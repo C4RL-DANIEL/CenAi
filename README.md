@@ -7,14 +7,17 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Streaming chat for OpenAI-compatible APIs, Claude Messages and Gemini.
 - Per-provider API keys encrypted with Android Keystore.
 - Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
-- Saved conversations, new chat, history, delete, edit/resend, copy and regenerate.
-- Text-document attachments (TXT, Markdown, CSV and JSON).
+- Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
+- Text-document attachments (TXT, Markdown, CSV and JSON), plus optional Android speech-recognition voice input.
+- Quick prompt starters for brainstorming, summaries, translation, writing and code review.
+- Local usage insights (request count and approximate input-token estimate) with configurable daily limits.
 - System instructions and maximum output-token setting.
 - Connection test in provider settings.
 - In-app update checker and APK downloader using GitHub Releases.
 - Animated Compose UI with responsive message transitions and animated composer controls.
+- Four switchable UI themes in Settings: CenAI Default, Android Material 3 (including wallpaper-derived Material You colors on Android 12+), iOS-inspired, and Figma-inspired.
 - Markdown-aware message rendering with visually separated fenced code blocks, language labels, horizontal code scrolling and per-block copy.
-- Agent planning mode with approval-first guidance; this is planning support, not unrestricted background or device execution.
+- Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls and nine allow-listed local utilities (date/time, calculator, word/text statistics, JSON formatting, UUID and Base64). This is not unrestricted background or device execution.
 - Expanded settings for agent planning, approval preferences and provider account/OAuth capability guidance.
 
 ## Build
@@ -38,7 +41,7 @@ Then push a version tag such as `v0.2.0`. The workflow builds a signed release A
 
 ## Agent tools
 
-Agent planning mode can request a small allow-listed set of local tools: current date/time, arithmetic, word counting and JSON formatting. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, background device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
+Agent planning mode can request an allow-listed set of local tools: current date/time, arithmetic, word counting, text statistics, JSON formatting, UUID generation and Base64 encoding/decoding. Each tool can be enabled or disabled in Settings. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, background device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
 
 ## Google Gemini OAuth
 
@@ -49,3 +52,8 @@ Other providers are not automatically account-connected. Only implement their OA
 ## Security and provider access
 
 Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
+
+
+## UI design references
+
+The project includes a Figma design file with editable Material 3 and iOS/iPadOS component instances and CenAI chat/settings screen compositions: https://www.figma.com/design/izsd2XugSdMRQtDidtc3iI/CenAI-Android-App-Design-System. The Figma-inspired in-app theme is a token-based fallback palette; importing a user's private Figma assets directly into Android still requires a target file and selected assets.
