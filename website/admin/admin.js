@@ -107,7 +107,7 @@
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-    ["overview","flags","audit","integrations","releases","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
+    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
       const data = (tab === "beta" || tab === "feedback") ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
@@ -120,15 +120,36 @@
       else if (tab === "audit") $("audit-content").innerHTML = (data.events||[]).map(e=>row(e.action,e.created_at+" · "+e.actor_email,e.status||"recorded")).join("") || "<p>No audit events.</p>";
       else if (tab === "integrations") $("integration-content").innerHTML = (data.integrations||[]).map(x=>row(x.name,x.detail,x.connected?"connected":"not connected")).join("");
       else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,"Open release",x.url)).join("") || "<p>No published releases yet.</p>";
+      else if (tab === "models") await loadModels();
+      else if (tab === "api-keys") await loadApiKeys();
+      else if (tab === "analytics") await loadAnalytics();
       else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
+  }
+  async function loadModels() {
+    const d=await api("models");
+    $("model-content").innerHTML=(d.models||[]).map(m=>'<div class="item"><div><b>'+esc(m.display_name)+' · '+esc(m.slug)+'</b><small>'+esc(m.provider)+' / '+esc(m.model_id)+' · '+esc((m.tasks||[]).join(", "))+'</small></div><span class="pill">'+(m.enabled?"enabled":"disabled")+(m.public?" · public":" · private")+'</span></div>').join("")||"<p>No models registered yet.</p>";
+  }
+  async function loadApiKeys() {
+    const d=await api("api_keys");
+    $("api-key-content").innerHTML=(d.apiKeys||[]).map(k=>'<div class="item"><div><b>'+esc(k.name)+' · '+esc(k.key_prefix)+'…</b><small>'+esc(k.created_at)+' · Last used: '+esc(k.last_used_at||"Never")+'</small></div>'+(k.enabled?'<button data-revoke-key="'+esc(k.id)+'">Revoke</button>':'<span class="pill">Revoked</span>')).join("")||"<p>No API keys created.</p>";
+  }
+  async function loadAnalytics() {
+    const d=await api("usage_analytics",{days:Number($("analytics-days").value)});
+    $("analytics-content").innerHTML=[row("Requests",String(d.total||0),d.days+" days"),row("Successful / failed",(d.succeeded||0)+" / "+(d.failed||0),"events"),row("Input / output tokens",(d.inputTokens||0)+" / "+(d.outputTokens||0),"estimated/recorded"),row("Average latency",String(d.averageLatencyMs||0)+" ms","aggregate"),row("Provider breakdown",Object.entries(d.providers||{}).map(([k,v])=>k+": "+v).join(" · ")||"No events","source")].join("")+(d.truncated?"<p class='muted'>Showing the most recent 5,000 events.</p>":"");
   }
   async function loadBeta(){const d=await betaApi("admin_list",{status:$("beta-filter").value});$("beta-content").innerHTML=(d.applications||[]).map(a=>'<article class="item beta-item"><div><b>'+esc(a.display_name)+' · '+esc(a.email)+'</b><small>'+esc(a.status)+' · '+esc(a.experience)+' · '+esc(a.created_at)+'</small><p>'+esc(a.motivation)+'</p><small>Review note: '+esc(a.reviewer_note||"—")+'</small></div><div class="beta-actions" data-id="'+esc(a.id)+'">'+(a.status!=="approved"?'<button data-review="approved">Approve</button>':"")+(a.status!=="rejected"?'<button data-review="rejected">Reject</button>':"")+(a.status==="approved"?'<button data-review="revoked">Revoke</button>':"")+'</div></article>').join("")||"<p>No applications in this filter.</p>";}
   $("beta-filter")?.addEventListener("change",()=>loadBeta().catch(e=>status(e.message,true)));
   $("beta-refresh")?.addEventListener("click",()=>loadBeta().catch(e=>status(e.message,true)));
   $("beta-content")?.addEventListener("click",async e=>{const b=e.target.closest("button[data-review]");if(!b)return;const parent=b.closest("[data-id]");if(!confirm("Are you sure you want to "+b.dataset.review+" this beta application?"))return;try{await betaApi("admin_review",{id:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"});try{const mail=await fetch("/api/beta-notification",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({applicationId:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"})});const md=await mail.json().catch(()=>({}));if(!mail.ok)throw new Error(md.error||"Email send failed");status("Decision saved and notification email sent.");}catch(mailError){status("Decision saved, but notification email failed: "+mailError.message,true);}await loadBeta();}catch(err){status(err.message,true);}});
   function row(name, detail, state, url) { const action = url && /^https:\/\/github\.com\//i.test(url) ? '<a class="pill" target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(state)+' ↗</a>' : '<span class="pill">'+esc(state)+'</span>'; return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div>'+action+'</div>'; }
+  $("model-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("model_upsert",{slug:$("model-slug").value,provider:$("model-provider").value,modelId:$("model-id").value,displayName:$("model-name").value,description:$("model-description").value,enabled:$("model-enabled").checked,public:$("model-public").checked,tasks:["chat"],modalities:["text"]});status("Model saved and audited.");await loadModels();}catch(err){status(err.message,true);}});
+  $("api-key-form")?.addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("api_key_create",{name:$("api-key-name").value});$("api-key-secret").textContent=d.secret;$("api-key-secret").hidden=false;$("copy-api-key").hidden=false;$("api-key-name").value="";status("API key created. Copy it now; it will not be shown again.");await loadApiKeys();}catch(err){status(err.message,true);}});
+  $("copy-api-key")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("api-key-secret").textContent);status("API key copied.");}catch(e){status("Clipboard access unavailable; copy the displayed key manually.",true);}});
+  $("api-key-content")?.addEventListener("click",async e=>{const b=e.target.closest("[data-revoke-key]");if(!b)return;if(!confirm("Revoke this API key immediately?"))return;try{await api("api_key_revoke",{id:b.dataset.revokeKey});status("API key revoked.");await loadApiKeys();}catch(err){status(err.message,true);}});
+  $("analytics-refresh")?.addEventListener("click",()=>loadAnalytics().catch(e=>status(e.message,true)));
+  $("analytics-days")?.addEventListener("change",()=>loadAnalytics().catch(e=>status(e.message,true)));
   $("login-form").addEventListener("submit",signIn);
   $("password-form")?.addEventListener("submit",changePassword);
   $("reset-password")?.addEventListener("click",resetPassword);
