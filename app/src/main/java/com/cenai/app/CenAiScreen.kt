@@ -1,6 +1,9 @@
 package com.cenai.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -19,6 +22,7 @@ import android.util.Base64
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -168,6 +172,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
 private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) -> Unit) {
     val palette = LocalCenAiPalette.current
     val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
     val updater = remember { UpdateManager(context) }
@@ -832,6 +837,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     OutlinedButton(
                         enabled = backgroundTaskPrompt.isNotBlank() && (backgroundTaskDelay.toLongOrNull() ?: 0L) in 1L..43_200L,
                         onClick = {
+                            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
                             runCatching {
                                 val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base)
                                 backgroundTaskStatus = "Task queued · ID " + id.take(8)
