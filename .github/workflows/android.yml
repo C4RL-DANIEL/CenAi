@@ -26,17 +26,25 @@ jobs:
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,x86_64-linux-android
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Build Rust JNI library
         working-directory: core
-        run: cargo ndk -t arm64-v8a -o ../app/src/main/jniLibs build --release
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app/src/main/jniLibs build --release
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
       - name: Run unit tests and build debug APK
         run: gradle testDebugUnitTest assembleDebug
+      - name: Run Android emulator smoke tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: gradle connectedDebugAndroidTest
       - name: Generate debug APK SHA-256
         run: |
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
