@@ -402,7 +402,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             val content = result.getOrNull()
             if (content.isNullOrBlank()) {
                 error = result.exceptionOrNull()?.message
-                    ?: "No selectable text was found. Scanned/image-only PDFs and image attachments are not supported yet."
+                    ?: "No selectable text was found. Scanned/image-only PDFs are not OCR-processed yet; attach the page as an image to use on-device OCR."
             } else {
                 val detectedMime = context.contentResolver.getType(uri).orEmpty().lowercase()
                 val label = when { detectedMime.startsWith("image/") -> "image OCR"; detectedMime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf") -> "PDF document"; else -> "text document" }
