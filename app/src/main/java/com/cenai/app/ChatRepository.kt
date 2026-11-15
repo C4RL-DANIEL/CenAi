@@ -16,7 +16,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
 
     suspend fun send(provider: Provider, model: String, baseUrl: String, messages: List<ChatMessage>): String =
         withContext(Dispatchers.IO) {
-            val key = vault.apiKey()
+            val key = vault.apiKey(provider)
             require(key.isNotBlank()) { "Add your API key in Settings." }
             val request = when (provider) {
                 Provider.CLAUDE -> claude(model, messages, key)

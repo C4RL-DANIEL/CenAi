@@ -26,22 +26,36 @@ class SecureKeyStore(context: Context) {
         return gen.generateKey()
     }
 
-    fun saveApiKey(value: String) {
-        if (value.isBlank()) { prefs.edit().remove("api_key").apply(); return }
+    private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val packed = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        prefs.edit().putString("api_key", Base64.encodeToString(packed, Base64.NO_WRAP)).apply()
+        return Base64.encodeToString(packed, Base64.NO_WRAP)
     }
 
-    fun apiKey(): String {
-        return try {
-            val encoded = prefs.getString("api_key", null) ?: return ""
+    private fun decrypt(encoded: String?): String {
+        if (encoded.isNullOrBlank()) return ""
+        return runCatching {
             val packed = Base64.decode(encoded, Base64.NO_WRAP)
-            require(packed.size > 12) { "Invalid encrypted key payload" }
+            require(packed.size > 12)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, packed.copyOfRange(0, 12)))
             String(cipher.doFinal(packed.copyOfRange(12, packed.size)), Charsets.UTF_8)
-        } catch (_: Exception) { "" }
+        }.getOrDefault("")
+    }
+
+    fun saveApiKey(value: String) = saveApiKey(value, "default")
+
+    fun saveApiKey(value: String, provider: Provider) {
+        val name = "api_key_${provider.name.lowercase()}"
+        if (value.isBlank()) prefs.edit().remove(name).apply()
+        else prefs.edit().putString(name, encrypt(value)).apply()
+    }
+
+    fun apiKey(): String = decrypt(prefs.getString("api_key", null))
+
+    fun apiKey(provider: Provider): String {
+        val stored = prefs.getString("api_key_${provider.name.lowercase()}", null)
+        return decrypt(stored ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null)
     }
 
     fun put(name: String, value: String) { prefs.edit().putString(name, value).apply() }

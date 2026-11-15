@@ -11,4 +11,5 @@ enum class Provider(val label: String, val model: String, val baseUrl: String) {
         fun parse(value: String?) = entries.firstOrNull { it.name == value } ?: OPENAI
     }
 }
+
 data class ChatMessage(val role: String, val content: String)
