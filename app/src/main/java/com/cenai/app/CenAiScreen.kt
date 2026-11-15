@@ -75,6 +75,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
     var approvalFirst by remember { mutableStateOf(vault.get("approval_first", "true").toBoolean()) }
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
+    var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
@@ -401,10 +402,13 @@ fun CenAiScreen(vault: SecureKeyStore) {
                             Text("Google Gemini account", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                             Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) Sand else TextMuted, fontSize = 11.sp)
                             OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     vault.put("google_oauth_client_id", googleOAuthClientId)
+                vault.put("google_cloud_project_id", googleCloudProjectId)
+                                    vault.put("google_cloud_project_id", googleCloudProjectId)
                                     runCatching { context.startActivity(GoogleGeminiOAuth(vault).authorizationIntent(googleOAuthClientId)) }
                                         .onFailure { info = it.message ?: "Could not start Google sign-in." }
                                 }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
