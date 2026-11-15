@@ -528,7 +528,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     vault.put("google_oauth_client_id", googleOAuthClientId)
-                vault.put("google_cloud_project_id", googleCloudProjectId)
                                     vault.put("google_cloud_project_id", googleCloudProjectId)
                                     runCatching { context.startActivity(GoogleGeminiOAuth(vault).authorizationIntent(googleOAuthClientId)) }
                                         .onFailure { info = it.message ?: "Could not start Google sign-in." }
