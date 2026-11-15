@@ -49,7 +49,9 @@
       await ensureConfig();
       const url = window.CENAI_SUPABASE_URL;
       const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
-      const response = await fetch(new URL("/auth/v1/recover", url).toString(), {
+      const recoveryUrl = new URL("/auth/v1/recover", url);
+      recoveryUrl.searchParams.set("redirect_to", window.location.origin + "/admin");
+      const response = await fetch(recoveryUrl.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": key },
         body: JSON.stringify({ email })
@@ -76,7 +78,7 @@
       const response = await fetch(new URL("/auth/v1/user", url).toString(), {
         method: "PUT",
         headers: { "Content-Type": "application/json", "apikey": key, "Authorization": "Bearer " + accessToken },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password, data: { username: "CenAI", name: "CenAI" } })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.msg || data.message || "Password update failed.");
@@ -84,6 +86,23 @@
       $("password-status").textContent = "Administrator password updated successfully.";
     } catch (error) {
       $("password-status").textContent = error.message;
+    }
+  }
+  async function handleRecoveryLink() {
+    const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = fragment.get("access_token");
+    if (fragment.get("type") !== "recovery" || !token) return;
+    try {
+      await ensureConfig();
+      accessToken = token;
+      userEmail = ADMIN_EMAIL;
+      $("login").hidden = true;
+      $("dashboard").hidden = false;
+      $("password-status").textContent = "Recovery link verified. Set your new administrator password below.";
+      window.history.replaceState({}, document.title, window.location.pathname);
+      $("password-panel").scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (error) {
+      $("login-error").textContent = error.message;
     }
   }
   async function load(tab) {
@@ -117,4 +136,5 @@
   document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>load(b.dataset.tab)));
   $("flags-content").addEventListener("change",async e=>{const key=e.target.dataset.flag;if(!key)return;try{await api("update_flag",{key,enabled:e.target.checked});status("Feature flag saved and audited.");}catch(err){e.target.checked=!e.target.checked;status(err.message,true);}});
   fetch("/api/admin-config").then(r=>r.ok?r.json():{}).then(c=>{window.CENAI_SUPABASE_URL=c.supabaseUrl;window.CENAI_SUPABASE_PUBLISHABLE_KEY=c.publishableKey;}).catch(()=>{});
+  handleRecoveryLink();
 })();
