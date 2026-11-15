@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
       return response(200, { days, total:rows.length, succeeded:rows.filter((x:any)=>x.status==="success").length, failed:rows.filter((x:any)=>x.status==="error").length, cancelled:rows.filter((x:any)=>x.status==="cancelled").length, inputTokens:sum("input_tokens"), outputTokens:sum("output_tokens"), averageLatencyMs:rows.length ? Math.round(sum("latency_ms")/rows.length) : 0, providers, truncated:rows.length===5000 });
     }
     if (action === "api_keys") {
-      const { data, error } = await adminDb.from("api_keys").select("id,name,key_prefix,scopes,enabled,created_at,last_used_at,revoked_at,owner_user_id").order("created_at",{ascending:false}).limit(100);
+      const { data, error } = await adminDb.from("api_keys").select("id,name,key_prefix,scopes,enabled,created_at,last_used_at,revoked_at,owner_user_id").eq("owner_user_id",user.id).order("created_at",{ascending:false}).limit(100);
       if (error) throw error;
       await audit(user, "api.keys.view", { count:data?.length ?? 0 });
       return response(200, { apiKeys:data ?? [] });
