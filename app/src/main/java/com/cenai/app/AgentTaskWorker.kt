@@ -1,6 +1,16 @@
 package com.cenai.app
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.Constraints
@@ -65,6 +75,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
             vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
+            postNotification(taskId, "Completed", response)
             Result.success()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             prefs.edit().putString("status_$taskId", "Cancelled").apply()
@@ -72,11 +83,28 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         } catch (error: Exception) {
             val message = (error.message ?: error.javaClass.simpleName).take(500)
             prefs.edit().putString("status_$taskId", "Failed: $message").apply()
+            postNotification(taskId, "Failed", message)
             if (error is IOException && runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 
+    private fun postNotification(taskId: String, status: String, detail: String) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        runCatching {
+            val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "CenAI agent tasks", NotificationManager.IMPORTANCE_DEFAULT))
+            val openApp = PendingIntent.getActivity(applicationContext, taskId.hashCode(), Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("CenAI background task " + status)
+                .setContentText(detail.take(140))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(detail.take(1_000)))
+                .setContentIntent(openApp).setAutoCancel(true).build()
+            NotificationManagerCompat.from(applicationContext).notify(taskId.hashCode(), notification)
+        }
+    }
     companion object {
+        private const val CHANNEL_ID = "cenai_agent_tasks"
         const val PREFS = "cenai_agent_tasks"
         const val KEY_ID = "task_id"
         const val KEY_PROMPT = "task_prompt"
