@@ -97,7 +97,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             textToSpeech.setSpeechRate(speechRate)
             textToSpeech.setPitch(speechPitch)
             val locale = if (speechLanguage == "device") Locale.getDefault() else Locale.forLanguageTag(speechLanguage)
-            if (textToSpeech.setLanguage(locale) < TextToSpeech.LANG_AVAILABLE) speechOutputReady = false
+            if (textToSpeech.setLanguage(locale) < TextToSpeech.LANG_AVAILABLE) textToSpeech.setLanguage(Locale.getDefault())
         }
     }
     DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
