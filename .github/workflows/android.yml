@@ -60,6 +60,13 @@ jobs:
           echo "CENAI_KEYSTORE_PASSWORD=$CENAI_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "CENAI_KEY_ALIAS=$CENAI_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "CENAI_KEY_PASSWORD=$CENAI_KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Set release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          echo "CENAI_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
       - name: Build signed release APK
         if: startsWith(github.ref, 'refs/tags/v')
         run: gradle assembleRelease

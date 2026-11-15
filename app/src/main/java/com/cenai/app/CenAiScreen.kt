@@ -6,8 +6,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -465,6 +468,10 @@ private fun MessageBubble(
     onCopy: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
 ) {
     val user = message.role == "user"
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(tween(280)) + slideInVertically(tween(280)) { it / 10 }
+    ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
         Text(if (user) "YOU" else "CENAI", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Surface(
@@ -480,6 +487,7 @@ private fun MessageBubble(
             if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = TextMuted, fontSize = 10.sp) }
             if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = TextMuted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = TextMuted, fontSize = 10.sp) }
         }
+    }
     }
 }
 

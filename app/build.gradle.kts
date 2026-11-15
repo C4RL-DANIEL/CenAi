@@ -14,7 +14,7 @@ android {
         applicationId = "com.cenai.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
+        versionCode = System.getenv("CENAI_VERSION_CODE")?.toIntOrNull() ?: 2000
         versionName = "0.2.0"
     }
     signingConfigs {
