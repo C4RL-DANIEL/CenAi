@@ -13,6 +13,9 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Connection test in provider settings.
 - In-app update checker and APK downloader using GitHub Releases.
 - Animated Compose UI with responsive message transitions and animated composer controls.
+- Markdown-aware message rendering with visually separated fenced code blocks, language labels, horizontal code scrolling and per-block copy.
+- Agent planning mode with approval-first guidance; this is planning support, not unrestricted background or device execution.
+- Expanded settings for agent planning, approval preferences and provider account/OAuth capability guidance.
 
 ## Build
 
