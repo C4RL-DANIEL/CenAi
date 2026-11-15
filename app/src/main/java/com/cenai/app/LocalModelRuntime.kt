@@ -59,12 +59,27 @@ class LocalModelRuntime(context: Context) {
             require(copied > 1_000_000L) { "The selected model file is empty or incomplete." }
             mutex.withLock {
                 closeEngineLocked()
-                if (modelFile.exists() && !modelFile.delete()) {
-                    throw IllegalStateException("Could not replace the existing local model.")
+                // Keep the previous working model until the new import has been
+                // promoted successfully. A failed rename must not destroy the
+                // user's only installed offline model.
+                val backup = File(modelDir, "cenai-local.previous")
+                if (backup.exists() && !backup.delete()) {
+                    throw IllegalStateException("Could not prepare the model backup.")
                 }
-                if (!temporary.renameTo(modelFile)) {
-                    throw IllegalStateException("Could not finish installing the local model.")
+                val hadPrevious = modelFile.exists()
+                if (hadPrevious && !modelFile.renameTo(backup)) {
+                    throw IllegalStateException("Could not safely stage the existing local model.")
                 }
+                val installed = temporary.renameTo(modelFile)
+                if (!installed) {
+                    if (hadPrevious && !backup.renameTo(modelFile)) {
+                        throw IllegalStateException(
+                            "New model installation failed and the previous model could not be restored. The backup is preserved in app storage."
+                        )
+                    }
+                    throw IllegalStateException("Could not finish installing the local model. The previous model was restored.")
+                }
+                backup.delete()
             }
             copied
         } catch (error: Throwable) {
