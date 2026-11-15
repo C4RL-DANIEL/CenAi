@@ -977,17 +977,6 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToolActivityCard(content: String) {
-    val palette = LocalCenAiPalette.current
-    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("LOCAL TOOL ACTIVITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Text(content, color = palette.text, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
 private fun MessageBubble(
     message: ChatMessage, index: Int, last: Boolean, busy: Boolean, style: String,
     onCopy: () -> Unit, onCopyCode: (String) -> Unit, onSpeak: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
