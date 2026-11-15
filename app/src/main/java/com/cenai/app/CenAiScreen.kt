@@ -390,7 +390,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         scope.launch {
                             try {
                                 updateInfo = updater.check()
-                                updateStatus = if (updateInfo == null) "You're using the latest published version." else "Version ${updateInfo!!.version} is available."
+                                updateStatus = if (updateInfo == null) "No public update has been published yet." else "Version ${updateInfo!!.version} is available."
                             } catch (e: Exception) { updateStatus = e.message ?: "Could not check for updates." }
                             finally { updateBusy = false }
                         }

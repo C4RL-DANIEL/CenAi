@@ -27,6 +27,7 @@ class UpdateManager(private val context: Context) {
         val request = Request.Builder().url("https://api.github.com/repos/$owner/$repo/releases/latest")
             .header("Accept", "application/vnd.github+json").build()
         client.newCall(request).execute().use { response ->
+            if (response.code == 404) return@withContext null
             if (!response.isSuccessful) throw IllegalStateException("Update check failed (HTTP ${response.code}).")
             val release = JSONObject(response.body?.string().orEmpty())
             val assets = release.optJSONArray("assets") ?: return@withContext null
