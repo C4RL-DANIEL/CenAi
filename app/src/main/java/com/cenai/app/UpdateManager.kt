@@ -2,6 +2,8 @@ package com.cenai.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -124,6 +126,40 @@ class UpdateManager(private val context: Context) {
         if (!actualDigest.equals(info.sha256, ignoreCase = true)) {
             apk.delete()
             throw IllegalStateException("APK SHA-256 verification failed. The downloaded file was rejected.")
+        }
+
+        // SHA-256 protects transfer integrity; matching the installed signing certificate
+        // prevents an update from replacing the app with an APK signed by another party.
+        val archive = context.packageManager.getPackageArchiveInfo(
+            apk.absolutePath,
+            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+        ) ?: run {
+            apk.delete()
+            throw IllegalStateException("Downloaded file is not a valid Android package.")
+        }
+        if (archive.packageName != context.packageName) {
+            apk.delete()
+            throw IllegalStateException("Update package ID does not match this CenAI installation.")
+        }
+        val installed = context.packageManager.getPackageInfo(
+            context.packageName,
+            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+        )
+        fun fingerprints(info: PackageInfo): Set<String> {
+            val signatures = if (Build.VERSION.SDK_INT >= 28) {
+                info.signingInfo?.apkContentsSigners?.toList().orEmpty()
+            } else {
+                @Suppress("DEPRECATION")
+                info.signatures?.toList().orEmpty()
+            }
+            return signatures.map { signature ->
+                MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                    .joinToString("") { byte -> "%02x".format(byte) }
+            }.toSet()
+        }
+        if (fingerprints(installed).isEmpty() || fingerprints(archive) != fingerprints(installed)) {
+            apk.delete()
+            throw IllegalStateException("APK signing certificate does not match the installed CenAI app. Update blocked.")
         }
         withContext(Dispatchers.Main) {
             if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
