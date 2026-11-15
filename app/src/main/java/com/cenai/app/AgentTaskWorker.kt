@@ -20,12 +20,12 @@ import java.util.concurrent.TimeUnit
 class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(KEY_ID).orEmpty()
-        val prompt = inputData.getString(KEY_PROMPT).orEmpty()
+        val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prompt = prefs.getString("prompt_$taskId", "").orEmpty()
         val provider = Provider.parse(inputData.getString(KEY_PROVIDER))
         val model = inputData.getString(KEY_MODEL).orEmpty().ifBlank { provider.model }
         val base = inputData.getString(KEY_BASE).orEmpty().ifBlank { provider.baseUrl }
         if (taskId.isBlank() || prompt.isBlank()) return Result.failure()
-        val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putString("status_$taskId", "Running").apply()
         return try {
             val vault = SecureKeyStore(applicationContext)
@@ -74,7 +74,6 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             val id = UUID.randomUUID().toString()
             val data = Data.Builder()
                 .putString(KEY_ID, id)
-                .putString(KEY_PROMPT, prompt)
                 .putString(KEY_PROVIDER, provider.name)
                 .putString(KEY_MODEL, model)
                 .putString(KEY_BASE, base)
