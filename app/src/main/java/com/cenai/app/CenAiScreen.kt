@@ -193,12 +193,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         error = ""
         persist(requestMessages)
         val queryForKnowledge = requestMessages.lastOrNull { it.role == "user" }?.content.orEmpty()
-        val localKnowledgeContext = if (localKnowledgeEnabled) localKnowledge.retrieve(queryForKnowledge, conversations, requestMessages) else ""
         appMonitor.recordStarted()
         monitorSnapshot = appMonitor.snapshot()
         val requestStartedAt = System.currentTimeMillis()
         activeJob = scope.launch {
             try {
+                val localKnowledgeContext = if (localKnowledgeEnabled) withContext(Dispatchers.Default) {
+                    localKnowledge.retrieve(queryForKnowledge, conversations, requestMessages)
+                } else ""
                 for (target in targets) {
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
