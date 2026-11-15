@@ -644,7 +644,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
                             OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             OutlinedTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                            Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access. OpenAI, Anthropic and DeepSeek use their official API-key methods; consumer ChatGPT and Claude subscriptions are not third-party API OAuth credentials.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     vault.put("google_oauth_client_id", googleOAuthClientId)
@@ -689,6 +689,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
                                 if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
                                 Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
+                            }
+                            if (cloudSignedIn) {
+                                HorizontalDivider(color = palette.raised)
+                                Text("CENAI PLANS · OPTIONAL BILLING", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Secure Stripe checkout. Billing remains unavailable until the owner configures and verifies the payment provider.", color = palette.muted, fontSize = 10.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
+                                        cloudBusy = true; cloudStatus = "Opening Supporter checkout…"
+                                        scope.launch { try { val url = cloud.startBillingCheckout("supporter"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
+                                    }, modifier = Modifier.weight(1f)) { Text("Supporter") }
+                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
+                                        cloudBusy = true; cloudStatus = "Opening Pro checkout…"
+                                        scope.launch { try { val url = cloud.startBillingCheckout("pro"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
+                                    }, modifier = Modifier.weight(1f)) { Text("Pro") }
+                                }
                             }
                             if (cloudStatus.isNotBlank()) Text(cloudStatus, color = if (cloudStatus.contains("failed", true) || cloudStatus.contains("error", true)) MaterialTheme.colorScheme.error else palette.muted, fontSize = 11.sp)
                         }
