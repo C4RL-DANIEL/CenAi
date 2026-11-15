@@ -316,7 +316,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 val successfulTargets = mutableListOf<Provider>()
                 for (target in targets) {
                     try {
-                    val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
+                    val storedTargetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
+                    val targetModel = if (target == Provider.DEEPSEEK && storedTargetModel in setOf("deepseek-chat", "deepseek-reasoner")) target.model else storedTargetModel
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
