@@ -308,7 +308,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     localKnowledge.retrieve(queryForKnowledge, conversations, requestMessages)
                 } else ""
                 val providerAnswers = mutableListOf<String>()
+                val successfulTargets = mutableListOf<Provider>()
                 for (target in targets) {
+                    try {
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
@@ -378,9 +380,18 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         persist(current)
                     }
                     providerAnswers += "${target.label}:\n" + displayText.trim().take(8_000)
+                    successfulTargets += target
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (!multiAgent) throw failure
+                        val failureSummary = "${target.label}: provider request failed — " + (failure.message ?: failure.javaClass.simpleName)
+                        providerAnswers += failureSummary
+                        persist(messages + ChatMessage("assistant", failureSummary))
+                    }
                 }
-                if (multiAgent && providerAnswers.size > 1 && !localModelEnabled) {
-                    val synthesisProvider = targets.first()
+                if (multiAgent && successfulTargets.size > 1 && !localModelEnabled) {
+                    val synthesisProvider = successfulTargets.first()
                     val synthesisModel = if (synthesisProvider == provider) model else vault.get("model_${synthesisProvider.name}", synthesisProvider.model)
                     val synthesisBase = if (synthesisProvider == provider) base else vault.get("base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
                     val synthesisPrompt = "USER REQUEST:\n" + queryForKnowledge.take(8_000) +
