@@ -329,7 +329,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     OutlinedTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
                         label = { Text("System instructions (optional)") }, minLines = 2)
                     Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = TextMuted, fontSize = 10.sp)
-                    if (info.isNotBlank()) Text(info, color = Sand, fontSize = 11.sp)\n                    OutlinedButton(enabled = !testBusy, onClick = {
+                    if (info.isNotBlank()) Text(info, color = Sand, fontSize = 11.sp)
+                    OutlinedButton(enabled = !testBusy, onClick = {
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
@@ -405,13 +406,6 @@ fun CenAiScreen(vault: SecureKeyStore) {
         )
     }
 
-    if (info.isNotBlank()) {
-        LaunchedEffect(info) {
-            kotlinx.coroutines.delay(3500)
-            info = ""
-        }
-        SnackbarHost(hostState = remember { SnackbarHostState() }, modifier = Modifier)
-    }
 }
 
 @Composable
