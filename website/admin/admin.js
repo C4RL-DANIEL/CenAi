@@ -38,10 +38,10 @@
       } else if (tab === "flags") $("flags-content").innerHTML = (data.flags||[]).map(f=>'<div class="item"><div><b>'+esc(f.key)+'</b><small>'+esc(f.description||"")+'</small></div><label class="flag"><input type="checkbox" data-flag="'+esc(f.key)+'" '+(f.enabled?"checked":"")+'> Enabled</label></div>').join("") || "<p>No feature flags configured.</p>";
       else if (tab === "audit") $("audit-content").innerHTML = (data.events||[]).map(e=>row(e.action,e.created_at+" · "+e.actor_email,e.status||"recorded")).join("") || "<p>No audit events.</p>";
       else if (tab === "integrations") $("integration-content").innerHTML = (data.integrations||[]).map(x=>row(x.name,x.detail,x.connected?"connected":"not connected")).join("");
-      else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,'<a target="_blank" rel="noopener" href="'+esc(x.url)+'">Open release ↗</a>')).join("") || "<p>No published releases yet.</p>";
+      else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,"Open release",x.url)).join("") || "<p>No published releases yet.</p>";
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
   }
-  function row(name, detail, state) { return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div><span class="pill">'+esc(state)+'</span></div>'; }
+  function row(name, detail, state, url) { const action = url && /^https:\/\/github\.com\//i.test(url) ? '<a class="pill" target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(state)+' ↗</a>' : '<span class="pill">'+esc(state)+'</span>'; return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div>'+action+'</div>'; }
   $("login-form").addEventListener("submit",signIn);
   $("signout").addEventListener("click",()=>{accessToken=null;userEmail="";$("dashboard").hidden=true;$("login").hidden=false;$("password").value="";});
   document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>load(b.dataset.tab)));
