@@ -33,12 +33,16 @@ class SecureKeyStore(context: Context) {
         prefs.edit().putString("api_key", Base64.encodeToString(packed, Base64.NO_WRAP)).apply()
     }
 
-    fun apiKey(): String = try {
-        val packed = Base64.decode(prefs.getString("api_key", null) ?: return "", Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, packed.copyOfRange(0, 12)))
-        String(cipher.doFinal(packed.copyOfRange(12, packed.size)), Charsets.UTF_8)
-    } catch (_: Exception) { "" }
+    fun apiKey(): String {
+        return try {
+            val encoded = prefs.getString("api_key", null) ?: return ""
+            val packed = Base64.decode(encoded, Base64.NO_WRAP)
+            require(packed.size > 12) { "Invalid encrypted key payload" }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, packed.copyOfRange(0, 12)))
+            String(cipher.doFinal(packed.copyOfRange(12, packed.size)), Charsets.UTF_8)
+        } catch (_: Exception) { "" }
+    }
 
     fun put(name: String, value: String) { prefs.edit().putString(name, value).apply() }
     fun get(name: String, fallback: String = "") = prefs.getString(name, fallback) ?: fallback
