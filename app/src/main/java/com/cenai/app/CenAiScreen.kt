@@ -82,6 +82,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
     var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
+    var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
     var approvalFirst by remember { mutableStateOf(vault.get("approval_first", "true").toBoolean()) }
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
@@ -164,7 +165,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
-                    val runtime = AgentRuntime()
+                    val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
                     val toolGuide = if (agentPlanning) {
                         "You may use these safe local tools when useful: " + runtime.availableTools().joinToString { it.name + " — " + it.description } +
                         ". To call one, output exactly [[CENAI_TOOL_CALL]] followed by a JSON object with name and arguments, then [[/CENAI_TOOL_CALL]]. Example: [[CENAI_TOOL_CALL]]{\"name\":\"current_time\",\"arguments\":{}}[[/CENAI_TOOL_CALL]]. Only call listed tools. Do not claim that unsupported shell, arbitrary code, device-control, file-write or web actions were performed. Explain tool results to the user."
@@ -493,6 +494,28 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         Switch(checked = approvalFirst, onCheckedChange = { approvalFirst = it }, enabled = agentPlanning)
                     }
                     Text("Planning mode currently creates structured plans in the AI response. Direct device control, background execution and external tool actions are not enabled in this build.", color = palette.muted, fontSize = 10.sp)
+                    HorizontalDivider(color = palette.raised)
+                    Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("Enable only the tools you want the agent to access. These run locally and do not execute shell commands or arbitrary code.", color = palette.muted, fontSize = 10.sp)
+                    listOf(
+                        "current_time" to "Current time",
+                        "current_date" to "Current date",
+                        "calculate" to "Safe calculator",
+                        "count_words" to "Word counter",
+                        "text_stats" to "Text statistics",
+                        "format_json" to "JSON formatter",
+                        "generate_uuid" to "UUID generator",
+                        "base64_encode" to "Base64 encoder",
+                        "base64_decode" to "Base64 decoder"
+                    ).forEach { (tool, label) ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, color = palette.text, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                            Switch(checked = toolEnabled[tool] == true, onCheckedChange = { enabled ->
+                                toolEnabled = toolEnabled.toMutableMap().apply { put(tool, enabled) }
+                                vault.put("tool_enabled_" + tool, enabled.toString())
+                            })
+                        }
+                    }
                     HorizontalDivider(color = palette.raised)
                     Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
