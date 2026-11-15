@@ -96,7 +96,7 @@ class LocalModelRuntime(context: Context) {
                 try {
                     val answer = StringBuilder()
                     conversation.sendMessageAsync(prompt).collect { part ->
-                        val delta = part.text
+                        val delta = part.toString()
                         if (delta.isNotEmpty()) {
                             answer.append(delta)
                             onDelta(delta)
