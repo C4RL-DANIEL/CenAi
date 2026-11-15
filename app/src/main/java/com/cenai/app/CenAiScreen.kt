@@ -708,6 +708,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var betaApplicationStatus by remember { mutableStateOf("") }
         var expanded by remember { mutableStateOf(false) }
         var themeExpanded by remember { mutableStateOf(false) }
+        var backgroundTaskPrompt by remember { mutableStateOf("") }
+        var backgroundTaskDelay by remember { mutableStateOf("15") }
+        var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
         AlertDialog(
             onDismissRequest = { settings = false },
@@ -776,6 +779,56 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }
                     HorizontalDivider(color = palette.raised)
                     Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.SemiBold)
+                    Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
+                    OutlinedTextField(
+                        value = backgroundTaskPrompt,
+                        onValueChange = { backgroundTaskPrompt = it.take(8_000) },
+                        label = { Text("Task instructions") },
+                        placeholder = { Text("e.g. Summarize my saved project notes…") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = backgroundTaskDelay,
+                        onValueChange = { backgroundTaskDelay = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Run after minutes (1–43200)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedButton(
+                        enabled = backgroundTaskPrompt.isNotBlank() && backgroundTaskDelay.toLongOrNull() in 1L..43_200L,
+                        onClick = {
+                            runCatching {
+                                val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base)
+                                backgroundTaskStatus = "Task queued · ID " + id.take(8)
+                                backgroundTaskPrompt = ""
+                            }.onFailure { backgroundTaskStatus = it.message ?: "Could not schedule task." }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Schedule background task") }
+                    if (backgroundTaskStatus.isNotBlank()) Text(backgroundTaskStatus, color = palette.accent, fontSize = 11.sp)
+                    val taskPrefs = context.getSharedPreferences(AgentTaskWorker.PREFS, android.content.Context.MODE_PRIVATE).all
+                    val taskEntries = taskPrefs.filterKeys { it.startsWith("status_") }.entries.sortedByDescending { entry ->
+                        taskPrefs["completed_" + entry.key.removePrefix("status_")] as? Long ?: (taskPrefs["scheduled_" + entry.key.removePrefix("status_")] as? Long ?: 0L)
+                    }.take(5)
+                    if (taskEntries.isNotEmpty()) {
+                        Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        taskEntries.forEach { entry ->
+                            val id = entry.key.removePrefix("status_")
+                            val taskName = (taskPrefs["prompt_$id"] as? String).orEmpty().take(90)
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(taskName, color = palette.text, fontSize = 11.sp)
+                                Text((entry.value as? String).orEmpty(), color = palette.muted, fontSize = 10.sp)
+                                (taskPrefs["result_$id"] as? String)?.takeIf { it.isNotBlank() }?.let { result ->
+                                    Text("Result: " + result.take(700), color = palette.muted, fontSize = 10.sp)
+                                }
+                                if ((entry.value as? String) == "Scheduled" || (entry.value as? String) == "Running") {
+                                    TextButton(onClick = { AgentTaskWorker.cancel(context, id); backgroundTaskStatus = "Task cancelled." }) { Text("Cancel task", color = Color(0xFFFF938B)) }
+                                }
+                            }
+                        }
+                    }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Agent planning mode", color = palette.text)
