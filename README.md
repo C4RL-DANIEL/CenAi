@@ -8,7 +8,7 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Per-provider API keys encrypted with Android Keystore.
 - Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
 - Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
-- Text-document attachments (TXT, Markdown, CSV and JSON) plus selectable-text PDF extraction (up to 300 pages / 250,000 characters). Password-protected and scanned/image-only PDFs are not supported yet. Android speech-recognition voice input is also available.
+- Text-document attachments (TXT, Markdown, CSV and JSON) plus selectable-text PDF extraction (up to 300 pages / 250,000 characters), and on-device OCR for image attachments using ML Kit. Password-protected and scanned/image-only PDFs are not supported yet (attach the page images separately for OCR). Android speech-recognition voice input is also available.
 - Configurable speech engine controls: input/output language tags, speech rate, pitch and an in-app voice test; assistant responses can be read aloud with Android Text-to-Speech.
 - Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider.
 - Offline Brain powered by LiteRT-LM: import a compatible `.litertlm` model into app-private storage and run text chat locally on the CPU without a network connection. The model is not bundled in the APK; users must obtain it under its model licence.
