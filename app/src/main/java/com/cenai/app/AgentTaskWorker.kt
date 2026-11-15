@@ -153,7 +153,6 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             WorkManager.getInstance(context.applicationContext).cancelUniqueWork("cenai-agent-$taskId")
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString("status_$taskId", "Cancelled").apply()
-            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$taskId", "")
         }
     }
 }
