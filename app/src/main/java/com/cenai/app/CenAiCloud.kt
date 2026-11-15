@@ -113,6 +113,34 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         }
     }
 
+    private suspend fun telemetryCall(payload: JSONObject): JSONObject {
+        var token = vault.getSecret("supabase_access_token")
+        if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
+        return try {
+            post("$BASE_URL/functions/v1/cenai-telemetry", payload, token)
+        } catch (error: IOException) {
+            if (!refreshSession()) throw error
+            token = vault.getSecret("supabase_access_token")
+            post("$BASE_URL/functions/v1/cenai-telemetry", payload, token)
+        }
+    }
+
+    suspend fun setTelemetryConsent(usageAnalytics: Boolean, guardian: Boolean) {
+        telemetryCall(JSONObject().put("action","consent").put("usageAnalytics",usageAnalytics).put("guardian",guardian))
+    }
+
+    suspend fun recordUsageEvent(provider: String, model: String, inputTokens: Int, outputTokens: Int, latencyMs: Long, status: String, errorCode: String = "") {
+        telemetryCall(JSONObject().put("action","usage").put("provider",provider).put("model",model)
+            .put("inputTokens",inputTokens).put("outputTokens",outputTokens).put("latencyMs",latencyMs)
+            .put("status",status).put("errorCode",errorCode.take(80)))
+    }
+
+    suspend fun sendGuardianReport(appVersion: String, androidVersion: String, batteryPercent: Int, availableRamMb: Long, freeStorageMb: Long, network: String, crashCategory: String) {
+        telemetryCall(JSONObject().put("action","guardian").put("appVersion",appVersion).put("androidVersion",androidVersion)
+            .put("batteryPercent",batteryPercent).put("availableRamMb",availableRamMb).put("freeStorageMb",freeStorageMb)
+            .put("network",network).put("crashCategory",crashCategory.take(64)))
+    }
+
     suspend fun sendEmailOtp(): String {
         val token = vault.getSecret("supabase_access_token")
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
