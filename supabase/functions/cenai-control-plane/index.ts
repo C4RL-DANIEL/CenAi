@@ -103,8 +103,13 @@ Deno.serve(async (req: Request) => {
       }
       const summarize = (bucket: Record<string, any>) => Object.entries(bucket).map(([name, v]: [string, any]) => ({ name, requests:v.requests, inputTokens:v.inputTokens, outputTokens:v.outputTokens, averageLatencyMs:v.requests ? Math.round(v.latencyTotal/v.requests) : 0, succeeded:v.succeeded, failed:v.failed })).sort((a,b)=>b.requests-a.requests);
       const latencies = rows.map((r:any)=>Number(r.latency_ms || 0)).filter((n:number)=>Number.isFinite(n)&&n>=0).sort((a:number,b:number)=>a-b);
-      await audit(user, "analytics.dashboard.view", { days, rows: rows.length });
-      return response(200, { days, total:rows.length, truncated:rows.length===5000, statuses, providers:summarize(providers), models:summarize(models), daily:summarize(daily), failureCategories:Object.entries(failures).map(([category,count])=>({category,count})).sort((a,b)=>Number(b.count)-Number(a.count)).slice(0,20), averageLatencyMs:latencies.length?Math.round(latencies.reduce((a:number,b:number)=>a+b,0)/latencies.length):0, p95LatencyMs:latencies.length?latencies[Math.min(latencies.length-1,Math.ceil(latencies.length*0.95)-1)]:0 });
+      const { data: guardianRows, error: guardianError } = await adminDb.from("guardian_reports").select("battery_percent,available_ram_mb,free_storage_mb,network_type,crash_category,created_at").gte("created_at", since).order("created_at", { ascending:false }).limit(5000);
+      if (guardianError) throw guardianError;
+      const health = guardianRows ?? [];
+      const averageHealth = (key:string) => { const values = health.map((row:any)=>Number(row[key])).filter((n:number)=>Number.isFinite(n)&&n>=0); return values.length ? Math.round(values.reduce((a:number,b:number)=>a+b,0)/values.length) : null; };
+      const healthCounts = (key:string) => { const counts:Record<string,number> = {}; for (const row of health) { const name=String(row[key]||"unknown").slice(0,64); counts[name]=(counts[name]||0)+1; } return Object.entries(counts).map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count).slice(0,12); };
+      await audit(user, "analytics.dashboard.view", { days, rows: rows.length, guardianRows:health.length });
+      return response(200, { days, total:rows.length, truncated:rows.length===5000, statuses, providers:summarize(providers), models:summarize(models), daily:summarize(daily), failureCategories:Object.entries(failures).map(([category,count])=>({category,count})).sort((a,b)=>Number(b.count)-Number(a.count)).slice(0,20), averageLatencyMs:latencies.length?Math.round(latencies.reduce((a:number,b:number)=>a+b,0)/latencies.length):0, p95LatencyMs:latencies.length?latencies[Math.min(latencies.length-1,Math.ceil(latencies.length*0.95)-1)]:0, guardian:{reports:health.length,averageBatteryPercent:averageHealth("battery_percent"),averageAvailableRamMb:averageHealth("available_ram_mb"),averageFreeStorageMb:averageHealth("free_storage_mb"),networks:healthCounts("network_type"),crashCategories:healthCounts("crash_category")} });
     }
     if (action === "usage_analytics") {
       const days = [7,30,90].includes(Number(body.days)) ? Number(body.days) : 30;
