@@ -11,6 +11,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,7 +67,9 @@ fun CenAiScreen(vault: SecureKeyStore) {
     var provider by remember { mutableStateOf(Provider.parse(vault.get("provider", "OPENAI"))) }
     var model by remember { mutableStateOf(vault.get("model", Provider.parse(vault.get("provider", "OPENAI")).model)) }
     var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
-    var key by remember { mutableStateOf(vault.apiKey(provider)) }
+    var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
+    var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
+    var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
     var maxTokens by remember { mutableStateOf(vault.get("max_tokens", "4096")) }
@@ -112,25 +116,49 @@ fun CenAiScreen(vault: SecureKeyStore) {
 
     fun startRequest(requestMessages: List<ChatMessage>) {
         if (busy) return
+        val today = java.time.LocalDate.now().toString()
+        if (vault.get("usage_day") != today) {
+            vault.put("usage_day", today)
+            vault.put("usage_count", "0")
+        }
+        val used = vault.get("usage_count", "0").toIntOrNull() ?: 0
+        val limit = dailyLimit.toIntOrNull() ?: 0
+        if (limit > 0 && used >= limit) {
+            error = "Daily message limit reached. Change it in Settings or try again tomorrow."
+            return
+        }
+        vault.put("usage_count", (used + 1).toString())
+        val targets = if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() } else listOf(provider)
+        if (targets.isEmpty()) {
+            error = "Add at least one provider API key to use multi-agent mode."
+            return
+        }
         busy = true
         error = ""
-        val withPlaceholder = requestMessages + ChatMessage("assistant", "")
-        persist(withPlaceholder)
+        persist(requestMessages)
         activeJob = scope.launch {
             try {
-                val response = repo.stream(provider, model, base, listOfNotNull(
-                    systemPrompt.takeIf { it.isNotBlank() }?.let { ChatMessage("system", it) }
-                ) + requestMessages) { delta ->
-                    val current = messages.toMutableList()
-                    val last = current.lastIndex
-                    if (last >= 0 && current[last].role == "assistant") {
-                        current[last] = current[last].copy(content = current[last].content + delta)
-                        messages = current
+                for (target in targets) {
+                    val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
+                    val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
+                    val heading = if (multiAgent) "${target.label} response\\n\\n" else ""
+                    persist(messages + ChatMessage("assistant", heading))
+                    val response = repo.stream(target, targetModel, targetBase, listOfNotNull(
+                        systemPrompt.takeIf { it.isNotBlank() }?.let { ChatMessage("system", it) }
+                    ) + requestMessages) { delta ->
+                        val current = messages.toMutableList()
+                        val last = current.lastIndex
+                        if (last >= 0 && current[last].role == "assistant") {
+                            current[last] = current[last].copy(content = current[last].content + delta)
+                            messages = current
+                        }
                     }
+                    val final = messages.toMutableList()
+                    if (final.lastOrNull()?.role == "assistant") {
+                        final[final.lastIndex] = ChatMessage("assistant", heading + response)
+                    }
+                    persist(final)
                 }
-                val final = messages.toMutableList()
-                if (final.lastOrNull()?.role == "assistant") final[final.lastIndex] = ChatMessage("assistant", response)
-                persist(final)
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) error = e.message ?: "Request failed."
                 if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) {
@@ -197,7 +225,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                                 }
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf")) }) {
+                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json")) }) {
                                     Icon(Icons.Default.AttachFile, "Attach text document", tint = TextMuted)
                                 }
                                 TextButton(onClick = { settings = true }) { Text("Configure", color = Sand, fontSize = 12.sp) }
@@ -303,7 +331,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
             onDismissRequest = { settings = false },
             title = { Text("Workspace settings") },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 540.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("PROVIDER", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
@@ -312,7 +340,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             Provider.entries.forEach { p ->
                                 DropdownMenuItem(text = { Text(p.label) }, onClick = {
-                                    provider = p; model = p.model; base = p.baseUrl; key = vault.apiKey(p); expanded = false
+                                    provider = p; model = vault.get("model_${p.name}", p.model); base = vault.get("base_url_${p.name}", p.baseUrl); expanded = false
                                 })
                             }
                         }
@@ -320,10 +348,17 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") }, singleLine = true)
                     if (provider == Provider.CUSTOM) OutlinedTextField(value = base, onValueChange = { base = it },
                         label = { Text("HTTPS API base URL") }, singleLine = true)
-                    OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("API key for ${provider.label}") }, singleLine = true)
+                    Provider.entries.forEach { p ->
+                        OutlinedTextField(value = providerKeys[p].orEmpty(), onValueChange = { value -> providerKeys = providerKeys.toMutableMap().apply { put(p, value) } }, label = { Text("${p.label} API key") }, singleLine = true)
+                    }
                     if (provider == Provider.CUSTOM || provider == Provider.CLAUDE)
                         OutlinedTextField(value = customHeaders, onValueChange = { customHeaders = it },
                             label = { Text("Extra headers (JSON)") }, minLines = 2)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = TextMain); Text("Ask every configured provider", color = TextMuted, fontSize = 10.sp) }
+                        Switch(checked = multiAgent, onCheckedChange = { multiAgent = it })
+                    }
+                    OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
                     OutlinedTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
                         label = { Text("Maximum output tokens") }, singleLine = true)
                     OutlinedTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
@@ -331,6 +366,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = TextMuted, fontSize = 10.sp)
                     if (info.isNotBlank()) Text(info, color = Sand, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
+                        vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
