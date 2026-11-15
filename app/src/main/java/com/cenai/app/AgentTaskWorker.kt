@@ -97,8 +97,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("CenAI background task " + status)
-                .setContentText(detail.take(140))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(detail.take(1_000)))
+                .setContentText("Tap to open CenAI and review the private result.")
+                .setStyle(NotificationCompat.BigTextStyle().bigText("Your scheduled task finished. Open CenAI to review its private result."))
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setContentIntent(openApp).setAutoCancel(true).build()
             NotificationManagerCompat.from(applicationContext).notify(taskId.hashCode(), notification)
         }
