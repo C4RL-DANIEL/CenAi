@@ -1,4 +1,4 @@
-const required = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY"];
+const required = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"];
 const optional = ["CENAI_API_BASE_URL", "AI_GATEWAY_API_KEY", "BILLING_SECRET_KEY"];
 export default function handler(req, res) {
   if (req.method !== "GET") { res.setHeader("Allow", "GET"); return res.status(405).json({ error: "Method not allowed" }); }
