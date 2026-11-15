@@ -16,11 +16,13 @@ Early development bootstrap. The initial milestone is a working Android shell, p
 
 ## Build
 
-Open the project in Android Studio or run the Gradle wrapper on a compatible machine:
+Open the project in Android Studio and sync Gradle, or install Gradle 8.9 and run:
 
 ```bash
-./gradlew assembleDebug
+gradle assembleDebug
 ```
+
+The GitHub Actions workflow installs Gradle 8.9 automatically and builds the ARM64 Rust JNI library before the APK.
 
 The APK is produced under `app/build/outputs/apk/debug/`.
 
