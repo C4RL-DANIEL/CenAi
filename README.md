@@ -10,12 +10,14 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
 - Text-document attachments (TXT, Markdown, CSV and JSON), plus Android speech-recognition voice input.
 - Configurable speech engine controls: input/output language tags, speech rate, pitch and an in-app voice test; assistant responses can be read aloud with Android Text-to-Speech.
-- Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider; this is local retrieval, not an offline language model.
+- Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider.
+- Offline Brain powered by LiteRT-LM: import a compatible `.litertlm` model into app-private storage and run text chat locally on the CPU without a network connection. The model is not bundled in the APK; users must obtain it under its model licence.
 - Save or share conversations; save uses Android's Storage Access Framework so the user chooses the destination.
 - Optional user-managed persistent agent memory, encrypted with Android Keystore and editable or clearable in Settings.
 - Quick prompt starters for brainstorming, summaries, translation, writing and code review.
 - Local usage insights (request count and approximate input-token estimate) with configurable daily limits.
 - Privacy-first app monitor with local request success/failure/latency counters and feature activity counts for app starts, voice, document attachments, provider tests and update checks. It does not store prompts, responses or credentials.
+- Guardian local diagnostics: available/total RAM, app heap, storage, battery, network, uptime, Android/device version and last crash category/timestamp. No stack traces or prompt content are collected.
 - System instructions and maximum output-token setting.
 - Connection test in provider settings.
 - In-app update checker and APK downloader using GitHub Releases.
