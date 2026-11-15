@@ -719,6 +719,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
         var cloudPassword by remember { mutableStateOf("") }
         var cloudStatus by remember { mutableStateOf("") }
+        var adminAnalytics by remember { mutableStateOf("") }
         var usageAnalyticsConsent by remember { mutableStateOf(vault.get("cloud_usage_analytics_consent", "false").toBoolean()) }
         var guardianCloudConsent by remember { mutableStateOf(vault.get("guardian_cloud_consent", "false").toBoolean()) }
         var cloudBusy by remember { mutableStateOf(false) }
@@ -958,6 +959,33 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         scope.launch { try { val url = cloud.startBillingCheckout("pro"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
                                     }, modifier = Modifier.weight(1f)) { Text("Pro") }
                                 }
+                            }
+                            if (cloudSignedIn) {
+                                HorizontalDivider(color = palette.raised)
+                                Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Administrator and owner roles can load privacy-minimized aggregate usage analytics. Ordinary accounts receive an access-denied response.", color = palette.muted, fontSize = 10.sp)
+                                OutlinedButton(enabled = !cloudBusy, onClick = {
+                                    cloudBusy = true
+                                    adminAnalytics = "Loading administrator analytics…"
+                                    scope.launch {
+                                        try {
+                                            val data = cloud.call("analytics_dashboard", JSONObject().put("days", 30))
+                                            val statuses = data.optJSONObject("statuses") ?: JSONObject()
+                                            val providers = data.optJSONArray("providers") ?: org.json.JSONArray()
+                                            val providerLines = (0 until providers.length()).map { index ->
+                                                val item = providers.getJSONObject(index)
+                                                item.optString("name") + ": " + item.optInt("requests") + " requests"
+                                            }
+                                            adminAnalytics = "Last 30 days · " + data.optInt("total") + " events" + (if (data.optBoolean("truncated")) " (limited to 5,000)" else "") + "\n" +
+                                                "Success " + statuses.optInt("success") + " · Errors " + statuses.optInt("error") + " · Cancelled " + statuses.optInt("cancelled") + "\n" +
+                                                "Average latency " + data.optLong("averageLatencyMs") + " ms · P95 " + data.optLong("p95LatencyMs") + " ms\n" +
+                                                providerLines.joinToString("\n").ifBlank { "No provider data yet." }
+                                        } catch (e: Exception) {
+                                            adminAnalytics = e.message ?: "Administrator analytics could not be loaded."
+                                        } finally { cloudBusy = false }
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("Load admin analytics · 30 days") }
+                                if (adminAnalytics.isNotBlank()) Text(adminAnalytics, color = palette.muted, fontSize = 11.sp, lineHeight = 16.sp)
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
