@@ -19,7 +19,7 @@ data class CenAiPalette(
 )
 
 val LocalCenAiPalette = staticCompositionLocalOf {
-    CenAiPalette(Color(0xFF111214), Color(0xFF1C1E21), Color(0xFF26292D), Color(0xFFD8B48A), Color(0xFFF2F0EC), Color(0xFF92969D))
+    CenAiPalette(Color(0xFF101114), Color(0xFF1B1D22), Color(0xFF282B32), Color(0xFFB9A1FF), Color(0xFFF4F2FA), Color(0xFF9B9AA8))
 }
 
 @Composable
@@ -36,22 +36,29 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             if (dark) Color(0xFFBFC3CC) else Color(0xFF62636B)
         )
         "IOS" -> CenAiPalette(
-            if (dark) Color.Black else Color(0xFFF2F2F7),
-            if (dark) Color(0xFF1C1C1E) else Color.White,
+            if (dark) Color(0xFF000000) else Color(0xFFF2F2F7),
+            if (dark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF),
             if (dark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
-            Color(0xFF0A84FF),
+            if (dark) Color(0xFF0A84FF) else Color(0xFF007AFF),
             if (dark) Color(0xFFF5F5F7) else Color(0xFF1C1C1E),
             if (dark) Color(0xFF98989D) else Color(0xFF6C6C70)
         )
         "FIGMA" -> CenAiPalette(
-            if (dark) Color(0xFF11101A) else Color(0xFFF7F5FF),
-            if (dark) Color(0xFF201C31) else Color.White,
-            if (dark) Color(0xFF302A46) else Color(0xFFEAE5FF),
-            Color(0xFFA78BFA),
-            if (dark) Color(0xFFF4F0FF) else Color(0xFF211A38),
-            if (dark) Color(0xFFB7AECF) else Color(0xFF6B6280)
+            if (dark) Color(0xFF100D1B) else Color(0xFFF6F3FF),
+            if (dark) Color(0xFF1D1730) else Color(0xFFFFFFFF),
+            if (dark) Color(0xFF30234B) else Color(0xFFEAE2FF),
+            if (dark) Color(0xFFC4A7FF) else Color(0xFF7047EB),
+            if (dark) Color(0xFFF7F1FF) else Color(0xFF211536),
+            if (dark) Color(0xFFB7A8CC) else Color(0xFF766A88)
         )
-        else -> CenAiPalette(Color(0xFF111214), Color(0xFF1C1E21), Color(0xFF26292D), Color(0xFFD8B48A), Color(0xFFF2F0EC), Color(0xFF92969D))
+        else -> CenAiPalette(
+            if (dark) Color(0xFF111214) else Color(0xFFF4F3F7),
+            if (dark) Color(0xFF1C1E21) else Color.White,
+            if (dark) Color(0xFF26292D) else Color(0xFFE8E6ED),
+            if (dark) Color(0xFFD8B48A) else Color(0xFF7458A6),
+            if (dark) Color(0xFFF2F0EC) else Color(0xFF211F26),
+            if (dark) Color(0xFF92969D) else Color(0xFF6E6A76)
+        )
     }
     val colors = when {
         style == "MATERIAL" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
