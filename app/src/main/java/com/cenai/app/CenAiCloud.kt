@@ -68,6 +68,7 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         vault.putSecret("supabase_access_token", "")
         vault.putSecret("supabase_refresh_token", "")
         vault.put("supabase_account_email", "")
+        vault.put("cenai_email_verified", "false")
     }
 
     suspend fun refreshSession(): Boolean {
