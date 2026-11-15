@@ -21,14 +21,14 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(KEY_ID).orEmpty()
         val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val prompt = prefs.getString("prompt_$taskId", "").orEmpty()
+        val vault = SecureKeyStore(applicationContext)
+        val prompt = vault.getSecret("scheduled_task_prompt_$taskId")
         val provider = Provider.parse(inputData.getString(KEY_PROVIDER))
         val model = inputData.getString(KEY_MODEL).orEmpty().ifBlank { provider.model }
         val base = inputData.getString(KEY_BASE).orEmpty().ifBlank { provider.baseUrl }
         if (taskId.isBlank() || prompt.isBlank()) return Result.failure()
         prefs.edit().putString("status_$taskId", "Running").apply()
         return try {
-            val vault = SecureKeyStore(applicationContext)
             val response = ChatRepository(vault).stream(
                 provider, model, base,
                 listOf(
@@ -38,7 +38,8 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             ) { }
             prefs.edit()
                 .putString("status_$taskId", "Completed")
-                .putString("result_$taskId", response.take(16_000))
+                .apply()
+            vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
                 .putLong("completed_$taskId", System.currentTimeMillis())
                 .apply()
             Result.success()
@@ -87,7 +88,8 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 .build()
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString("status_$id", "Scheduled")
-                .putString("prompt_$id", prompt)
+                .apply()
+            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$id", prompt)
                 .putLong("scheduled_$id", System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes))
                 .apply()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
@@ -100,6 +102,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             WorkManager.getInstance(context.applicationContext).cancelUniqueWork("cenai-agent-$taskId")
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString("status_$taskId", "Cancelled").apply()
+            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$taskId", "")
         }
     }
 }
