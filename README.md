@@ -65,3 +65,5 @@ Provider API keys stay on-device and are encrypted using Android Keystore. Use o
 ## UI design references
 
 The project includes a Figma design file with editable Material 3 and iOS/iPadOS component instances and CenAI chat/settings screen compositions: https://www.figma.com/design/izsd2XugSdMRQtDidtc3iI/CenAI-Android-App-Design-System. The Figma-inspired in-app theme is a token-based fallback palette; importing a user's private Figma assets directly into Android still requires a target file and selected assets.
+
+- Multi-provider mode shows independent responses and, when multiple providers respond, requests a consolidated synthesis from the first configured provider.
