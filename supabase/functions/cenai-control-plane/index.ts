@@ -84,6 +84,28 @@ Deno.serve(async (req: Request) => {
       await audit(user, "models.registry.upsert", { slug, provider, enabled:data.enabled, public:data.public });
       return response(200, { model:data });
     }
+    if (action === "analytics_dashboard") {
+      const days = [7,30,90].includes(Number(body.days)) ? Number(body.days) : 30;
+      const since = new Date(Date.now() - days * 86400000).toISOString();
+      const { data, error } = await adminDb.from("usage_events").select("source,event_type,provider,model_id,input_tokens,output_tokens,latency_ms,status,error_code,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(5000);
+      if (error) throw error;
+      const rows = data ?? [];
+      const providers: Record<string, any> = {}, models: Record<string, any> = {}, daily: Record<string, any> = {}, statuses: Record<string, number> = {}, failures: Record<string, number> = {};
+      const add = (bucket: Record<string, any>, key: string, row: any) => {
+        const value = bucket[key] ??= { requests:0, inputTokens:0, outputTokens:0, latencyTotal:0, succeeded:0, failed:0 };
+        value.requests++; value.inputTokens += Number(row.input_tokens || 0); value.outputTokens += Number(row.output_tokens || 0); value.latencyTotal += Number(row.latency_ms || 0);
+        if (row.status === "success") value.succeeded++; if (row.status === "error") value.failed++;
+      };
+      for (const row of rows) {
+        add(providers, row.provider || "unknown", row); add(models, row.model_id || "unknown", row); add(daily, String(row.created_at || "").slice(0,10), row);
+        statuses[row.status || "unknown"] = (statuses[row.status || "unknown"] || 0) + 1;
+        if (row.status === "error") { const key = String(row.error_code || "unknown").slice(0,80); failures[key] = (failures[key] || 0) + 1; }
+      }
+      const summarize = (bucket: Record<string, any>) => Object.entries(bucket).map(([name, v]: [string, any]) => ({ name, requests:v.requests, inputTokens:v.inputTokens, outputTokens:v.outputTokens, averageLatencyMs:v.requests ? Math.round(v.latencyTotal/v.requests) : 0, succeeded:v.succeeded, failed:v.failed })).sort((a,b)=>b.requests-a.requests);
+      const latencies = rows.map((r:any)=>Number(r.latency_ms || 0)).filter((n:number)=>Number.isFinite(n)&&n>=0).sort((a:number,b:number)=>a-b);
+      await audit(user, "analytics.dashboard.view", { days, rows: rows.length });
+      return response(200, { days, total:rows.length, truncated:rows.length===5000, statuses, providers:summarize(providers), models:summarize(models), daily:summarize(daily), failureCategories:Object.entries(failures).map(([category,count])=>({category,count})).sort((a,b)=>Number(b.count)-Number(a.count)).slice(0,20), averageLatencyMs:latencies.length?Math.round(latencies.reduce((a:number,b:number)=>a+b,0)/latencies.length):0, p95LatencyMs:latencies.length?latencies[Math.min(latencies.length-1,Math.ceil(latencies.length*0.95)-1)]:0 });
+    }
     if (action === "usage_analytics") {
       const days = [7,30,90].includes(Number(body.days)) ? Number(body.days) : 30;
       const since = new Date(Date.now() - days * 86400000).toISOString();
