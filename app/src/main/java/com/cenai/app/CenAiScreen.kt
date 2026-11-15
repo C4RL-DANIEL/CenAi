@@ -136,7 +136,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
             return
         }
         vault.put("usage_count", (used + 1).toString())
-        val targets = if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() } else listOf(provider)
+        val targets = if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
@@ -150,25 +150,55 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
-                    persist(messages + ChatMessage("assistant", heading))
-                    val response = repo.stream(target, targetModel, targetBase, listOfNotNull(
-                        systemPrompt.takeIf { it.isNotBlank() },
-                        if (agentPlanning) {
-                            if (approvalFirst) "You are operating in CenAI's approval-first planning mode. For complex requests, produce a concise numbered plan, identify required tools or permissions, distinguish actions you can actually perform from suggestions, and ask for explicit user approval before any external, destructive, privacy-sensitive, or device-level action. Do not claim to have executed actions that you cannot access." else "You are operating in CenAI's planning mode. For complex requests, produce a concise numbered plan and clearly distinguish actions you can actually perform from suggestions. Never claim to have executed actions that you cannot access."
-                        } else null
-                    ).takeIf { it.isNotEmpty() }?.joinToString("\n\n")?.let { ChatMessage("system", it) }?.let { listOf(it) }.orEmpty() + requestMessages) { delta ->
-                        val current = messages.toMutableList()
-                        val last = current.lastIndex
-                        if (last >= 0 && current[last].role == "assistant") {
-                            current[last] = current[last].copy(content = current[last].content + delta)
-                            messages = current
+                    val runtime = AgentRuntime()
+                    val toolGuide = if (agentPlanning) {
+                        "You may use these safe local tools when useful: " + runtime.availableTools().joinToString { it.name + " — " + it.description } +
+                        ". To call one, output exactly [[CENAI_TOOL_CALL]] followed by a JSON object with name and arguments, then [[/CENAI_TOOL_CALL]]. Example: [[CENAI_TOOL_CALL]]{\"name\":\"current_time\",\"arguments\":{}}[[/CENAI_TOOL_CALL]]. Only call listed tools. Do not claim that unsupported shell, arbitrary code, device-control, file-write or web actions were performed. Explain tool results to the user."
+                    } else null
+                    val systemMessages = listOfNotNull(systemPrompt.takeIf { it.isNotBlank() }, toolGuide)
+                        .takeIf { it.isNotEmpty() }?.joinToString("\n\n")?.let { listOf(ChatMessage("system", it)) }.orEmpty()
+                    var agentHistory = requestMessages.toList()
+                    var displayText = heading
+                    persist(messages + ChatMessage("assistant", displayText))
+                    var finished = false
+                    for (step in 0..3) {
+                        val response = repo.stream(target, targetModel, targetBase, systemMessages + agentHistory) { delta ->
+                            val current = messages.toMutableList()
+                            val last = current.lastIndex
+                            if (last >= 0 && current[last].role == "assistant") {
+                                current[last] = current[last].copy(content = current[last].content + delta)
+                                messages = current
+                            }
                         }
+                        val toolCall = if (agentPlanning) runtime.parseToolCall(response) else null
+                        if (toolCall == null) {
+                            displayText += response
+                            val final = messages.toMutableList()
+                            if (final.lastOrNull()?.role == "assistant") final[final.lastIndex] = ChatMessage("assistant", displayText)
+                            persist(final)
+                            finished = true
+                            break
+                        }
+                        val visible = response.substringBefore("[[CENAI_TOOL_CALL]]").trim()
+                        val execution = runtime.execute(toolCall.first, toolCall.second)
+                        displayText += visible + "\n\n" + if (execution.completed) "Used tool: " + execution.toolName else "Tool unavailable: " + execution.toolName
+                        val current = messages.toMutableList()
+                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText)
+                        persist(current)
+                        if (execution.requiresApproval) {
+                            displayText += "\n\nWaiting for your approval."
+                            persist(messages.dropLast(1) + ChatMessage("assistant", displayText))
+                            finished = true
+                            break
+                        }
+                        agentHistory = agentHistory + ChatMessage("assistant", response) +
+                            ChatMessage("user", "Tool result for " + execution.toolName + ": " + execution.output + "\nContinue the task. If another safe tool is needed, request it using the same tool-call format.")
                     }
-                    val final = messages.toMutableList()
-                    if (final.lastOrNull()?.role == "assistant") {
-                        final[final.lastIndex] = ChatMessage("assistant", heading + response)
+                    if (!finished) {
+                        val current = messages.toMutableList()
+                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText + "\n\nAgent step limit reached. Ask me to continue if needed.")
+                        persist(current)
                     }
-                    persist(final)
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) error = e.message ?: "Request failed."
