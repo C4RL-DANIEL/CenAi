@@ -99,6 +99,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
     var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
+    var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var agentMemory by remember { mutableStateOf(vault.getSecret("agent_memory")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
@@ -606,11 +607,17 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }, modifier = Modifier.fillMaxWidth()) { Text(if (testBusy) "Testing…" else "Test connection") }
                     HorizontalDivider(color = palette.raised)
                     Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("Release channel", color = palette.text, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = updateChannel == "stable", onClick = { updateChannel = "stable" }, label = { Text("Stable") })
+                        FilterChip(selected = updateChannel == "beta", onClick = { updateChannel = "beta" }, label = { Text("Public beta") })
+                    }
+                    Text(if (updateChannel == "beta") "Beta channel includes prereleases. Expect unfinished features and possible bugs." else "Stable channel receives production releases only.", color = palette.muted, fontSize = 10.sp)
                     OutlinedButton(onClick = {
                         updateDialog = true; updateBusy = true; updateStatus = "Checking GitHub Releases…"
                         scope.launch {
                             try {
-                                updateInfo = updater.check()
+                                updateInfo = updater.check(includePrerelease = updateChannel == "beta")
                                 updateStatus = if (updateInfo == null) "No public update has been published yet." else "Version ${updateInfo!!.version} is available."
                             } catch (e: Exception) { updateStatus = e.message ?: "Could not check for updates." }
                             finally { updateBusy = false }
@@ -631,6 +638,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("google_cloud_project_id", googleCloudProjectId)
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
+                vault.put("update_channel", updateChannel)
                 vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
