@@ -1,5 +1,5 @@
 {
-  "rewrites": [
+  "rewrites": [\n    { "source": "/beta", "destination": "/beta.html" },\n    { "source": "/beta/", "destination": "/beta.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
     { "source": "/admin/", "destination": "/admin/index.html" }
   ],
