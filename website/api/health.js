@@ -1,5 +1,5 @@
 const required = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"];
-const optional = ["CENAI_API_BASE_URL", "AI_GATEWAY_API_KEY", "BILLING_SECRET_KEY"];
+const optional = ["CENAI_API_BASE_URL", "AI_GATEWAY_API_KEY", "BILLING_SECRET_KEY", "EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET"];
 export default function handler(req, res) {
   if (req.method !== "GET") { res.setHeader("Allow", "GET"); return res.status(405).json({ error: "Method not allowed" }); }
   const configured = Object.fromEntries([...required, ...optional].map(key => [key, Boolean(process.env[key])]));
