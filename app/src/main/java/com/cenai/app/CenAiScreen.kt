@@ -1075,7 +1075,35 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text("Feature activity · App starts ${monitorSnapshot.appStarts} · Voice in/out ${monitorSnapshot.voiceInputs}/${monitorSnapshot.voiceOutputs} · Documents ${monitorSnapshot.documentsAttached} · Update checks ${monitorSnapshot.updateChecks} · Provider tests ${monitorSnapshot.providerTests}", color = palette.muted, fontSize = 10.sp)
                             Text("Last failure category: ${monitorSnapshot.lastFailureCategory.ifBlank { "None recorded" }}", color = palette.muted, fontSize = 10.sp)
                             Text("Only aggregate counters and error categories are stored. Prompts, responses and API keys are never recorded.", color = palette.muted, fontSize = 10.sp)
-                            TextButton(onClick = { monitorSnapshot = appMonitor.snapshot() }) { Text("Refresh monitor") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                TextButton(onClick = { monitorSnapshot = appMonitor.snapshot() }) { Text("Refresh monitor") }
+                                TextButton(onClick = {
+                                    val snapshot = appMonitor.snapshot()
+                                    val report = JSONObject()
+                                        .put("generatedAt", System.currentTimeMillis())
+                                        .put("started", snapshot.started)
+                                        .put("succeeded", snapshot.succeeded)
+                                        .put("failed", snapshot.failed)
+                                        .put("cancelled", snapshot.cancelled)
+                                        .put("successRatePercent", snapshot.successRate)
+                                        .put("averageLatencyMs", snapshot.averageLatencyMs)
+                                        .put("lastFailureCategory", snapshot.lastFailureCategory)
+                                        .put("appStarts", snapshot.appStarts)
+                                        .put("voiceInputs", snapshot.voiceInputs)
+                                        .put("voiceOutputs", snapshot.voiceOutputs)
+                                        .put("documentsAttached", snapshot.documentsAttached)
+                                        .put("updateChecks", snapshot.updateChecks)
+                                        .put("providerTests", snapshot.providerTests)
+                                    val send = Intent(Intent.ACTION_SEND).setType("application/json")
+                                        .putExtra(Intent.EXTRA_SUBJECT, "CenAI local analytics")
+                                        .putExtra(Intent.EXTRA_TEXT, report.toString(2))
+                                    context.startActivity(Intent.createChooser(send, "Export local analytics"))
+                                }) { Text("Export analytics") }
+                            }
+                            TextButton(onClick = {
+                                appMonitor.reset()
+                                monitorSnapshot = appMonitor.snapshot()
+                            }) { Text("Reset local analytics", color = Color(0xFFFF938B)) }
                         }
                     }
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
