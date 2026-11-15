@@ -144,6 +144,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var updateProgress by remember { mutableIntStateOf(0) }
     var updateStatus by remember { mutableStateOf("Check for the latest CenAI release.") }
     val listState = rememberLazyListState()
+    LaunchedEffect(Unit) { appMonitor.recordEvent("app_start"); monitorSnapshot = appMonitor.snapshot() }
 
     fun persist(next: List<ChatMessage> = messages) {
         messages = next
@@ -283,7 +284,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            if (spoken.isNotBlank()) draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" ")
+            if (spoken.isNotBlank()) { draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" "); appMonitor.recordEvent("voice_input"); monitorSnapshot = appMonitor.snapshot() }
         }
     }
 
@@ -309,7 +310,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(250_000) } }.getOrNull()
             }
             if (content.isNullOrBlank()) error = "This file could not be read as text. Try a TXT, MD, CSV or JSON file."
-            else draft += "\n\n[Attached document]\n$content"
+            else { draft += "\n\n[Attached document]\n$content"; appMonitor.recordEvent("document_attached"); monitorSnapshot = appMonitor.snapshot() }
         }
     }
 
@@ -434,7 +435,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             busy = busy, style = vault.get("ui_style", "DEFAULT"),
                             onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
-                            onSpeak = { if (speechOutputReady) textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") else info = "Speech output is not ready yet." },
+                            onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
                             onEdit = { editIndex = index; editText = message.content },
                             onRegenerate = {
                                 val before = messages.takeWhileIndexed { i, _ -> i < index }
@@ -675,7 +676,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Slider(value = speechPitch, onValueChange = { speechPitch = it }, valueRange = 0.5f..2f)
                             OutlinedTextField(value = speechInputLanguage, onValueChange = { speechInputLanguage = it.take(40) }, label = { Text("Input language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Voice input uses Android speech recognition. Voice output uses the speech engine installed on this device. Set either language to 'device' to follow Android language settings.", color = palette.muted, fontSize = 10.sp)
-                            OutlinedButton(enabled = speechOutputReady, onClick = { textToSpeech.speak("CenAI voice engine is ready.", TextToSpeech.QUEUE_FLUSH, null, "cenai-voice-test") }, modifier = Modifier.fillMaxWidth()) { Text("Test voice output") }
+                            OutlinedButton(enabled = speechOutputReady, onClick = { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak("CenAI voice engine is ready.", TextToSpeech.QUEUE_FLUSH, null, "cenai-voice-test") }, modifier = Modifier.fillMaxWidth()) { Text("Test voice output") }
                         }
                     }
                     Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -694,6 +695,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text("Local runtime health", color = palette.text, fontWeight = FontWeight.SemiBold)
                             Text("Started ${monitorSnapshot.started} · Successful ${monitorSnapshot.succeeded} · Failed ${monitorSnapshot.failed} · Cancelled ${monitorSnapshot.cancelled}", color = palette.muted, fontSize = 11.sp)
                             Text("Success rate ${monitorSnapshot.successRate}% · Average response ${monitorSnapshot.averageLatencyMs} ms", color = palette.muted, fontSize = 11.sp)
+                            Text("Feature activity · App starts ${monitorSnapshot.appStarts} · Voice in/out ${monitorSnapshot.voiceInputs}/${monitorSnapshot.voiceOutputs} · Documents ${monitorSnapshot.documentsAttached} · Update checks ${monitorSnapshot.updateChecks} · Provider tests ${monitorSnapshot.providerTests}", color = palette.muted, fontSize = 10.sp)
                             Text("Last failure category: ${monitorSnapshot.lastFailureCategory.ifBlank { "None recorded" }}", color = palette.muted, fontSize = 10.sp)
                             Text("Only aggregate counters and error categories are stored. Prompts, responses and API keys are never recorded.", color = palette.muted, fontSize = 10.sp)
                             TextButton(onClick = { monitorSnapshot = appMonitor.snapshot() }) { Text("Refresh monitor") }
@@ -710,6 +712,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = palette.muted, fontSize = 10.sp)
                     if (info.isNotBlank()) Text(info, color = palette.accent, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
+                        appMonitor.recordEvent("provider_test"); monitorSnapshot = appMonitor.snapshot()
                         vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
@@ -729,6 +732,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }
                     Text(if (updateChannel == "beta") "Beta channel includes prereleases. Expect unfinished features and possible bugs." else "Stable channel receives production releases only.", color = palette.muted, fontSize = 10.sp)
                     OutlinedButton(onClick = {
+                        appMonitor.recordEvent("update_check"); monitorSnapshot = appMonitor.snapshot()
                         updateDialog = true; updateBusy = true; updateStatus = "Checking GitHub Releases…"
                         scope.launch {
                             try {
