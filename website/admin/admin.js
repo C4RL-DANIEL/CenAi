@@ -2,6 +2,9 @@
   const $ = (id) => document.getElementById(id);
   let accessToken = null;
   let userEmail = "";
+  const ADMIN_USERNAME = "cenai";
+  const ADMIN_EMAIL = "aglibotcarldaniel@gmail.com";
+  const loginEmail = () => $("email").value.trim().toLowerCase() === ADMIN_USERNAME ? ADMIN_EMAIL : $("email").value.trim();
   const status = (message, bad = false) => { $("notice").textContent = message; $("notice").classList.toggle("bad", bad); };
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function betaApi(action, payload = {}) { const response=await fetch("/api/beta",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({action,...payload})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Beta request failed");return data;}
@@ -17,13 +20,36 @@
     const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
     if (!url || !key) { $("login-error").textContent = "Admin authentication is not configured yet. Contact the platform owner."; return; }
     try {
-      const response = await fetch(url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password", {method:"POST",headers:{"Content-Type":"application/json","apikey":key},body:JSON.stringify({email:$("email").value,password:$("password").value})});
+      const response = await fetch(url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password", {method:"POST",headers:{"Content-Type":"application/json","apikey":key},body:JSON.stringify({email:loginEmail(),password:$("password").value})});
       const data = await response.json();
       if (!response.ok || !data.access_token) throw new Error(data.msg || data.message || "Sign-in failed");
-      accessToken = data.access_token; userEmail = data.user?.email || $("email").value;
+      accessToken = data.access_token; userEmail = data.user?.email || loginEmail();
       $("login").hidden = true; $("dashboard").hidden = false;
       await load("overview");
     } catch (error) { accessToken = null; $("login-error").textContent = error.message; }
+  }
+  async function resetPassword() {
+    const url = window.CENAI_SUPABASE_URL;
+    const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
+    const email = loginEmail();
+    if (!url || !key || !email.includes("@")) {
+      $("login-error").textContent = "Enter CenAI or the administrator email first.";
+      return;
+    }
+    try {
+      const response = await fetch(new URL("/auth/v1/recover", url).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": key },
+        body: JSON.stringify({ email })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.msg || data.message || "Password reset could not be requested.");
+      }
+      $("login-error").textContent = "If the administrator account exists, a password reset email has been sent. Check the inbox and spam folder.";
+    } catch (error) {
+      $("login-error").textContent = error.message;
+    }
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
@@ -50,6 +76,7 @@
   $("beta-content")?.addEventListener("click",async e=>{const b=e.target.closest("button[data-review]");if(!b)return;const parent=b.closest("[data-id]");if(!confirm("Are you sure you want to "+b.dataset.review+" this beta application?"))return;try{await betaApi("admin_review",{id:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"});try{const mail=await fetch("/api/beta-notification",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({applicationId:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"})});const md=await mail.json().catch(()=>({}));if(!mail.ok)throw new Error(md.error||"Email send failed");status("Decision saved and notification email sent.");}catch(mailError){status("Decision saved, but notification email failed: "+mailError.message,true);}await loadBeta();}catch(err){status(err.message,true);}});
   function row(name, detail, state, url) { const action = url && /^https:\/\/github\.com\//i.test(url) ? '<a class="pill" target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(state)+' ↗</a>' : '<span class="pill">'+esc(state)+'</span>'; return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div>'+action+'</div>'; }
   $("login-form").addEventListener("submit",signIn);
+  $("reset-password")?.addEventListener("click",resetPassword);
   $("signout").addEventListener("click",()=>{accessToken=null;userEmail="";$("dashboard").hidden=true;$("login").hidden=false;$("password").value="";});
   document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>load(b.dataset.tab)));
   $("flags-content").addEventListener("change",async e=>{const key=e.target.dataset.flag;if(!key)return;try{await api("update_flag",{key,enabled:e.target.checked});status("Feature flag saved and audited.");}catch(err){e.target.checked=!e.target.checked;status(err.message,true);}});
