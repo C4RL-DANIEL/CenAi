@@ -28,6 +28,11 @@ jobs:
           test -s website/security.html
           test -s website/api.html
           test -s website/roadmap.html
+          test -s website/updates.html
+          test -s website/updates.js
+          test -s website/api/health.js
+          test -s website/api/releases.js
+          test -s website/vercel.json
           grep -q 'href="/styles.css"' website/index.html
           grep -q 'src="/app.js"' website/index.html
           grep -q 'API access and billing activate only' website/index.html
