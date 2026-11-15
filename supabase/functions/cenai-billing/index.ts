@@ -66,12 +66,12 @@ Deno.serve(async(req:Request)=>{
      const raw=await req.text();
      if(!await verifyStripe(raw,stripeSignature,webhookSecret))return fail(400,"Invalid Stripe webhook signature");
      const event=JSON.parse(raw);
-     const {error:insertError}=await db.from("billing_webhook_events").insert({provider:"stripe",event_id:String(event.id)});
-     if(insertError){
-       if(insertError.code==="23505")return json(200,{received:true,duplicate:true});
-       throw insertError;
-     }
+     const {data:existing,error:lookupError}=await db.from("billing_webhook_events").select("event_id").eq("provider","stripe").eq("event_id",String(event.id)).maybeSingle();
+     if(lookupError)throw lookupError;
+     if(existing)return json(200,{received:true,duplicate:true});
      await handleWebhook(event);
+     const {error:insertError}=await db.from("billing_webhook_events").insert({provider:"stripe",event_id:String(event.id)});
+     if(insertError && insertError.code!=="23505")throw insertError;
      return json(200,{received:true});
    }
    if(!stripeKey||!webhookSecret||!publicUrl)return fail(503,"Billing is not configured. The administrator must configure Stripe server secrets and the public site URL.");
