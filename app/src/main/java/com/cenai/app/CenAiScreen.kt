@@ -300,6 +300,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         error = ""
         persist(requestMessages)
         val queryForKnowledge = requestMessages.lastOrNull { it.role == "user" }?.content.orEmpty()
+            .replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")
         appMonitor.recordStarted()
         monitorSnapshot = appMonitor.snapshot()
         val requestStartedAt = System.currentTimeMillis()
@@ -494,7 +495,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             ?: throw IllegalStateException("This image format is not supported for vision requests.")
                         val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
                         val ocr = runCatching { extractImageText(context, uri) }.getOrDefault("")
-                        "[[CENAI_IMAGE|$safeMime|$encoded]]" + if (ocr.isNotBlank()) "\n\n[On-device OCR reference]\n" + ocr else ""
+                        if (localModelEnabled) {
+                            "[Image attached; offline model is text-only]" + if (ocr.isNotBlank()) "\n\n[On-device OCR reference]\n" + ocr else ""
+                        } else {
+                            "[[CENAI_IMAGE|$safeMime|$encoded]]" + if (ocr.isNotBlank()) "\n\n[On-device OCR reference]\n" + ocr else ""
+                        }
                     } else if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
                         PDFBoxResourceLoader.init(context.applicationContext)
                         val selectableText = context.contentResolver.openInputStream(uri)?.use { input ->
