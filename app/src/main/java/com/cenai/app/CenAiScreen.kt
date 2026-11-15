@@ -299,12 +299,23 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         persist(current)
                     }
                 }
-                appMonitor.recordSucceeded(System.currentTimeMillis() - requestStartedAt)
+                val completedLatency = System.currentTimeMillis() - requestStartedAt
+                appMonitor.recordSucceeded(completedLatency)
+                if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                    runCatching {
+                        val outputEstimate = messages.lastOrNull { it.role == "assistant" }?.content?.length?.div(4) ?: 0
+                        cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, outputEstimate, completedLatency, "success")
+                    }
+                }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) {
                     appMonitor.recordCancelled()
                 } else {
-                    appMonitor.recordFailed(System.currentTimeMillis() - requestStartedAt, e)
+                    val failedLatency = System.currentTimeMillis() - requestStartedAt
+                    appMonitor.recordFailed(failedLatency, e)
+                    if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                        runCatching { cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, 0, failedLatency, "error", e.javaClass.simpleName) }
+                    }
                     error = e.message ?: "Request failed."
                 }
                 if (messages.lastOrNull()?.let { it.role == "assistant" && it.content.isBlank() } == true) {
@@ -522,6 +533,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
         var cloudPassword by remember { mutableStateOf("") }
         var cloudStatus by remember { mutableStateOf("") }
+        var usageAnalyticsConsent by remember { mutableStateOf(vault.get("cloud_usage_analytics_consent", "false").toBoolean()) }
+        var guardianCloudConsent by remember { mutableStateOf(vault.get("guardian_cloud_consent", "false").toBoolean()) }
         var cloudBusy by remember { mutableStateOf(false) }
         var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
         var otpCode by remember { mutableStateOf("") }
@@ -705,6 +718,36 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }, modifier = Modifier.weight(1f)) { Text("Pro") }
                                 }
                             }
+                            if (cloudSignedIn) {
+                                HorizontalDivider(color = palette.raised)
+                                Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Share aggregate usage analytics", color = palette.text, fontSize = 12.sp)
+                                        Text("Sends provider/model, token estimates, response time and success/error only. Never sends prompts or answers.", color = palette.muted, fontSize = 10.sp)
+                                    }
+                                    Switch(checked = usageAnalyticsConsent, onCheckedChange = { usageAnalyticsConsent = it })
+                                }
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Share Guardian health reports", color = palette.text, fontSize = 12.sp)
+                                        Text("Sends RAM, storage, battery, Android version, network type and crash category only.", color = palette.muted, fontSize = 10.sp)
+                                    }
+                                    Switch(checked = guardianCloudConsent, onCheckedChange = { guardianCloudConsent = it })
+                                }
+                                OutlinedButton(enabled = !cloudBusy, onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            cloud.setTelemetryConsent(usageAnalyticsConsent, guardianCloudConsent)
+                                            vault.put("cloud_usage_analytics_consent", usageAnalyticsConsent.toString())
+                                            vault.put("guardian_cloud_consent", guardianCloudConsent.toString())
+                                            cloudStatus = "Privacy choices saved. Guardian uploads also require the platform owner to enable the Guardian ingestion flag."
+                                        } catch (e: Exception) { cloudStatus = e.message ?: "Could not save privacy choices." }
+                                        finally { cloudBusy = false }
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("Save privacy choices") }
+                            }
                             if (cloudStatus.isNotBlank()) Text(cloudStatus, color = if (cloudStatus.contains("failed", true) || cloudStatus.contains("error", true)) MaterialTheme.colorScheme.error else palette.muted, fontSize = 11.sp)
                         }
                     }
@@ -772,7 +815,20 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text("Storage free ${guardianSnapshot.freeStorageMb} / ${guardianSnapshot.totalStorageMb} MB · Battery ${guardianSnapshot.batteryPercent}% ${if (guardianSnapshot.charging) "· Charging" else ""}", color = palette.muted, fontSize = 10.sp)
                             Text("${guardianSnapshot.device} · Android ${guardianSnapshot.androidVersion} · ${guardianSnapshot.network} · Uptime ${guardianSnapshot.uptimeMinutes} min", color = palette.muted, fontSize = 10.sp)
                             Text("Last crash: ${if (guardianSnapshot.lastCrashAt == 0L) "None recorded" else guardianSnapshot.lastCrashCategory + " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(guardianSnapshot.lastCrashAt))}", color = palette.muted, fontSize = 10.sp)
-                            Text("Diagnostics stay on-device. Guardian stores only a crash category and timestamp, not stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
+                            Text("Diagnostics stay on-device by default. If you explicitly enable Guardian sharing in your CenAI account privacy settings, only these summary fields are sent; no stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
+                            if (cloud.isSignedIn() && vault.get("guardian_cloud_consent", "false").toBoolean()) {
+                                OutlinedButton(enabled = !cloudBusy, onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            guardianSnapshot = guardian.snapshot()
+                                            cloud.sendGuardianReport("0.2.0", guardianSnapshot.androidVersion, guardianSnapshot.batteryPercent, guardianSnapshot.availableRamMb, guardianSnapshot.freeStorageMb, guardianSnapshot.network, guardianSnapshot.lastCrashCategory)
+                                            cloudStatus = "Guardian health report sent."
+                                        } catch (e: Exception) { cloudStatus = e.message ?: "Guardian report was not sent." }
+                                        finally { cloudBusy = false }
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("Send Guardian health report") }
+                            }
                             TextButton(onClick = { guardianSnapshot = guardian.snapshot(); monitorSnapshot = appMonitor.snapshot() }) { Text("Run health check") }
                         }
                     }
