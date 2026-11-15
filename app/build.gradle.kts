@@ -6,6 +6,10 @@ plugins {
 android {
     namespace = "com.cenai.app"
     compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     defaultConfig {
         applicationId = "com.cenai.app"
         minSdk = 26
@@ -14,6 +18,7 @@ android {
         versionName = "0.1.0"
     }
     buildFeatures { compose = true }
+    kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
