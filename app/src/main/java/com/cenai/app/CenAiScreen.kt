@@ -1,6 +1,9 @@
 package com.cenai.app
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import android.app.Activity
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
@@ -91,6 +94,57 @@ private suspend fun extractImageText(context: android.content.Context, uri: Uri)
         }
         continuation.invokeOnCancellation { recognizer.close() }
     }
+
+
+private suspend fun recognizeBitmapText(bitmap: Bitmap): String {
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    return try {
+        suspendCancellableCoroutine { continuation ->
+            recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                .addOnSuccessListener { result ->
+                    if (continuation.isActive) continuation.resume(result.text)
+                }
+                .addOnFailureListener { error ->
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            continuation.invokeOnCancellation { recognizer.close() }
+        }
+    } finally {
+        recognizer.close()
+    }
+}
+
+private suspend fun extractScannedPdfText(context: android.content.Context, uri: Uri): String {
+    val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+        ?: throw IllegalStateException("Android could not open this PDF for OCR.")
+    descriptor.use { fd ->
+        PdfRenderer(fd).use { renderer ->
+            require(renderer.pageCount in 1..50) {
+                "This scanned PDF has ${renderer.pageCount} pages. OCR is limited to 50 pages per attachment."
+            }
+            val output = StringBuilder()
+            for (index in 0 until renderer.pageCount) {
+                renderer.openPage(index).use { page ->
+                    val scale = minOf(2f, 2200f / maxOf(page.width, page.height).toFloat())
+                    val bitmap = Bitmap.createBitmap(
+                        (page.width * scale).toInt().coerceAtLeast(1),
+                        (page.height * scale).toInt().coerceAtLeast(1),
+                        Bitmap.Config.ARGB_8888
+                    )
+                    try {
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val text = recognizeBitmapText(bitmap)
+                        if (text.isNotBlank()) output.append("\n\n[PDF page ${index + 1}]\n").append(text)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                if (output.length >= 250_000) break
+            }
+            output.toString().take(250_000)
+        }
+    }
+}
 
 fun CenAiScreen(vault: SecureKeyStore) {
     var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
@@ -385,7 +439,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         extractImageText(context, uri)
                     } else if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
                         PDFBoxResourceLoader.init(context.applicationContext)
-                        context.contentResolver.openInputStream(uri)?.use { input ->
+                        val selectableText = context.contentResolver.openInputStream(uri)?.use { input ->
                             PDDocument.load(input).use { document ->
                                 require(!document.isEncrypted) { "Password-protected PDFs are not supported yet." }
                                 require(document.numberOfPages in 1..300) { "PDFs must contain between 1 and 300 pages." }
@@ -393,6 +447,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     .getText(document).take(250_000)
                             }
                         } ?: throw IllegalStateException("Android could not open this PDF.")
+                        if (selectableText.isNotBlank()) selectableText else extractScannedPdfText(context, uri)
                     } else {
                         context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(250_000) }
                             ?: throw IllegalStateException("Android could not open this document.")
