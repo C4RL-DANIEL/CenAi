@@ -86,3 +86,15 @@ The authenticated Supabase control plane provides a role-protected analytics das
 ## Provider authentication limitations
 
 Gemini's native OAuth flow is the only consumer-facing provider OAuth flow currently implemented. OpenAI and Anthropic offer API-key authentication and selected workload-identity options; DeepSeek documents bearer API-key authentication. These workload-identity methods require a trusted cloud identity provider and are not user-subscription OAuth flows for a standalone Android app. ChatGPT Plus, Claude subscriptions and DeepSeek consumer subscriptions are not API credentials. CenAI does not scrape browser sessions or store consumer-account passwords to imitate provider OAuth. API keys are encrypted at rest with Android Keystore, but a mobile client is not a trusted secret-holding server.
+
+
+## Production release signing
+
+Before creating a `v*` release tag, configure these repository Actions secrets under **Settings → Secrets and variables → Actions**:
+
+- `CENAI_KEYSTORE_BASE64` — base64-encoded, long-lived production keystore
+- `CENAI_KEYSTORE_PASSWORD`
+- `CENAI_KEY_ALIAS`
+- `CENAI_KEY_PASSWORD`
+
+Keep the keystore and passwords outside Git; never commit them or place them in workflow logs. Use the same keystore for every future release so Android accepts in-app updates. The release workflow intentionally fails closed when signing secrets are missing; it will not publish a debug-signed APK as a production release. The Actions workflow runs JVM tests and an API 35 x86_64 emulator smoke test before publishing build artifacts. A passing emulator run still does not replace physical-device testing on the target Redmi tablet.
