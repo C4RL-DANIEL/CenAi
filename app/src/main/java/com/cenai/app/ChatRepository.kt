@@ -29,7 +29,8 @@ class ChatRepository(private val vault: SecureKeyStore) {
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
     ): String {
-        val credential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else vault.apiKey(provider) to false
+        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
+        val credential = if (oauthCredential.first.isNotBlank()) oauthCredential else vault.apiKey(provider) to false
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
         return suspendCancellableCoroutine { continuation ->
