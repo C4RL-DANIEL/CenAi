@@ -118,6 +118,11 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     .header("Authorization", "Bearer $key")
             }
         }
+        if (p == Provider.CUSTOM) {
+            runCatching { JSONObject(vault.get("custom_params", "{}")) }.getOrNull()?.let { params ->
+                params.keys().forEach { name -> if (name !in setOf("model", "messages", "stream")) payload.put(name, params.get(name)) }
+            }
+        }
         if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
             runCatching { JSONObject(vault.get("custom_headers", "{}")) }.getOrNull()?.let { headers ->
                 headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }

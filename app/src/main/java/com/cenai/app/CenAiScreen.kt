@@ -72,6 +72,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
+    var customParams by remember { mutableStateOf(vault.get("custom_params", "{}")) }
     var maxTokens by remember { mutableStateOf(vault.get("max_tokens", "4096")) }
     var draft by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
@@ -354,6 +355,9 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     if (provider == Provider.CUSTOM || provider == Provider.CLAUDE)
                         OutlinedTextField(value = customHeaders, onValueChange = { customHeaders = it },
                             label = { Text("Extra headers (JSON)") }, minLines = 2)
+                    if (provider == Provider.CUSTOM)
+                        OutlinedTextField(value = customParams, onValueChange = { customParams = it },
+                            label = { Text("Extra request parameters (JSON)") }, minLines = 2)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = TextMain); Text("Ask every configured provider", color = TextMuted, fontSize = 10.sp) }
                         Switch(checked = multiAgent, onCheckedChange = { multiAgent = it })
@@ -398,7 +402,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
                 vault.put("multi_agent", multiAgent.toString())
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
-                vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders)
+                vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = Sand) } },
