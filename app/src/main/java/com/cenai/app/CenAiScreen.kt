@@ -3,6 +3,7 @@ package com.cenai.app
 import android.content.Intent
 import android.app.Activity
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -81,6 +83,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
     val updater = remember { UpdateManager(context) }
+    var speechOutputReady by remember { mutableStateOf(false) }
+    val textToSpeech = remember { TextToSpeech(context) { status -> speechOutputReady = status == TextToSpeech.SUCCESS } }
+    DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     var provider by remember { mutableStateOf(Provider.parse(vault.get("provider", "OPENAI"))) }
@@ -396,6 +401,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             busy = busy, style = vault.get("ui_style", "DEFAULT"),
                             onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
+                            onSpeak = { if (speechOutputReady) textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") else info = "Speech output is not ready yet." },
                             onEdit = { editIndex = index; editText = message.content },
                             onRegenerate = {
                                 val before = messages.takeWhileIndexed { i, _ -> i < index }
@@ -690,7 +696,7 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 @Composable
 private fun MessageBubble(
     message: ChatMessage, index: Int, last: Boolean, busy: Boolean, style: String,
-    onCopy: () -> Unit, onCopyCode: (String) -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
+    onCopy: () -> Unit, onCopyCode: (String) -> Unit, onSpeak: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
 ) {
     val palette = LocalCenAiPalette.current
     if (message.role == "tool") {
@@ -733,6 +739,7 @@ private fun MessageBubble(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
+                if (!user) TextButton(onClick = onSpeak) { Icon(Icons.Default.VolumeUp, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Listen", color = palette.muted, fontSize = 10.sp) }
                 if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
                 if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
             }
