@@ -30,6 +30,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
@@ -42,6 +45,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -195,14 +199,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             break
                         }
                         val visible = response.substringBefore("[[CENAI_TOOL_CALL]]").trim()
+                        if (visible.isNotBlank()) displayText += visible + "\n\n"
                         val execution = runtime.execute(toolCall.first, toolCall.second)
-                        displayText += visible + "\n\n" + if (execution.completed) "Used tool: " + execution.toolName else "Tool unavailable: " + execution.toolName
                         val current = messages.toMutableList()
-                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText)
+                        if (current.lastOrNull()?.role == "assistant") {
+                            current[current.lastIndex] = ChatMessage("assistant", displayText.trimEnd())
+                        }
+                        val activityState = when {
+                            execution.requiresApproval -> "Approval required"
+                            execution.completed -> "Completed"
+                            else -> "Unavailable"
+                        }
+                        current += ChatMessage("tool", "$activityState · ${execution.toolName}\n${execution.output}")
+                        if (!execution.requiresApproval) current += ChatMessage("assistant", "")
                         persist(current)
                         if (execution.requiresApproval) {
-                            displayText += "\n\nWaiting for your approval."
-                            persist(messages.dropLast(1) + ChatMessage("assistant", displayText))
                             finished = true
                             break
                         }
@@ -254,7 +265,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             TopAppBar(
                 title = {
                     Column {
-                        Text("CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp)
+                        Text(if (vault.get("ui_style", "DEFAULT") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "DEFAULT") == "FIGMA") 1.2.sp else 0.sp)
                         Text(provider.label + "  ·  " + model, color = palette.muted, fontSize = 11.sp, maxLines = 1)
                     }
                 },
@@ -266,7 +277,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     IconButton(onClick = { if (messages.isNotEmpty()) { val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }; val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }; context.startActivity(Intent.createChooser(send, "Export conversation")) } }) { Icon(Icons.Default.Share, "Export conversation", tint = palette.text) }
                     IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.background)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = if (vault.get("ui_style", "DEFAULT") == "IOS") palette.surface.copy(alpha = 0.82f) else palette.background)
             )
         },
         bottomBar = {
@@ -361,7 +372,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     itemsIndexed(messages, key = { index, _ -> "$currentId-$index" }) { index, message ->
                         MessageBubble(
                             message = message, index = index, last = index == messages.lastIndex,
-                            busy = busy, onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
+                            busy = busy, style = vault.get("ui_style", "DEFAULT"),
+                            onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
                             onEdit = { editIndex = index; editText = message.content },
                             onRegenerate = {
@@ -371,7 +383,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         )
                     }
                     if (busy && messages.lastOrNull()?.content.isNullOrBlank()) {
-                        item { Text("CenAI is thinking…", color = palette.accent, fontSize = 12.sp) }
+                        item { ThinkingIndicator() }
                     }
                 }
             }
@@ -427,8 +439,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         OutlinedTextField(
                             value = when (uiStyle) {
                                 "MATERIAL" -> "Android · Material 3"
-                                "IOS" -> "iOS-inspired"
-                                "FIGMA" -> "Figma design"
+                                "IOS" -> "iOS 27 · Liquid Glass"
+                                "FIGMA" -> "CenAI Studio · Editorial"
                                 else -> "CenAI Default"
                             },
                             onValueChange = {}, readOnly = true, label = { Text("Interface style") },
@@ -436,15 +448,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
-                            listOf("DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS-inspired", "FIGMA" to "Figma design").forEach { (key, label) ->
+                            listOf("DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = { uiStyle = key; themeExpanded = false })
                             }
                         }
                     }
                     Text(when (uiStyle) {
                         "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
-                        "IOS" -> "Rounded cards, softer surfaces and iOS-style spacing."
-                        "FIGMA" -> "Figma-inspired violet and indigo design tokens. Connect a Figma file to import its exact assets."
+                        "IOS" -> "Liquid Glass-inspired translucent chrome, native-feeling controls and soft spring motion."
+                        "FIGMA" -> "A distinct editorial workspace with bold hierarchy, framed panels, vivid accent rails and asymmetric composition."
                         else -> "The original CenAI dark workspace."
                     }, color = palette.muted, fontSize = 10.sp)
                     HorizontalDivider(color = palette.raised)
@@ -653,33 +665,105 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun MessageBubble(
-    message: ChatMessage, index: Int, last: Boolean, busy: Boolean,
+    message: ChatMessage, index: Int, last: Boolean, busy: Boolean, style: String,
     onCopy: () -> Unit, onCopyCode: (String) -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
 ) {
     val palette = LocalCenAiPalette.current
+    if (message.role == "tool") {
+        ToolActivityCard(message.content)
+        return
+    }
     val user = message.role == "user"
+    val ios = style == "IOS"
+    val editorial = style == "FIGMA"
     AnimatedVisibility(
         visible = true,
-        enter = fadeIn(tween(280)) + slideInVertically(tween(280)) { it / 10 }
+        enter = fadeIn(tween(320)) + slideInVertically(tween(320)) { it / 8 } +
+            androidx.compose.animation.scaleIn(spring(dampingRatio = 0.82f, stiffness = 380f), initialScale = 0.985f)
     ) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-        Text(if (user) "YOU" else "CENAI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        Surface(
-            color = if (user) palette.raised else palette.surface,
-            shape = RoundedCornerShape(if (user) 20.dp else 6.dp, 20.dp, 20.dp, 20.dp),
-            modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(15.dp)) {
-                if (message.content.isBlank()) Text(" ", color = palette.text)
-                else RichMessageContent(message.content, onCopyCode)
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
+            if (!ios) Text(if (user) "YOU" else if (editorial) "CENAI / RESPONSE" else "CENAI",
+                color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = if (editorial) 1.sp else 0.sp)
+            Surface(
+                color = when {
+                    ios && user -> palette.accent
+                    ios && !user -> Color.Transparent
+                    editorial && !user -> palette.surface
+                    user -> palette.raised
+                    else -> palette.surface
+                },
+                shape = when {
+                    ios && user -> RoundedCornerShape(22.dp)
+                    ios -> RoundedCornerShape(4.dp)
+                    editorial -> RoundedCornerShape(topStart = 5.dp, topEnd = 22.dp, bottomEnd = 22.dp, bottomStart = 22.dp)
+                    user -> RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+                    else -> RoundedCornerShape(6.dp, 22.dp, 22.dp, 22.dp)
+                },
+                border = if (editorial && !user) androidx.compose.foundation.BorderStroke(1.dp, palette.raised) else null,
+                modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(if (ios && !user) 4.dp else 15.dp)) {
+                    if (message.content.isBlank()) Text(" ", color = palette.text)
+                    else RichMessageContent(message.content, onCopyCode)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
+                if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
+                if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
-            if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
-            if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
+    }
+}
+
+@Composable
+private fun ToolActivityCard(content: String) {
+    val palette = LocalCenAiPalette.current
+    var expanded by remember(content) { mutableStateOf(false) }
+    val title = content.substringBefore('\n').substringBefore(" · ")
+    val tool = content.substringBefore('\n').substringAfter(" · ", "Agent tool")
+    val details = content.substringAfter('\n', "")
+    val icon = when {
+        title == "Completed" -> Icons.Default.CheckCircle
+        title == "Approval required" -> Icons.Default.Lock
+        else -> Icons.Default.Info
+    }
+    Surface(
+        color = palette.raised.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised),
+        modifier = Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)).clickable { expanded = !expanded }
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = palette.accent, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(tool.replace('_', ' ').replaceFirstChar { it.uppercase() }, color = palette.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(title, color = palette.muted, fontSize = 10.sp)
+                }
+                Text(if (expanded) "Hide" else "Details", color = palette.accent, fontSize = 11.sp)
+            }
+            AnimatedVisibility(expanded, enter = fadeIn(tween(180)) + slideInVertically { -it / 5 }) {
+                Text(details.ifBlank { "No additional details." }, color = palette.muted, fontSize = 12.sp, lineHeight = 18.sp)
+            }
         }
     }
+}
+
+@Composable
+private fun ThinkingIndicator() {
+    val palette = LocalCenAiPalette.current
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "thinking")
+    val alpha = transition.animateFloat(
+        initialValue = 0.25f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = tween(650), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ), label = "thinking-pulse"
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("CenAI is thinking", color = palette.muted, fontSize = 12.sp)
+        Text("•••", color = palette.accent, fontSize = 17.sp, modifier = Modifier.alpha(alpha.value))
     }
 }
 
