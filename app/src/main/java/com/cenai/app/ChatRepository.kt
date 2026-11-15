@@ -87,7 +87,14 @@ class ChatRepository(private val vault: SecureKeyStore) {
         when (p) {
             Provider.CLAUDE -> {
                 val list = JSONArray()
-                conversation.forEach { list.put(JSONObject().put("role", it.role).put("content", it.content)) }
+                conversation.forEach { message ->
+                    val blocks = JSONArray()
+                    message.visionParts().forEach { (kind, value) ->
+                        if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
+                        else blocks.put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", kind).put("data", value)))
+                    }
+                    list.put(JSONObject().put("role", message.role).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
+                }
                 payload = JSONObject().put("model", model)
                     .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
                     .put("stream", true).put("messages", list)
@@ -97,9 +104,13 @@ class ChatRepository(private val vault: SecureKeyStore) {
             }
             Provider.GEMINI -> {
                 val contents = JSONArray()
-                conversation.forEach {
-                    contents.put(JSONObject().put("role", if (it.role == "assistant") "model" else "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", it.content))))
+                conversation.forEach { message ->
+                    val parts = JSONArray()
+                    message.visionParts().forEach { (kind, value) ->
+                        if (kind == "text") parts.put(JSONObject().put("text", value))
+                        else parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", kind).put("data", value)))
+                    }
+                    contents.put(JSONObject().put("role", if (message.role == "assistant") "model" else "user").put("parts", parts))
                 }
                 payload = JSONObject().put("contents", contents)
                     .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
@@ -112,7 +123,15 @@ class ChatRepository(private val vault: SecureKeyStore) {
                 val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
                 require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
                 val list = JSONArray()
-                msgs.forEach { list.put(JSONObject().put("role", it.role).put("content", it.content)) }
+                msgs.forEach { message ->
+                    val blocks = JSONArray()
+                    message.visionParts().forEach { (kind, value) ->
+                        if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
+                        else blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$kind;base64,$value")))
+                    }
+                    val content: Any = if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks
+                    list.put(JSONObject().put("role", message.role).put("content", content))
+                }
                 payload = JSONObject().put("model", model).put("stream", true)
                     .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
                     .put("messages", list)
@@ -154,4 +173,22 @@ class ChatRepository(private val vault: SecureKeyStore) {
                 ?.optJSONObject("delta")?.optString("content").orEmpty()
         }
     }.getOrDefault("")
+}
+
+
+/** Converts user-selected image markers into provider-native vision payloads. */
+private val CENAI_IMAGE_MARKER = Regex("""\[\[CENAI_IMAGE\|([^|]+)\|([A-Za-z0-9+/=]+)]]""")
+
+private fun ChatMessage.visionParts(): List<Pair<String, String>> {
+    val result = mutableListOf<Pair<String, String>>()
+    var cursor = 0
+    CENAI_IMAGE_MARKER.findAll(content).forEach { match ->
+        val before = content.substring(cursor, match.range.first)
+        if (before.isNotBlank()) result += "text" to before
+        result += match.groupValues[1] to match.groupValues[2]
+        cursor = match.range.last + 1
+    }
+    val tail = content.substring(cursor)
+    if (tail.isNotBlank() || result.isEmpty()) result += "text" to tail
+    return result
 }
