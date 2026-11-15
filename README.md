@@ -25,7 +25,7 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Animated Compose UI with responsive message transitions and animated composer controls.
 - Four switchable UI themes in Settings: CenAI Default, Android Material 3 (including wallpaper-derived Material You colors on Android 12+), iOS-inspired, and Figma-inspired.
 - Markdown-aware message rendering with visually separated fenced code blocks, language labels, horizontal code scrolling and per-block copy.
-- Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls, nine local utilities, and approval-gated Android actions (open URL, open dialer without calling, share sheet and app settings). Sensitive actions require a separate approval tap and hand off to Android intents; CenAI cannot silently call or send messages. One-off scheduled network tasks can run through WorkManager, with local task status/results and cancellation controls; Android may defer work due to battery and connectivity policy.
+- Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls, nine local utilities, and approval-gated Android actions (open URL, open dialer without calling, share sheet and app settings). Sensitive actions require a separate approval tap and hand off to Android intents; CenAI cannot silently call or send messages. One-off scheduled network tasks run through WorkManager with a bounded four-turn safe-tool loop, encrypted local prompts/results, task status/history and cancellation controls; Android may defer work due to battery and connectivity policy.
 - Expanded settings for agent planning, approval preferences and provider account/OAuth capability guidance.
 
 ## Build
