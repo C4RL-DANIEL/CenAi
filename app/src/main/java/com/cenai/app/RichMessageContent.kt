@@ -113,7 +113,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInlineMarkdow
         append(value.substring(cursor, match.range.first))
         val token = match.value
         when {
-            token.startsWith("\x60") -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = CodeAccent, background = CodePanel)) { append(token.drop(1).dropLast(1)) }
+            token.firstOrNull() == 96.toChar() -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = CodeAccent, background = CodePanel)) { append(token.drop(1).dropLast(1)) }
             token.startsWith("**") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.drop(2).dropLast(2)) }
             else -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(token.drop(1).dropLast(1)) }
         }
