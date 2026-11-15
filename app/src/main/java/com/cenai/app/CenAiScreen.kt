@@ -486,13 +486,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
                             onEdit = { editIndex = index; editText = message.content },
                             onRegenerate = {
-                                val before = messages.takeWhileIndexed { i, _ -> i < index }
+                                val before = messages.take(index)
                                 startRequest(before)
                             }
                         )
                     }
                     if (busy && messages.lastOrNull()?.content.isNullOrBlank()) {
-                        item { ThinkingIndicator() }
+                        item { Text("CenAI is thinking…", color = palette.muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp)) }
                     }
                 }
             }
@@ -794,7 +794,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 })
                             }
                             Text("Recommended model: Qwen3 0.6B INT8 · about 614 MB · Apache 2.0. Download it, then import the .litertlm file above. CPU inference is used for broad device compatibility.", color = palette.muted, fontSize = 10.sp)
-                            OutlinedButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm"))) }.onFailure { info = it.message ?: "Could not open model download." }, modifier = Modifier.fillMaxWidth()) { Text("Download recommended 614 MB model") }
+                            OutlinedButton(
+                                onClick = {
+                                    val modelUri = Uri.parse("https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm")
+                                    try { context.startActivity(Intent(Intent.ACTION_VIEW, modelUri)) }
+                                    catch (e: Exception) { info = e.message ?: "Could not open model download." }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Download recommended 614 MB model") }
                         }
                     }
                     Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -966,6 +973,17 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
     val palette = LocalCenAiPalette.current
     Surface(onClick = onClick, color = palette.surface, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)) {
         Text(label, color = palette.text, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp))
+    }
+}
+
+@Composable
+private fun ToolActivityCard(content: String) {
+    val palette = LocalCenAiPalette.current
+    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("LOCAL TOOL ACTIVITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(content, color = palette.text, fontSize = 12.sp)
+        }
     }
 }
 
