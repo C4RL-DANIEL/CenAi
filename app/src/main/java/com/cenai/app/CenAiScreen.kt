@@ -235,8 +235,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
                     Text("Your AI workspace.", color = TextMuted, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("What would you like to
-create today?", color = TextMain, fontSize = 31.sp,
+                    Text("What would you like to\\ncreate today?", color = TextMain, fontSize = 31.sp,
                         lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -330,7 +329,7 @@ create today?", color = TextMain, fontSize = 31.sp,
                     OutlinedTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
                         label = { Text("System instructions (optional)") }, minLines = 2)
                     Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = TextMuted, fontSize = 10.sp)
-                    OutlinedButton(enabled = !testBusy, onClick = {
+                    if (info.isNotBlank()) Text(info, color = Sand, fontSize = 11.sp)\n                    OutlinedButton(enabled = !testBusy, onClick = {
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
@@ -385,7 +384,7 @@ create today?", color = TextMain, fontSize = 31.sp,
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(updateStatus)
                     updateInfo?.let { Text("Version ${it.version}", color = Sand, fontWeight = FontWeight.Bold) }
-                    if (updateBusy && updateProgress > 0) LinearProgressIndicator(progress = { updateProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                    if (updateBusy && updateProgress > 0) LinearProgressIndicator(progress = updateProgress / 100f, modifier = Modifier.fillMaxWidth())
                     if (!updateInfo?.notes.isNullOrBlank()) Text(updateInfo?.notes.orEmpty().take(800), color = TextMuted, fontSize = 12.sp)
                 }
             },

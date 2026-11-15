@@ -1,78 +1,150 @@
 package com.cenai.app
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okio.BufferedSource
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 class ChatRepository(private val vault: SecureKeyStore) {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build()
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .callTimeout(5, TimeUnit.MINUTES)
+        .build()
 
-    suspend fun send(provider: Provider, model: String, baseUrl: String, messages: List<ChatMessage>): String =
-        withContext(Dispatchers.IO) {
-            val key = vault.apiKey(provider)
-            require(key.isNotBlank()) { "Add your API key in Settings." }
-            val request = when (provider) {
-                Provider.CLAUDE -> claude(model, messages, key)
-                Provider.GEMINI -> gemini(model, messages, key)
-                else -> compatible(provider, model, baseUrl, messages, key)
+    suspend fun stream(
+        provider: Provider,
+        model: String,
+        baseUrl: String,
+        messages: List<ChatMessage>,
+        onDelta: (String) -> Unit
+    ): String = suspendCancellableCoroutine { continuation ->
+        val key = vault.apiKey(provider)
+        if (key.isBlank()) {
+            continuation.resumeWith(Result.failure(IllegalStateException("Add your API key in Settings.")))
+            return@suspendCancellableCoroutine
+        }
+        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key)) }
+            .getOrElse {
+                continuation.resumeWith(Result.failure(it))
+                return@suspendCancellableCoroutine
             }
-            client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}: " +
-                    runCatching { JSONObject(raw).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty())
-                parse(provider, raw)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { res ->
+                    if (!res.isSuccessful) {
+                        val raw = res.body?.string().orEmpty()
+                        val message = runCatching {
+                            JSONObject(raw).optJSONObject("error")?.optString("message")
+                                ?.takeIf { it.isNotBlank() } ?: raw.take(500)
+                        }.getOrDefault(raw.take(500))
+                        if (continuation.isActive) continuation.resumeWith(
+                            Result.failure(IllegalStateException("HTTP ${res.code}: ${message.ifBlank { res.message }}"))
+                        )
+                        return
+                    }
+                    try {
+                        val source = res.body?.source() ?: throw IOException("Empty response body.")
+                        val answer = StringBuilder()
+                        readEvents(source) { data ->
+                            val delta = parseDelta(provider, data)
+                            if (delta.isNotEmpty()) {
+                                answer.append(delta)
+                                if (continuation.isActive) onDelta(delta)
+                            }
+                        }
+                        if (continuation.isActive) continuation.resume(answer.toString())
+                    } catch (e: Exception) {
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+                    }
+                }
+            }
+        })
+    }
+
+    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String): Request {
+        require(model.isNotBlank()) { "Enter a model ID in Settings." }
+        val system = msgs.firstOrNull { it.role == "system" }?.content
+        val conversation = msgs.filter { it.role != "system" }
+        val builder: Request.Builder
+        val payload: JSONObject
+        when (p) {
+            Provider.CLAUDE -> {
+                val list = JSONArray()
+                conversation.forEach { list.put(JSONObject().put("role", it.role).put("content", it.content)) }
+                payload = JSONObject().put("model", model)
+                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("stream", true).put("messages", list)
+                if (!system.isNullOrBlank()) payload.put("system", system)
+                builder = Request.Builder().url("https://api.anthropic.com/v1/messages")
+                    .header("x-api-key", key).header("anthropic-version", "2023-06-01")
+            }
+            Provider.GEMINI -> {
+                val contents = JSONArray()
+                conversation.forEach {
+                    contents.put(JSONObject().put("role", if (it.role == "assistant") "model" else "user")
+                        .put("parts", JSONArray().put(JSONObject().put("text", it.content))))
+                }
+                payload = JSONObject().put("contents", contents)
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
+                if (!system.isNullOrBlank()) payload.put("systemInstruction",
+                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                builder = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
+            }
+            else -> {
+                val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
+                require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
+                val list = JSONArray()
+                msgs.forEach { list.put(JSONObject().put("role", it.role).put("content", it.content)) }
+                payload = JSONObject().put("model", model).put("stream", true)
+                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("messages", list)
+                builder = Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
+                    .header("Authorization", "Bearer $key")
             }
         }
-
-    private fun jsonBody(value: JSONObject) = value.toString().toRequestBody("application/json".toMediaType())
-
-    private fun compatible(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String): Request {
-        val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
-        require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
-        val list = JSONArray()
-        msgs.forEach { list.put(JSONObject().put("role", it.role).put("content", it.content)) }
-        return Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
-            .header("Authorization", "Bearer $key")
-            .post(jsonBody(JSONObject().put("model", model).put("messages", list))).build()
-    }
-
-    private fun claude(model: String, msgs: List<ChatMessage>, key: String): Request {
-        val list = JSONArray()
-        msgs.filter { it.role != "system" }.forEach {
-            list.put(JSONObject().put("role", it.role).put("content", it.content))
+        if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
+            runCatching { JSONObject(vault.get("custom_headers", "{}")) }.getOrNull()?.let { headers ->
+                headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }
+            }
         }
-        val payload = JSONObject().put("model", model).put("max_tokens", 2048).put("messages", list)
-        msgs.firstOrNull { it.role == "system" }?.let { payload.put("system", it.content) }
-        return Request.Builder().url("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", key).header("anthropic-version", "2023-06-01")
-            .header("anthropic-dangerous-direct-browser-access", "true")
-            .post(jsonBody(payload)).build()
+        return builder.header("Accept", "text/event-stream")
+            .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
     }
 
-    private fun gemini(model: String, msgs: List<ChatMessage>, key: String): Request {
-        val contents = JSONArray()
-        msgs.filter { it.role != "system" }.forEach {
-            contents.put(JSONObject().put("role", if (it.role == "assistant") "model" else "user")
-                .put("parts", JSONArray().put(JSONObject().put("text", it.content))))
+    private fun readEvents(source: BufferedSource, onData: (String) -> Unit) {
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            if (!line.startsWith("data:")) continue
+            val data = line.removePrefix("data:").trim()
+            if (data.isNotEmpty() && data != "[DONE]") onData(data)
         }
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
-        return Request.Builder().url(url).post(jsonBody(JSONObject().put("contents", contents))).build()
     }
 
-    private fun parse(p: Provider, raw: String): String {
+    private fun parseDelta(provider: Provider, raw: String): String = runCatching {
         val obj = JSONObject(raw)
-        return when (p) {
-            Provider.CLAUDE -> obj.getJSONArray("content").optJSONObject(0)?.optString("text")
-            Provider.GEMINI -> obj.getJSONArray("candidates").optJSONObject(0)
-                ?.getJSONObject("content")?.getJSONArray("parts")?.optJSONObject(0)?.optString("text")
-            else -> obj.getJSONArray("choices").optJSONObject(0)?.getJSONObject("message")?.optString("content")
-        }?.takeIf { it.isNotBlank() } ?: "Empty response from provider."
-    }
+        when (provider) {
+            Provider.CLAUDE -> if (obj.optString("type") == "content_block_delta")
+                obj.optJSONObject("delta")?.optString("text").orEmpty() else ""
+            Provider.GEMINI -> obj.optJSONArray("candidates")?.optJSONObject(0)
+                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+            else -> obj.optJSONArray("choices")?.optJSONObject(0)
+                ?.optJSONObject("delta")?.optString("content").orEmpty()
+        }
+    }.getOrDefault("")
 }

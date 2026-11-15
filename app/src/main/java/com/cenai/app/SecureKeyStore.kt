@@ -43,7 +43,10 @@ class SecureKeyStore(context: Context) {
         }.getOrDefault("")
     }
 
-    fun saveApiKey(value: String) = saveApiKey(value, "default")
+    fun saveApiKey(value: String) {
+        if (value.isBlank()) prefs.edit().remove("api_key").apply()
+        else prefs.edit().putString("api_key", encrypt(value)).apply()
+    }
 
     fun saveApiKey(value: String, provider: Provider) {
         val name = "api_key_${provider.name.lowercase()}"
