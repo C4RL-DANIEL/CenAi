@@ -41,7 +41,12 @@ jobs:
           test -s supabase/migrations/202611150001_sendai_control_plane.sql
           grep -q '/admin/index.html' website/vercel.json
           grep -q 'Administrator sign in' website/admin/index.html
-          grep -q 'admin_users' website/api/admin.js
+          grep -q 'cenai-control-plane' website/api/admin.js
+          test -s website/api/email-otp.js
+          grep -q 'EMAIL_OTP_SECRET' website/api/email-otp.js
+          grep -q 'nodemailer' website/package.json
+          test -s website/beta.html
+          test -s website/beta.js
           test -s website/vercel.json
           grep -q 'href="/styles.css"' website/index.html
           grep -q 'src="/app.js"' website/index.html
