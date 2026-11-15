@@ -9,7 +9,9 @@
 Set these for Production and Preview only as appropriate:
 - `SUPABASE_URL`: project URL.
 - `SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key (public identifier; not a secret).
-- `SUPABASE_SECRET_KEY`: Supabase secret key, server-side only. Legacy `SUPABASE_SERVICE_ROLE_KEY` is accepted for migration.
+- `EMAIL_USER`: Gmail account used as the CenAI verification sender.
+- `EMAIL_PASS`: Gmail App Password for that sender (not the normal account password).
+- `EMAIL_OTP_SECRET`: long random server-only HMAC secret used to hash OTP challenges.
 - `GITHUB_TOKEN`: optional least-privilege GitHub token for private/release write operations; current panel only reads public releases.
 - `CENAI_API_BASE_URL`: only after the API service is deployed.
 - `AI_GATEWAY_API_KEY`: only after the AI gateway is provisioned.
