@@ -85,6 +85,7 @@ Deno.serve(async (req: Request) => {
       return response(200, { model:data });
     }
     if (action === "analytics_dashboard") {
+      if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
       const days = [7,30,90].includes(Number(body.days)) ? Number(body.days) : 30;
       const since = new Date(Date.now() - days * 86400000).toISOString();
       const { data, error } = await adminDb.from("usage_events").select("source,event_type,provider,model_id,input_tokens,output_tokens,latency_ms,status,error_code,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(5000);
