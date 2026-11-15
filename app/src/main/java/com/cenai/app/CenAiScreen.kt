@@ -990,15 +990,33 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             val statuses = data.optJSONObject("statuses") ?: JSONObject()
                                             val health = data.optJSONObject("guardian") ?: JSONObject()
                                             val providers = data.optJSONArray("providers") ?: org.json.JSONArray()
+                                            val models = data.optJSONArray("models") ?: org.json.JSONArray()
+                                            val failures = data.optJSONArray("failureCategories") ?: org.json.JSONArray()
+                                            val daily = data.optJSONArray("daily") ?: org.json.JSONArray()
                                             val providerLines = (0 until providers.length()).map { index ->
                                                 val item = providers.getJSONObject(index)
                                                 item.optString("name") + ": " + item.optInt("requests") + " requests"
+                                            }
+                                            val modelLines = (0 until minOf(models.length(), 5)).map { index ->
+                                                val item = models.getJSONObject(index)
+                                                item.optString("name") + ": " + item.optInt("requests")
+                                            }
+                                            val failureLines = (0 until minOf(failures.length(), 5)).map { index ->
+                                                val item = failures.getJSONObject(index)
+                                                item.optString("category") + ": " + item.optInt("count")
+                                            }
+                                            val dailyLines = (maxOf(0, daily.length() - 7) until daily.length()).map { index ->
+                                                val item = daily.getJSONObject(index)
+                                                item.optString("date") + ": " + item.optInt("requests") + " requests"
                                             }
                                             adminAnalytics = "Last 30 days · " + data.optInt("total") + " events" + (if (data.optBoolean("truncated")) " (limited to 5,000)" else "") + "\n" +
                                                 "Success " + statuses.optInt("success") + " · Errors " + statuses.optInt("error") + " · Cancelled " + statuses.optInt("cancelled") + "\n" +
                                                 "Tokens in/out " + data.optLong("inputTokens") + " / " + data.optLong("outputTokens") + "\n" +
                                                 "Average latency " + data.optLong("averageLatencyMs") + " ms · P95 " + data.optLong("p95LatencyMs") + " ms\n" +
-                                                providerLines.joinToString("\n").ifBlank { "No provider data yet." } + "\n" +
+                                                "Providers: " + providerLines.joinToString(" · ").ifBlank { "No provider data yet." } + "\n" +
+                                                "Models: " + modelLines.joinToString(" · ").ifBlank { "No model data yet." } + "\n" +
+                                                "Top failures: " + failureLines.joinToString(" · ").ifBlank { "None recorded." } + "\n" +
+                                                "Daily: " + dailyLines.joinToString(" · ").ifBlank { "No daily events." } + "\n" +
                                                 "Guardian reports " + health.optInt("reports") + " · Avg battery " + health.opt("averageBatteryPercent") + "% · Avg RAM " + health.opt("averageAvailableRamMb") + " MB"
                                         } catch (e: Exception) {
                                             adminAnalytics = e.message ?: "Administrator analytics could not be loaded."
