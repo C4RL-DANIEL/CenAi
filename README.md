@@ -8,12 +8,14 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Per-provider API keys encrypted with Android Keystore.
 - Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
 - Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
-- Text-document attachments (TXT, Markdown, CSV and JSON), plus optional Android speech-recognition voice input.
-- Android text-to-speech playback for assistant responses.
+- Text-document attachments (TXT, Markdown, CSV and JSON), plus Android speech-recognition voice input.
+- Configurable speech engine controls: input/output language tags, speech rate, pitch and an in-app voice test; assistant responses can be read aloud with Android Text-to-Speech.
+- Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider; this is local retrieval, not an offline language model.
 - Save or share conversations; save uses Android's Storage Access Framework so the user chooses the destination.
 - Optional user-managed persistent agent memory, encrypted with Android Keystore and editable or clearable in Settings.
 - Quick prompt starters for brainstorming, summaries, translation, writing and code review.
 - Local usage insights (request count and approximate input-token estimate) with configurable daily limits.
+- Privacy-first app monitor with local request success/failure/latency counters and feature activity counts for app starts, voice, document attachments, provider tests and update checks. It does not store prompts, responses or credentials.
 - System instructions and maximum output-token setting.
 - Connection test in provider settings.
 - In-app update checker and APK downloader using GitHub Releases.
