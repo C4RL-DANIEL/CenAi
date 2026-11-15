@@ -28,7 +28,7 @@
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     ["overview","flags","audit","integrations","releases","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = await api(tab);
+      const data = (tab === "beta" || tab === "feedback") ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
