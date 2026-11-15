@@ -835,7 +835,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedButton(
-                        enabled = backgroundTaskPrompt.isNotBlank() && (backgroundTaskDelay.toLongOrNull() ?: 0L) in 1L..43_200L,
+                        enabled = backgroundTaskPrompt.isNotBlank() &&
+                            (backgroundTaskDelay.toLongOrNull() ?: 0L) in 1L..43_200L &&
+                            (provider == Provider.CUSTOM || !providerKeys[provider].isNullOrBlank() ||
+                                (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))),
                         onClick = {
                             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
