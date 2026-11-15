@@ -650,8 +650,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     .onSuccess { result ->
                                         info = result
                                         val updated = messages.map { item ->
-                                            if (item.role == "tool" && item.content.contains("\\nARGS:$rawArgs")) {
-                                                ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\\nARGS:") + "\\n" + result)
+                                            if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
+                                                ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\\n" + result)
                                             } else item
                                         }
                                         persist(updated)
