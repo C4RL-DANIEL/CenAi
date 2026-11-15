@@ -103,7 +103,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
     val localKnowledge = remember { LocalKnowledgeStore() }
     val appMonitor = remember { AppMonitor(context) }
-    var localKnowledgeEnabled by remember { mutableStateOf(vault.get("local_knowledge_enabled", "true").toBoolean()) }
+    var localKnowledgeEnabled by remember { mutableStateOf(vault.get("local_knowledge_enabled", "false").toBoolean()) }
     var monitorSnapshot by remember { mutableStateOf(appMonitor.snapshot()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
