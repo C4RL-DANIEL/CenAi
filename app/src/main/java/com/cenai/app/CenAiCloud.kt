@@ -94,6 +94,25 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         }
     }
 
+    suspend fun sendEmailOtp(): String {
+        val token = vault.getSecret("supabase_access_token")
+        if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
+        val data = post("https://cenai-website.vercel.app/api/email-otp", JSONObject().put("action", "send"), token)
+        return data.optString("message", "Verification code sent.")
+    }
+
+    suspend fun verifyEmailOtp(code: String): String {
+        require(code.matches(Regex("\\d{6}"))) { "Enter the six-digit verification code." }
+        val token = vault.getSecret("supabase_access_token")
+        if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
+        val data = post("https://cenai-website.vercel.app/api/email-otp", JSONObject().put("action", "verify").put("code", code), token)
+        if (!data.optBoolean("verified")) throw IOException("Email verification was not confirmed.")
+        vault.put("cenai_email_verified", "true")
+        return data.optString("message", "Email verified.")
+    }
+
+    fun isEmailVerified(): Boolean = vault.get("cenai_email_verified") == "true"
+
     fun accountEmail(): String = vault.get("supabase_account_email")
     fun isSignedIn(): Boolean = vault.getSecret("supabase_access_token").isNotBlank()
 }
