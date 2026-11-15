@@ -130,10 +130,9 @@ class UpdateManager(private val context: Context) {
 
         // SHA-256 protects transfer integrity; matching the installed signing certificate
         // prevents an update from replacing the app with an APK signed by another party.
-        val archive = context.packageManager.getPackageArchiveInfo(
-            apk.absolutePath,
-            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
-        ) ?: run {
+        @Suppress("DEPRECATION")
+        val signingFlags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val archive = context.packageManager.getPackageArchiveInfo(apk.absolutePath, signingFlags) ?: run {
             apk.delete()
             throw IllegalStateException("Downloaded file is not a valid Android package.")
         }
@@ -141,10 +140,7 @@ class UpdateManager(private val context: Context) {
             apk.delete()
             throw IllegalStateException("Update package ID does not match this CenAI installation.")
         }
-        val installed = context.packageManager.getPackageInfo(
-            context.packageName,
-            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
-        )
+        val installed = context.packageManager.getPackageInfo(context.packageName, signingFlags)
         fun fingerprints(info: PackageInfo): Set<String> {
             val signatures = if (Build.VERSION.SDK_INT >= 28) {
                 info.signingInfo?.apkContentsSigners?.toList().orEmpty()
