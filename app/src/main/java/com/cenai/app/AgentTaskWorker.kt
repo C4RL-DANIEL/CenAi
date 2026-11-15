@@ -29,13 +29,37 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         if (taskId.isBlank() || prompt.isBlank()) return Result.failure()
         prefs.edit().putString("status_$taskId", "Running").apply()
         return try {
-            val response = ChatRepository(vault).stream(
-                provider, model, base,
-                listOf(
-                    ChatMessage("system", "You are CenAI's scheduled task agent. Complete the user's requested task using only the capabilities available in this request. Never claim to have performed external actions you cannot perform. Be concise and report blockers honestly."),
-                    ChatMessage("user", prompt)
-                )
-            ) { }
+            val repository = ChatRepository(vault)
+            val runtime = AgentRuntime(enabledTools = setOf(
+                "current_time", "current_date", "calculate", "count_words", "text_stats",
+                "format_json", "generate_uuid", "base64_encode", "base64_decode"
+            ))
+            val toolGuide = "You are CenAI's scheduled background agent. Complete the user's task and use these safe local tools when useful: " +
+                runtime.availableTools().joinToString { it.name + " — " + it.description } +
+                ". Tool calls must use [[CENAI_TOOL_CALL]] followed by JSON {name,arguments} and [[/CENAI_TOOL_CALL]]. " +
+                "Background tasks cannot execute Android device actions, send messages, access arbitrary files or run shell commands. Never claim to have performed external actions you cannot perform."
+            val history = mutableListOf(ChatMessage("user", prompt))
+            var response = ""
+            var finished = false
+            for (step in 0..3) {
+                val turn = repository.stream(provider, model, base, listOf(ChatMessage("system", toolGuide)) + history) { }
+                val call = runtime.parseToolCall(turn)
+                if (call == null) {
+                    response = turn
+                    finished = true
+                    break
+                }
+                val execution = runtime.execute(call.first, call.second)
+                if (!execution.completed) {
+                    response = "The scheduled agent could not complete a requested tool action: " + execution.output
+                    finished = true
+                    break
+                }
+                history += ChatMessage("assistant", turn)
+                history += ChatMessage("user", "Tool result for " + execution.toolName + ": " + execution.output + "\nContinue the task. Use another safe tool if needed, otherwise provide the final answer.")
+            }
+            if (!finished) response = "The scheduled agent reached its four-step tool limit. Last context: " + response
+            if (response.isBlank()) response = "The scheduled agent returned an empty response."
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
             vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
