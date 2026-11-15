@@ -200,7 +200,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
     var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
-    var approvalFirst by remember { mutableStateOf(vault.get("approval_first", "true").toBoolean()) }
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
     var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
@@ -854,13 +853,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                         Switch(checked = agentPlanning, onCheckedChange = { agentPlanning = it })
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Approval-first actions", color = palette.text)
-                            Text("Require your confirmation before external or destructive actions", color = palette.muted, fontSize = 10.sp)
-                        }
-                        Switch(checked = approvalFirst, onCheckedChange = { approvalFirst = it }, enabled = agentPlanning)
-                    }
+                    Text("Sensitive Android actions always require your explicit approval. This safety check cannot be disabled.", color = palette.muted, fontSize = 10.sp)
                     Text("The agent can run allow-listed local tools, schedule one-off network tasks, and request narrowly scoped Android actions. Device actions require an explicit approval tap and are handed to Android; CenAI cannot silently place calls or send messages.", color = palette.muted, fontSize = 10.sp)
                     HorizontalDivider(color = palette.raised)
                     Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -1171,7 +1164,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
                 vault.put("multi_agent", multiAgent.toString())
                 vault.put("agent_planning", agentPlanning.toString())
-                vault.put("approval_first", approvalFirst.toString())
                 vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("google_cloud_project_id", googleCloudProjectId)
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
