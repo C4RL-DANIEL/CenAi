@@ -17,12 +17,30 @@ android {
         versionCode = 2
         versionName = "0.2.0"
     }
-    signingConfigs {\n        create("release") {\n            val keyPath = System.getenv("CENAI_KEYSTORE_FILE")\n            if (!keyPath.isNullOrBlank()) {\n                storeFile = file(keyPath)\n                storePassword = System.getenv("CENAI_KEYSTORE_PASSWORD")\n                keyAlias = System.getenv("CENAI_KEY_ALIAS")\n                keyPassword = System.getenv("CENAI_KEY_PASSWORD")\n            }\n        }\n    }\n    buildTypes {\n        getByName("release") {\n            signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n        }\n    }\n    buildFeatures { compose = true }
+    signingConfigs {
+        create("release") {
+            val keyPath = System.getenv("CENAI_KEYSTORE_FILE")
+            if (!keyPath.isNullOrBlank()) {
+                storeFile = file(keyPath)
+                storePassword = System.getenv("CENAI_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CENAI_KEY_ALIAS")
+                keyPassword = System.getenv("CENAI_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+    buildFeatures { compose = true }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-    implementation("androidx.activity:activity-compose:1.10.0")\n    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.10.0")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
