@@ -17,7 +17,7 @@ android {
         versionCode = 2
         versionName = "0.2.0"
     }
-    buildFeatures { compose = true }
+    signingConfigs {\n        create("release") {\n            val keyPath = System.getenv("CENAI_KEYSTORE_FILE")\n            if (!keyPath.isNullOrBlank()) {\n                storeFile = file(keyPath)\n                storePassword = System.getenv("CENAI_KEYSTORE_PASSWORD")\n                keyAlias = System.getenv("CENAI_KEY_ALIAS")\n                keyPassword = System.getenv("CENAI_KEY_PASSWORD")\n            }\n        }\n    }\n    buildTypes {\n        getByName("release") {\n            signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n        }\n    }\n    buildFeatures { compose = true }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {

@@ -43,9 +43,37 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Prepare release signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
+          CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
+          CENAI_KEY_ALIAS: ${{ secrets.CENAI_KEY_ALIAS }}
+          CENAI_KEY_PASSWORD: ${{ secrets.CENAI_KEY_PASSWORD }}
+        run: |
+          test -n "$CENAI_KEYSTORE_BASE64" || (echo "::error::Configure CENAI_KEYSTORE_BASE64 and the other signing secrets before tagging a release." && exit 1)
+          test -n "$CENAI_KEYSTORE_PASSWORD"
+          test -n "$CENAI_KEY_ALIAS"
+          test -n "$CENAI_KEY_PASSWORD"
+          echo "$CENAI_KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+          echo "CENAI_KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
+          echo "CENAI_KEYSTORE_PASSWORD=$CENAI_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_ALIAS=$CENAI_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_PASSWORD=$CENAI_KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gradle assembleRelease
+      - name: Upload signed release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: CenAI-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/*.apk
+          files: app/build/outputs/apk/release/*.apk
           generate_release_notes: true

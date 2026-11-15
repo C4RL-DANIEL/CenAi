@@ -1,31 +1,38 @@
 # CenAI
 
-CenAI is an Android-first, multi-provider AI chat client with a native Kotlin/Jetpack Compose interface and a Rust-powered core.
+CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack Compose and a Rust JNI core.
 
-## Project status
+## Current features
 
-Early development bootstrap. The initial milestone is a working Android shell, provider configuration, streaming chat architecture, secure local credential storage, and CI-generated APK artifacts.
-
-## Architecture
-
-- **Android app:** Kotlin, Jetpack Compose, Android Gradle Plugin.
-- **Core:** Rust library exposed to Android through JNI (UniFFI can be introduced as the API stabilizes).
-- **Security:** Keep provider credentials on-device and protect them with Android Keystore-backed encryption.
-- **Providers:** Integrate through documented provider APIs. A consumer subscription does not automatically include API access.
-- **CI:** GitHub Actions builds a debug APK and uploads it as a downloadable workflow artifact.
+- Streaming chat for OpenAI-compatible APIs, Claude Messages and Gemini.
+- Per-provider API keys encrypted with Android Keystore.
+- Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
+- Saved conversations, new chat, history, delete, edit/resend, copy and regenerate.
+- Text-document attachments (TXT, Markdown, CSV and JSON).
+- System instructions and maximum output-token setting.
+- Connection test in provider settings.
+- In-app update checker and APK downloader using GitHub Releases.
+- Animated Compose UI with responsive message transitions and animated composer controls.
 
 ## Build
 
-Open the project in Android Studio and sync Gradle, or install Gradle 8.9 and run:
+GitHub Actions builds the ARM64 Rust JNI library and a debug APK on pushes to `main`. Download the `CenAI-debug-apk` artifact from the Actions run.
 
-```bash
-gradle assembleDebug
-```
+## In-app software updates
 
-The GitHub Actions workflow installs Gradle 8.9 automatically and builds the ARM64 Rust JNI library before the APK.
+The app checks the latest GitHub Release and downloads its APK directly inside CenAI. Android then opens the system package installer. Android requires the user to approve installation; apps cannot silently install their own updates.
 
-The APK is produced under `app/build/outputs/apk/debug/`.
+For updates to install over an existing CenAI copy, every release must be signed with the same private signing key. Never commit that key to this repository.
 
-## Security
+Add these repository Actions secrets before publishing a version tag:
 
-Never commit API keys, OAuth tokens, signing keys, or local configuration containing secrets. Use local encrypted storage for credentials.
+- `CENAI_KEYSTORE_BASE64`: base64-encoded JKS/PKCS12 keystore.
+- `CENAI_KEYSTORE_PASSWORD`: keystore password.
+- `CENAI_KEY_ALIAS`: signing key alias.
+- `CENAI_KEY_PASSWORD`: key password.
+
+Then push a version tag such as `v0.2.0`. The workflow builds a signed release APK and attaches it to the GitHub Release. Future app updates can be installed from Settings → Check for software updates.
+
+## Security and provider access
+
+Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
