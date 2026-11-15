@@ -36,6 +36,16 @@ Add these repository Actions secrets before publishing a version tag:
 
 Then push a version tag such as `v0.2.0`. The workflow builds a signed release APK and attaches it to the GitHub Release. Future app updates can be installed from Settings → Check for software updates.
 
+## Agent tools
+
+Agent planning mode can request a small allow-listed set of local tools: current date/time, arithmetic, word counting and JSON formatting. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, background device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
+
+## Google Gemini OAuth
+
+Settings includes a native Google OAuth authorization-code flow with PKCE for Gemini API access. Configure a Google Cloud project, enable the Generative Language API, complete the OAuth consent screen, register an appropriate native Android OAuth client, and enter its client ID and Cloud Project ID in CenAI Settings. The app requests the `generative-language.retriever` and `cloud-platform` scopes, validates the OAuth state, stores tokens encrypted with Android Keystore and refreshes access tokens when possible. The configured redirect URI is `com.cenai.app:/oauth2redirect`; verify that this redirect and Android package/signing identity are accepted by the OAuth client configuration before distributing the app. OAuth access depends on Google's project, consent-screen and API eligibility policies; it does not bypass quotas, billing, app review or account restrictions.
+
+Other providers are not automatically account-connected. Only implement their OAuth integrations when the provider documents and permits a third-party native-app flow for the specific API product. A consumer subscription does not imply API access.
+
 ## Security and provider access
 
 Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
