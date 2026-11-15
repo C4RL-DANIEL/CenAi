@@ -797,7 +797,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedButton(
-                        enabled = backgroundTaskPrompt.isNotBlank() && backgroundTaskDelay.toLongOrNull() in 1L..43_200L,
+                        enabled = backgroundTaskPrompt.isNotBlank() && (backgroundTaskDelay.toLongOrNull() ?: 0L) in 1L..43_200L,
                         onClick = {
                             runCatching {
                                 val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base)
