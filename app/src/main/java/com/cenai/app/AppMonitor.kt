@@ -9,18 +9,38 @@ data class MonitorSnapshot(
     val cancelled: Int,
     val averageLatencyMs: Long,
     val lastSuccessAt: Long,
-    val lastFailureCategory: String
+    val lastFailureCategory: String,
+    val appStarts: Int,
+    val voiceInputs: Int,
+    val voiceOutputs: Int,
+    val documentsAttached: Int,
+    val updateChecks: Int,
+    val providerTests: Int
 ) {
     val successRate: Int
         get() = if (succeeded + failed == 0) 0 else (succeeded * 100 / (succeeded + failed))
 }
 
 /**
- * Local privacy-first runtime monitor. Stores aggregate counters and failure
- * categories only; never stores prompts, responses, provider keys or tokens.
+ * Local privacy-first monitor. It records aggregate request and feature activity
+ * only; prompts, responses, documents, provider keys and tokens are never stored.
  */
 class AppMonitor(context: Context) {
     private val prefs = context.getSharedPreferences("cenai_app_monitor", Context.MODE_PRIVATE)
+    private val eventKeys = mapOf(
+        "app_start" to "app_starts",
+        "voice_input" to "voice_inputs",
+        "voice_output" to "voice_outputs",
+        "document_attached" to "documents_attached",
+        "update_check" to "update_checks",
+        "provider_test" to "provider_tests"
+    )
+
+    @Synchronized
+    fun recordEvent(event: String) {
+        val key = eventKeys[event] ?: return
+        prefs.edit().putInt(key, prefs.getInt(key, 0) + 1).apply()
+    }
 
     @Synchronized
     fun recordStarted() {
@@ -31,11 +51,8 @@ class AppMonitor(context: Context) {
     fun recordSucceeded(durationMs: Long) {
         val count = prefs.getInt("succeeded", 0) + 1
         val total = prefs.getLong("latency_total", 0L) + durationMs.coerceAtLeast(0L)
-        prefs.edit()
-            .putInt("succeeded", count)
-            .putLong("latency_total", total)
-            .putLong("last_success_at", System.currentTimeMillis())
-            .apply()
+        prefs.edit().putInt("succeeded", count).putLong("latency_total", total)
+            .putLong("last_success_at", System.currentTimeMillis()).apply()
     }
 
     @Synchronized
@@ -45,11 +62,8 @@ class AppMonitor(context: Context) {
         val message = error.message.orEmpty()
         val category = Regex("HTTP ([0-9]{3})").find(message)?.groupValues?.get(1)
             ?.let { "HTTP $it" } ?: error.javaClass.simpleName.take(48)
-        prefs.edit()
-            .putInt("failed", count)
-            .putLong("latency_total", total)
-            .putString("last_failure_category", category)
-            .apply()
+        prefs.edit().putInt("failed", count).putLong("latency_total", total)
+            .putString("last_failure_category", category).apply()
     }
 
     @Synchronized
@@ -70,7 +84,13 @@ class AppMonitor(context: Context) {
             cancelled = prefs.getInt("cancelled", 0),
             averageLatencyMs = if (completed == 0) 0L else total / completed,
             lastSuccessAt = prefs.getLong("last_success_at", 0L),
-            lastFailureCategory = prefs.getString("last_failure_category", "").orEmpty()
+            lastFailureCategory = prefs.getString("last_failure_category", "").orEmpty(),
+            appStarts = prefs.getInt("app_starts", 0),
+            voiceInputs = prefs.getInt("voice_inputs", 0),
+            voiceOutputs = prefs.getInt("voice_outputs", 0),
+            documentsAttached = prefs.getInt("documents_attached", 0),
+            updateChecks = prefs.getInt("update_checks", 0),
+            providerTests = prefs.getInt("provider_tests", 0)
         )
     }
 
