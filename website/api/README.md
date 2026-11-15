@@ -4,6 +4,7 @@
 - `GET /api/releases`: reads published GitHub releases and returns sanitized release metadata.
 - `GET /api/v1/models`: public API model list; requires a `cai_live_` API key and the `api.public.enabled` feature flag.
 - `GET /api/v1/usage`: 30-day aggregate usage for the API key owner; requires the `usage:read` scope.
+- Public API rate limit: 60 requests per minute per key. This first release is read-only; chat completions, quotas and full SDK coverage are not yet implemented.
 - `POST /api/admin`: authenticated admin proxy to the Supabase control plane.
 - `POST /api/email-otp`: Gmail SMTP account email verification.
 
