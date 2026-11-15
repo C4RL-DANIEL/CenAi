@@ -27,12 +27,13 @@ private val CodeAccent = Color(0xFF8CC8B0)
 /** Separates Markdown prose from fenced code blocks in assistant and user messages. */
 @Composable
 fun RichMessageContent(content: String, onCopyCode: (String) -> Unit) {
+    val palette = LocalCenAiPalette.current
     val blocks = remember(content) { splitMessageBlocks(content) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         blocks.forEach { block ->
             when (block) {
                 is MessageBlock.Prose -> if (block.text.isNotBlank()) {
-                    Text(markdownText(block.text), color = Color(0xFFF2F0EC), fontSize = 15.sp, lineHeight = 24.sp)
+                    Text(markdownText(block.text), color = palette.text, fontSize = 15.sp, lineHeight = 24.sp)
                 }
                 is MessageBlock.Code -> CodeBlockCard(block.language, block.code, onCopyCode)
             }
@@ -82,7 +83,7 @@ private fun CodeBlockCard(language: String, code: String, onCopyCode: (String) -
             }
             HorizontalDivider(color = CodeBorder)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(13.dp)) {
-                Text(code, color = Color(0xFFE3E8EE), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 19.sp)
+                Text(code, color = Color(0xFFE3E8EE), fontFamily = FontFamily.Default, fontSize = 12.sp, lineHeight = 19.sp)
             }
         }
     }
@@ -113,7 +114,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInlineMarkdow
         append(value.substring(cursor, match.range.first))
         val token = match.value
         when {
-            token.firstOrNull() == 96.toChar() -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = CodeAccent, background = CodePanel)) { append(token.drop(1).dropLast(1)) }
+            token.firstOrNull() == 96.toChar() -> withStyle(SpanStyle(fontFamily = FontFamily.Default, color = CodeAccent, background = CodePanel)) { append(token.drop(1).dropLast(1)) }
             token.startsWith("**") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.drop(2).dropLast(2)) }
             else -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(token.drop(1).dropLast(1)) }
         }
