@@ -109,7 +109,7 @@
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     ["overview","flags","audit","integrations","releases","models","api-keys","analytics","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = (tab === "beta" || tab === "feedback") ? {} : await api(tab);
+      const data = ["beta","feedback","models","api-keys","analytics"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
