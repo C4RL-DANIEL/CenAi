@@ -307,6 +307,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 val localKnowledgeContext = if (localKnowledgeEnabled) withContext(Dispatchers.Default) {
                     localKnowledge.retrieve(queryForKnowledge, conversations, requestMessages)
                 } else ""
+                val providerAnswers = mutableListOf<String>()
                 for (target in targets) {
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
@@ -374,6 +375,43 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     if (!finished) {
                         val current = messages.toMutableList()
                         if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText + "\n\nAgent step limit reached. Ask me to continue if needed.")
+                        persist(current)
+                    }
+                    providerAnswers += "${target.label}:\\n" + displayText.trim().take(8_000)
+                }
+                if (multiAgent && providerAnswers.size > 1 && !localModelEnabled) {
+                    val synthesisProvider = targets.first()
+                    val synthesisModel = if (synthesisProvider == provider) model else vault.get("model_${synthesisProvider.name}", synthesisProvider.model)
+                    val synthesisBase = if (synthesisProvider == provider) base else vault.get("base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
+                    val synthesisPrompt = "Compare these independent AI responses to the same user request. Produce one clear, accurate, balanced answer. Resolve contradictions where evidence permits, preserve useful disagreements and uncertainty, remove repetition, and do not invent facts.\\n\\n" +
+                        providerAnswers.joinToString("\\n\\n---\\n\\n").take(32_000)
+                    val synthesisHeader = "Cross-provider synthesis\\n\\n"
+                    persist(messages + ChatMessage("assistant", synthesisHeader))
+                    val synthesisText = StringBuilder()
+                    runCatching {
+                        repo.stream(
+                            synthesisProvider,
+                            synthesisModel,
+                            synthesisBase,
+                            listOf(
+                                ChatMessage("system", "You are CenAI's synthesis coordinator. Be precise, transparent about disagreements, and concise."),
+                                ChatMessage("user", synthesisPrompt)
+                            )
+                        ) { delta ->
+                            synthesisText.append(delta)
+                            val current = messages.toMutableList()
+                            if (current.lastOrNull()?.role == "assistant") {
+                                current[current.lastIndex] = ChatMessage("assistant", synthesisHeader + synthesisText)
+                                messages = current
+                            }
+                        }
+                    }.onSuccess { result ->
+                        val current = messages.toMutableList()
+                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", synthesisHeader + result)
+                        persist(current)
+                    }.onFailure { failure ->
+                        val current = messages.toMutableList()
+                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", synthesisHeader + "I collected the provider responses, but the synthesis request failed: " + (failure.message ?: "unknown error"))
                         persist(current)
                     }
                 }
