@@ -19,6 +19,16 @@ Set these for Production and Preview only as appropriate:
 
 Do not put secret keys in `NEXT_PUBLIC_*`, static files, GitHub source, or Android builds. Rotate any secret that has ever been committed.
 
+## Supabase Edge Function secrets for billing
+Set these in Supabase Edge Function Secrets (not Vercel) before testing Stripe:
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_SUPPORTER`
+- `STRIPE_PRICE_PRO`
+- `CENAI_PUBLIC_URL`
+
+The deployed billing function validates Stripe webhook signatures and deduplicates event IDs. Billing remains inactive until checkout and webhook tests pass.
+
 ## Database bootstrap
 Run `supabase/migrations/202611150001_sendai_control_plane.sql` in the Supabase SQL Editor. Create the first admin in Supabase Auth, obtain that user's UUID, and run the owner bootstrap SQL at the bottom of the migration. Never add an admin email or password to source code.
 
