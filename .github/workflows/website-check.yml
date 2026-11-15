@@ -1,0 +1,40 @@
+name: Website checks
+on:
+  push:
+    branches: [ main, "feat/**" ]
+    paths:
+      - "website/**"
+      - ".github/workflows/website-check.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/website-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required pages and local assets
+        run: |
+          set -euo pipefail
+          test -s website/index.html
+          test -s website/styles.css
+          test -s website/app.js
+          test -s website/security.html
+          test -s website/api.html
+          test -s website/roadmap.html
+          test -s website/updates.html
+          test -s website/updates.js
+          test -s website/api/health.js
+          test -s website/api/releases.js
+          test -s website/vercel.json
+          grep -q 'href="/styles.css"' website/index.html
+          grep -q 'src="/app.js"' website/index.html
+          grep -q 'API access and billing activate only' website/index.html
+          grep -q 'not live service URLs' website/api.html
+          echo "Static website structure checks passed."
