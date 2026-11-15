@@ -4,6 +4,8 @@ export default function handler(req, res) {
   if (req.method !== "GET") { res.setHeader("Allow", "GET"); return res.status(405).json({ error: "Method not allowed" }); }
   const configured = Object.fromEntries([...required, ...optional].map(key => [key, Boolean(process.env[key])]));
   const missing = required.filter(key => !process.env[key]);
+  const otpRequired = ["EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET"];
+  const missingOtp = otpRequired.filter(key => !process.env[key]);
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   return res.status(200).json({
@@ -11,11 +13,14 @@ export default function handler(req, res) {
     status: "online",
     checkedAt: new Date().toISOString(),
     adminPanel: "available-at-/admin",
+    emailOtp: missingOtp.length === 0 ? "configuration-present" : "not-configured",
+    missingEmailOtpConfiguration: missingOtp,
     controlPlane: missing.length === 0 ? "configuration-present" : "not-configured",
     integrations: configured,
     missingConfiguration: missing,
     note: missing.length
       ? "Public website is online. Admin authentication and database access require the missing Supabase configuration. No credentials are exposed."
-      : "Required Supabase configuration is present. This endpoint checks configuration only; authenticated admin API requests verify actual connectivity."
+      : "Required Supabase configuration is present. This endpoint checks configuration only; authenticated admin API requests verify actual connectivity.",
+    emailNote: missingOtp.length ? "Gmail SMTP OTP delivery needs the listed server-side environment variables." : "Gmail SMTP OTP configuration is present; actual message delivery is verified when a code is sent."
   });
 }
