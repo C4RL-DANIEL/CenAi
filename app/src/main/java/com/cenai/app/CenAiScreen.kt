@@ -72,6 +72,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
     var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
     var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
+    var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
+    var approvalFirst by remember { mutableStateOf(vault.get("approval_first", "true").toBoolean()) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
@@ -334,7 +336,12 @@ fun CenAiScreen(vault: SecureKeyStore) {
         var expanded by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { settings = false },
-            title = { Text("Workspace settings") },
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("CenAI settings", color = TextMain, fontWeight = FontWeight.Bold)
+                    Text("Providers · Agents · Security · Updates", color = TextMuted, fontSize = 11.sp)
+                }
+            },
             text = {
                 Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("PROVIDER", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -365,6 +372,31 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = TextMain); Text("Ask every configured provider", color = TextMuted, fontSize = 10.sp) }
                         Switch(checked = multiAgent, onCheckedChange = { multiAgent = it })
+                    }
+                    HorizontalDivider(color = Raised)
+                    Text("AGENT WORKSPACE", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Agent planning mode", color = TextMain)
+                            Text("Break complex requests into steps and track what needs doing", color = TextMuted, fontSize = 10.sp)
+                        }
+                        Switch(checked = agentPlanning, onCheckedChange = { agentPlanning = it })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Approval-first actions", color = TextMain)
+                            Text("Require your confirmation before external or destructive actions", color = TextMuted, fontSize = 10.sp)
+                        }
+                        Switch(checked = approvalFirst, onCheckedChange = { approvalFirst = it }, enabled = agentPlanning)
+                    }
+                    Text("Planning mode currently creates structured plans in the AI response. Direct device control, background execution and external tool actions are not enabled in this build.", color = TextMuted, fontSize = 10.sp)
+                    HorizontalDivider(color = Raised)
+                    Text("ACCOUNT CONNECTIONS", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(color = Raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Gemini and other provider accounts", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Official account sign-in is supported only where a provider publishes an OAuth/API flow for third-party apps. Signing into the consumer Gemini app or having a Gemini subscription does not automatically grant Gemini API access. This version still uses provider API credentials; OAuth support needs registered app credentials and provider approval.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                        }
                     }
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
                     OutlinedTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
@@ -405,12 +437,18 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 vault.put("model", model); vault.put("model_${provider.name}", model)
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
                 vault.put("multi_agent", multiAgent.toString())
+                vault.put("agent_planning", agentPlanning.toString())
+                vault.put("approval_first", approvalFirst.toString())
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = Sand) } },
-            dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } }
+            dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } },
+            containerColor = Panel,
+            titleContentColor = TextMain,
+            textContentColor = TextMain,
+            shape = RoundedCornerShape(24.dp)
         )
     }
 
