@@ -3,20 +3,28 @@ package com.cenai.app
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.ZonedDateTime
+import java.time.LocalDate
+import java.util.UUID
+import java.util.Base64
 import java.time.format.DateTimeFormatter
 
 enum class ToolRisk { SAFE, SENSITIVE, DESTRUCTIVE }
 data class AgentTool(val name: String, val description: String, val risk: ToolRisk, val parameters: JSONObject)
 data class ToolExecution(val toolName: String, val arguments: JSONObject, val output: String, val requiresApproval: Boolean, val completed: Boolean)
 
-class AgentRuntime {
+class AgentRuntime(private val enabledTools: Set<String>? = null) {
     private val tools = listOf(
         AgentTool("current_time", "Get the current local date and time.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject())),
         AgentTool("calculate", "Evaluate a basic arithmetic expression.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("expression", JSONObject().put("type", "string"))).put("required", JSONArray().put("expression"))),
         AgentTool("count_words", "Count words and characters in supplied text.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("text", JSONObject().put("type", "string"))).put("required", JSONArray().put("text"))),
-        AgentTool("format_json", "Validate and pretty-print JSON supplied by the user.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("json", JSONObject().put("type", "string"))).put("required", JSONArray().put("json")))
+        AgentTool("format_json", "Validate and pretty-print JSON supplied by the user.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("json", JSONObject().put("type", "string"))).put("required", JSONArray().put("json"))),
+        AgentTool("current_date", "Get today's local date.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject())),
+        AgentTool("generate_uuid", "Generate a random UUID.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject())),
+        AgentTool("text_stats", "Return line, word and character statistics for text.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("text", JSONObject().put("type", "string"))).put("required", JSONArray().put("text"))),
+        AgentTool("base64_encode", "Encode supplied text as Base64.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("text", JSONObject().put("type", "string"))).put("required", JSONArray().put("text"))),
+        AgentTool("base64_decode", "Decode a Base64 string as UTF-8 text.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("value", JSONObject().put("type", "string"))).put("required", JSONArray().put("value")))
     )
-    fun availableTools(): List<AgentTool> = tools
+    fun availableTools(): List<AgentTool> = tools.filter { enabledTools == null || it.name in enabledTools }
     fun parseToolCall(response: String): Pair<String, JSONObject>? {
         val marker = "[[CENAI_TOOL_CALL]]"
         val closing = "[[/CENAI_TOOL_CALL]]"
@@ -29,7 +37,7 @@ class AgentRuntime {
     }
     private fun JSONObject?.orEmptyJson() = this ?: JSONObject()
     fun execute(name: String, args: JSONObject, approvalGranted: Boolean = false): ToolExecution {
-        val tool = tools.firstOrNull { it.name == name } ?: return ToolExecution(name, args, "Tool is not allow-listed.", false, false)
+        val tool = availableTools().firstOrNull { it.name == name } ?: return ToolExecution(name, args, "Tool is disabled or not allow-listed.", false, false)
         if (tool.risk != ToolRisk.SAFE && !approvalGranted) return ToolExecution(name, args, "User approval is required.", true, false)
         return try {
             val output = when (name) {
@@ -37,6 +45,16 @@ class AgentRuntime {
                 "calculate" -> SafeArithmetic.evaluate(args.getString("expression")).toString()
                 "count_words" -> { val value = args.getString("text"); JSONObject().put("words", value.trim().split(Regex("\\s+")).count { it.isNotBlank() }).put("characters", value.length).put("characters_without_spaces", value.count { !it.isWhitespace() }).toString() }
                 "format_json" -> JSONObject(args.getString("json")).toString(2)
+                "current_date" -> LocalDate.now().toString()
+                "generate_uuid" -> UUID.randomUUID().toString()
+                "text_stats" -> {
+                    val value = args.getString("text")
+                    JSONObject().put("lines", if (value.isEmpty()) 0 else value.lines().size)
+                        .put("words", value.trim().split(Regex("\\s+")).count { it.isNotBlank() })
+                        .put("characters", value.length).toString()
+                }
+                "base64_encode" -> Base64.getEncoder().encodeToString(args.getString("text").toByteArray(Charsets.UTF_8))
+                "base64_decode" -> String(Base64.getDecoder().decode(args.getString("value")), Charsets.UTF_8)
                 else -> "No executor registered."
             }
             ToolExecution(name, args, output, false, true)
