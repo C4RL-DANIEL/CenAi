@@ -56,5 +56,6 @@ dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
