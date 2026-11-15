@@ -40,9 +40,11 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 "Background tasks cannot execute Android device actions, send messages, access arbitrary files or run shell commands. Never claim to have performed external actions you cannot perform."
             val history = mutableListOf(ChatMessage("user", prompt))
             var response = ""
+            var lastTurn = ""
             var finished = false
             for (step in 0..3) {
                 val turn = repository.stream(provider, model, base, listOf(ChatMessage("system", toolGuide)) + history) { }
+                lastTurn = turn
                 val call = runtime.parseToolCall(turn)
                 if (call == null) {
                     response = turn
@@ -58,7 +60,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 history += ChatMessage("assistant", turn)
                 history += ChatMessage("user", "Tool result for " + execution.toolName + ": " + execution.output + "\nContinue the task. Use another safe tool if needed, otherwise provide the final answer.")
             }
-            if (!finished) response = "The scheduled agent reached its four-step tool limit. Last context: " + response
+            if (!finished) response = "The scheduled agent reached its four-step tool limit. Last model output: " + lastTurn.take(2_000)
             if (response.isBlank()) response = "The scheduled agent returned an empty response."
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
