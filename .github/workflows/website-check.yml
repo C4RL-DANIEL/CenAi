@@ -32,6 +32,16 @@ jobs:
           test -s website/updates.js
           test -s website/api/health.js
           test -s website/api/releases.js
+          test -s website/admin/index.html
+          test -s website/admin/admin.css
+          test -s website/admin/admin.js
+          test -s website/api/admin.js
+          test -s website/api/admin-config.js
+          test -s website/ADMIN-SETUP.md
+          test -s supabase/migrations/202611150001_sendai_control_plane.sql
+          grep -q '/admin/index.html' website/vercel.json
+          grep -q 'Administrator sign in' website/admin/index.html
+          grep -q 'admin_users' website/api/admin.js
           test -s website/vercel.json
           grep -q 'href="/styles.css"' website/index.html
           grep -q 'src="/app.js"' website/index.html
