@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        GuardianMonitor(applicationContext).installCrashRecorder()
         val vault = SecureKeyStore(applicationContext)
         setContent { CenAiScreen(vault) }
         handleOAuthCallback(intent, vault)
