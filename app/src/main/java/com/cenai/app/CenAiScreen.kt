@@ -457,6 +457,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var cloudStatus by remember { mutableStateOf("") }
         var cloudBusy by remember { mutableStateOf(false) }
         var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
+        var otpCode by remember { mutableStateOf("") }
+        var emailVerified by remember { mutableStateOf(cloud.isEmailVerified()) }
         var betaDisplayName by remember { mutableStateOf(vault.get("beta_display_name", "")) }
         var betaMotivation by remember { mutableStateOf("") }
         var betaApplicationStatus by remember { mutableStateOf("") }
@@ -606,12 +608,20 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
+                                Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(if (emailVerified) "Email verified for this account." else "Verify your account email with a one-time code before applying for beta access.", color = palette.muted, fontSize = 11.sp)
+                                if (!emailVerified) {
+                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.sendEmailOtp() } catch (e: Exception) { cloudStatus = e.message ?: "Could not send verification code." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Send email verification code") }
+                                    OutlinedTextField(value = otpCode, onValueChange = { otpCode = it.filter(Char::isDigit).take(6) }, label = { Text("Six-digit email code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                    Button(enabled = !cloudBusy && otpCode.length == 6, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.verifyEmailOtp(otpCode); emailVerified = true; otpCode = "" } catch (e: Exception) { cloudStatus = e.message ?: "Verification failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Verify email") }
+                                }
+                                HorizontalDivider(color = palette.raised)
                                 Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                                Text("Your application must contain at least 20 characters. An administrator reviews access requests.", color = palette.muted, fontSize = 10.sp)
+                                Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
                                 if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
-                                Button(enabled = !cloudBusy && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
+                                Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
                             }
                             if (cloudStatus.isNotBlank()) Text(cloudStatus, color = if (cloudStatus.contains("failed", true) || cloudStatus.contains("error", true)) MaterialTheme.colorScheme.error else palette.muted, fontSize = 11.sp)
                         }
