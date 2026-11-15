@@ -29,6 +29,9 @@ class ChatRepository(private val vault: SecureKeyStore) {
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
     ): String {
+        if (provider == Provider.DEEPSEEK && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
+            throw IllegalArgumentException("The configured DeepSeek chat model is text-only. Switch to a vision-capable OpenAI, Claude, Gemini or custom model to analyze images.")
+        }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
         val credential = if (oauthCredential.first.isNotBlank()) oauthCredential else vault.apiKey(provider) to false
         val key = credential.first
