@@ -8,7 +8,7 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Per-provider API keys encrypted with Android Keystore.
 - Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
 - Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
-- Text-document attachments (TXT, Markdown, CSV and JSON) plus selectable-text PDF extraction (up to 300 pages / 250,000 characters), and on-device OCR for image attachments using ML Kit. Password-protected PDFs are not supported; scanned PDFs fall back to on-device OCR with a 50-page limit. Android speech-recognition voice input is also available.
+- Text-document attachments (TXT, Markdown, CSV and JSON), selectable-text PDF extraction (up to 300 pages / 250,000 characters), on-device OCR, and native multimodal image payloads for vision-capable OpenAI, Claude, Gemini and compatible custom models. Images are explicitly selected by the user and capped at 4 MB per attachment; DeepSeek's configured text-only chat model reports a clear unsupported-image error. Password-protected PDFs are not supported; scanned PDFs fall back to on-device OCR with a 50-page limit. Android speech-recognition voice input is also available.
 - Configurable speech engine controls: input/output language tags, speech rate, pitch and an in-app voice test; assistant responses can be read aloud with Android Text-to-Speech.
 - Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider.
 - Offline Brain powered by LiteRT-LM: import a compatible `.litertlm` model into app-private storage and run text chat locally on the CPU without a network connection. The model is not bundled in the APK; users must obtain it under its model licence.
@@ -25,7 +25,7 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Animated Compose UI with responsive message transitions and animated composer controls.
 - Four switchable UI themes in Settings: CenAI Default, Android Material 3 (including wallpaper-derived Material You colors on Android 12+), iOS-inspired, and Figma-inspired.
 - Markdown-aware message rendering with visually separated fenced code blocks, language labels, horizontal code scrolling and per-block copy.
-- Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls and nine allow-listed local utilities (date/time, calculator, word/text statistics, JSON formatting, UUID and Base64). This is not unrestricted background or device execution.
+- Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls, nine local utilities, and approval-gated Android actions (open URL, open dialer without calling, share sheet and app settings). Sensitive actions require a separate approval tap and hand off to Android intents; CenAI cannot silently call or send messages. One-off scheduled network tasks can run through WorkManager, with local task status/results and cancellation controls; Android may defer work due to battery and connectivity policy.
 - Expanded settings for agent planning, approval preferences and provider account/OAuth capability guidance.
 
 ## Build
@@ -45,11 +45,11 @@ Add these repository Actions secrets before publishing a version tag:
 - `CENAI_KEY_ALIAS`: signing key alias.
 - `CENAI_KEY_PASSWORD`: key password.
 
-Then push a version tag such as `v0.2.0`. The workflow builds a signed release APK and attaches it to the GitHub Release. Future app updates can be installed from Settings → Check for software updates.
+Then push a version tag such as `v0.2.0`. The workflow runs JVM unit tests, builds the debug APK, generates SHA-256 checksums, and on version tags builds a signed release APK, verifies its Android signature and attaches both APK and checksum to the GitHub Release. The in-app updater checks the published SHA-256 and also requires the downloaded APK package ID and signing certificate to match the installed CenAI app before opening Android's installer. Future app updates can be installed from Settings → Check for software updates.
 
 ## Agent tools
 
-Agent planning mode can request an allow-listed set of local tools: current date/time, arithmetic, word counting, text statistics, JSON formatting, UUID generation and Base64 encoding/decoding. Each tool can be enabled or disabled in Settings. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, background device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
+Agent planning mode can request an allow-listed set of local tools: current date/time, arithmetic, word counting, text statistics, JSON formatting, UUID generation and Base64 encoding/decoding. Each tool can be enabled or disabled in Settings. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, unattended device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
 
 ## Google Gemini OAuth
 
@@ -67,3 +67,22 @@ Provider API keys stay on-device and are encrypted using Android Keystore. Use o
 The project includes a Figma design file with editable Material 3 and iOS/iPadOS component instances and CenAI chat/settings screen compositions: https://www.figma.com/design/izsd2XugSdMRQtDidtc3iI/CenAI-Android-App-Design-System. The Figma-inspired in-app theme is a token-based fallback palette; importing a user's private Figma assets directly into Android still requires a target file and selected assets.
 
 - Multi-provider mode shows independent responses and, when multiple providers respond, requests a consolidated synthesis from the first configured provider.
+
+
+## Vision and scheduled agents
+
+Image attachments are passed to supported providers as native image blocks (OpenAI-compatible `image_url`, Anthropic image source blocks, or Gemini `inline_data`) rather than relying only on OCR. OCR text is included as an optional reference. Image bytes are kept in the local conversation and sent to the selected cloud provider only when the user sends the chat. Use a vision-capable model; provider/model capability is not inferred automatically.
+
+Scheduled tasks are one-shot WorkManager jobs. Their prompts and results are stored in app-private preferences, while WorkManager input contains only task metadata. Jobs require network connectivity and Android may defer them. The app does not claim always-on execution.
+
+## Device-action permissions
+
+The agent registry exposes only narrow Android actions. A device-action tool call produces an approval card; tapping **Approve & run once** launches the corresponding Android screen. Opening the dialer does not place a call, and sharing opens the Android chooser without selecting a recipient or sending content. CenAI does not request Accessibility, SMS, call-log or broad device-control permissions.
+
+## Admin analytics
+
+The authenticated Supabase control plane provides a role-protected analytics dashboard action with time-series, provider/model, latency, status and failure-category aggregates. The local app monitor can export aggregate JSON and be reset. Remote telemetry remains subject to explicit per-account consent and platform feature flags.
+
+## Provider authentication limitations
+
+Gemini's native OAuth flow is the only consumer-facing provider OAuth flow currently implemented. OpenAI, Anthropic and DeepSeek integrations use their official API-key authentication paths; ChatGPT Plus, Claude subscriptions and DeepSeek consumer subscriptions are not API credentials. CenAI does not scrape browser sessions or store consumer-account passwords to imitate provider OAuth.
