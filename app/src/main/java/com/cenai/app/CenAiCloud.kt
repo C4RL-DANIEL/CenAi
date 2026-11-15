@@ -95,6 +95,24 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         }
     }
 
+    suspend fun startBillingCheckout(plan: String): String {
+        require(plan in setOf("supporter", "pro")) { "Choose a supported CenAI plan." }
+        var token = vault.getSecret("supabase_access_token")
+        if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
+        val payload = JSONObject().put("plan", plan)
+        return try {
+            post("$BASE_URL/functions/v1/cenai-billing", payload, token).optString("checkoutUrl")
+                .takeIf { it.startsWith("https://checkout.stripe.com/") }
+                ?: throw IOException("The billing service did not return a valid checkout link.")
+        } catch (error: IOException) {
+            if (!refreshSession()) throw error
+            token = vault.getSecret("supabase_access_token")
+            post("$BASE_URL/functions/v1/cenai-billing", payload, token).optString("checkoutUrl")
+                .takeIf { it.startsWith("https://checkout.stripe.com/") }
+                ?: throw IOException("The billing service did not return a valid checkout link.")
+        }
+    }
+
     suspend fun sendEmailOtp(): String {
         val token = vault.getSecret("supabase_access_token")
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
