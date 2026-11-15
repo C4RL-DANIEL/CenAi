@@ -29,12 +29,13 @@ class ChatRepository(private val vault: SecureKeyStore) {
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
     ): String = suspendCancellableCoroutine { continuation ->
-        val key = vault.apiKey(provider)
+        val credential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else vault.apiKey(provider) to false
+        val key = credential.first
         if (key.isBlank()) {
-            continuation.resumeWith(Result.failure(IllegalStateException("Add your API key in Settings.")))
+            continuation.resumeWith(Result.failure(IllegalStateException("Connect a Google account or add an API key in Settings.")))
             return@suspendCancellableCoroutine
         }
-        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key)) }
+        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key, credential.second)) }
             .getOrElse {
                 continuation.resumeWith(Result.failure(it))
                 return@suspendCancellableCoroutine
@@ -77,7 +78,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         })
     }
 
-    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String): Request {
+    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean): Request {
         require(model.isNotBlank()) { "Enter a model ID in Settings." }
         val system = msgs.firstOrNull { it.role == "system" }?.content
         val conversation = msgs.filter { it.role != "system" }
@@ -104,7 +105,8 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
                 if (!system.isNullOrBlank()) payload.put("systemInstruction",
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-                builder = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
+                builder = Request.Builder().url(if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse" else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
+                if (oauth) builder.header("Authorization", "Bearer $key").header("x-goog-user-project", vault.get("google_cloud_project_id"))
             }
             else -> {
                 val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
