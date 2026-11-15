@@ -1,6 +1,9 @@
 package com.cenai.app
 
 import android.content.Intent
+import android.app.Activity
+import android.speech.RecognizerIntent
+import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -29,6 +32,8 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -89,6 +94,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var draft by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
+    var historyQuery by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
@@ -141,6 +147,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             return
         }
         vault.put("usage_count", (used + 1).toString())
+        val inputEstimate = requestMessages.sumOf { it.content.length } / 4
+        val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
+        vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         val targets = if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
@@ -217,6 +226,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         }
     }
 
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
+            if (spoken.isNotBlank()) draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" ")
+        }
+    }
+
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             val content = withContext(Dispatchers.IO) {
@@ -246,6 +262,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 },
                 actions = {
                     IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
+                    IconButton(onClick = { if (messages.isNotEmpty()) { val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }; val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }; context.startActivity(Intent.createChooser(send, "Export conversation")) } }) { Icon(Icons.Default.Share, "Export conversation", tint = palette.text) }
                     IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.background)
@@ -271,6 +288,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 }
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = {
+                                    val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to CenAI")
+                                    }
+                                    runCatching { speechLauncher.launch(speechIntent) }.onFailure { error = "Speech recognition is not available on this device." }
+                                }) { Icon(Icons.Default.Mic, "Voice input", tint = palette.muted) }
                                 IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json")) }) {
                                     Icon(Icons.Default.AttachFile, "Attach text document", tint = palette.muted)
                                 }
@@ -317,6 +342,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         SuggestionChip("Write something") { draft = "Help me write: " }
                     }
                     SuggestionChip("Explain a topic") { draft = "Explain this topic clearly: " }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SuggestionChip("Summarize") { draft = "Summarize the following clearly, with key points: " }
+                        SuggestionChip("Brainstorm") { draft = "Help me brainstorm practical ideas for: " }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SuggestionChip("Review code") { draft = "Review this code for bugs, security issues and improvements: " }
+                        SuggestionChip("Translate") { draft = "Translate this into Filipino while preserving the meaning: " }
+                    }
                 }
             } else {
                 LazyColumn(
@@ -351,8 +384,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
-            if (conversations.isEmpty()) Text("Your saved chats will appear here.", color = palette.muted, modifier = Modifier.padding(24.dp))
-            conversations.forEach { chat ->
+            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp))
+            val visibleConversations = conversations.filter { chat -> chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) } }
+            if (visibleConversations.isEmpty()) Text(if (historyQuery.isBlank()) "Your saved chats will appear here." else "No matching conversations.", color = palette.muted, modifier = Modifier.padding(24.dp))
+            visibleConversations.forEach { chat ->
                 Row(Modifier.fillMaxWidth().clickable {
                     activeJob?.cancel(); busy = false
                     currentId = chat.id; messages = chat.messages.toList(); historyOpen = false
@@ -477,6 +512,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
                                 OutlinedButton(onClick = { GoogleGeminiOAuth(vault).disconnect(); info = "Google account disconnected." }) { Text("Disconnect") }
                             }
+                        }
+                    }
+                    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
+                            Text("Token count is a local character-based estimate, not provider billing data.", color = palette.muted, fontSize = 10.sp)
                         }
                     }
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
