@@ -985,6 +985,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             }
                                             adminAnalytics = "Last 30 days · " + data.optInt("total") + " events" + (if (data.optBoolean("truncated")) " (limited to 5,000)" else "") + "\n" +
                                                 "Success " + statuses.optInt("success") + " · Errors " + statuses.optInt("error") + " · Cancelled " + statuses.optInt("cancelled") + "\n" +
+                                                "Tokens in/out " + data.optLong("inputTokens") + " / " + data.optLong("outputTokens") + "\n" +
                                                 "Average latency " + data.optLong("averageLatencyMs") + " ms · P95 " + data.optLong("p95LatencyMs") + " ms\n" +
                                                 providerLines.joinToString("\n").ifBlank { "No provider data yet." } + "\n" +
                                                 "Guardian reports " + health.optInt("reports") + " · Avg battery " + health.opt("averageBatteryPercent") + "% · Avg RAM " + health.opt("averageAvailableRamMb") + " MB"
