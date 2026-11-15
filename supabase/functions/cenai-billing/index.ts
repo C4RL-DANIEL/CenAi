@@ -39,7 +39,8 @@ async function handleWebhook(event:any){
  if(event.type==="checkout.session.completed"){
    const userId=String(object.client_reference_id||object.metadata?.user_id||"");
    if(userId&&object.customer){
-     await db.from("billing_customers").upsert({user_id:userId,provider:"stripe",provider_customer_id:String(object.customer),email:String(object.customer_details?.email||object.customer_email||"")},{onConflict:"user_id"});
+     const {error}=await db.from("billing_customers").upsert({user_id:userId,provider:"stripe",provider_customer_id:String(object.customer),email:String(object.customer_details?.email||object.customer_email||"")},{onConflict:"user_id"});
+     if(error)throw error;
    }
  }
  if(["customer.subscription.created","customer.subscription.updated","customer.subscription.deleted"].includes(event.type)){
@@ -47,11 +48,13 @@ async function handleWebhook(event:any){
    let userId=String(object.metadata?.user_id||"");
    if(!userId&&customerId){const {data}=await db.from("billing_customers").select("user_id").eq("provider_customer_id",customerId).maybeSingle();userId=data?.user_id||"";}
    if(userId){
-     await db.from("billing_subscriptions").upsert({user_id:userId,provider:"stripe",provider_subscription_id:String(object.id),plan_key:String(object.metadata?.plan_key||"supporter"),status:String(object.status||"unknown"),current_period_end:object.current_period_end?new Date(object.current_period_end*1000).toISOString():null,cancel_at_period_end:object.cancel_at_period_end===true,updated_at:new Date().toISOString()},{onConflict:"provider_subscription_id"});
+     const {error}=await db.from("billing_subscriptions").upsert({user_id:userId,provider:"stripe",provider_subscription_id:String(object.id),plan_key:String(object.metadata?.plan_key||"supporter"),status:String(object.status||"unknown"),current_period_end:object.current_period_end?new Date(object.current_period_end*1000).toISOString():null,cancel_at_period_end:object.cancel_at_period_end===true,updated_at:new Date().toISOString()},{onConflict:"provider_subscription_id"});
+     if(error)throw error;
    }
  }
  if(event.type==="invoice.payment_failed"&&object.subscription){
-   await db.from("billing_subscriptions").update({status:"past_due",updated_at:new Date().toISOString()}).eq("provider_subscription_id",String(object.subscription));
+   const {error}=await db.from("billing_subscriptions").update({status:"past_due",updated_at:new Date().toISOString()}).eq("provider_subscription_id",String(object.subscription));
+   if(error)throw error;
  }
 }
 Deno.serve(async(req:Request)=>{
