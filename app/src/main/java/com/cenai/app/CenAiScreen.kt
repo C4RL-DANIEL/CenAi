@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import org.json.JSONObject
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,6 +85,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
     val updater = remember { UpdateManager(context) }
+    val cloud = remember { CenAiCloud(vault) }
     var speechOutputReady by remember { mutableStateOf(false) }
     val textToSpeech = remember { TextToSpeech(context) { status -> speechOutputReady = status == TextToSpeech.SUCCESS } }
     DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
@@ -449,6 +452,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     if (settings) {
+        var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
+        var cloudPassword by remember { mutableStateOf("") }
+        var cloudStatus by remember { mutableStateOf("") }
+        var cloudBusy by remember { mutableStateOf(false) }
+        var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
+        var betaDisplayName by remember { mutableStateOf(vault.get("beta_display_name", "")) }
+        var betaMotivation by remember { mutableStateOf("") }
+        var betaApplicationStatus by remember { mutableStateOf("") }
         var expanded by remember { mutableStateOf(false) }
         var themeExpanded by remember { mutableStateOf(false) }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
@@ -574,6 +585,35 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
                                 OutlinedButton(onClick = { GoogleGeminiOAuth(vault).disconnect(); info = "Google account disconnected." }) { Text("Disconnect") }
                             }
+                        }
+                    }
+                    HorizontalDivider(color = palette.raised)
+                    Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("CenAI account", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text(if (cloudSignedIn) "Signed in as ${cloud.accountEmail()}" else "Sign in to apply for public beta access and sync your tester status.", color = palette.muted, fontSize = 11.sp)
+                            OutlinedTextField(value = cloudEmail, onValueChange = { cloudEmail = it }, label = { Text("Email address") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !cloudSignedIn)
+                            if (!cloudSignedIn) OutlinedTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (!cloudSignedIn) {
+                                    Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) cloudPassword = "" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
+                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Signing in…"; scope.launch { try { cloudStatus = cloud.signIn(cloudEmail, cloudPassword).message; cloudSignedIn = true; cloudPassword = ""; val status = cloud.call("status"); betaApplicationStatus = status.optJSONObject("application")?.optString("status") ?: "No application yet" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-in failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Sign in") }
+                                } else {
+                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloud.call("status").optJSONObject("application")?.let { betaApplicationStatus = it.optString("status") } ?: run { betaApplicationStatus = "No application yet" }; cloudStatus = "Beta status refreshed." } catch (e: Exception) { cloudStatus = e.message ?: "Could not refresh status." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Refresh status") }
+                                    TextButton(onClick = { cloud.signOut(); cloudSignedIn = false; betaApplicationStatus = ""; cloudPassword = ""; cloudStatus = "Signed out of CenAI." }) { Text("Sign out") }
+                                }
+                            }
+                            if (cloudSignedIn) {
+                                HorizontalDivider(color = palette.raised)
+                                Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                                Text("Your application must contain at least 20 characters. An administrator reviews access requests.", color = palette.muted, fontSize = 10.sp)
+                                if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
+                                Button(enabled = !cloudBusy && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
+                            }
+                            if (cloudStatus.isNotBlank()) Text(cloudStatus, color = if (cloudStatus.contains("failed", true) || cloudStatus.contains("error", true)) MaterialTheme.colorScheme.error else palette.muted, fontSize = 11.sp)
                         }
                     }
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
