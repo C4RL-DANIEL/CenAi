@@ -40,14 +40,15 @@
     } catch (error) { accessToken = null; $("login-error").textContent = error.message; }
   }
   async function resetPassword() {
-    const url = window.CENAI_SUPABASE_URL;
-    const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
     const email = loginEmail();
-    if (!url || !key || !email.includes("@")) {
+    if (!email.includes("@")) {
       $("login-error").textContent = "Enter CenAI or the administrator email first.";
       return;
     }
     try {
+      await ensureConfig();
+      const url = window.CENAI_SUPABASE_URL;
+      const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
       const response = await fetch(new URL("/auth/v1/recover", url).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": key },
