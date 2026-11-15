@@ -194,7 +194,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     var provider by remember { mutableStateOf(Provider.parse(vault.get("provider", "OPENAI"))) }
-    var model by remember { mutableStateOf(vault.get("model", Provider.parse(vault.get("provider", "OPENAI")).model)) }
+    var model by remember {
+        val savedProvider = Provider.parse(vault.get("provider", "OPENAI"))
+        val savedModel = vault.get("model", savedProvider.model)
+        mutableStateOf(if (savedProvider == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) savedProvider.model else savedModel)
+    }
     var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
     var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
@@ -773,7 +777,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             Provider.entries.forEach { p ->
                                 DropdownMenuItem(text = { Text(p.label) }, onClick = {
-                                    provider = p; model = vault.get("model_${p.name}", p.model); base = vault.get("base_url_${p.name}", p.baseUrl); expanded = false
+                                    provider = p
+                                    val savedModel = vault.get("model_${p.name}", p.model)
+                                    model = if (p == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) p.model else savedModel
+                                    base = vault.get("base_url_${p.name}", p.baseUrl)
+                                    expanded = false
                                 })
                             }
                         }
