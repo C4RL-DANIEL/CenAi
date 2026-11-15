@@ -75,6 +75,7 @@ Deno.serve(async(req:Request)=>{
      return json(200,{received:true});
    }
    if(!stripeKey||!webhookSecret||!publicUrl)return fail(503,"Billing is not configured. The administrator must configure Stripe server secrets and the public site URL.");
+   if(!(await db.from("admin_feature_flags").select("enabled").eq("key","billing.enabled").maybeSingle()).data?.enabled) return fail(503,"Billing is disabled by the platform owner.");
    const user=await currentUser(req);
    if(!user)return fail(401,"Sign in required");
    const body=await req.json().catch(()=>({}));
