@@ -25,13 +25,16 @@ class UpdateManager(private val context: Context) {
     private val owner = "C4RL-DANIEL"
     private val repo = "CenAi"
 
-    suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url("https://api.github.com/repos/$owner/$repo/releases/latest")
+    suspend fun check(includePrerelease: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("https://api.github.com/repos/$owner/$repo/releases?per_page=30")
             .header("Accept", "application/vnd.github+json").build()
         client.newCall(request).execute().use { response ->
             if (response.code == 404) return@withContext null
             if (!response.isSuccessful) throw IllegalStateException("Update check failed (HTTP ${response.code}).")
-            val release = JSONObject(response.body?.string().orEmpty())
+            val releases = org.json.JSONArray(response.body?.string().orEmpty())
+            val release = (0 until releases.length()).map { releases.getJSONObject(it) }
+                .firstOrNull { !it.optBoolean("draft", true) && (includePrerelease || !it.optBoolean("prerelease", false)) }
+                ?: return@withContext null
             val assets = release.optJSONArray("assets") ?: return@withContext null
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.optString("name").endsWith(".apk", true) } ?: return@withContext null
@@ -47,10 +50,32 @@ class UpdateManager(private val context: Context) {
     }
 
     private fun compareVersions(a: String, b: String): Int {
-        val aa = a.split(".", "-", "+").map { it.toIntOrNull() ?: 0 }
-        val bb = b.split(".", "-", "+").map { it.toIntOrNull() ?: 0 }
+        fun parts(value: String): Pair<List<Int>, List<String>?> {
+            val clean = value.removePrefix("v").substringBefore("+")
+            val split = clean.split("-", limit = 2)
+            val core = split[0].split(".").map { it.toIntOrNull() ?: 0 }
+            return core to split.getOrNull(1)?.split(".")
+        }
+        val (aa, ap) = parts(a)
+        val (bb, bp) = parts(b)
         for (i in 0 until maxOf(aa.size, bb.size)) {
             val diff = (aa.getOrNull(i) ?: 0).compareTo(bb.getOrNull(i) ?: 0)
+            if (diff != 0) return diff
+        }
+        if (ap == null && bp == null) return 0
+        if (ap == null) return 1
+        if (bp == null) return -1
+        for (i in 0 until maxOf(ap.size, bp.size)) {
+            val x = ap.getOrNull(i) ?: return -1
+            val y = bp.getOrNull(i) ?: return 1
+            val xn = x.toIntOrNull()
+            val yn = y.toIntOrNull()
+            val diff = when {
+                xn != null && yn != null -> xn.compareTo(yn)
+                xn != null -> -1
+                yn != null -> 1
+                else -> x.compareTo(y)
+            }
             if (diff != 0) return diff
         }
         return 0
