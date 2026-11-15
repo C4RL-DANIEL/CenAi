@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = System.getenv("CENAI_VERSION_CODE")?.toIntOrNull() ?: 2000
-        versionName = "0.2.0"
+        versionName = System.getenv("CENAI_VERSION_NAME") ?: "0.2.0"
     }
     signingConfigs {
         create("release") {
