@@ -365,7 +365,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             execution.completed -> "Completed"
                             else -> "Unavailable"
                         }
-                        current += ChatMessage("tool", "$activityState · ${execution.toolName}\n${execution.output}")
+                        current += ChatMessage("tool", "$activityState · ${execution.toolName}\n${execution.output}\nARGS:${execution.arguments}")
                         if (!execution.requiresApproval) current += ChatMessage("assistant", "")
                         persist(current)
                         if (execution.requiresApproval) {
@@ -645,6 +645,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         MessageBubble(
                             message = message, index = index, last = index == messages.lastIndex,
                             busy = busy, style = vault.get("ui_style", "DEFAULT"),
+                            onApproveDeviceAction = { name, rawArgs ->
+                                runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
+                                    .onSuccess { info = it }
+                                    .onFailure { error = it.message ?: "Android action could not be opened." }
+                            },
                             onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
                             onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
@@ -1197,11 +1202,12 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 @Composable
 private fun MessageBubble(
     message: ChatMessage, index: Int, last: Boolean, busy: Boolean, style: String,
-    onCopy: () -> Unit, onCopyCode: (String) -> Unit, onSpeak: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
+    onCopy: () -> Unit, onCopyCode: (String) -> Unit, onSpeak: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit,
+    onApproveDeviceAction: (String, String) -> Unit
 ) {
     val palette = LocalCenAiPalette.current
     if (message.role == "tool") {
-        ToolActivityCard(message.content)
+        ToolActivityCard(message.content, onApproveDeviceAction)
         return
     }
     val user = message.role == "user"
@@ -1249,12 +1255,13 @@ private fun MessageBubble(
 }
 
 @Composable
-private fun ToolActivityCard(content: String) {
+private fun ToolActivityCard(content: String, onApproveDeviceAction: (String, String) -> Unit) {
     val palette = LocalCenAiPalette.current
     var expanded by remember(content) { mutableStateOf(false) }
     val title = content.substringBefore('\n').substringBefore(" · ")
     val tool = content.substringBefore('\n').substringAfter(" · ", "Agent tool")
-    val details = content.substringAfter('\n', "")
+    val details = content.substringAfter('\n', "").substringBefore("\nARGS:")
+    val actionArgs = content.substringAfter("\nARGS:", "").takeIf { it.isNotBlank() }
     val icon = when {
         title == "Completed" -> Icons.Default.CheckCircle
         title == "Approval required" -> Icons.Default.Lock
@@ -1277,7 +1284,15 @@ private fun ToolActivityCard(content: String) {
                 Text(if (expanded) "Hide" else "Details", color = palette.accent, fontSize = 11.sp)
             }
             AnimatedVisibility(expanded, enter = fadeIn(tween(180)) + slideInVertically { -it / 5 }) {
-                Text(details.ifBlank { "No additional details." }, color = palette.muted, fontSize = 12.sp, lineHeight = 18.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(details.ifBlank { "No additional details." }, color = palette.muted, fontSize = 12.sp, lineHeight = 18.sp)
+                    if (title == "Approval required" && actionArgs != null) {
+                        Text("This action opens an Android screen. CenAI cannot place calls or send content without your separate action in that app.", color = palette.muted, fontSize = 10.sp)
+                        OutlinedButton(onClick = { onApproveDeviceAction(tool, actionArgs) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Approve & run once")
+                        }
+                    }
+                }
             }
         }
     }
