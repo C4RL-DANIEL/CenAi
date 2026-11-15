@@ -29,7 +29,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
     ): String {
-        if (provider == Provider.DEEPSEEK && model != "deepseek-flash" && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
+        if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
