@@ -829,11 +829,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
-                            val taskName = (taskPrefs["prompt_$id"] as? String).orEmpty().take(90)
+                            val taskName = vault.getSecret("scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(taskName, color = palette.text, fontSize = 11.sp)
                                 Text((entry.value as? String).orEmpty(), color = palette.muted, fontSize = 10.sp)
-                                (taskPrefs["result_$id"] as? String)?.takeIf { it.isNotBlank() }?.let { result ->
+                                vault.getSecret("scheduled_task_result_$id").takeIf { it.isNotBlank() }?.let { result ->
                                     Text("Result: " + result.take(700), color = palette.muted, fontSize = 10.sp)
                                 }
                                 if ((entry.value as? String) == "Scheduled" || (entry.value as? String) == "Running") {
