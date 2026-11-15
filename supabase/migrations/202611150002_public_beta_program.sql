@@ -33,11 +33,6 @@ revoke all on public.beta_applications from anon, authenticated;
 revoke all on public.beta_feedback from anon, authenticated;
 grant all on public.beta_applications to service_role;
 grant all on public.beta_feedback to service_role;
-create or replace function public.is_beta_tester()
-returns boolean language sql stable security definer set search_path = ''
-as $ select exists(select 1 from public.beta_applications b where b.user_id = auth.uid() and b.status = 'approved') $;
-revoke all on function public.is_beta_tester() from public, anon;
-grant execute on function public.is_beta_tester() to authenticated;
 insert into public.admin_feature_flags(key,enabled,description) values
  ('beta.applications.open',true,'Allow authenticated users to apply for public beta access'),
  ('beta.feedback.enabled',true,'Allow approved beta testers to submit feedback'),
