@@ -152,7 +152,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     val response = repo.stream(target, targetModel, targetBase, listOfNotNull(
                         systemPrompt.takeIf { it.isNotBlank() },
                         if (agentPlanning) {
-                            "You are operating in CenAI's approval-first planning mode. For complex requests, produce a concise numbered plan, identify required tools or permissions, distinguish actions you can actually perform from suggestions, and ask for explicit user approval before any external, destructive, privacy-sensitive, or device-level action. Do not claim to have executed actions that you cannot access."
+                            if (approvalFirst) "You are operating in CenAI's approval-first planning mode. For complex requests, produce a concise numbered plan, identify required tools or permissions, distinguish actions you can actually perform from suggestions, and ask for explicit user approval before any external, destructive, privacy-sensitive, or device-level action. Do not claim to have executed actions that you cannot access." else "You are operating in CenAI's planning mode. For complex requests, produce a concise numbered plan and clearly distinguish actions you can actually perform from suggestions. Never claim to have executed actions that you cannot access."
                         } else null
                     ).takeIf { it.isNotEmpty() }?.joinToString("\\n\\n")?.let { ChatMessage("system", it) }?.let { listOf(it) }.orEmpty() + requestMessages) { delta ->
                         val current = messages.toMutableList()
