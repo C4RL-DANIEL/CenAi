@@ -36,12 +36,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                     ChatMessage("user", prompt)
                 )
             ) { }
-            prefs.edit()
-                .putString("status_$taskId", "Completed")
-                .apply()
+            prefs.edit().putString("status_$taskId", "Completed")
+                .putLong("completed_$taskId", System.currentTimeMillis()).apply()
             vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
-                .putLong("completed_$taskId", System.currentTimeMillis())
-                .apply()
             Result.success()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             prefs.edit().putString("status_$taskId", "Cancelled").apply()
@@ -88,10 +85,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 .build()
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString("status_$id", "Scheduled")
-                .apply()
-            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$id", prompt)
                 .putLong("scheduled_$id", System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes))
                 .apply()
+            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$id", prompt)
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 "cenai-agent-$id", ExistingWorkPolicy.KEEP, request
             )
