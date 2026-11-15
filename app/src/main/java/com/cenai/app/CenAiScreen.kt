@@ -292,7 +292,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 IconButton(onClick = {
                                     val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                                         putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to CenAI")
                                     }
                                     runCatching { speechLauncher.launch(speechIntent) }.onFailure { error = "Speech recognition is not available on this device." }
