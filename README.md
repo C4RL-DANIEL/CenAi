@@ -17,7 +17,7 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Quick prompt starters for brainstorming, summaries, translation, writing and code review.
 - Local usage insights (request count and approximate input-token estimate) with configurable daily limits.
 - Privacy-first app monitor with local request success/failure/latency counters and feature activity counts for app starts, voice, document attachments, provider tests and update checks. It does not store prompts, responses or credentials.
-- Guardian local diagnostics: available/total RAM, app heap, storage, battery, network, uptime, Android/device version and last crash category/timestamp. No stack traces or prompt content are collected.
+- Guardian local diagnostics: available/total RAM, app heap, storage, battery, network, uptime, Android/device version and last crash category/timestamp. A WorkManager task samples a small on-device health history periodically (Android schedules it on a best-effort basis, not as an always-on service). No stack traces or prompt content are collected.
 - Optional cloud analytics and Guardian reporting are explicitly opt-in per account. Usage telemetry contains only provider/model, token estimates, latency and status; Guardian reports contain device-health aggregates only.
 - System instructions and maximum output-token setting.
 - Connection test in provider settings.
