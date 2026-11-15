@@ -4,6 +4,7 @@ import android.content.Intent
 import android.app.Activity
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.provider.OpenableColumns
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,6 +86,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
     val updater = remember { UpdateManager(context) }
+    val localModelRuntime = remember { LocalModelRuntime(context) }
+    val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
     var speechOutputReady by remember { mutableStateOf(false) }
     var speechRate by remember { mutableFloatStateOf(vault.get("speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
@@ -104,6 +107,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localKnowledge = remember { LocalKnowledgeStore() }
     val appMonitor = remember { AppMonitor(context) }
     var localKnowledgeEnabled by remember { mutableStateOf(vault.get("local_knowledge_enabled", "false").toBoolean()) }
+    var localModelEnabled by remember { mutableStateOf(vault.get("local_model_enabled", "false").toBoolean()) }
+    var localModelReady by remember { mutableStateOf(localModelRuntime.isModelInstalled()) }
+    var guardianSnapshot by remember { mutableStateOf(guardian.snapshot()) }
     var monitorSnapshot by remember { mutableStateOf(appMonitor.snapshot()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -144,6 +150,26 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var updateProgress by remember { mutableIntStateOf(0) }
     var updateStatus by remember { mutableStateOf("Check for the latest CenAI release.") }
     val listState = rememberLazyListState()
+    val localModelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            info = "Importing on-device model…"
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    } ?: "selected-model.litertlm"
+                    localModelRuntime.importModel(uri, displayName)
+                }
+            }
+            if (result.isSuccess) {
+                localModelReady = true
+                localModelEnabled = true
+                vault.put("local_model_enabled", "true")
+                info = "Offline model imported (${result.getOrThrow() / 1_048_576L} MB)."
+            } else info = result.exceptionOrNull()?.message ?: "Model import failed."
+            guardianSnapshot = guardian.snapshot()
+        }
+    }
     LaunchedEffect(Unit) { appMonitor.recordEvent("app_start"); monitorSnapshot = appMonitor.snapshot() }
 
     fun persist(next: List<ChatMessage> = messages) {
@@ -184,7 +210,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         val inputEstimate = requestMessages.sumOf { it.content.length } / 4
         val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
-        val targets = if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) } else listOf(provider)
+        if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
+        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
@@ -219,7 +246,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     persist(messages + ChatMessage("assistant", displayText))
                     var finished = false
                     for (step in 0..3) {
-                        val response = repo.stream(target, targetModel, targetBase, systemMessages + agentHistory) { delta ->
+                        val response = if (localModelEnabled) localModelRuntime.stream(systemMessages + agentHistory) { delta ->
+                            val current = messages.toMutableList()
+                            val last = current.lastIndex
+                            if (last >= 0 && current[last].role == "assistant") {
+                                current[last] = current[last].copy(content = current[last].content + delta)
+                                messages = current
+                            }
+                        } else repo.stream(target, targetModel, targetBase, systemMessages + agentHistory) { delta ->
                             val current = messages.toMutableList()
                             val last = current.lastIndex
                             if (last >= 0 && current[last].role == "assistant") {
@@ -681,6 +715,28 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             OutlinedButton(enabled = speechOutputReady, onClick = { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak("CenAI voice engine is ready.", TextToSpeech.QUEUE_FLUSH, null, "cenai-voice-test") }, modifier = Modifier.fillMaxWidth()) { Text("Test voice output") }
                         }
                     }
+                    Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Private local language model", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text(if (localModelReady) "Model installed · ${localModelRuntime.modelSizeBytes() / 1_048_576L} MB" else "No local model installed", color = if (localModelReady) palette.accent else palette.muted, fontSize = 11.sp)
+                            Text("Import a compatible .litertlm model once. After import, chats can run fully offline on this device using LiteRT-LM CPU inference. Model files stay in private app storage and are not included in the APK.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                            OutlinedButton(onClick = { localModelPicker.launch(arrayOf("application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (localModelReady) "Replace local model" else "Import .litertlm model")
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Use Offline AI for chats", color = palette.text)
+                                    Text("Overrides cloud providers while enabled", color = palette.muted, fontSize = 10.sp)
+                                }
+                                Switch(checked = localModelEnabled, enabled = localModelReady, onCheckedChange = {
+                                    localModelEnabled = it
+                                    vault.put("local_model_enabled", it.toString())
+                                })
+                            }
+                            Text("Suggested starting point: Gemma 3 1B IT, quantized. Review and accept the model licence on its host before importing.", color = palette.muted, fontSize = 10.sp)
+                        }
+                    }
                     Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -689,6 +745,18 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 Text("Retrieves relevant excerpts from saved chats and attached text documents locally, then supplies them as context to your selected AI provider. No separate on-device language model is included.", color = palette.muted, fontSize = 10.sp)
                             }
                             Switch(checked = localKnowledgeEnabled, onCheckedChange = { localKnowledgeEnabled = it })
+                        }
+                    }
+                    Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Local device diagnostics", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("RAM available ${guardianSnapshot.availableRamMb} / ${guardianSnapshot.totalRamMb} MB · App heap ${guardianSnapshot.appHeapUsedMb} / ${guardianSnapshot.appHeapMaxMb} MB", color = palette.muted, fontSize = 10.sp)
+                            Text("Storage free ${guardianSnapshot.freeStorageMb} / ${guardianSnapshot.totalStorageMb} MB · Battery ${guardianSnapshot.batteryPercent}% ${if (guardianSnapshot.charging) "· Charging" else ""}", color = palette.muted, fontSize = 10.sp)
+                            Text("${guardianSnapshot.device} · Android ${guardianSnapshot.androidVersion} · ${guardianSnapshot.network} · Uptime ${guardianSnapshot.uptimeMinutes} min", color = palette.muted, fontSize = 10.sp)
+                            Text("Last crash: ${if (guardianSnapshot.lastCrashAt == 0L) "None recorded" else guardianSnapshot.lastCrashCategory + " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(guardianSnapshot.lastCrashAt))}", color = palette.muted, fontSize = 10.sp)
+                            Text("Diagnostics stay on-device. Guardian stores only a crash category and timestamp, not stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
+                            TextButton(onClick = { guardianSnapshot = guardian.snapshot(); monitorSnapshot = appMonitor.snapshot() }) { Text("Run health check") }
                         }
                     }
                     Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -764,6 +832,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 vault.put("speech_language", speechLanguage.ifBlank { "device" })
                 vault.put("speech_input_language", speechInputLanguage.ifBlank { "device" })
                 vault.put("local_knowledge_enabled", localKnowledgeEnabled.toString())
+                vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
                 vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
