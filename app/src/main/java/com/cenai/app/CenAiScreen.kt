@@ -673,10 +673,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }
                                     .onFailure { error = it.message ?: "Android action could not be opened." }
                             },
-                            onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
+                            onCopy = { clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]"))); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
                             onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
-                            onEdit = { editIndex = index; editText = message.content },
+                            onEdit = { editIndex = index; editText = message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]") },
                             onRegenerate = {
                                 val before = messages.take(index)
                                 startRequest(before)
