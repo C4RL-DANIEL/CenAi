@@ -28,13 +28,11 @@ class ChatRepository(private val vault: SecureKeyStore) {
         baseUrl: String,
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
-    ): String = suspendCancellableCoroutine { continuation ->
+    ): String {
         val credential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else vault.apiKey(provider) to false
         val key = credential.first
-        if (key.isBlank()) {
-            continuation.resumeWith(Result.failure(IllegalStateException("Connect a Google account or add an API key in Settings.")))
-            return@suspendCancellableCoroutine
-        }
+        require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
+        return suspendCancellableCoroutine { continuation ->
         val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key, credential.second)) }
             .getOrElse {
                 continuation.resumeWith(Result.failure(it))
@@ -76,6 +74,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                 }
             }
         })
+        }
     }
 
     private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean): Request {
