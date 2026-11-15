@@ -647,7 +647,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             busy = busy, style = vault.get("ui_style", "DEFAULT"),
                             onApproveDeviceAction = { name, rawArgs ->
                                 runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
-                                    .onSuccess { info = it }
+                                    .onSuccess { result ->
+                                        info = result
+                                        val updated = messages.map { item ->
+                                            if (item.role == "tool" && item.content.contains("\\nARGS:$rawArgs")) {
+                                                ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\\nARGS:") + "\\n" + result)
+                                            } else item
+                                        }
+                                        persist(updated)
+                                    }
                                     .onFailure { error = it.message ?: "Android action could not be opened." }
                             },
                             onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
