@@ -17,6 +17,17 @@ class AgentRuntime {
         AgentTool("format_json", "Validate and pretty-print JSON supplied by the user.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("json", JSONObject().put("type", "string"))).put("required", JSONArray().put("json")))
     )
     fun availableTools(): List<AgentTool> = tools
+    fun parseToolCall(response: String): Pair<String, JSONObject>? {
+        val marker = "[[CENAI_TOOL_CALL]]"
+        val closing = "[[/CENAI_TOOL_CALL]]"
+        val start = response.indexOf(marker)
+        if (start < 0) return null
+        val end = response.indexOf(closing, start + marker.length)
+        if (end < 0) return null
+        val payload = JSONObject(response.substring(start + marker.length, end).trim())
+        return payload.getString("name") to payload.optJSONObject("arguments").orEmptyJson()
+    }
+    private fun JSONObject?.orEmptyJson() = this ?: JSONObject()
     fun execute(name: String, args: JSONObject, approvalGranted: Boolean = false): ToolExecution {
         val tool = tools.firstOrNull { it.name == name } ?: return ToolExecution(name, args, "Tool is not allow-listed.", false, false)
         if (tool.risk != ToolRisk.SAFE && !approvalGranted) return ToolExecution(name, args, "User approval is required.", true, false)
