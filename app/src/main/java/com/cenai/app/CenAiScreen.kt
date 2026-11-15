@@ -72,6 +72,26 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @Composable
+
+private suspend fun extractImageText(context: android.content.Context, uri: Uri): String =
+    suspendCancellableCoroutine { continuation ->
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val task = runCatching { recognizer.process(InputImage.fromFilePath(context, uri)) }
+            .getOrElse {
+                recognizer.close()
+                continuation.resumeWithException(it)
+                return@suspendCancellableCoroutine
+            }
+        task.addOnSuccessListener { result ->
+            recognizer.close()
+            if (continuation.isActive) continuation.resume(result.text.take(250_000))
+        }.addOnFailureListener { error ->
+            recognizer.close()
+            if (continuation.isActive) continuation.resumeWithException(error)
+        }
+        continuation.invokeOnCancellation { recognizer.close() }
+    }
+
 fun CenAiScreen(vault: SecureKeyStore) {
     var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
     CenAiTheme(style = selectedStyle) {
@@ -360,7 +380,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
-                    if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
+                    if (mime.startsWith("image/")) {
+                        extractImageText(context, uri)
+                    } else if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
                         PDFBoxResourceLoader.init(context.applicationContext)
                         context.contentResolver.openInputStream(uri)?.use { input ->
                             PDDocument.load(input).use { document ->
@@ -381,7 +403,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 error = result.exceptionOrNull()?.message
                     ?: "No selectable text was found. Scanned/image-only PDFs and image attachments are not supported yet."
             } else {
-                val label = if (context.contentResolver.getType(uri) == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) "PDF document" else "text document"
+                val detectedMime = context.contentResolver.getType(uri).orEmpty().lowercase()
+                val label = when { detectedMime.startsWith("image/") -> "image OCR"; detectedMime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf") -> "PDF document"; else -> "text document" }
                 draft += "\n\n[Attached $label]\n$content"
                 appMonitor.recordEvent("document_attached")
                 monitorSnapshot = appMonitor.snapshot()
@@ -443,8 +466,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }
                                     runCatching { speechLauncher.launch(speechIntent) }.onFailure { error = "Speech recognition is not available on this device." }
                                 }) { Icon(Icons.Default.Mic, "Voice input", tint = palette.muted) }
-                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf")) }) {
-                                    Icon(Icons.Default.AttachFile, "Attach text document", tint = palette.muted)
+                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*")) }) {
+                                    Icon(Icons.Default.AttachFile, "Attach text, PDF or image", tint = palette.muted)
                                 }
                                 TextButton(onClick = { settings = true }) { Text("Configure", color = palette.accent, fontSize = 12.sp) }
                                 Spacer(Modifier.weight(1f))
