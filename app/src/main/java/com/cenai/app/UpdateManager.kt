@@ -13,9 +13,11 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-data class UpdateInfo(val version: String, val notes: String, val downloadUrl: String)
+data class UpdateInfo(val version: String, val notes: String, val downloadUrl: String, val sha256: String)
 
 class UpdateManager(private val context: Context) {
     private val client = OkHttpClient.Builder().followRedirects(true)
@@ -33,10 +35,14 @@ class UpdateManager(private val context: Context) {
             val assets = release.optJSONArray("assets") ?: return@withContext null
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.optString("name").endsWith(".apk", true) } ?: return@withContext null
+            val digest = apk.optString("digest", "").removePrefix("sha256:").lowercase()
+            if (!digest.matches(Regex("[a-f0-9]{64}"))) {
+                throw IllegalStateException("This release has no valid SHA-256 asset digest. Installation is blocked for safety.")
+            }
             val latest = release.optString("tag_name").removePrefix("v")
             val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
             if (compareVersions(latest, current) <= 0) return@withContext null
-            UpdateInfo(latest, release.optString("body"), apk.optString("browser_download_url"))
+            UpdateInfo(latest, release.optString("body"), apk.optString("browser_download_url"), digest)
         }
     }
 
@@ -53,6 +59,8 @@ class UpdateManager(private val context: Context) {
     suspend fun downloadAndInstall(info: UpdateInfo, onProgress: (Int) -> Unit) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(info.downloadUrl).build()
         val apk = File(context.cacheDir, "cenai-update.apk")
+        // Never reuse a previous or partially downloaded installer package.
+        apk.delete()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IllegalStateException("APK download failed (HTTP ${response.code}).")
             val body = response.body ?: throw IllegalStateException("Empty APK download.")
@@ -71,6 +79,26 @@ class UpdateManager(private val context: Context) {
                     output.fd.sync()
                 }
             }
+        }
+        if (!apk.isFile || apk.length() <= 0L) {
+            apk.delete()
+            throw IllegalStateException("Downloaded APK is empty.")
+        }
+        val actualDigest = run {
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(apk).use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        if (!actualDigest.equals(info.sha256, ignoreCase = true)) {
+            apk.delete()
+            throw IllegalStateException("APK SHA-256 verification failed. The downloaded file was rejected.")
         }
         withContext(Dispatchers.Main) {
             if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
