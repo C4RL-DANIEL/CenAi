@@ -5,6 +5,9 @@ import android.app.Activity
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.provider.OpenableColumns
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import android.net.Uri
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -354,11 +357,35 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
 
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
-            val content = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(250_000) } }.getOrNull()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+                    if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
+                        PDFBoxResourceLoader.init(context.applicationContext)
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            PDDocument.load(input).use { document ->
+                                require(!document.isEncrypted) { "Password-protected PDFs are not supported yet." }
+                                require(document.numberOfPages in 1..300) { "PDFs must contain between 1 and 300 pages." }
+                                PDFTextStripper().apply { endPage = minOf(document.numberOfPages, 300) }
+                                    .getText(document).take(250_000)
+                            }
+                        } ?: throw IllegalStateException("Android could not open this PDF.")
+                    } else {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(250_000) }
+                            ?: throw IllegalStateException("Android could not open this document.")
+                    }
+                }
             }
-            if (content.isNullOrBlank()) error = "This file could not be read as text. Try a TXT, MD, CSV or JSON file."
-            else { draft += "\n\n[Attached document]\n$content"; appMonitor.recordEvent("document_attached"); monitorSnapshot = appMonitor.snapshot() }
+            val content = result.getOrNull()
+            if (content.isNullOrBlank()) {
+                error = result.exceptionOrNull()?.message
+                    ?: "No selectable text was found. Scanned/image-only PDFs and image attachments are not supported yet."
+            } else {
+                val label = if (context.contentResolver.getType(uri) == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) "PDF document" else "text document"
+                draft += "\n\n[Attached $label]\n$content"
+                appMonitor.recordEvent("document_attached")
+                monitorSnapshot = appMonitor.snapshot()
+            }
         }
     }
 
@@ -416,7 +443,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }
                                     runCatching { speechLauncher.launch(speechIntent) }.onFailure { error = "Speech recognition is not available on this device." }
                                 }) { Icon(Icons.Default.Mic, "Voice input", tint = palette.muted) }
-                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json")) }) {
+                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf")) }) {
                                     Icon(Icons.Default.AttachFile, "Attach text document", tint = palette.muted)
                                 }
                                 TextButton(onClick = { settings = true }) { Text("Configure", color = palette.accent, fontSize = 12.sp) }
