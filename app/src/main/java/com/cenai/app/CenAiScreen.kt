@@ -147,14 +147,14 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 for (target in targets) {
                     val targetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
                     val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
-                    val heading = if (multiAgent) "${target.label} response\\n\\n" else ""
+                    val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     persist(messages + ChatMessage("assistant", heading))
                     val response = repo.stream(target, targetModel, targetBase, listOfNotNull(
                         systemPrompt.takeIf { it.isNotBlank() },
                         if (agentPlanning) {
                             if (approvalFirst) "You are operating in CenAI's approval-first planning mode. For complex requests, produce a concise numbered plan, identify required tools or permissions, distinguish actions you can actually perform from suggestions, and ask for explicit user approval before any external, destructive, privacy-sensitive, or device-level action. Do not claim to have executed actions that you cannot access." else "You are operating in CenAI's planning mode. For complex requests, produce a concise numbered plan and clearly distinguish actions you can actually perform from suggestions. Never claim to have executed actions that you cannot access."
                         } else null
-                    ).takeIf { it.isNotEmpty() }?.joinToString("\\n\\n")?.let { ChatMessage("system", it) }?.let { listOf(it) }.orEmpty() + requestMessages) { delta ->
+                    ).takeIf { it.isNotEmpty() }?.joinToString("\n\n")?.let { ChatMessage("system", it) }?.let { listOf(it) }.orEmpty() + requestMessages) { delta ->
                         val current = messages.toMutableList()
                         val last = current.lastIndex
                         if (last >= 0 && current[last].role == "assistant") {
@@ -272,7 +272,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
                     Text("Your AI workspace.", color = TextMuted, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("What would you like to\\ncreate today?", color = TextMain, fontSize = 31.sp,
+                    Text("What would you like to\ncreate today?", color = TextMain, fontSize = 31.sp,
                         lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
