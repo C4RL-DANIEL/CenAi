@@ -61,6 +61,8 @@ class SecureKeyStore(context: Context) {
         return decrypt(stored ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null)
     }
 
+    fun putSecret(name: String, value: String) { if (value.isBlank()) prefs.edit().remove("secret_" + name).apply() else prefs.edit().putString("secret_" + name, encrypt(value)).apply() }
+    fun getSecret(name: String): String = decrypt(prefs.getString("secret_" + name, null))
     fun put(name: String, value: String) { prefs.edit().putString(name, value).apply() }
     fun get(name: String, fallback: String = "") = prefs.getString(name, fallback) ?: fallback
 }
