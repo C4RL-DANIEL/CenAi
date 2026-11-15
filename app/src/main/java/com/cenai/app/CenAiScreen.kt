@@ -12,6 +12,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import android.net.Uri
+import android.util.Base64
 import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -486,7 +487,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 runCatching {
                     val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
                     if (mime.startsWith("image/")) {
-                        extractImageText(context, uri)
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: throw IllegalStateException("Android could not read this image.")
+                        require(bytes.size in 1..4_000_000) { "Images must be 4 MB or smaller. Choose a smaller image." }
+                        val safeMime = mime.takeIf { it in setOf("image/jpeg", "image/png", "image/webp", "image/gif") }
+                            ?: throw IllegalStateException("This image format is not supported for vision requests.")
+                        val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        val ocr = runCatching { extractImageText(context, uri) }.getOrDefault("")
+                        "[[CENAI_IMAGE|$safeMime|$encoded]]" + if (ocr.isNotBlank()) "\n\n[On-device OCR reference]\n" + ocr else ""
                     } else if (mime == "application/pdf" || uri.toString().lowercase().endsWith(".pdf")) {
                         PDFBoxResourceLoader.init(context.applicationContext)
                         val selectableText = context.contentResolver.openInputStream(uri)?.use { input ->
@@ -1174,7 +1182,7 @@ private fun MessageBubble(
             ) {
                 Column(Modifier.fillMaxWidth().padding(if (ios && !user) 4.dp else 15.dp)) {
                     if (message.content.isBlank()) Text(" ", color = palette.text)
-                    else RichMessageContent(message.content, onCopyCode)
+                    else RichMessageContent(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached for vision analysis]"), onCopyCode)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
