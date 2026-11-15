@@ -7,6 +7,17 @@
   const loginEmail = () => $("email").value.trim().toLowerCase() === ADMIN_USERNAME ? ADMIN_EMAIL : $("email").value.trim();
   const status = (message, bad = false) => { $("notice").textContent = message; $("notice").classList.toggle("bad", bad); };
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  async function ensureConfig() {
+    if (window.CENAI_SUPABASE_URL && window.CENAI_SUPABASE_PUBLISHABLE_KEY) return;
+    const response = await fetch("/api/admin-config", { cache: "no-store" });
+    if (!response.ok) throw new Error("Administrator authentication is not configured.");
+    const config = await response.json();
+    window.CENAI_SUPABASE_URL = config.supabaseUrl;
+    window.CENAI_SUPABASE_PUBLISHABLE_KEY = config.publishableKey;
+    if (!window.CENAI_SUPABASE_URL || !window.CENAI_SUPABASE_PUBLISHABLE_KEY) {
+      throw new Error("Administrator authentication is not configured.");
+    }
+  }
   async function betaApi(action, payload = {}) { const response=await fetch("/api/beta",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({action,...payload})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Beta request failed");return data;}
   async function api(action, payload = {}) {
     const response = await fetch("/api/admin", { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken}, body:JSON.stringify({action,...payload}) });
@@ -16,10 +27,10 @@
   }
   async function signIn(event) {
     event.preventDefault(); $("login-error").textContent = "";
-    const url = window.CENAI_SUPABASE_URL;
-    const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) { $("login-error").textContent = "Admin authentication is not configured yet. Contact the platform owner."; return; }
     try {
+      await ensureConfig();
+      const url = window.CENAI_SUPABASE_URL;
+      const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
       const response = await fetch(url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password", {method:"POST",headers:{"Content-Type":"application/json","apikey":key},body:JSON.stringify({email:loginEmail(),password:$("password").value})});
       const data = await response.json();
       if (!response.ok || !data.access_token) throw new Error(data.msg || data.message || "Sign-in failed");
