@@ -11,6 +11,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         GuardianMonitor(applicationContext).installCrashRecorder()
+        GuardianWorker.schedule(applicationContext)
         val vault = SecureKeyStore(applicationContext)
         setContent { CenAiScreen(vault) }
         handleOAuthCallback(intent, vault)
