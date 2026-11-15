@@ -21,6 +21,10 @@ Deno.serve(async (req:Request) => {
     const {data:key,error:keyError}=await db.from("api_keys").select("id,owner_user_id,scopes,enabled").eq("key_hash",keyHash).maybeSingle();
     if(keyError) throw keyError;
     if(!key || !key.enabled) return reply(401,{error:"Invalid or revoked API key."});
+    const sinceMinute=new Date(Date.now()-60_000).toISOString();
+    const {count:recentCount,error:rateError}=await db.from("usage_events").select("id",{count:"exact",head:true}).eq("api_key_id",key.id).gte("created_at",sinceMinute);
+    if(rateError)throw rateError;
+    if((recentCount||0)>=60)return reply(429,{error:"Rate limit exceeded. Maximum 60 requests per minute per API key."});
     const path=new URL(req.url).pathname;
     if(path.endsWith("/v1/models")) {
       if(!key.scopes?.includes("models:read")) return reply(403,{error:"API key lacks models:read scope."});
@@ -37,6 +41,7 @@ Deno.serve(async (req:Request) => {
       if(error) throw error;
       const rows=events||[];
       await db.from("api_keys").update({last_used_at:new Date().toISOString()}).eq("id",key.id);
+      await db.from("usage_events").insert({owner_user_id:key.owner_user_id,api_key_id:key.id,source:"public_api",event_type:"usage.read",status:"success"});
       return reply(200,{period_days:30,total_events:rows.length,successful:rows.filter(x=>x.status==="success").length,failed:rows.filter(x=>x.status==="error").length,input_tokens:rows.reduce((n,x)=>n+(x.input_tokens||0),0),output_tokens:rows.reduce((n,x)=>n+(x.output_tokens||0),0),truncated:rows.length===1000});
     }
     return reply(404,{error:"Endpoint not found.",available:["GET /v1/models","GET /v1/usage"]});
