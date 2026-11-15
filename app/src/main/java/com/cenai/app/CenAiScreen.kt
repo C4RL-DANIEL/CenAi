@@ -51,16 +51,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-private val Ink = Color(0xFF111214)
-private val Panel = Color(0xFF1C1E21)
-private val Raised = Color(0xFF26292D)
-private val Sand = Color(0xFFD8B48A)
-private val TextMain = Color(0xFFF2F0EC)
-private val TextMuted = Color(0xFF92969D)
+@Composable
+fun CenAiScreen(vault: SecureKeyStore) {
+    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
+    CenAiTheme(style = selectedStyle) {
+        CenAiScreenContent(vault) { style ->
+            selectedStyle = style
+            vault.put("ui_style", style)
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CenAiScreen(vault: SecureKeyStore) {
+private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) -> Unit) {
+    val palette = LocalCenAiPalette.current
     val context = LocalContext.current
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
@@ -227,49 +232,49 @@ fun CenAiScreen(vault: SecureKeyStore) {
     }
 
     Scaffold(
-        containerColor = Ink,
+        containerColor = palette.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("CenAI", fontWeight = FontWeight.Bold, color = TextMain, fontSize = 20.sp)
-                        Text(provider.label + "  ·  " + model, color = TextMuted, fontSize = 11.sp, maxLines = 1)
+                        Text("CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp)
+                        Text(provider.label + "  ·  " + model, color = palette.muted, fontSize = 11.sp, maxLines = 1)
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = TextMain) }
+                    IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = palette.text) }
                 },
                 actions = {
-                    IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = Sand) }
-                    IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = TextMain) }
+                    IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
+                    IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Ink)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.background)
             )
         },
         bottomBar = {
-            Surface(color = Ink, tonalElevation = 4.dp) {
+            Surface(color = palette.background, tonalElevation = 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
                     AnimatedVisibility(visible = error.isNotBlank()) {
                         Text(error, color = Color(0xFFFF938B), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
                     }
-                    Surface(color = Panel, shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = palette.surface, shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
                             BasicTextField(
                                 value = draft, onValueChange = { draft = it },
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp, max = 150.dp).padding(8.dp),
-                                textStyle = TextStyle(color = TextMain, fontSize = 15.sp),
+                                textStyle = TextStyle(color = palette.text, fontSize = 15.sp),
                                 decorationBox = { inner ->
                                     Box {
-                                        if (draft.isEmpty()) Text("Message CenAI…", color = TextMuted)
+                                        if (draft.isEmpty()) Text("Message CenAI…", color = palette.muted)
                                         inner()
                                     }
                                 }
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json")) }) {
-                                    Icon(Icons.Default.AttachFile, "Attach text document", tint = TextMuted)
+                                    Icon(Icons.Default.AttachFile, "Attach text document", tint = palette.muted)
                                 }
-                                TextButton(onClick = { settings = true }) { Text("Configure", color = Sand, fontSize = 12.sp) }
+                                TextButton(onClick = { settings = true }) { Text("Configure", color = palette.accent, fontSize = 12.sp) }
                                 Spacer(Modifier.weight(1f))
                                 AnimatedContent(targetState = busy, label = "send-stop") { sending ->
                                     if (sending) {
@@ -288,7 +293,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                                                     startRequest(request)
                                                 }
                                             },
-                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Sand, contentColor = Ink)
+                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.accent, contentColor = palette.background)
                                         ) { Icon(Icons.Default.ArrowUpward, "Send") }
                                     }
                                 }
@@ -302,9 +307,9 @@ fun CenAiScreen(vault: SecureKeyStore) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (messages.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-                    Text("Your AI workspace.", color = TextMuted, fontSize = 13.sp)
+                    Text("Your AI workspace.", color = palette.muted, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("What would you like to\ncreate today?", color = TextMain, fontSize = 31.sp,
+                    Text("What would you like to\ncreate today?", color = palette.text, fontSize = 31.sp,
                         lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -332,7 +337,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         )
                     }
                     if (busy && messages.lastOrNull()?.content.isNullOrBlank()) {
-                        item { Text("CenAI is thinking…", color = Sand, fontSize = 12.sp) }
+                        item { Text("CenAI is thinking…", color = palette.accent, fontSize = 12.sp) }
                     }
                 }
             }
@@ -340,27 +345,27 @@ fun CenAiScreen(vault: SecureKeyStore) {
     }
 
     if (historyOpen) {
-        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = Panel) {
+        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = palette.surface) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Your conversations", color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = Sand) }
+                TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
-            if (conversations.isEmpty()) Text("Your saved chats will appear here.", color = TextMuted, modifier = Modifier.padding(24.dp))
+            if (conversations.isEmpty()) Text("Your saved chats will appear here.", color = palette.muted, modifier = Modifier.padding(24.dp))
             conversations.forEach { chat ->
                 Row(Modifier.fillMaxWidth().clickable {
                     activeJob?.cancel(); busy = false
                     currentId = chat.id; messages = chat.messages.toList(); historyOpen = false
                 }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(chat.title, color = TextMain, maxLines = 1)
-                        Text("${chat.messages.size} messages", color = TextMuted, fontSize = 11.sp)
+                        Text(chat.title, color = palette.text, maxLines = 1)
+                        Text("${chat.messages.size} messages", color = palette.muted, fontSize = 11.sp)
                     }
                     IconButton(onClick = {
                         conversations = conversations.filterNot { it.id == chat.id }.toMutableList()
                         store.save(conversations)
                         if (currentId == chat.id) newChat()
-                    }) { Icon(Icons.Default.Delete, "Delete conversation", tint = TextMuted) }
+                    }) { Icon(Icons.Default.Delete, "Delete conversation", tint = palette.muted) }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -369,17 +374,45 @@ fun CenAiScreen(vault: SecureKeyStore) {
 
     if (settings) {
         var expanded by remember { mutableStateOf(false) }
+        var themeExpanded by remember { mutableStateOf(false) }
+        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
         AlertDialog(
             onDismissRequest = { settings = false },
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("CenAI settings", color = TextMain, fontWeight = FontWeight.Bold)
-                    Text("Providers · Agents · Security · Updates", color = TextMuted, fontSize = 11.sp)
+                    Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
+                    Text("Providers · Agents · Security · Updates", color = palette.muted, fontSize = 11.sp)
                 }
             },
             text = {
                 Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("PROVIDER", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
+                        OutlinedTextField(
+                            value = when (uiStyle) {
+                                "MATERIAL" -> "Android · Material 3"
+                                "IOS" -> "iOS-inspired"
+                                "FIGMA" -> "Figma design"
+                                else -> "CenAI Default"
+                            },
+                            onValueChange = {}, readOnly = true, label = { Text("Interface style") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(themeExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
+                            listOf("DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS-inspired", "FIGMA" to "Figma design").forEach { (key, label) ->
+                                DropdownMenuItem(text = { Text(label) }, onClick = { uiStyle = key; themeExpanded = false })
+                            }
+                        }
+                    }
+                    Text(when (uiStyle) {
+                        "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
+                        "IOS" -> "Rounded cards, softer surfaces and iOS-style spacing."
+                        "FIGMA" -> "Figma-inspired violet and indigo design tokens. Connect a Figma file to import its exact assets."
+                        else -> "The original CenAI dark workspace."
+                    }, color = palette.muted, fontSize = 10.sp)
+                    HorizontalDivider(color = palette.raised)
+                    Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
@@ -405,35 +438,35 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         OutlinedTextField(value = customParams, onValueChange = { customParams = it },
                             label = { Text("Extra request parameters (JSON)") }, minLines = 2)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = TextMain); Text("Ask every configured provider", color = TextMuted, fontSize = 10.sp) }
+                        Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = palette.text); Text("Ask every configured provider", color = palette.muted, fontSize = 10.sp) }
                         Switch(checked = multiAgent, onCheckedChange = { multiAgent = it })
                     }
-                    HorizontalDivider(color = Raised)
-                    Text("AGENT WORKSPACE", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    HorizontalDivider(color = palette.raised)
+                    Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Agent planning mode", color = TextMain)
-                            Text("Break complex requests into steps and track what needs doing", color = TextMuted, fontSize = 10.sp)
+                            Text("Agent planning mode", color = palette.text)
+                            Text("Break complex requests into steps and track what needs doing", color = palette.muted, fontSize = 10.sp)
                         }
                         Switch(checked = agentPlanning, onCheckedChange = { agentPlanning = it })
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Approval-first actions", color = TextMain)
-                            Text("Require your confirmation before external or destructive actions", color = TextMuted, fontSize = 10.sp)
+                            Text("Approval-first actions", color = palette.text)
+                            Text("Require your confirmation before external or destructive actions", color = palette.muted, fontSize = 10.sp)
                         }
                         Switch(checked = approvalFirst, onCheckedChange = { approvalFirst = it }, enabled = agentPlanning)
                     }
-                    Text("Planning mode currently creates structured plans in the AI response. Direct device control, background execution and external tool actions are not enabled in this build.", color = TextMuted, fontSize = 10.sp)
-                    HorizontalDivider(color = Raised)
-                    Text("ACCOUNT CONNECTIONS", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Surface(color = Raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Planning mode currently creates structured plans in the AI response. Direct device control, background execution and external tool actions are not enabled in this build.", color = palette.muted, fontSize = 10.sp)
+                    HorizontalDivider(color = palette.raised)
+                    Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Google Gemini account", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) Sand else TextMuted, fontSize = 11.sp)
+                            Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
                             OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             OutlinedTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                            Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     vault.put("google_oauth_client_id", googleOAuthClientId)
@@ -451,8 +484,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         label = { Text("Maximum output tokens") }, singleLine = true)
                     OutlinedTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
                         label = { Text("System instructions (optional)") }, minLines = 2)
-                    Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = TextMuted, fontSize = 10.sp)
-                    if (info.isNotBlank()) Text(info, color = Sand, fontSize = 11.sp)
+                    Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = palette.muted, fontSize = 10.sp)
+                    if (info.isNotBlank()) Text(info, color = palette.accent, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
                         vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
                         testBusy = true; info = "Testing connection…"
@@ -464,8 +497,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
                             finally { testBusy = false }
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text(if (testBusy) "Testing…" else "Test connection") }
-                    HorizontalDivider(color = Raised)
-                    Text("SOFTWARE UPDATE", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    HorizontalDivider(color = palette.raised)
+                    Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     OutlinedButton(onClick = {
                         updateDialog = true; updateBusy = true; updateStatus = "Checking GitHub Releases…"
                         scope.launch {
@@ -476,11 +509,12 @@ fun CenAiScreen(vault: SecureKeyStore) {
                             finally { updateBusy = false }
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text("Check for software updates") }
-                    Text("Current version 0.2.0 · Updates download and install inside CenAI. Android will ask you to approve installation.", color = TextMuted, fontSize = 10.sp)
+                    Text("Current version 0.2.0 · Updates download and install inside CenAI. Android will ask you to approve installation.", color = palette.muted, fontSize = 10.sp)
                 }
             },
             confirmButton = { TextButton(onClick = {
                 Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
+                onUiStyleChange(uiStyle)
                 vault.put("provider", provider.name)
                 vault.put("model", model); vault.put("model_${provider.name}", model)
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
@@ -488,15 +522,16 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 vault.put("agent_planning", agentPlanning.toString())
                 vault.put("approval_first", approvalFirst.toString())
                 vault.put("google_oauth_client_id", googleOAuthClientId)
+                vault.put("google_cloud_project_id", googleCloudProjectId)
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
-            }) { Text("Save settings", color = Sand) } },
+            }) { Text("Save settings", color = palette.accent) } },
             dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } },
-            containerColor = Panel,
-            titleContentColor = TextMain,
-            textContentColor = TextMain,
+            containerColor = palette.surface,
+            titleContentColor = palette.text,
+            textContentColor = palette.text,
             shape = RoundedCornerShape(24.dp)
         )
     }
@@ -519,9 +554,9 @@ fun CenAiScreen(vault: SecureKeyStore) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(updateStatus)
-                    updateInfo?.let { Text("Version ${it.version}", color = Sand, fontWeight = FontWeight.Bold) }
+                    updateInfo?.let { Text("Version ${it.version}", color = palette.accent, fontWeight = FontWeight.Bold) }
                     if (updateBusy && updateProgress > 0) LinearProgressIndicator(progress = updateProgress / 100f, modifier = Modifier.fillMaxWidth())
-                    if (!updateInfo?.notes.isNullOrBlank()) Text(updateInfo?.notes.orEmpty().take(800), color = TextMuted, fontSize = 12.sp)
+                    if (!updateInfo?.notes.isNullOrBlank()) Text(updateInfo?.notes.orEmpty().take(800), color = palette.muted, fontSize = 12.sp)
                 }
             },
             confirmButton = {
@@ -534,7 +569,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         } catch (e: Exception) { updateStatus = e.message ?: "Update installation failed." }
                         finally { updateBusy = false }
                     }
-                }) { Text("Download and install", color = Sand) }
+                }) { Text("Download and install", color = palette.accent) }
                 else TextButton(onClick = { updateDialog = false }) { Text("Done") }
             },
             dismissButton = { if (updateInfo != null) TextButton(onClick = { updateDialog = false }) { Text("Later") } }
@@ -545,8 +580,9 @@ fun CenAiScreen(vault: SecureKeyStore) {
 
 @Composable
 private fun SuggestionChip(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = Panel, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Raised)) {
-        Text(label, color = TextMain, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp))
+    val palette = LocalCenAiPalette.current
+    Surface(onClick = onClick, color = palette.surface, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)) {
+        Text(label, color = palette.text, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp))
     }
 }
 
@@ -555,27 +591,28 @@ private fun MessageBubble(
     message: ChatMessage, index: Int, last: Boolean, busy: Boolean,
     onCopy: () -> Unit, onCopyCode: (String) -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
 ) {
+    val palette = LocalCenAiPalette.current
     val user = message.role == "user"
     AnimatedVisibility(
         visible = true,
         enter = fadeIn(tween(280)) + slideInVertically(tween(280)) { it / 10 }
     ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-        Text(if (user) "YOU" else "CENAI", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(if (user) "YOU" else "CENAI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Surface(
-            color = if (user) Raised else Panel,
+            color = if (user) palette.raised else palette.surface,
             shape = RoundedCornerShape(if (user) 20.dp else 6.dp, 20.dp, 20.dp, 20.dp),
             modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
         ) {
             Column(Modifier.fillMaxWidth().padding(15.dp)) {
-                if (message.content.isBlank()) Text(" ", color = TextMain)
+                if (message.content.isBlank()) Text(" ", color = palette.text)
                 else RichMessageContent(message.content, onCopyCode)
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = TextMuted); Spacer(Modifier.width(4.dp)); Text("Copy", color = TextMuted, fontSize = 10.sp) }
-            if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = TextMuted, fontSize = 10.sp) }
-            if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = TextMuted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = TextMuted, fontSize = 10.sp) }
+            TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
+            if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
+            if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
         }
     }
     }
