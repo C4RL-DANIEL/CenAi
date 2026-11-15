@@ -971,6 +971,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         try {
                                             val data = cloud.call("analytics_dashboard", JSONObject().put("days", 30))
                                             val statuses = data.optJSONObject("statuses") ?: JSONObject()
+                                            val health = data.optJSONObject("guardian") ?: JSONObject()
                                             val providers = data.optJSONArray("providers") ?: org.json.JSONArray()
                                             val providerLines = (0 until providers.length()).map { index ->
                                                 val item = providers.getJSONObject(index)
@@ -979,7 +980,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             adminAnalytics = "Last 30 days · " + data.optInt("total") + " events" + (if (data.optBoolean("truncated")) " (limited to 5,000)" else "") + "\n" +
                                                 "Success " + statuses.optInt("success") + " · Errors " + statuses.optInt("error") + " · Cancelled " + statuses.optInt("cancelled") + "\n" +
                                                 "Average latency " + data.optLong("averageLatencyMs") + " ms · P95 " + data.optLong("p95LatencyMs") + " ms\n" +
-                                                providerLines.joinToString("\n").ifBlank { "No provider data yet." }
+                                                providerLines.joinToString("\n").ifBlank { "No provider data yet." } + "\n" +
+                                                "Guardian reports " + health.optInt("reports") + " · Avg battery " + health.opt("averageBatteryPercent") + "% · Avg RAM " + health.opt("averageAvailableRamMb") + " MB"
                                         } catch (e: Exception) {
                                             adminAnalytics = e.message ?: "Administrator analytics could not be loaded."
                                         } finally { cloudBusy = false }
