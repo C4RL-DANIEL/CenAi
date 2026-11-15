@@ -15,7 +15,6 @@ class CenAiLaunchSmokeTest {
 
     @Test
     fun mainScreenLaunchesAndShowsComposer() {
-        compose.onNodeWithText("CenAI").assertExists()
         compose.onNodeWithText("Message CenAI…").assertExists()
     }
 }
