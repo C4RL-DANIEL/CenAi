@@ -122,7 +122,7 @@ Deno.serve(async (req: Request) => {
       if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
       const id = String(body.id ?? "");
       if (!/^[0-9a-f-]{36}$/i.test(id)) return fail(400, "Invalid API key identifier");
-      const { data, error } = await adminDb.from("api_keys").update({ enabled:false, revoked_at:new Date().toISOString() }).eq("id",id).select("id,name,enabled,revoked_at").maybeSingle();
+      const { data, error } = await adminDb.from("api_keys").update({ enabled:false, revoked_at:new Date().toISOString() }).eq("id",id).eq("owner_user_id",user.id).select("id,name,enabled,revoked_at").maybeSingle();
       if (error) throw error;
       if (!data) return fail(404, "API key not found");
       await audit(user, "api.key.revoked", { api_key_id:id });
