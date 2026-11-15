@@ -392,8 +392,12 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 }
             },
             confirmButton = { TextButton(onClick = {
-                vault.saveApiKey(key, provider)
-                vault.put("provider", provider.name); vault.put("model", model); vault.put("base_url", base)
+                Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
+                vault.put("provider", provider.name)
+                vault.put("model", model); vault.put("model_${provider.name}", model)
+                vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
+                vault.put("multi_agent", multiAgent.toString())
+                vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
