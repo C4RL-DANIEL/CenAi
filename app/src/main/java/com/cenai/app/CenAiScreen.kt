@@ -286,6 +286,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                         MessageBubble(
                             message = message, index = index, last = index == messages.lastIndex,
                             busy = busy, onCopy = { clipboard.setText(AnnotatedString(message.content)); info = "Copied to clipboard." },
+                            onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
                             onEdit = { editIndex = index; editText = message.content },
                             onRegenerate = {
                                 val before = messages.takeWhileIndexed { i, _ -> i < index }
@@ -465,7 +466,7 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 @Composable
 private fun MessageBubble(
     message: ChatMessage, index: Int, last: Boolean, busy: Boolean,
-    onCopy: () -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
+    onCopy: () -> Unit, onCopyCode: (String) -> Unit, onEdit: () -> Unit, onRegenerate: () -> Unit
 ) {
     val user = message.role == "user"
     AnimatedVisibility(
@@ -479,8 +480,10 @@ private fun MessageBubble(
             shape = RoundedCornerShape(if (user) 20.dp else 6.dp, 20.dp, 20.dp, 20.dp),
             modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
         ) {
-            Text(message.content.ifBlank { " " }, color = TextMain, fontSize = 15.sp, lineHeight = 23.sp,
-                modifier = Modifier.padding(15.dp))
+            Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                if (message.content.isBlank()) Text(" ", color = TextMain)
+                else RichMessageContent(message.content, onCopyCode)
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = TextMuted); Spacer(Modifier.width(4.dp)); Text("Copy", color = TextMuted, fontSize = 10.sp) }
