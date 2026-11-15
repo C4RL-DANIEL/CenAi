@@ -74,6 +74,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
     var approvalFirst by remember { mutableStateOf(vault.get("approval_first", "true").toBoolean()) }
+    var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
@@ -396,9 +397,19 @@ fun CenAiScreen(vault: SecureKeyStore) {
                     HorizontalDivider(color = Raised)
                     Text("ACCOUNT CONNECTIONS", color = Sand, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = Raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text("Gemini and other provider accounts", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("Official account sign-in is supported only where a provider publishes an OAuth/API flow for third-party apps. Signing into the consumer Gemini app or having a Gemini subscription does not automatically grant Gemini API access. This version still uses provider API credentials; OAuth support needs registered app credentials and provider approval.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Google Gemini account", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) Sand else TextMuted, fontSize = 11.sp)
+                            OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Text("Create an OAuth client in Google Cloud for this Android app, enable the Generative Language API, configure the consent screen and add the redirect URI: com.cenai.app:/oauth2redirect. Google may require package/SHA-1 verification and app review. Gemini consumer subscriptions do not automatically include API access.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    vault.put("google_oauth_client_id", googleOAuthClientId)
+                                    runCatching { context.startActivity(GoogleGeminiOAuth(vault).authorizationIntent(googleOAuthClientId)) }
+                                        .onFailure { info = it.message ?: "Could not start Google sign-in." }
+                                }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
+                                OutlinedButton(onClick = { GoogleGeminiOAuth(vault).disconnect(); info = "Google account disconnected." }) { Text("Disconnect") }
+                            }
                         }
                     }
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
@@ -442,6 +453,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
                 vault.put("multi_agent", multiAgent.toString())
                 vault.put("agent_planning", agentPlanning.toString())
                 vault.put("approval_first", approvalFirst.toString())
+                vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("system_prompt", systemPrompt); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
