@@ -46,7 +46,7 @@ jobs:
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
-          grep -q 'cenai-website.aglibotcarldaniel.workers.dev/reset-password' website/reset-password.js
+          grep -q 'cenai-website.cenai-app.workers.dev/reset-password' website/reset-password.js
           grep -q 'site_pages_public_read' supabase/migrations/20261116135000_tighten_cms_and_quota_table_access.sql
           grep -q 'cenai_issue_email_otp_for_user' supabase/migrations/20261116135500_secure_email_otp_service_role_only.sql
           echo "Cloudflare site build and backend route checks passed."
