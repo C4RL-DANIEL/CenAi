@@ -1,7 +1,11 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   let accessToken = null;
+  let refreshToken = null;
   let userEmail = "";
+  let mfaFactorId = "";
+  let mfaMode = "";
+  let sitePages = [];
   const ADMIN_USERNAME = "cenai";
   const ADMIN_EMAIL = "aglibotcarldaniel@gmail.com";
   const loginEmail = () => $("email").value.trim().toLowerCase() === ADMIN_USERNAME ? ADMIN_EMAIL : $("email").value.trim();
@@ -38,6 +42,79 @@
     if (!response.ok) throw new Error(data.error || "Request failed");
     return data;
   }
+  function jwtAal(token) {
+    try {
+      const part = token.split(".")[1] || "";
+      const normalized = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+      return JSON.parse(atob(normalized)).aal || "aal1";
+    } catch { return "aal1"; }
+  }
+  async function authMfa(path, method = "GET", body) {
+    const url = window.CENAI_SUPABASE_URL.replace(/\/$/, "");
+    const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
+    const response = await fetch(url + "/auth/v1/" + path, {
+      method,
+      headers: { "Content-Type": "application/json", "apikey": key, "Authorization": "Bearer " + accessToken },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.msg || data.message || data.error_description || "Authenticator verification failed.");
+    return data;
+  }
+  async function beginMfa() {
+    try {
+      await api("admin_preflight");
+      if (jwtAal(accessToken) === "aal2") {
+        $("mfa-gate").hidden = true; $("dashboard").hidden = false;
+        await load("overview"); return;
+      }
+      const factors = await authMfa("factors");
+      const verified = (factors.totp || []).filter(f => f.status === "verified");
+      $("mfa-qr").hidden = true; $("mfa-secret-wrap").hidden = true;
+      if (verified.length) {
+        mfaFactorId = verified[0].id; mfaMode = "challenge";
+        $("mfa-instructions").textContent = "Enter the current six-digit code from your authenticator app to continue.";
+      } else {
+        const enrolled = await authMfa("factors", "POST", { factor_type: "totp", friendly_name: "CenAI Administrator" });
+        mfaFactorId = enrolled.id; mfaMode = "enroll";
+        if (!mfaFactorId) throw new Error("Supabase did not return an authenticator factor.");
+        const qr = enrolled.totp?.qr_code || "";
+        if (qr) {
+          $("mfa-qr").src = qr.startsWith("data:") ? qr : "data:image/svg+xml;charset=utf-8," + encodeURIComponent(qr);
+          $("mfa-qr").hidden = false;
+        }
+        if (enrolled.totp?.secret) {
+          $("mfa-secret").textContent = enrolled.totp.secret;
+          $("mfa-secret-wrap").hidden = false;
+        }
+        $("mfa-instructions").textContent = "Scan this QR code with an authenticator app, then enter the generated six-digit code below. Save the secret securely if you need manual setup.";
+      }
+      $("mfa-status").textContent = "";
+    } catch (error) {
+      $("mfa-status").textContent = error.message;
+    }
+  }
+  async function verifyMfa() {
+    const code = $("mfa-code").value.trim();
+    if (!/^\d{6}$/.test(code) || !mfaFactorId) { $("mfa-status").textContent = "Enter a valid six-digit code."; return; }
+    $("mfa-verify").disabled = true; $("mfa-status").textContent = "Verifying authenticator…";
+    try {
+      const challenge = await authMfa("factors/" + encodeURIComponent(mfaFactorId) + "/challenge", "POST", {});
+      const verified = await authMfa("factors/" + encodeURIComponent(mfaFactorId) + "/verify", "POST", { challenge_id: challenge.id, code });
+      if (verified.access_token) accessToken = verified.access_token;
+      if (verified.refresh_token) refreshToken = verified.refresh_token;
+      if (jwtAal(accessToken) !== "aal2" && refreshToken) {
+        const refreshed = await authMfa("token?grant_type=refresh_token", "POST", { refresh_token: refreshToken });
+        if (refreshed.access_token) accessToken = refreshed.access_token;
+        if (refreshed.refresh_token) refreshToken = refreshed.refresh_token;
+      }
+      if (jwtAal(accessToken) !== "aal2") throw new Error("Authenticator code was accepted but the session has not reached AAL2. Please sign in and retry.");
+      $("mfa-gate").hidden = true; $("dashboard").hidden = false; $("mfa-code").value = "";
+      status("Authenticator verified · signed in as " + userEmail + ".");
+      await load("overview");
+    } catch (error) { $("mfa-status").textContent = error.message; }
+    finally { $("mfa-verify").disabled = false; }
+  }
   async function signIn(event) {
     event.preventDefault(); $("login-error").textContent = "";
     try {
@@ -47,9 +124,9 @@
       const response = await fetch(url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password", {method:"POST",headers:{"Content-Type":"application/json","apikey":key},body:JSON.stringify({email:loginEmail(),password:$("password").value})});
       const data = await response.json();
       if (!response.ok || !data.access_token) throw new Error(data.msg || data.message || "Sign-in failed");
-      accessToken = data.access_token; userEmail = data.user?.email || loginEmail();
-      $("login").hidden = true; $("dashboard").hidden = false;
-      await load("overview");
+      accessToken = data.access_token; refreshToken = data.refresh_token || null; userEmail = data.user?.email || loginEmail();
+      $("login").hidden = true; $("dashboard").hidden = true; $("mfa-gate").hidden = false;
+      await beginMfa();
     } catch (error) { accessToken = null; $("login-error").textContent = error.message; }
   }
   async function resetPassword() {
@@ -120,9 +197,9 @@
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
+    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = ["beta","feedback","models","api-keys","analytics","billing"].includes(tab) ? {} : await api(tab);
+      const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
@@ -136,6 +213,8 @@
       else if (tab === "models") await loadModels();
       else if (tab === "api-keys") await loadApiKeys();
       else if (tab === "analytics") await loadAnalytics();
+      else if (tab === "website") await loadSitePages();
+      else if (tab === "quotas") await loadQuotas();
       else if (tab === "billing") await loadBillingPlans();
       else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
@@ -158,9 +237,37 @@
     const d=await api("api_keys");
     $("api-key-content").innerHTML=(d.apiKeys||[]).map(k=>'<div class="item"><div><b>'+esc(k.name)+' · '+esc(k.key_prefix)+'…</b><small>'+esc(k.created_at)+' · Last used: '+esc(k.last_used_at||"Never")+'</small></div>'+(k.enabled?'<button data-revoke-key="'+esc(k.id)+'">Revoke</button>':'<span class="pill">Revoked</span>')).join("")||"<p>No API keys created.</p>";
   }
+  function analyticsLineChart(daily) {
+    if (!daily.length) return '<svg class="analytics-line" viewBox="0 0 680 190" role="img" aria-label="Request activity chart awaiting telemetry"><line x1="24" y1="24" x2="24" y2="166" stroke="#d9e1e8"/><line x1="24" y1="166" x2="656" y2="166" stroke="#d9e1e8"/><line x1="24" y1="95" x2="656" y2="95" stroke="#edf1f4" stroke-dasharray="4 5"/><text x="340" y="84" text-anchor="middle" fill="#8793a1" font-size="13">No telemetry data yet</text><text x="340" y="106" text-anchor="middle" fill="#a1acb7" font-size="10">Charts populate as users opt in</text></svg><div class="chart-labels"><span>Start</span><span>Today</span></div>';
+    const width=680,height=190,pad=24,max=Math.max(1,...daily.map(x=>Number(x.requests)||0));
+    const points=daily.map((x,i)=>{const px=pad+(daily.length===1?(width-pad*2)/2:i*(width-pad*2)/(daily.length-1));const py=height-pad-(Number(x.requests)||0)/max*(height-pad*2);return px.toFixed(1)+","+py.toFixed(1);}).join(" ");
+    const labels=daily.filter((x,i)=>i===0||i===daily.length-1||i%Math.ceil(daily.length/5)===0).map(x=>'<span>'+esc(String(x.date).slice(5))+'</span>').join("");
+    return '<svg class="analytics-line" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Requests per day line chart"><line x1="'+pad+'" y1="'+(height-pad)+'" x2="'+(width-pad)+'" y2="'+(height-pad)+'" stroke="#d9e1e8"/><line x1="'+pad+'" y1="'+(height/2)+'" x2="'+(width-pad)+'" y2="'+(height/2)+'" stroke="#edf1f4"/><polyline points="'+points+'" fill="none" stroke="#6382dc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+daily.map((x,i)=>{const px=pad+(daily.length===1?(width-pad*2)/2:i*(width-pad*2)/(daily.length-1));const py=height-pad-(Number(x.requests)||0)/max*(height-pad*2);return '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="4" fill="#fff" stroke="#4569d4" stroke-width="2"><title>'+esc(x.date)+': '+Number(x.requests||0)+' requests</title></circle>';}).join("")+'</svg><div class="chart-labels">'+labels+'</div>';
+  }
+  function analyticsBars(items, valueKey, labelKey) {
+    if (!items.length) return '<div class="analytics-bars"><div class="analytics-bar-row"><span>Awaiting data</span><div class="bar-track"><i style="width:0%"></i></div><b>0</b></div></div><div class="chart-empty">No recorded events in this period.</div>';
+    const max=Math.max(1,...items.map(x=>Number(x[valueKey])||0));
+    return '<div class="analytics-bars">'+items.slice(0,7).map(x=>'<div class="analytics-bar-row"><span>'+esc(x[labelKey])+'</span><div class="bar-track"><i style="width:'+Math.max(2,(Number(x[valueKey])||0)/max*100)+'%"></i></div><b>'+Number(x[valueKey]||0).toLocaleString()+'</b></div>').join("")+'</div>';
+  }
   async function loadAnalytics() {
-    const d=await api("usage_analytics",{days:Number($("analytics-days").value)});
-    $("analytics-content").innerHTML=[row("Requests",String(d.total||0),d.days+" days"),row("Successful / failed",(d.succeeded||0)+" / "+(d.failed||0),"events"),row("Input / output tokens",(d.inputTokens||0)+" / "+(d.outputTokens||0),"estimated/recorded"),row("Average latency",String(d.averageLatencyMs||0)+" ms","aggregate"),row("Provider breakdown",Object.entries(d.providers||{}).map(([k,v])=>k+": "+v).join(" · ")||"No events","source")].join("")+(d.truncated?"<p class='muted'>Showing the most recent 5,000 events.</p>":"");
+    const d=await api("analytics_dashboard",{days:Number($("analytics-days").value)});
+    const metrics=[["Requests",d.total||0,d.days+" days"],["Successful",d.statuses?.success||0,"successful events"],["Failed",d.statuses?.error||0,"failed events"],["Avg. latency",(d.averageLatencyMs||0)+" ms","P95 "+(d.p95LatencyMs||0)+" ms"]];
+    $("analytics-content").innerHTML='<div class="analytics-metrics">'+metrics.map(x=>'<div class="analytics-metric"><small>'+x[0]+'</small><b>'+x[1]+'</b><span>'+x[2]+'</span></div>').join("")+'</div><div class="analytics-chart-grid"><article class="chart-card chart-wide"><div class="chart-title"><b>Request activity</b><small>Daily events · UTC</small></div>'+analyticsLineChart(d.daily||[])+'</article><article class="chart-card"><div class="chart-title"><b>Provider usage</b><small>Requests by provider</small></div>'+analyticsBars(d.providers||[],"requests","name")+'</article><article class="chart-card"><div class="chart-title"><b>Failure categories</b><small>Recorded error events</small></div>'+analyticsBars(d.failureCategories||[],"count","category")+'</article></div>'+(d.truncated?'<p class="muted">Showing the most recent 5,000 events.</p>':"");
+  }
+  async function loadSitePages() {
+    const d=await api("site_pages"); sitePages=d.pages||[];
+    $("page-picker").innerHTML='<option value="">Select a saved page</option>'+sitePages.map(p=>'<option value="'+esc(p.slug)+'">'+esc(p.title)+' · '+esc(p.slug)+'</option>').join("");
+    $("site-page-content").innerHTML=sitePages.map(p=>row(p.title,p.slug+" · "+(p.published?"published":"draft")+" · "+p.updated_at,p.published?"live":"draft")+(p.published?'<p><a class="inline-link" href="/pages/'+encodeURIComponent(p.slug)+'" target="_blank" rel="noopener">Open published page ↗</a></p>':"")).join("")||"<p>No editable pages yet.</p>";
+    const selected=sitePages.find(p=>p.slug===$("page-slug").value)||sitePages.find(p=>p.slug==="home")||sitePages[0];
+    if(selected) fillPage(selected);
+  }
+  function fillPage(page) {
+    $("page-slug").value=page.slug; $("page-title").value=page.title||""; $("page-description").value=page.description||"";
+    $("page-content-json").value=JSON.stringify(Object.fromEntries(Object.entries(page.content||{}).filter(([key])=>key!=="bodyMarkdown"&&key!=="body")),null,2); $("page-body").value=page.content?.bodyMarkdown||page.content?.body||""; $("page-published").checked=page.published===true; $("page-picker").value=page.slug;
+  }
+  async function loadQuotas() {
+    const d=await api("quota_list");
+    $("quota-content").innerHTML='<p class="muted">Default policy: '+d.defaults.dailyRequestLimit+' requests/day and '+Number(d.defaults.monthlyTokenLimit).toLocaleString()+' public API tokens/month.</p>'+(d.policies||[]).map(p=>row(p.owner_user_id,"Daily "+p.daily_request_limit+" requests · Monthly "+Number(p.monthly_token_limit).toLocaleString()+" tokens · "+p.updated_at,p.enabled?"enforced":"disabled")).join("")||"<p>No per-user quota overrides. Default policy applies.</p>";
   }
   async function loadBeta(){const d=await betaApi("admin_list",{status:$("beta-filter").value});$("beta-content").innerHTML=(d.applications||[]).map(a=>'<article class="item beta-item"><div><b>'+esc(a.display_name)+' · '+esc(a.email)+'</b><small>'+esc(a.status)+' · '+esc(a.experience)+' · '+esc(a.created_at)+'</small><p>'+esc(a.motivation)+'</p><small>Review note: '+esc(a.reviewer_note||"—")+'</small></div><div class="beta-actions" data-id="'+esc(a.id)+'">'+(a.status!=="approved"?'<button data-review="approved">Approve</button>':"")+(a.status!=="rejected"?'<button data-review="rejected">Reject</button>':"")+(a.status==="approved"?'<button data-review="revoked">Revoke</button>':"")+'</div></article>').join("")||"<p>No applications in this filter.</p>";}
   $("beta-filter")?.addEventListener("change",()=>loadBeta().catch(e=>status(e.message,true)));
@@ -193,12 +300,19 @@
   $("api-key-form")?.addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("api_key_create",{name:$("api-key-name").value});$("api-key-secret").textContent=d.secret;$("api-key-secret").hidden=false;$("copy-api-key").hidden=false;$("api-key-name").value="";status("API key created. Copy it now; it will not be shown again.");await loadApiKeys();}catch(err){status(err.message,true);}});
   $("copy-api-key")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("api-key-secret").textContent);status("API key copied.");}catch(e){status("Clipboard access unavailable; copy the displayed key manually.",true);}});
   $("api-key-content")?.addEventListener("click",async e=>{const b=e.target.closest("[data-revoke-key]");if(!b)return;if(!confirm("Revoke this API key immediately?"))return;try{await api("api_key_revoke",{id:b.dataset.revokeKey});status("API key revoked.");await loadApiKeys();}catch(err){status(err.message,true);}});
+  $("page-form")?.addEventListener("submit",async e=>{e.preventDefault();try{let content;try{content=JSON.parse($("page-content-json").value||"{}");}catch{throw new Error("Page content must be valid JSON.");}content.bodyMarkdown=$("page-body").value;const d=await api("site_page_save",{slug:$("page-slug").value,title:$("page-title").value,description:$("page-description").value,content,published:$("page-published").checked});status("Website page saved. "+(d.page.published?"It is published.":"It remains a draft."));await loadSitePages();}catch(err){status(err.message,true);}});
+  $("page-picker")?.addEventListener("change",()=>{const page=sitePages.find(p=>p.slug===$("page-picker").value);if(page)fillPage(page);});
+  $("page-refresh")?.addEventListener("click",()=>loadSitePages().catch(e=>status(e.message,true)));
+  $("quota-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("quota_update",{ownerUserId:$("quota-user-id").value.trim(),dailyRequestLimit:Number($("quota-daily").value),monthlyTokenLimit:Number($("quota-monthly").value),enabled:$("quota-enabled").checked});status("Public API quota policy saved and audited.");await loadQuotas();}catch(err){status(err.message,true);}});
+  $("mfa-verify")?.addEventListener("click",verifyMfa);
+  $("mfa-signout")?.addEventListener("click",()=>{accessToken=null;refreshToken=null;userEmail="";mfaFactorId="";$("mfa-gate").hidden=true;$("login").hidden=false;$("mfa-code").value="";$("mfa-status").textContent="";});
+  $("mfa-code")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
   $("analytics-refresh")?.addEventListener("click",()=>loadAnalytics().catch(e=>status(e.message,true)));
   $("analytics-days")?.addEventListener("change",()=>loadAnalytics().catch(e=>status(e.message,true)));
   $("login-form").addEventListener("submit",signIn);
   $("password-form")?.addEventListener("submit",changePassword);
   $("reset-password")?.addEventListener("click",resetPassword);
-  $("signout").addEventListener("click",()=>{accessToken=null;userEmail="";$("dashboard").hidden=true;$("login").hidden=false;$("password").value="";});
+  $("signout").addEventListener("click",()=>{accessToken=null;refreshToken=null;userEmail="";mfaFactorId="";$("dashboard").hidden=true;$("mfa-gate").hidden=true;$("login").hidden=false;$("password").value="";$("mfa-code").value="";});
   document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>load(b.dataset.tab)));
   $("flags-content").addEventListener("change",async e=>{const key=e.target.dataset.flag;if(!key)return;try{await api("update_flag",{key,enabled:e.target.checked});status("Feature flag saved and audited.");}catch(err){e.target.checked=!e.target.checked;status(err.message,true);}});
   fetch("/api/admin-config").then(r=>r.ok?r.json():{}).then(c=>{window.CENAI_SUPABASE_URL=c.supabaseUrl;window.CENAI_SUPABASE_PUBLISHABLE_KEY=c.publishableKey;}).catch(()=>{});
