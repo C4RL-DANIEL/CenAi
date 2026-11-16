@@ -52,12 +52,12 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             if (dark) Color(0xFFB7A8CC) else Color(0xFF766A88)
         )
         else -> CenAiPalette(
-            if (dark) Color(0xFF111214) else Color(0xFFF4F3F7),
-            if (dark) Color(0xFF1C1E21) else Color.White,
-            if (dark) Color(0xFF26292D) else Color(0xFFE8E6ED),
-            if (dark) Color(0xFFD8B48A) else Color(0xFF7458A6),
-            if (dark) Color(0xFFF2F0EC) else Color(0xFF211F26),
-            if (dark) Color(0xFF92969D) else Color(0xFF6E6A76)
+            if (dark) Color(0xFF0B1020) else Color(0xFFF5F7FC),
+            if (dark) Color(0xFF121B2D) else Color(0xFFFFFFFF),
+            if (dark) Color(0xFF1B2940) else Color(0xFFE8EDF7),
+            if (dark) Color(0xFF8DE4DC) else Color(0xFF365FCE),
+            if (dark) Color(0xFFF0F5FF) else Color(0xFF18243A),
+            if (dark) Color(0xFF9EACC4) else Color(0xFF65738B)
         )
     }
     val colors = when {
