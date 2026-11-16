@@ -75,3 +75,16 @@ jobs:
           grep -q '/pages/:slug' website/vercel.json
           grep -q 'id="page-body"' website/admin/index.html
           echo "Static website structure and JavaScript syntax checks passed."
+      - name: Verify deployed admin and beta API authentication guards
+        run: |
+          set -euo pipefail
+          BASE="https://cenai-website-3t2so2h8r-carls-projects-e4dd61db.vercel.app"
+          for endpoint in admin beta; do
+            status=$(curl -sS -o "/tmp/cenai-$endpoint.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"admin_preflight"}' "$BASE/api/$endpoint")
+            if [[ "$status" != "401" ]]; then
+              cat "/tmp/cenai-$endpoint.json"
+              echo "Expected 401 from /api/$endpoint without a bearer token, got $status"
+              exit 1
+            fi
+          done
+          echo "Admin and beta API proxy authentication guards passed."
