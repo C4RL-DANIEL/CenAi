@@ -50,7 +50,7 @@ jobs:
         if: steps.cloudflare-auth.outputs.ready == 'true'
         run: |
           set -euo pipefail
-          BASE="https://cenai-website.aglibotcarldaniel.workers.dev"
+          BASE="https://cenai-website.cenai-app.workers.dev"
           curl -fsS --retry 5 --retry-delay 3 "$BASE/api/health" | grep -q '"status":"online"'
           curl -fsS --retry 5 --retry-delay 3 "$BASE/" | grep -qi 'CenAI'
           echo "Cloudflare production deployment verified."
