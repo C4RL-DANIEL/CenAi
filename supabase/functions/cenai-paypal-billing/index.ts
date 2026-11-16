@@ -17,7 +17,7 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
   status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 const fail = (status: number, error: string) => json(status, { error });
-const baseUrl = () => (Deno.env.get("CENAI_PUBLIC_URL") || "https://cenai-website.vercel.app").replace(/\/$/, "");
+const baseUrl = () => "https://cenai-website.aglibotcarldaniel.workers.dev";
 
 async function currentUser(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
