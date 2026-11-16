@@ -1021,18 +1021,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("CENAI PLANS · OPTIONAL BILLING", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("Secure Stripe checkout. Billing remains unavailable until the owner configures and verifies the payment provider.", color = palette.muted, fontSize = 10.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
-                                        cloudBusy = true; cloudStatus = "Opening Supporter checkout…"
-                                        scope.launch { try { val url = cloud.startBillingCheckout("supporter"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
-                                    }, modifier = Modifier.weight(1f)) { Text("Supporter") }
-                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
-                                        cloudBusy = true; cloudStatus = "Opening Pro checkout…"
-                                        scope.launch { try { val url = cloud.startBillingCheckout("pro"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
-                                    }, modifier = Modifier.weight(1f)) { Text("Pro") }
-                                }
+                                Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Subscriptions are managed on the secure CenAI website. Sign in with your CenAI account and review the recurring amount before approving payment on PayPal.", color = palette.muted, fontSize = 10.sp)
+                                OutlinedButton(enabled = emailVerified, onClick = {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cenai-website.vercel.app/billing")))
+                                    }.onFailure { cloudStatus = "Could not open the secure billing page: " + (it.message ?: "unknown error") }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("View subscriptions and continue with PayPal") }
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
