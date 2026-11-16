@@ -33,7 +33,11 @@ class ChatRepository(private val vault: SecureKeyStore) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
-        val credential = if (oauthCredential.first.isNotBlank()) oauthCredential else vault.apiKey(provider) to false
+        val credential = when {
+            provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
+            oauthCredential.first.isNotBlank() -> oauthCredential
+            else -> vault.apiKey(provider) to false
+        }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
         return suspendCancellableCoroutine { continuation ->
@@ -62,6 +66,16 @@ class ChatRepository(private val vault: SecureKeyStore) {
                         return
                     }
                     try {
+                        if (provider == Provider.CENAI_CLOUD) {
+                            val raw = res.body?.string().orEmpty()
+                            val data = JSONObject(raw)
+                            val answer = data.optJSONArray("choices")?.optJSONObject(0)
+                                ?.optJSONObject("message")?.optString("content").orEmpty()
+                            if (answer.isBlank()) throw IOException(data.optString("error", "CenAI Cloud returned an empty response."))
+                            if (continuation.isActive) onDelta(answer)
+                            if (continuation.isActive) continuation.resume(answer)
+                            return
+                        }
                         val source = res.body?.source() ?: throw IOException("Empty response body.")
                         val answer = StringBuilder()
                         readEvents(source) { data ->
@@ -88,6 +102,16 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val builder: Request.Builder
         val payload: JSONObject
         when (p) {
+            Provider.CENAI_CLOUD -> {
+                require(!msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) { "CenAI Cloud currently supports text-only chat. Choose another provider for image attachments." }
+                val list = JSONArray()
+                msgs.forEach { message -> list.put(JSONObject().put("role", message.role).put("content", message.content)) }
+                payload = JSONObject().put("model", model).put("stream", false)
+                    .put("max_tokens", (vault.get("max_tokens", "1024").toIntOrNull() ?: 1024).coerceIn(1, 1024))
+                    .put("messages", list)
+                builder = Request.Builder().url("https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions")
+                    .header("Authorization", "Bearer " + key)
+            }
             Provider.CLAUDE -> {
                 val list = JSONArray()
                 conversation.forEach { message ->
