@@ -246,9 +246,15 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
   }
   const expired = row.expires_at && Date.parse(String(row.expires_at)) <= Date.now();
   if ((status === "APPROVAL_PENDING" || status === "APPROVED") && (forceCancel || expired)) {
-    await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI checkout was not completed before its expiry." });
-    await db.from("billing_checkout_attempts").update({ status: "CANCELLED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
-    return "CANCELLED";
+    try {
+      await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI checkout was not completed before its expiry." });
+      await db.from("billing_checkout_attempts").update({ status: "CANCELLED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+      return "CANCELLED";
+    } catch (error) {
+      console.error("PayPal refused cancellation of an unapproved checkout", subscriptionId, error instanceof Error ? error.message : "unknown");
+      await db.from("billing_checkout_attempts").update({ status: "EXPIRED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+      return "EXPIRED";
+    }
   }
   return status;
 }
@@ -359,16 +365,23 @@ Deno.serve(async (req: Request) => {
             const token = await accessToken();
             const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)), "GET", token);
             if (String(detail.custom_id || "") === user.id && ["APPROVAL_PENDING", "APPROVED"].includes(String(detail.status))) {
-              await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)) + "/cancel", "POST", token, { reason: "Unpaid CenAI checkout expired or was abandoned." });
+              try {
+                await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)) + "/cancel", "POST", token, { reason: "Unpaid CenAI checkout expired or was abandoned." });
+              } catch (cancelError) {
+                console.error("PayPal could not cancel legacy unapproved checkout", String(row.provider_subscription_id), cancelError instanceof Error ? cancelError.message : "unknown");
+              }
             }
-            await db.from("billing_subscriptions").update({ status: "CANCELLED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
-          } catch (error) { console.error("Legacy pending PayPal cleanup failed", String(row.provider_subscription_id), error instanceof Error ? error.message : "unknown"); }
+            await db.from("billing_subscriptions").update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
+          } catch (error) {
+            console.error("Legacy pending PayPal cleanup failed", String(row.provider_subscription_id), error instanceof Error ? error.message : "unknown");
+            await db.from("billing_subscriptions").update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
+          }
         }
       }
       if (action === "cancel_open_checkouts") return json(200, { cancelled: (attempts || []).length + (legacy || []).length, message: "Unfinished PayPal checkouts were cancelled where PayPal allowed cancellation." });
       const { data, error } = await db.from("billing_subscriptions")
         .select("provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at")
-        .eq("user_id", user.id).eq("provider", "paypal").order("updated_at", { ascending: false }).limit(5);
+        .eq("user_id", user.id).eq("provider", "paypal").neq("status", "APPROVAL_PENDING").order("updated_at", { ascending: false }).limit(5);
       if (error) throw error;
       return json(200, { subscriptions: data || [] });
     }
