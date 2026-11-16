@@ -5,6 +5,7 @@ enum class Provider(val label: String, val model: String, val baseUrl: String) {
     DEEPSEEK("DeepSeek", "deepseek-flash", "https://api.deepseek.com"),
     CLAUDE("Claude", "claude-3-5-haiku-latest", "https://api.anthropic.com"),
     GEMINI("Gemini", "gemini-2.0-flash", "https://generativelanguage.googleapis.com"),
+    CENAI_CLOUD("CenAI Cloud · Gemma 4", "cloudflare-gemma-4-26b-a4b-it", "https://cenai-website.aglibotcarldaniel.workers.dev"),
     CUSTOM("Custom OpenAI-compatible", "", "https://");
 
     companion object {
