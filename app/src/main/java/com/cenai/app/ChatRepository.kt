@@ -105,7 +105,10 @@ class ChatRepository(private val vault: SecureKeyStore) {
             Provider.CENAI_CLOUD -> {
                 require(!msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) { "CenAI Cloud currently supports text-only chat. Choose another provider for image attachments." }
                 val list = JSONArray()
-                msgs.forEach { message -> list.put(JSONObject().put("role", message.role).put("content", message.content)) }
+                msgs.filter { it.role in setOf("system", "user", "assistant", "tool") }.takeLast(50).forEach { message ->
+                    val role = if (message.role == "tool") "assistant" else message.role
+                    list.put(JSONObject().put("role", role).put("content", message.content.take(20000)))
+                }
                 payload = JSONObject().put("model", model).put("stream", false)
                     .put("max_tokens", (vault.get("max_tokens", "1024").toIntOrNull() ?: 1024).coerceIn(1, 1024))
                     .put("messages", list)
