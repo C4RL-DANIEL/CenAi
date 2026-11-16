@@ -180,11 +180,19 @@ async function handleWebhook(event: Record<string, any>) {
   const status = statusMap[eventType];
   if (!status) return;
   const nextBilling = resource.billing_info?.next_billing_time || resource.billing_info?.next_billing_date;
+  let planKey = String(existing?.plan_key || "live_test");
+  const paypalPlanId = String(resource.plan_id || "");
+  if (paypalPlanId) {
+    const { data: configuredPlan, error: planError } = await db.from("billing_plan_config")
+      .select("plan_key").eq("paypal_plan_id", paypalPlanId).maybeSingle();
+    if (planError) throw planError;
+    if (configuredPlan?.plan_key) planKey = configuredPlan.plan_key;
+  }
   const { error } = await db.from("billing_subscriptions").upsert({
     user_id: userId,
     provider: "paypal",
     provider_subscription_id: subscriptionId,
-    plan_key: String(resource.plan_id || existing?.plan_key || "live_test"),
+    plan_key: planKey,
     status,
     current_period_end: nextBilling && !Number.isNaN(Date.parse(String(nextBilling))) ? new Date(String(nextBilling)).toISOString() : null,
     cancel_at_period_end: status === "CANCELLED",
