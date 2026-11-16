@@ -42,6 +42,8 @@ jobs:
           grep -q 'cenai-email-otp' website/worker.js
           grep -q 'cenai-control-plane' website/worker.js
           grep -q 'cenai-paypal-billing' website/worker.js
+          grep -q 'cenai-ai-quota' website/worker.js
+          grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
           grep -q 'cenai-website.aglibotcarldaniel.workers.dev/reset-password' website/reset-password.js
@@ -75,4 +77,7 @@ jobs:
           done
           curl -fsS "$BASE/api/admin-config" | grep -q "bqkzehozezvepbthglyj.supabase.co"
           curl -fsS "$BASE/api/site-pages" >/tmp/cenai-pages.json
+
+          ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
+          if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi
           echo "Cloudflare Worker health, public pages, API authentication and Supabase configuration passed."
