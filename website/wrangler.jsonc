@@ -14,5 +14,10 @@
   "vars": {
     "SUPABASE_URL": "https://bqkzehozezvepbthglyj.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_l6YDudJWsFgUJ2YZc2Xq1Q_hNatLp3C"
+  },
+  "triggers": {
+    "crons": [
+      "*/10 * * * *"
+    ]
   }
 }
