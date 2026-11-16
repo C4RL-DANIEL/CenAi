@@ -18,6 +18,19 @@
       throw new Error("Administrator authentication is not configured.");
     }
   }
+  async function paypalApi(action, payload = {}) {
+    const url = window.CENAI_SUPABASE_URL;
+    const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !key || !accessToken) throw new Error("Sign in again before managing billing.");
+    const response = await fetch(url.replace(/\\/$/, "") + "/functions/v1/cenai-paypal-billing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": key, "Authorization": "Bearer " + accessToken },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "PayPal billing request failed.");
+    return data;
+  }
   async function betaApi(action, payload = {}) { const response=await fetch("/api/beta",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({action,...payload})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Beta request failed");return data;}
   async function api(action, payload = {}) {
     const response = await fetch("/api/admin", { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken}, body:JSON.stringify({action,...payload}) });
@@ -107,9 +120,9 @@
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
+    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = ["beta","feedback","models","api-keys","analytics"].includes(tab) ? {} : await api(tab);
+      const data = ["beta","feedback","models","api-keys","analytics","billing"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
@@ -122,10 +135,19 @@
       else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,"Open release",x.url)).join("") || "<p>No published releases yet.</p>";
       else if (tab === "models") await loadModels();
       else if (tab === "api-keys") await loadApiKeys();
-      else if (tab === "analytics") await loadAnalytics();
+      else if (tab === "analytics") await loadAnalytics();\n      else if (tab === "billing") await loadBillingPlans();
       else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
+  }
+  async function loadBillingPlans() {
+    const data = await paypalApi("list_plans");
+    $("billing-plan-content").innerHTML = (data.plans || []).map(p =>
+      '<div class="item"><div><b>' + esc(p.display_name) + ' · ' + esc(p.plan_key) + '</b><small>' +
+      esc(p.amount) + ' ' + esc(p.currency) + ' / ' + esc(p.interval_count) + ' ' + esc(p.interval_unit) +
+      ' · PayPal plan ' + esc(p.paypal_plan_id || "not created") + '</small></div><span class="pill">' +
+      (p.enabled ? "enabled" : "disabled") + (p.is_test ? " · test" : "") + '</span></div>'
+    ).join("") || "<p>No PayPal plans configured.</p>";
   }
   async function loadModels() {
     const d=await api("models");
@@ -144,6 +166,28 @@
   $("beta-refresh")?.addEventListener("click",()=>loadBeta().catch(e=>status(e.message,true)));
   $("beta-content")?.addEventListener("click",async e=>{const b=e.target.closest("button[data-review]");if(!b)return;const parent=b.closest("[data-id]");if(!confirm("Are you sure you want to "+b.dataset.review+" this beta application?"))return;try{await betaApi("admin_review",{id:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"});try{const mail=await fetch("/api/beta-notification",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({applicationId:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"})});const md=await mail.json().catch(()=>({}));if(!mail.ok)throw new Error(md.error||"Email send failed");status("Decision saved and notification email sent.");}catch(mailError){status("Decision saved, but notification email failed: "+mailError.message,true);}await loadBeta();}catch(err){status(err.message,true);}});
   function row(name, detail, state, url) { const action = url && /^https:\/\/github\.com\//i.test(url) ? '<a class="pill" target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(state)+' ↗</a>' : '<span class="pill">'+esc(state)+'</span>'; return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div>'+action+'</div>'; }
+  $("billing-plan-form")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const statusNode = $("billing-plan-status");
+    statusNode.textContent = "Creating the PayPal Live subscription plan…";
+    try {
+      const data = await paypalApi("configure_plan", {
+        planKey: $("billing-plan-key").value.trim(),
+        displayName: $("billing-plan-name").value.trim(),
+        amount: Number($("billing-plan-amount").value),
+        currency: "PHP",
+        intervalUnit: $("billing-plan-interval").value,
+        intervalCount: 1,
+        isTest: $("billing-plan-test").checked,
+        enabled: $("billing-plan-enabled").checked
+      });
+      statusNode.textContent = "PayPal plan created and activated: " + data.plan.paypal_plan_id + ". This only makes the plan available; it does not charge anyone until they approve a subscription.";
+      await loadBillingPlans();
+    } catch (error) {
+      statusNode.textContent = error.message;
+      statusNode.classList.add("bad");
+    }
+  });
   $("model-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("model_upsert",{slug:$("model-slug").value,provider:$("model-provider").value,modelId:$("model-id").value,displayName:$("model-name").value,description:$("model-description").value,enabled:$("model-enabled").checked,public:$("model-public").checked,tasks:["chat"],modalities:["text"]});status("Model saved and audited.");await loadModels();}catch(err){status(err.message,true);}});
   $("api-key-form")?.addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("api_key_create",{name:$("api-key-name").value});$("api-key-secret").textContent=d.secret;$("api-key-secret").hidden=false;$("copy-api-key").hidden=false;$("api-key-name").value="";status("API key created. Copy it now; it will not be shown again.");await loadApiKeys();}catch(err){status(err.message,true);}});
   $("copy-api-key")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("api-key-secret").textContent);status("API key copied.");}catch(e){status("Clipboard access unavailable; copy the displayed key manually.",true);}});
