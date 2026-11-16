@@ -17,7 +17,7 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
   status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 const fail = (status: number, error: string) => json(status, { error });
-const baseUrl = () => "https://cenai-website.aglibotcarldaniel.workers.dev";
+const baseUrl = () => "https://cenai-website.cenai-app.workers.dev";
 
 async function currentUser(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -175,7 +175,8 @@ async function handleWebhook(event: Record<string, any>) {
     .select("user_id,plan_key").eq("provider", "paypal")
     .eq("provider_subscription_id", subscriptionId).maybeSingle();
   if (lookupError) throw lookupError;
-  let userId = String(resource.custom_id || resource.custom || existing?.user_id || "");
+  const { data: attempt } = await db.from("billing_checkout_attempts").select("user_id,plan_key").eq("provider_subscription_id", subscriptionId).maybeSingle();
+  let userId = String(resource.custom_id || resource.custom || existing?.user_id || attempt?.user_id || "");
   if (!userId && resource.supplementary_data?.related_ids?.order_id) {
     const { data: row } = await db.from("billing_subscriptions").select("user_id")
       .eq("provider_subscription_id", String(resource.supplementary_data.related_ids.order_id)).maybeSingle();
@@ -183,7 +184,6 @@ async function handleWebhook(event: Record<string, any>) {
   }
   if (!userId) return;
   const statusMap: Record<string, string> = {
-    "BILLING.SUBSCRIPTION.CREATED": "APPROVAL_PENDING",
     "BILLING.SUBSCRIPTION.ACTIVATED": "ACTIVE",
     "BILLING.SUBSCRIPTION.UPDATED": String(resource.status || "ACTIVE"),
     "BILLING.SUBSCRIPTION.CANCELLED": "CANCELLED",
@@ -197,7 +197,7 @@ async function handleWebhook(event: Record<string, any>) {
   const status = statusMap[eventType];
   if (!status) return;
   const nextBilling = resource.billing_info?.next_billing_time || resource.billing_info?.next_billing_date;
-  let planKey = String(existing?.plan_key || "live_test");
+  let planKey = String(existing?.plan_key || attempt?.plan_key || "live_test");
   const paypalPlanId = String(resource.plan_id || "");
   if (paypalPlanId) {
     const { data: configuredPlan, error: planError } = await db.from("billing_plan_config")
@@ -216,7 +216,43 @@ async function handleWebhook(event: Record<string, any>) {
     updated_at: new Date().toISOString(),
   }, { onConflict: "provider_subscription_id" });
   if (error) throw error;
+  if (attempt) {
+    const attemptStatus = status === "ACTIVE" ? "ACTIVE" : status === "CANCELLED" ? "CANCELLED" : status === "EXPIRED" ? "EXPIRED" : status === "SUSPENDED" || status === "PAST_DUE" ? "FAILED" : null;
+    if (attemptStatus) await db.from("billing_checkout_attempts").update({ status: attemptStatus, updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+  }
 }
+
+async function settleCheckoutAttempt(userId: string, row: Record<string, any>, forceCancel = false) {
+  const subscriptionId = String(row.provider_subscription_id || "");
+  if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return "INVALID";
+  const token = await accessToken();
+  const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+  if (String(detail.custom_id || "") !== userId) throw new Error("PayPal checkout ownership verification failed.");
+  const status = String(detail.status || "UNKNOWN");
+  if (status === "ACTIVE") {
+    const { error } = await db.from("billing_subscriptions").upsert({
+      user_id: userId, provider: "paypal", provider_subscription_id: subscriptionId,
+      plan_key: String(row.plan_key || "live_test"), status: "ACTIVE",
+      current_period_end: detail.billing_info?.next_billing_time ? new Date(detail.billing_info.next_billing_time).toISOString() : null,
+      cancel_at_period_end: false, updated_at: new Date().toISOString(),
+    }, { onConflict: "provider_subscription_id" });
+    if (error) throw error;
+    await db.from("billing_checkout_attempts").update({ status: "ACTIVE", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+    return "ACTIVE";
+  }
+  if (status === "CANCELLED" || status === "EXPIRED") {
+    await db.from("billing_checkout_attempts").update({ status, updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+    return status;
+  }
+  const expired = row.expires_at && Date.parse(String(row.expires_at)) <= Date.now();
+  if ((status === "APPROVAL_PENDING" || status === "APPROVED") && (forceCancel || expired)) {
+    await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI checkout was not completed before its expiry." });
+    await db.from("billing_checkout_attempts").update({ status: "CANCELLED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+    return "CANCELLED";
+  }
+  return status;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return fail(405, "POST required");
@@ -295,15 +331,41 @@ Deno.serve(async (req: Request) => {
       const subscriptionId = String(subscription.id || "");
       const approvalUrl = (subscription.links || []).find((link: any) => link.rel === "approve")?.href;
       if (!subscriptionId || !approvalUrl) return fail(502, "PayPal did not return a subscription approval URL.");
-      const { error: saveError } = await db.from("billing_subscriptions").upsert({
-        user_id: user.id, provider: "paypal", provider_subscription_id: subscriptionId,
-        plan_key: plan.plan_key, status: String(subscription.status || "APPROVAL_PENDING"),
-        current_period_end: null, cancel_at_period_end: false, updated_at: new Date().toISOString(),
-      }, { onConflict: "provider_subscription_id" });
-      if (saveError) throw saveError;
+      const { error: saveError } = await db.from("billing_checkout_attempts").insert({
+        user_id: user.id, provider_subscription_id: subscriptionId, plan_key: plan.plan_key,
+        status: "AWAITING_APPROVAL", expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+      });
+      if (saveError) {
+        try { await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI could not record the checkout attempt." }); } catch {}
+        throw saveError;
+      }
       return json(200, { approvalUrl, subscriptionId, plan: { name: plan.display_name, amount: plan.amount, currency: plan.currency, intervalUnit: plan.interval_unit, intervalCount: plan.interval_count } });
     }
-    if (action === "status") {
+    if (action === "cancel_open_checkouts" || action === "status") {
+      const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
+        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).eq("status", "AWAITING_APPROVAL");
+      if (attemptsError) throw attemptsError;
+      for (const attempt of attempts || []) {
+        try { await settleCheckoutAttempt(user.id, attempt, action === "cancel_open_checkouts"); }
+        catch (error) { console.error("CenAI checkout cleanup failed", String(attempt.provider_subscription_id), error instanceof Error ? error.message : "unknown"); }
+      }
+      const { data: legacy, error: legacyError } = await db.from("billing_subscriptions")
+        .select("provider_subscription_id,plan_key,updated_at").eq("user_id", user.id).eq("provider", "paypal").eq("status", "APPROVAL_PENDING");
+      if (legacyError) throw legacyError;
+      for (const row of legacy || []) {
+        const expired = Date.parse(String(row.updated_at || "")) < Date.now() - 20 * 60 * 1000;
+        if (action === "cancel_open_checkouts" || expired) {
+          try {
+            const token = await accessToken();
+            const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)), "GET", token);
+            if (String(detail.custom_id || "") === user.id && ["APPROVAL_PENDING", "APPROVED"].includes(String(detail.status))) {
+              await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)) + "/cancel", "POST", token, { reason: "Unpaid CenAI checkout expired or was abandoned." });
+            }
+            await db.from("billing_subscriptions").update({ status: "CANCELLED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
+          } catch (error) { console.error("Legacy pending PayPal cleanup failed", String(row.provider_subscription_id), error instanceof Error ? error.message : "unknown"); }
+        }
+      }
+      if (action === "cancel_open_checkouts") return json(200, { cancelled: (attempts || []).length + (legacy || []).length, message: "Unfinished PayPal checkouts were cancelled where PayPal allowed cancellation." });
       const { data, error } = await db.from("billing_subscriptions")
         .select("provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at")
         .eq("user_id", user.id).eq("provider", "paypal").order("updated_at", { ascending: false }).limit(5);
@@ -320,7 +382,7 @@ Deno.serve(async (req: Request) => {
       const token = await accessToken();
       await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "Cancelled by CenAI account holder" });
       const { error: updateError } = await db.from("billing_subscriptions")
-        .update({ status: "CANCELLED", cancel_at_period_end: true, updated_at: new Date().toISOString() })
+        .update({ status: "CANCELLED", cancel_at_period_end: false, updated_at: new Date().toISOString() })
         .eq("provider", "paypal").eq("provider_subscription_id", subscriptionId).eq("user_id", user.id);
       if (updateError) throw updateError;
       return json(200, { cancelled: true, subscriptionId });
