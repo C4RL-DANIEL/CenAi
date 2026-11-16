@@ -85,8 +85,6 @@ import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-@Composable
-
 private suspend fun extractImageText(context: android.content.Context, uri: Uri): String =
     suspendCancellableCoroutine { continuation ->
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -157,6 +155,7 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
     }
 }
 
+@Composable
 fun CenAiScreen(vault: SecureKeyStore) {
     var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
     CenAiTheme(style = selectedStyle) {
