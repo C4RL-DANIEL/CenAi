@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    { "source": "/billing/success", "destination": "/billing-success.html" },
+    { "source": "/billing/cancel", "destination": "/billing-cancel.html" },
+    { "source": "/billing", "destination": "/billing.html" },
+    { "source": "/billing/", "destination": "/billing.html" },
     { "source": "/beta", "destination": "/beta.html" },
     { "source": "/beta/", "destination": "/beta.html" },
     { "source": "/admin", "destination": "/admin/index.html" },
