@@ -24,6 +24,7 @@ CenAI public website and restricted administrator portal. The deployment is a si
 - `/api/beta-notification`: administrator-reviewed beta email notifications.
 - `/api/functions/:slug`: allowlisted Supabase Edge Function proxy, including PayPal billing, public API, billing, and telemetry.
 - `/api/webhooks/paypal`: PayPal webhook proxy with signature headers preserved.
+- `/api/ai/chat/completions`: quota-gated, session-authenticated Workers AI chat endpoint.
 - `/api/health`: non-secret service and configuration status.
 
 ## Cloudflare runtime variables
@@ -42,7 +43,7 @@ Do not commit secrets. Configure them in Cloudflare Worker Settings > Variables 
 
 ## Backend and data
 
-Supabase remains the PostgreSQL and Auth system of record to preserve accounts and existing data. The control plane, PayPal billing, public API, billing, and telemetry remain deployed as Supabase Edge Functions and are routed through the Cloudflare Worker. No service-role key or payment secret is exposed to the browser or Worker bundle.
+Supabase remains the PostgreSQL and Auth system of record to preserve accounts and existing data. The control plane, PayPal billing, public API, billing, and telemetry remain deployed as Supabase Edge Functions and are routed through the Cloudflare Worker. No service-role key or payment secret is exposed to the browser or Worker bundle. Cloud AI uses the Cloudflare `AI` binding and a service-role-only quota reservation RPC. The Gemma 4 model is registered, but `ai.cloud.enabled` is intentionally false until an administrator opts in after reviewing usage costs.
 
 Email OTP challenge writes and verification now use the `cenai-email-otp` Edge Function with service-role-only database RPCs. The original user-callable OTP SECURITY DEFINER functions have had public/authenticated execution revoked.
 
