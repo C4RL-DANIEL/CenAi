@@ -48,3 +48,31 @@ jobs:
           grep -q 'site_pages_public_read' supabase/migrations/20261116135000_tighten_cms_and_quota_table_access.sql
           grep -q 'cenai_issue_email_otp_for_user' supabase/migrations/20261116135500_secure_email_otp_service_role_only.sql
           echo "Cloudflare site build and backend route checks passed."
+
+      - name: Smoke test production Cloudflare Worker
+        run: |
+          set -euo pipefail
+          BASE="https://cenai-website.aglibotcarldaniel.workers.dev"
+          status=""
+          for attempt in $(seq 1 10); do
+            status=$(curl -sS --max-time 15 -o /tmp/cenai-health.json -w "%{http_code}" "$BASE/api/health" || true)
+            if [[ "$status" == "200" ]]; then break; fi
+            sleep 3
+          done
+          if [[ "$status" != "200" ]]; then
+            cat /tmp/cenai-health.json 2>/dev/null || true
+            echo "Cloudflare Worker health endpoint returned $status"
+            exit 1
+          fi
+          node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
+          for route in / /admin /beta /billing /updates.html /security.html /roadmap.html /api.html; do
+            code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
+            if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi
+          done
+          for endpoint in admin beta; do
+            code=$(curl -sS --max-time 15 -o "/tmp/cenai-$endpoint.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"admin_preflight"}' "$BASE/api/$endpoint")
+            if [[ "$code" != "401" ]]; then cat "/tmp/cenai-$endpoint.json"; echo "Expected 401 from /api/$endpoint, got $code"; exit 1; fi
+          done
+          curl -fsS "$BASE/api/admin-config" | grep -q "bqkzehozezvepbthglyj.supabase.co"
+          curl -fsS "$BASE/api/site-pages" >/tmp/cenai-pages.json
+          echo "Cloudflare Worker health, public pages, API authentication and Supabase configuration passed."
