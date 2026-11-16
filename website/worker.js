@@ -1,8 +1,8 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261116-secondary-ui-1";
+const STATIC_CACHE_VERSION = "20261116-billing-admin-redesign-1";
 const STATIC_FILES = new Set([
-  "/index.html", "/styles.css", "/site-shell.css", "/home.js", "/app.js", "/api.html",
+  "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
   "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
   "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
