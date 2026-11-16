@@ -83,6 +83,19 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         } catch (_: Exception) { false }
     }
 
+    suspend fun paypalBilling(action: String, payload: JSONObject = JSONObject()): JSONObject {
+        var token = vault.getSecret("supabase_access_token")
+        if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
+        payload.put("action", action)
+        return try {
+            post("$BASE_URL/functions/v1/cenai-paypal-billing", payload, token)
+        } catch (error: IOException) {
+            if (!refreshSession()) throw error
+            token = vault.getSecret("supabase_access_token")
+            post("$BASE_URL/functions/v1/cenai-paypal-billing", payload, token)
+        }
+    }
+
     suspend fun call(action: String, payload: JSONObject = JSONObject()): JSONObject {
         var token = vault.getSecret("supabase_access_token")
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
@@ -144,7 +157,7 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     suspend fun sendEmailOtp(): String {
         val token = vault.getSecret("supabase_access_token")
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
-        val data = post("https://cenai-website.vercel.app/api/email-otp", JSONObject().put("action", "send"), token)
+        val data = post("https://cenai-website.aglibotcarldaniel.workers.dev/api/email-otp", JSONObject().put("action", "send"), token)
         return data.optString("message", "Verification code sent.")
     }
 
