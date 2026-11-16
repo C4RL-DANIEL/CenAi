@@ -308,7 +308,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
-        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) } else listOf(provider)
+        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
@@ -867,9 +867,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") }, singleLine = true)
                     if (provider == Provider.CUSTOM) OutlinedTextField(value = base, onValueChange = { base = it },
                         label = { Text("HTTPS API base URL") }, singleLine = true)
-                    Provider.entries.forEach { p ->
+                    Provider.entries.filter { it != Provider.CENAI_CLOUD }.forEach { p ->
                         OutlinedTextField(value = providerKeys[p].orEmpty(), onValueChange = { value -> providerKeys = providerKeys.toMutableMap().apply { put(p, value) } }, label = { Text("${p.label} API key") }, singleLine = true)
                     }
+                    if (provider == Provider.CENAI_CLOUD) Text(if (cloud.isSignedIn()) "Uses your signed-in CenAI account. Daily and monthly quotas are enforced by the Cloud AI gateway; no external API key is needed." else "Sign in to your CenAI account in the Cloud Account section below to use this model.", color = palette.muted, fontSize = 11.sp)
                     if (provider == Provider.CUSTOM || provider == Provider.CLAUDE)
                         OutlinedTextField(value = customHeaders, onValueChange = { customHeaders = it },
                             label = { Text("Extra headers (JSON)") }, minLines = 2)
