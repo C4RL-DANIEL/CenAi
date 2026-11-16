@@ -1,6 +1,12 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_ASSETS = {};
+const STATIC_FILES = new Set([
+  "/index.html", "/styles.css", "/home.js", "/app.js", "/api.html",
+  "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
+  "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
+  "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
+  "/admin/index.html", "/admin/admin.css", "/admin/admin.js"
+]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -324,6 +330,34 @@ async function proxyFunction(request, env, slug) {
   }
 }
 
+async function staticAsset(request, url, ctx) {
+  const rewritten = rewritePath(url);
+  const assetPath = rewritten.pathname === "/" ? "/index.html" : rewritten.pathname;
+  if (!STATIC_FILES.has(assetPath)) return withSecurity(new Response("Not found", { status: 404 }));
+  if (!["GET", "HEAD"].includes(request.method)) return withSecurity(new Response("Method not allowed", { status: 405 }));
+  const cacheKey = new Request(url.origin + assetPath);
+  let response = await caches.default.match(cacheKey);
+  if (!response) {
+    const origin = "https://raw.githubusercontent.com/C4RL-DANIEL/CenAi/main/website" + assetPath;
+    try {
+      const upstream = await fetch(origin);
+      if (!upstream.ok) return withSecurity(new Response("Website asset unavailable", { status: 502 }));
+      const extension = assetPath.split(".").pop()?.toLowerCase();
+      const types = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8", svg: "image/svg+xml", txt: "text/plain; charset=utf-8" };
+      const headers = new Headers(upstream.headers);
+      headers.set("Content-Type", types[extension] || "application/octet-stream");
+      headers.set("Cache-Control", extension === "html" ? "public, max-age=300" : "public, max-age=3600");
+      headers.set("X-Content-Type-Options", "nosniff");
+      response = new Response(upstream.body, { status: 200, headers });
+      ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+    } catch (error) {
+      console.error("CenAI static origin failed", assetPath, error instanceof Error ? error.message : "unknown error");
+      return withSecurity(new Response("Website origin temporarily unavailable", { status: 502 }));
+    }
+  }
+  return withSecurity(request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response);
+}
+
 function rewritePath(url) {
   const path = url.pathname;
   const exact = {
@@ -347,7 +381,7 @@ function rewritePath(url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -371,19 +405,6 @@ export default {
       }
       return json(404, { error: "API route not found" });
     }
-    if (!["GET", "HEAD"].includes(request.method)) return withSecurity(new Response("Method not allowed", { status: 405 }));
-    const rewritten = rewritePath(url);
-    const assetPath = rewritten.pathname === "/" ? "/index.html" : rewritten.pathname;
-    const asset = STATIC_ASSETS[assetPath];
-    if (typeof asset !== "string") return withSecurity(new Response("Not found", { status: 404 }));
-    const extension = assetPath.split(".").pop()?.toLowerCase();
-    const types = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8", svg: "image/svg+xml", txt: "text/plain; charset=utf-8", webmanifest: "application/manifest+json" };
-    const response = new Response(request.method === "HEAD" ? null : asset, {
-      headers: {
-        "Content-Type": types[extension] || "application/octet-stream",
-        "Cache-Control": extension === "html" ? "no-store" : "public, max-age=3600"
-      }
-    });
-    return withSecurity(response);
+    return staticAsset(request, url, ctx);
   }
 };
