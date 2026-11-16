@@ -1,6 +1,6 @@
 package com.cenai.app
 
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -17,13 +17,13 @@ class CenAiLaunchSmokeTest {
 
     @Test
     fun mainScreenLaunchesAndShowsComposer() {
-        compose.onNodeWithText("Message CenAI…").assertExists()
+        compose.onNodeWithText("Message CenAI…").assertIsDisplayed()
     }
 
     @Test
     fun settingsExposeCoreVoiceAiGuardianAgentAndUpdateSystems() {
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("CenAI settings").assertExists()
+        compose.onNodeWithText("CenAI settings").assertIsDisplayed()
         listOf(
             "PROVIDER",
             "AGENT WORKSPACE",
@@ -35,7 +35,7 @@ class CenAiLaunchSmokeTest {
             "APP MONITOR",
             "SOFTWARE UPDATE"
         ).forEach { label ->
-            compose.onNodeWithText(label, substring = true).assertExists()
+            compose.onNodeWithText(label, substring = true).assertIsDisplayed()
         }
     }
 }
