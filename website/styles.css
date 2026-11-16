@@ -234,3 +234,48 @@ h1 em,h2 em{color:#477253}
 @media(max-width:900px){.hero-inner{grid-template-columns:1fr;gap:12px}.hero-copy{max-width:680px}.product-stage{max-width:760px;margin-inline:auto;width:100%}.main-nav{gap:16px;margin-left:16px}}
 @media(max-width:700px){.site-header{height:70px;padding-inline:18px}.header-actions{gap:10px}.header-login{display:none}.main-nav{background:#f3f1eb;border:1px solid #d9ddd5;border-radius:18px;padding:18px}.hero-inner,.intro-strip{width:calc(100% - 36px)}.hero-inner{padding-top:48px}.hero h1{font-size:clamp(48px,13vw,66px)}.hero-proof{gap:10px}.section{padding-top:76px;padding-bottom:76px}}
 @media(prefers-reduced-motion:reduce){.main-nav a:after{transition:none}}
+
+
+/* CenAI motion system — restrained, responsive and reduced-motion aware */
+:root{--motion-ease:cubic-bezier(.2,.72,.24,1);--motion-duration:720ms}
+html{scroll-behavior:smooth}
+body{overflow-x:clip}
+.site-header{transition:height 260ms var(--motion-ease),background 260ms ease,box-shadow 260ms ease}
+.site-header.is-scrolled{height:72px;background:rgba(243,241,235,.86);box-shadow:0 8px 28px rgba(27,43,35,.075)}
+.site-header.is-scrolled .brand-symbol{transform:scale(.92)}
+.brand-symbol{transition:transform 260ms var(--motion-ease)}
+.hero{isolation:isolate}
+.hero:after{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;background:radial-gradient(ellipse at 78% 35%,rgba(166,201,75,.18),transparent 32%),radial-gradient(ellipse at 62% 86%,rgba(49,91,72,.10),transparent 36%)}
+.hero-inner{position:relative}
+.hero-copy{animation:cenai-rise 900ms var(--motion-ease) both}
+.product-stage{--stage-drift:0px;translate:0 var(--stage-drift);transition:translate 100ms linear}
+.app-window{transform-origin:50% 55%;animation:cenai-window-in 1100ms 100ms var(--motion-ease) both}
+.stage-glow{animation:cenai-glow 9s ease-in-out infinite alternate}
+.capability,.security-cards article{transition:transform 360ms var(--motion-ease),box-shadow 360ms ease,border-color 360ms ease,background 360ms ease}
+.capability:hover{transform:translateY(-7px)}
+.capability-icon{transition:transform 360ms var(--motion-ease),box-shadow 360ms ease}
+.capability:hover .capability-icon{transform:rotate(-9deg) scale(1.08);box-shadow:0 8px 20px rgba(27,43,35,.10)}
+.security-cards article:hover{transform:translateX(5px);border-color:#a6c94b;box-shadow:0 12px 30px rgba(27,43,35,.08)}
+.button{transition:transform 240ms var(--motion-ease),box-shadow 240ms ease,background 240ms ease}
+.button-dark{overflow:hidden}
+.button-dark:before{content:"";position:absolute;inset:-120% auto -120% -45%;width:35%;transform:skewX(-22deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transition:left 650ms var(--motion-ease)}
+.button-dark:hover:before{left:125%}
+.access-panel{isolation:isolate}
+.access-panel:before{content:"";position:absolute;z-index:-1;width:420px;height:420px;right:-100px;top:-220px;border:1px solid rgba(166,201,75,.22);border-radius:50%;box-shadow:0 0 0 42px rgba(166,201,75,.035),0 0 0 84px rgba(166,201,75,.025)}
+.scroll-progress{position:fixed;z-index:80;inset:0 auto auto 0;width:100%;height:3px;pointer-events:none;background:transparent}
+.scroll-progress span{display:block;width:100%;height:100%;background:linear-gradient(90deg,#789b43,#b5d96c,#315b48);transform:scaleX(0);transform-origin:left center;will-change:transform}
+.motion-ready .scroll-reveal{opacity:0;transform:translate3d(0,28px,0);transition:opacity var(--motion-duration) var(--motion-ease),transform var(--motion-duration) var(--motion-ease);transition-delay:var(--reveal-delay,0ms);will-change:opacity,transform}
+.motion-ready .scroll-reveal.is-visible{opacity:1;transform:translate3d(0,0,0)}
+@keyframes cenai-rise{from{opacity:0;transform:translate3d(0,22px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes cenai-window-in{from{opacity:0;transform:perspective(1300px) translate3d(0,34px,0) rotateY(-5deg) rotateX(2deg) scale(.975)}to{opacity:1;transform:perspective(1300px) translate3d(0,0,0) rotateY(-2deg) rotateX(1deg) scale(1)}}
+@keyframes cenai-glow{from{transform:translate3d(-12px,6px,0) scale(.94);opacity:.48}to{transform:translate3d(14px,-10px,0) scale(1.06);opacity:.82}}
+@media(max-width:900px){.product-stage{translate:none}.app-window{animation-name:cenai-mobile-window-in}}
+@keyframes cenai-mobile-window-in{from{opacity:0;transform:translate3d(0,22px,0) scale(.985)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@media(hover:none){.capability:hover,.security-cards article:hover{transform:none}.capability:hover .capability-icon{transform:none}}
+@media(prefers-reduced-motion:reduce){
+ html{scroll-behavior:auto}
+ .site-header,.brand-symbol,.capability,.security-cards article,.button,.product-stage,.stage-glow,.app-window{transition:none!important;animation:none!important;translate:none!important}
+ .motion-ready .scroll-reveal,.motion-ready .scroll-reveal.is-visible{opacity:1;transform:none;transition:none;will-change:auto}
+ .scroll-progress{display:none}
+ .button-dark:before{display:none}
+}
