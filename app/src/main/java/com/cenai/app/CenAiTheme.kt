@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 
 data class CenAiPalette(
     val background: Color, val surface: Color, val raised: Color,
-    val accent: Color, val text: Color, val muted: Color
+    val accent: Color, val text: Color, val muted: Color, val glass: Boolean = false
 )
 
 val LocalCenAiPalette = staticCompositionLocalOf {
@@ -41,7 +41,8 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             if (dark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
             if (dark) Color(0xFF0A84FF) else Color(0xFF007AFF),
             if (dark) Color(0xFFF5F5F7) else Color(0xFF1C1C1E),
-            if (dark) Color(0xFF98989D) else Color(0xFF6C6C70)
+            if (dark) Color(0xFFB7C2D4) else Color(0xFF66758B),
+            true
         )
         "FIGMA" -> CenAiPalette(
             if (dark) Color(0xFF100D1B) else Color(0xFFF6F3FF),
