@@ -25,6 +25,8 @@ jobs:
           test -s website/index.html
           test -s website/styles.css
           test -s website/home.js
+          test -s website/page.html
+          test -s website/page.js
           test -s website/api/site-pages.js
           test -s website/security.html
           test -s website/api.html
@@ -44,6 +46,10 @@ jobs:
           test -s website/api/admin-config.js
           test -s website/ADMIN-SETUP.md
           test -s supabase/migrations/202611150001_sendai_control_plane.sql
+          test -s supabase/migrations/202611160001_site_cms_api_quotas.sql
+          test -s supabase/functions/cenai-control-plane/index.ts
+          test -s supabase/functions/cenai-paypal-billing/index.ts
+          test -s supabase/functions/cenai-public-api/index.ts
           grep -q '/admin/index.html' website/vercel.json
           grep -q '/billing.html' website/vercel.json
           grep -q 'Administrator sign in' website/admin/index.html
@@ -61,8 +67,11 @@ jobs:
           grep -q 'not live service URLs' website/api.html
           node --check website/admin/admin.js
           node --check website/home.js
+          node --check website/page.js
           node --check website/beta.js
           node --check website/api/admin.js
           node --check website/api/beta.js
           node --check website/api/site-pages.js
+          grep -q '/pages/:slug' website/vercel.json
+          grep -q 'id="page-body"' website/admin/index.html
           echo "Static website structure and JavaScript syntax checks passed."
