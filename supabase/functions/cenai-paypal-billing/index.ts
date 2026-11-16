@@ -387,7 +387,7 @@ Deno.serve(async (req: Request) => {
       if (action === "cancel_open_checkouts") return json(200, { cancelled: (attempts || []).length + (legacy || []).length, message: "Unfinished PayPal checkouts were cancelled where PayPal allowed cancellation." });
       const { data, error } = await db.from("billing_subscriptions")
         .select("provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at")
-        .eq("user_id", user.id).eq("provider", "paypal").neq("status", "APPROVAL_PENDING").order("updated_at", { ascending: false }).limit(5);
+        .eq("user_id", user.id).eq("provider", "paypal").neq("status", "APPROVAL_PENDING").neq("status", "EXPIRED").order("updated_at", { ascending: false }).limit(5);
       if (error) throw error;
       return json(200, { subscriptions: data || [] });
     }
