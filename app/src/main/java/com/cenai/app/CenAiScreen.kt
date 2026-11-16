@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -634,24 +636,78 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (messages.isEmpty()) {
-                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-                    Text("Your AI workspace.", color = palette.muted, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("What would you like to\ncreate today?", color = palette.text, fontSize = 31.sp,
-                        lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(24.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SuggestionChip("Explore an idea") { draft = "Help me explore an idea: " }
-                        SuggestionChip("Write something") { draft = "Help me write: " }
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 24.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        color = palette.surface,
+                        shape = RoundedCornerShape(28.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Surface(color = palette.accent.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(34.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("C", color = palette.accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                }
+                                Column {
+                                    Text("CENAI WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                                    Text(if (localModelEnabled && localModelReady) "On-device AI is ready" else "Your models. Your workflow.", color = palette.muted, fontSize = 11.sp)
+                                }
+                                Spacer(Modifier.weight(1f))
+                                val configured = !providerKeys[provider].isNullOrBlank() ||
+                                    (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))
+                                val stateLabel = when {
+                                    localModelEnabled && localModelReady -> "OFFLINE"
+                                    configured -> "READY"
+                                    else -> "SETUP"
+                                }
+                                Surface(color = palette.accent.copy(alpha = 0.14f), shape = RoundedCornerShape(30.dp)) {
+                                    Text("● $stateLabel", color = palette.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                                }
+                            }
+                            Text(
+                                "What are we\nworking on today?",
+                                color = palette.text,
+                                fontSize = 34.sp,
+                                lineHeight = 39.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-1.1).sp
+                            )
+                            Text(
+                                "Think through an idea, build something, learn a topic, or bring a file into your conversation.",
+                                color = palette.muted,
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp
+                            )
+                            HorizontalDivider(color = palette.raised)
+                            Text("START WITH A TASK", color = palette.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
+                                    HomeActionCard(Icons.Default.Info, "Explore an idea", "Think it through", Modifier.weight(1f)) { draft = "Help me explore an idea: " }
+                                    HomeActionCard(Icons.Default.Save, "Write something", "Create a first draft", Modifier.weight(1f)) { draft = "Help me write: " }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
+                                    HomeActionCard(Icons.Default.History, "Learn a topic", "Clear explanations", Modifier.weight(1f)) { draft = "Explain this topic clearly, with examples: " }
+                                    HomeActionCard(Icons.Default.Settings, "Review code", "Find issues & improve", Modifier.weight(1f)) { draft = "Review this code for bugs, security issues and improvements: " }
+                                }
+                            }
+                        }
                     }
-                    SuggestionChip("Explain a topic") { draft = "Explain this topic clearly: " }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SuggestionChip("Summarize") { draft = "Summarize the following clearly, with key points: " }
-                        SuggestionChip("Brainstorm") { draft = "Help me brainstorm practical ideas for: " }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SuggestionChip("Review code") { draft = "Review this code for bugs, security issues and improvements: " }
-                        SuggestionChip("Translate") { draft = "Translate this into Filipino while preserving the meaning: " }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Lock, null, tint = palette.accent, modifier = Modifier.size(14.dp))
+                        Text(
+                            if (localModelEnabled && localModelReady) "Offline model selected · Your prompt stays on this device"
+                            else "You stay in control · Configure providers, privacy and tools in Settings",
+                            color = palette.muted,
+                            fontSize = 10.sp,
+                            lineHeight = 15.sp
+                        )
                     }
                 }
             } else {
@@ -746,6 +802,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = { settings = false },
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -754,7 +812,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
@@ -963,18 +1021,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("CENAI PLANS · OPTIONAL BILLING", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("Secure Stripe checkout. Billing remains unavailable until the owner configures and verifies the payment provider.", color = palette.muted, fontSize = 10.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
-                                        cloudBusy = true; cloudStatus = "Opening Supporter checkout…"
-                                        scope.launch { try { val url = cloud.startBillingCheckout("supporter"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
-                                    }, modifier = Modifier.weight(1f)) { Text("Supporter") }
-                                    OutlinedButton(enabled = !cloudBusy && emailVerified, onClick = {
-                                        cloudBusy = true; cloudStatus = "Opening Pro checkout…"
-                                        scope.launch { try { val url = cloud.startBillingCheckout("pro"); context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); cloudStatus = "Secure checkout opened." } catch (e: Exception) { cloudStatus = e.message ?: "Checkout unavailable." } finally { cloudBusy = false } }
-                                    }, modifier = Modifier.weight(1f)) { Text("Pro") }
-                                }
+                                Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Subscriptions are managed on the secure CenAI website. Sign in with your CenAI account and review the recurring amount before approving payment on PayPal.", color = palette.muted, fontSize = 10.sp)
+                                OutlinedButton(enabled = emailVerified, onClick = {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cenai-website.vercel.app/billing")))
+                                    }.onFailure { cloudStatus = "Could not open the secure billing page: " + (it.message ?: "unknown error") }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("View subscriptions and continue with PayPal") }
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
@@ -1300,6 +1353,24 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         )
     }
 
+}
+
+@Composable
+private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val palette = LocalCenAiPalette.current
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 96.dp),
+        color = palette.background,
+        shape = RoundedCornerShape(17.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(21.dp))
+            Text(title, color = palette.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = palette.muted, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+    }
 }
 
 @Composable

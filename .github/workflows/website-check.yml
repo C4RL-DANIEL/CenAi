@@ -30,6 +30,10 @@ jobs:
           test -s website/roadmap.html
           test -s website/updates.html
           test -s website/updates.js
+          test -s website/billing.html
+          test -s website/billing.js
+          test -s website/billing-success.html
+          test -s website/billing-cancel.html
           test -s website/api/health.js
           test -s website/api/releases.js
           test -s website/admin/index.html
@@ -40,6 +44,7 @@ jobs:
           test -s website/ADMIN-SETUP.md
           test -s supabase/migrations/202611150001_sendai_control_plane.sql
           grep -q '/admin/index.html' website/vercel.json
+          grep -q '/billing.html' website/vercel.json
           grep -q 'Administrator sign in' website/admin/index.html
           grep -q 'cenai-control-plane' website/api/admin.js
           test -s website/api/email-otp.js

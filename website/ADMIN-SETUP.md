@@ -2,6 +2,7 @@
 
 ## Public and private routes
 - Public homepage: `/`
+- Subscription checkout: `/billing` (requires a signed-in CenAI account and the global billing launch flag)
 - Admin login: `/admin` (not linked from public navigation; obscurity is not authorization)
 - Admin API: `/api/admin` (POST only; validates the Supabase Auth bearer token and checks active admin membership on every request)
 
@@ -19,13 +20,16 @@ Set these for Production and Preview only as appropriate:
 
 Do not put secret keys in `NEXT_PUBLIC_*`, static files, GitHub source, or Android builds. Rotate any secret that has ever been committed.
 
-## Supabase Edge Function secrets for billing
-Set these in Supabase Edge Function Secrets (not Vercel) before testing Stripe:
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_SUPPORTER`
-- `STRIPE_PRICE_PRO`
-- `CENAI_PUBLIC_URL`
+## Supabase Edge Function secrets for PayPal Live billing
+Set these in Supabase Edge Function Secrets (not Vercel):
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `PAYPAL_WEBHOOK_ID`
+- `CENAI_PUBLIC_URL` (for example `https://cenai-website.vercel.app`)
+
+Create the PayPal webhook against `https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing`. Subscribe to the billing subscription lifecycle events (created, activated, updated, cancelled, suspended, expired, payment failed) and the supported payment sale completion/refund/reversal events. The function verifies each signature and deduplicates event IDs.
+
+The admin Billing Plans tab creates a PayPal product and recurring plan after an authorized owner/admin signs in. The configured `live_test` price of PHP 1.00 is a REAL recurring charge on PayPal Live, not a PayPal Sandbox test. Do not expose it to customers until the amount, renewal interval, cancellation flow, webhook delivery and refund handling have been checked.
 
 The deployed billing function validates Stripe webhook signatures and deduplicates event IDs. Billing remains inactive until checkout and webhook tests pass.
 
@@ -43,4 +47,4 @@ Run `supabase/migrations/202611150001_sendai_control_plane.sql` in the Supabase 
 - Control-plane tables have RLS enabled and no privileges for anon/authenticated roles. Only the server-side secret key can access them.
 
 ## Not yet activated
-This is a protected control-plane foundation, not a fully deployed SaaS backend. The public API currently supports model listing and usage reporting only; chat completions, quotas and full SDK coverage are not implemented. Stripe checkout and webhook code is deployed but remains inactive until the required server-side keys and price IDs are configured and verified. Guardian device diagnostics currently run locally on Android; remote ingestion is not enabled. Staged rollout workers, MFA enforcement and mobile admin tooling are not implemented. Do not enable paid plans or remote device control until those services and their security tests are deployed. Configure MFA for admin accounts before production use; current login is password-based and should be treated as a restricted beta.
+This is a protected control-plane foundation, not a fully deployed SaaS backend. The public API currently supports model listing and usage reporting only; chat completions, quotas and full SDK coverage are not implemented. PayPal Live checkout and webhook code is deployed, but the public billing flag remains OFF until a product/plan is created through the authorized admin UI and signed webhook, approval, activation, cancellation and refund paths are verified. Guardian device diagnostics currently run locally on Android; remote ingestion is not enabled. Staged rollout workers, MFA enforcement and mobile admin tooling are not implemented. Do not enable paid plans or remote device control until those services and their security tests are deployed. Configure MFA for admin accounts before production use; current login is password-based and should be treated as a restricted beta.
