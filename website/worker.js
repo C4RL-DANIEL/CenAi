@@ -1,5 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
+const STATIC_CACHE_VERSION = "20261116-website-polish-2";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
@@ -411,7 +412,7 @@ async function staticAsset(request, url, ctx) {
   const assetPath = rewritten.pathname === "/" ? "/index.html" : rewritten.pathname;
   if (!STATIC_FILES.has(assetPath)) return withSecurity(new Response("Not found", { status: 404 }));
   if (!["GET", "HEAD"].includes(request.method)) return withSecurity(new Response("Method not allowed", { status: 405 }));
-  const cacheKey = new Request(url.origin + assetPath);
+  const cacheKey = new Request(url.origin + assetPath + "?v=" + STATIC_CACHE_VERSION);
   let response = await caches.default.match(cacheKey);
   if (!response) {
     const origin = "https://raw.githubusercontent.com/C4RL-DANIEL/CenAi/main/website" + assetPath;
