@@ -847,7 +847,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
                             listOf("DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = {\n                                    uiStyle = key\n                                    themeExpanded = false\n                                    onUiStyleChange(key)\n                                    vault.put("ui_style", key)\n                                })
+                                DropdownMenuItem(text = { Text(label) }, onClick = { uiStyle = key; themeExpanded = false })
                             }
                         }
                     }
@@ -1455,7 +1455,7 @@ private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, m
         modifier = modifier.heightIn(min = 96.dp),
         color = if (palette.glass) palette.surface.copy(alpha = 0.56f) else palette.background,
         shape = RoundedCornerShape(17.dp),
-        border = if (palette.glass) cenAiGlassBorder() else androidx.compose.foundation.BorderStroke(1.dp, palette.raised),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (palette.glass) Color.White.copy(alpha = 0.76f) else palette.raised),
         shadowElevation = if (palette.glass) 8.dp else 0.dp
     ) {
         Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
