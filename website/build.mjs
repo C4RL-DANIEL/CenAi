@@ -4,7 +4,7 @@ import path from "node:path";
 
 const root = path.dirname(new URL(import.meta.url).pathname);
 const output = path.join(root, "dist");
-const excluded = new Set(["api", "node_modules", "dist", ".git", ".vercel", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "worker.js", "wrangler.jsonc", "build.mjs", "vercel.json", "README.md"]);
+const excluded = new Set(["ADMIN-SETUP.md", "api", "node_modules", "dist", ".git", ".vercel", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "worker.js", "wrangler.jsonc", "build.mjs", "vercel.json", "README.md"]);
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 
