@@ -22,5 +22,6 @@ async function copyTree(from, to, relative = "") {
   }
 }
 await copyTree(root, output);
+await cp(path.join(root, "worker.js"), path.join(output, "_worker.js"));
 const countFiles = async (dir) => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(async (entry) => entry.isDirectory() ? countFiles(path.join(dir, entry.name)) : 1))).reduce((a, b) => a + b, 0);
 console.log(`Prepared ${await countFiles(output)} static assets for Cloudflare Workers.`);
