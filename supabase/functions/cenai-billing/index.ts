@@ -62,7 +62,7 @@ Deno.serve(async(req:Request)=>{
  try{
    const stripeKey=Deno.env.get("STRIPE_SECRET_KEY")||"";
    const webhookSecret=Deno.env.get("STRIPE_WEBHOOK_SECRET")||"";
-   const publicUrl=Deno.env.get("CENAI_PUBLIC_URL")||"";
+   const publicUrl="https://cenai-website.aglibotcarldaniel.workers.dev";
    const stripeSignature=req.headers.get("Stripe-Signature")||"";
    if(stripeSignature){
      if(!webhookSecret)return fail(503,"Stripe webhook is not configured");
