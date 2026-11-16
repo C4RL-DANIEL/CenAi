@@ -14,7 +14,7 @@
     if (!supabaseUrl || !publishableKey) throw new Error("Billing authentication is not configured.");
   }
   async function billingApi(action, payload = {}) {
-    const response = await fetch(supabaseUrl + "/functions/v1/cenai-paypal-billing", {
+    const response = await fetch("/api/functions/cenai-paypal-billing", {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: publishableKey, Authorization: "Bearer " + accessToken },
       body: JSON.stringify({ action, ...payload })
