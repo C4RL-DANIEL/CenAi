@@ -65,7 +65,7 @@
     send.textContent = "Sending…";
     try {
       const email = document.getElementById("email").value.trim();
-      const redirectTo = "https://cenai-website.pages.dev/reset-password";
+      const redirectTo = "https://cenai-website.aglibotcarldaniel.workers.dev/reset-password";
       const response = await fetch(SUPABASE_URL + "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo), {
         method: "POST",
         headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
