@@ -24,7 +24,8 @@ jobs:
           set -euo pipefail
           test -s website/index.html
           test -s website/styles.css
-          test -s website/app.js
+          test -s website/home.js
+          test -s website/api/site-pages.js
           test -s website/security.html
           test -s website/api.html
           test -s website/roadmap.html
@@ -54,7 +55,14 @@ jobs:
           test -s website/beta.js
           test -s website/vercel.json
           grep -q 'href="/styles.css"' website/index.html
-          grep -q 'src="/app.js"' website/index.html
-          grep -q 'API access and billing activate only' website/index.html
+          grep -q 'data-cms-title' website/index.html
+          grep -q 'data-cms-description' website/index.html
+          grep -q 'Approval-first agents' website/index.html
           grep -q 'not live service URLs' website/api.html
-          echo "Static website structure checks passed."
+          node --check website/admin/admin.js
+          node --check website/home.js
+          node --check website/beta.js
+          node --check website/api/admin.js
+          node --check website/api/beta.js
+          node --check website/api/site-pages.js
+          echo "Static website structure and JavaScript syntax checks passed."
