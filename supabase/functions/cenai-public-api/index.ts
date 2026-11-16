@@ -21,6 +21,21 @@ Deno.serve(async (req:Request) => {
     const {data:key,error:keyError}=await db.from("api_keys").select("id,owner_user_id,scopes,enabled").eq("key_hash",keyHash).maybeSingle();
     if(keyError) throw keyError;
     if(!key || !key.enabled) return reply(401,{error:"Invalid or revoked API key."});
+    const {data:quota,error:quotaError}=await db.from("ai_quota_policies").select("daily_request_limit,monthly_token_limit,enabled").eq("owner_user_id",key.owner_user_id).maybeSingle();
+    if(quotaError) throw quotaError;
+    const policy={daily_request_limit:quota?.daily_request_limit ?? 100,monthly_token_limit:quota?.monthly_token_limit ?? 500000,enabled:quota?.enabled !== false};
+    const now=new Date();
+    const dayStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())).toISOString();
+    const monthStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)).toISOString();
+    if(policy.enabled){
+      const {count:dailyCount,error:dailyError}=await db.from("usage_events").select("id",{count:"exact",head:true}).eq("owner_user_id",key.owner_user_id).eq("source","public_api").gte("created_at",dayStart);
+      if(dailyError) throw dailyError;
+      if((dailyCount||0)>=policy.daily_request_limit) return reply(429,{error:"Daily CenAI API request quota exceeded.",quota:{dailyLimit:policy.daily_request_limit,used:dailyCount||0,resetAt:new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1)).toISOString()}});
+      const {data:monthRows,error:monthError}=await db.from("usage_events").select("input_tokens,output_tokens").eq("owner_user_id",key.owner_user_id).eq("source","public_api").gte("created_at",monthStart).limit(10000);
+      if(monthError) throw monthError;
+      const monthlyTokens=(monthRows||[]).reduce((n,row)=>n+Number(row.input_tokens||0)+Number(row.output_tokens||0),0);
+      if(monthlyTokens>=policy.monthly_token_limit) return reply(429,{error:"Monthly CenAI API token quota exceeded.",quota:{monthlyTokenLimit:policy.monthly_token_limit,usedTokens:monthlyTokens,resetAt:new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1)).toISOString()}});
+    }
     const sinceMinute=new Date(Date.now()-60_000).toISOString();
     const {count:recentCount,error:rateError}=await db.from("usage_events").select("id",{count:"exact",head:true}).eq("api_key_id",key.id).gte("created_at",sinceMinute);
     if(rateError)throw rateError;
