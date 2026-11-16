@@ -54,7 +54,7 @@ jobs:
       - name: Smoke test production Cloudflare Worker
         run: |
           set -euo pipefail
-          BASE="https://cenai-website.aglibotcarldaniel.workers.dev"
+          BASE="https://cenai-website.cenai-app.workers.dev"
           status=""
           for attempt in $(seq 1 10); do
             status=$(curl -sS --max-time 15 -o /tmp/cenai-health.json -w "%{http_code}" "$BASE/api/health" || true)
