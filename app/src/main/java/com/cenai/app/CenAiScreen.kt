@@ -554,7 +554,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     Scaffold(
-        modifier = Modifier.background(if (palette.glass) Brush.linearGradient(listOf(Color(0xFFE6EEF9), Color(0xFFF5F6FA), Color(0xFFE9EAF4))) else SolidColor(palette.background)),
+        modifier = Modifier.background(if (palette.glass) Brush.linearGradient(listOf(palette.background, palette.surface.copy(alpha = 0.96f), palette.raised.copy(alpha = 0.78f))) else SolidColor(palette.background)),
         containerColor = if (palette.glass) Color.Transparent else palette.background,
         topBar = {
             TopAppBar(
@@ -755,7 +755,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     if (historyOpen) {
-        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = palette.surface) {
+        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = if (palette.glass) palette.surface.copy(alpha = 0.90f) else palette.surface) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
@@ -813,6 +813,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = { settings = false },
+            containerColor = if (palette.glass) palette.surface.copy(alpha = 0.94f) else palette.surface,
+            tonalElevation = if (palette.glass) 18.dp else 6.dp,
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
@@ -826,7 +828,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         OutlinedTextField(
                             value = when (uiStyle) {
                                 "MATERIAL" -> "Android · Material 3"
-                                "IOS" -> "iOS 27 · Liquid Glass"
+                                "IOS" -> "iOS · Liquid Glass"
                                 "FIGMA" -> "CenAI Studio · Editorial"
                                 else -> "CenAI Default"
                             },
@@ -842,7 +844,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }
                     Text(when (uiStyle) {
                         "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
-                        "IOS" -> "Liquid Glass-inspired translucent chrome, native-feeling controls and soft spring motion."
+                        "IOS" -> "Translucent glass chrome, reflective edges, layered depth and restrained spring motion."
                         "FIGMA" -> "A distinct editorial workspace with bold hierarchy, framed panels, vivid accent rails and asymmetric composition."
                         else -> "The original CenAI dark workspace."
                     }, color = palette.muted, fontSize = 10.sp)
