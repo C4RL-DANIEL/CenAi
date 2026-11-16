@@ -66,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
@@ -553,8 +554,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    Scaffold(
-        modifier = Modifier.background(if (palette.glass) Brush.linearGradient(listOf(palette.background, palette.surface.copy(alpha = 0.96f), palette.raised.copy(alpha = 0.78f))) else SolidColor(palette.background)),
+    Box(Modifier.fillMaxSize().background(if (palette.glass) Brush.linearGradient(listOf(palette.background, palette.surface.copy(alpha = 0.96f), palette.raised.copy(alpha = 0.78f))) else SolidColor(palette.background))) {
+        if (palette.glass) {
+            Box(Modifier.offset(x = (-90).dp, y = 90.dp).size(340.dp).blur(76.dp)
+                .background(Brush.radialGradient(listOf(palette.accent.copy(alpha = 0.26f), Color.Transparent)), CircleShape))
+            Box(Modifier.offset(x = 180.dp, y = 390.dp).size(300.dp).blur(82.dp)
+                .background(Brush.radialGradient(listOf(Color(0xFFB8C8E8).copy(alpha = 0.34f), Color.Transparent)), CircleShape))
+        }
+        Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = if (palette.glass) Color.Transparent else palette.background,
         topBar = {
             TopAppBar(
@@ -751,6 +759,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }
                 }
             }
+        }
         }
     }
 
