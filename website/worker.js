@@ -201,7 +201,7 @@ async function emailOtp(request, env) {
 
 async function health(env) {
   const required = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"];
-  const optional = ["CENAI_API_BASE_URL", "AI_GATEWAY_API_KEY", "EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET", "PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID", "CENAI_PUBLIC_URL"];
+  const optional = ["CENAI_API_BASE_URL", "AI_GATEWAY_API_KEY", "EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET", "CENAI_PUBLIC_URL"];
   const configured = Object.fromEntries([...required, ...optional].map((key) => [key, Boolean(env[key])]));
   const missing = required.filter((key) => !env[key]);
   const missingOtp = ["EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET"].filter((key) => !env[key]);
@@ -213,7 +213,7 @@ async function health(env) {
     adminPanel: "available-at-/admin",
     emailOtp: missingOtp.length === 0 ? "configuration-present-needs-delivery-test" : "not-configured",
     controlPlane: missing.length === 0 ? "configuration-present" : "not-configured",
-    paypal: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"].every((key) => Boolean(env[key])) ? "configuration-present" : "not-configured",
+    paypal: "managed-by-supabase-paypal-edge-function",
     integrations: configured,
     missingConfiguration: missing,
     missingEmailOtpConfiguration: missingOtp,
