@@ -2,6 +2,17 @@ name: Release signing readiness
 on:
   push:
     branches: [main]
+    paths:
+      - "AndroidApp/**"
+      - "app/**"
+      - "core/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle.properties"
+      - ".github/workflows/release-readiness.yml"
   workflow_dispatch:
 permissions:
   contents: read
