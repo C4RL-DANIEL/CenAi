@@ -2,6 +2,9 @@ package com.cenai.app
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -16,6 +19,18 @@ import androidx.compose.ui.platform.LocalContext
 data class CenAiPalette(
     val background: Color, val surface: Color, val raised: Color,
     val accent: Color, val text: Color, val muted: Color, val glass: Boolean = false
+)
+
+fun cenAiGlassBorder(): BorderStroke = BorderStroke(
+    1.dp,
+    Brush.linearGradient(
+        listOf(
+            Color.White.copy(alpha = 0.96f),
+            Color(0xFFB9D9FF).copy(alpha = 0.58f),
+            Color.White.copy(alpha = 0.16f),
+            Color(0xFFE7F4FF).copy(alpha = 0.72f)
+        )
+    )
 )
 
 val LocalCenAiPalette = staticCompositionLocalOf {
