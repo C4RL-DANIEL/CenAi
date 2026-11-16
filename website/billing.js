@@ -57,7 +57,7 @@
         try {
           const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
           const approval = new URL(checkout.approvalUrl);
-          if (approval.protocol !== "https:" || !approval.hostname.endsWith("paypal.com")) throw new Error("PayPal returned an unexpected approval destination.");
+          if (approval.protocol !== "https:" || !(approval.hostname !== "paypal.com" && !approval.hostname.endsWith(".paypal.com"))) throw new Error("PayPal returned an unexpected approval destination.");
           location.assign(approval.toString());
         } catch (error) {
           status(error.message, true);
