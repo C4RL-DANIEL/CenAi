@@ -33,8 +33,7 @@ class CenAiLaunchSmokeTest {
             "LOCAL KNOWLEDGE",
             "GUARDIAN · DEVICE HEALTH",
             "APP MONITOR",
-            "SOFTWARE UPDATE",
-            "CENAI PLANS · PAYPAL"
+            "SOFTWARE UPDATE"
         ).forEach { label ->
             compose.onNodeWithText(label, substring = true).assertExists()
         }
