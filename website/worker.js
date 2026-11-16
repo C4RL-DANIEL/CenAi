@@ -1,12 +1,12 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261116-cenai-redesign-2";
+const STATIC_CACHE_VERSION = "20261117-cenai-account-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
   "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
   "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
-  "/admin/index.html", "/admin/admin.css", "/admin/admin.js"
+  "/admin/index.html", "/admin/admin.css", "/admin/admin.js", "/account.html", "/account.js"
 ]);
 
 const corsHeaders = {
@@ -444,6 +444,8 @@ function rewritePath(url) {
     "/admin/": "/admin/index.html",
     "/reset-password": "/reset-password.html",
     "/reset-password/": "/reset-password.html",
+    "/account": "/account.html",
+    "/account/": "/account.html",
     "/billing": "/billing.html",
     "/billing/": "/billing.html",
     "/billing/success": "/billing-success.html",
