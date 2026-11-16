@@ -67,7 +67,7 @@ jobs:
             exit 1
           fi
           node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
-          for route in / /admin /beta /billing /updates.html /security.html /roadmap.html /api.html; do
+          for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html; do
             code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
             if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi
           done
