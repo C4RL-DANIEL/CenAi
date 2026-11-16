@@ -184,8 +184,7 @@ async function handleWebhook(event: Record<string, any>) {
   }
   if (!userId) return;
   const statusMap: Record<string, string> = {
-    "BILLING.SUBSCRIPTION.ACTIVATED": "ACTIVE",
-    "BILLING.SUBSCRIPTION.UPDATED": String(resource.status || "ACTIVE"),
+    "BILLING.SUBSCRIPTION.UPDATED": ["CANCELLED", "SUSPENDED", "EXPIRED"].includes(String(resource.status || "")) ? String(resource.status) : "",
     "BILLING.SUBSCRIPTION.CANCELLED": "CANCELLED",
     "BILLING.SUBSCRIPTION.SUSPENDED": "SUSPENDED",
     "BILLING.SUBSCRIPTION.EXPIRED": "EXPIRED",
@@ -229,7 +228,9 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
   const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
   if (String(detail.custom_id || "") !== userId) throw new Error("PayPal checkout ownership verification failed.");
   const status = String(detail.status || "UNKNOWN");
-  if (status === "ACTIVE") {
+  const lastPaymentAmount = Number(detail.billing_info?.last_payment?.amount?.value || 0);
+  const firstPaymentConfirmed = Number.isFinite(lastPaymentAmount) && lastPaymentAmount > 0 && Boolean(detail.billing_info?.last_payment?.time);
+  if (status === "ACTIVE" && firstPaymentConfirmed) {
     const { error } = await db.from("billing_subscriptions").upsert({
       user_id: userId, provider: "paypal", provider_subscription_id: subscriptionId,
       plan_key: String(row.plan_key || "live_test"), status: "ACTIVE",
@@ -245,7 +246,7 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
     return status;
   }
   const expired = row.expires_at && Date.parse(String(row.expires_at)) <= Date.now();
-  if ((status === "APPROVAL_PENDING" || status === "APPROVED") && (forceCancel || expired)) {
+  if ((status === "APPROVAL_PENDING" || status === "APPROVED" || status === "ACTIVE") && (forceCancel || expired)) {
     try {
       await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI checkout was not completed before its expiry." });
       await db.from("billing_checkout_attempts").update({ status: "CANCELLED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
@@ -256,7 +257,7 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
       return "EXPIRED";
     }
   }
-  return status;
+  return status === "ACTIVE" ? "AWAITING_PAYMENT" : status;
 }
 
 Deno.serve(async (req: Request) => {
@@ -364,14 +365,19 @@ Deno.serve(async (req: Request) => {
           try {
             const token = await accessToken();
             const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)), "GET", token);
-            if (String(detail.custom_id || "") === user.id && ["APPROVAL_PENDING", "APPROVED"].includes(String(detail.status))) {
-              try {
-                await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)) + "/cancel", "POST", token, { reason: "Unpaid CenAI checkout expired or was abandoned." });
-              } catch (cancelError) {
-                console.error("PayPal could not cancel legacy unapproved checkout", String(row.provider_subscription_id), cancelError instanceof Error ? cancelError.message : "unknown");
+            const paid = Number(detail.billing_info?.last_payment?.amount?.value || 0) > 0 && Boolean(detail.billing_info?.last_payment?.time);
+            if (String(detail.custom_id || "") === user.id && String(detail.status) === "ACTIVE" && paid) {
+              await db.from("billing_subscriptions").update({ status: "ACTIVE", current_period_end: detail.billing_info?.next_billing_time || null, cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
+            } else {
+              if (String(detail.custom_id || "") === user.id && ["APPROVAL_PENDING", "APPROVED", "ACTIVE"].includes(String(detail.status))) {
+                try {
+                  await paypal("/v1/billing/subscriptions/" + encodeURIComponent(String(row.provider_subscription_id)) + "/cancel", "POST", token, { reason: "CenAI checkout expired without a confirmed first payment." });
+                } catch (cancelError) {
+                  console.error("PayPal could not cancel unpaid legacy checkout", String(row.provider_subscription_id), cancelError instanceof Error ? cancelError.message : "unknown");
+                }
               }
+              await db.from("billing_subscriptions").update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
             }
-            await db.from("billing_subscriptions").update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
           } catch (error) {
             console.error("Legacy pending PayPal cleanup failed", String(row.provider_subscription_id), error instanceof Error ? error.message : "unknown");
             await db.from("billing_subscriptions").update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: new Date().toISOString() }).eq("provider_subscription_id", row.provider_subscription_id).eq("user_id", user.id);
