@@ -1,0 +1,28 @@
+name: Release signing readiness
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release signing secrets without exposing values
+        env:
+          CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
+          CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
+          CENAI_KEY_ALIAS: ${{ secrets.CENAI_KEY_ALIAS }}
+          CENAI_KEY_PASSWORD: ${{ secrets.CENAI_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "$CENAI_KEYSTORE_BASE64" ]] || missing+=(CENAI_KEYSTORE_BASE64)
+          [[ -n "$CENAI_KEYSTORE_PASSWORD" ]] || missing+=(CENAI_KEYSTORE_PASSWORD)
+          [[ -n "$CENAI_KEY_ALIAS" ]] || missing+=(CENAI_KEY_ALIAS)
+          [[ -n "$CENAI_KEY_PASSWORD" ]] || missing+=(CENAI_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            echo "Release signing is not configured. Missing secret names: ${missing[*]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "All release signing secrets are present. No secret values were printed." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
