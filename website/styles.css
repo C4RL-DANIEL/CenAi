@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
 :root{--paper:#f6f7f5;--white:#fff;--ink:#15213a;--ink-2:#263650;--muted:#647188;--line:#e1e5e3;--blue:#4569d4;--blue-soft:#edf1ff;--green:#2d9b78;--green-soft:#eaf5ef;--purple:#8166cb;--orange:#bd7447;--shadow:0 22px 70px rgba(28,43,68,.11);--font:'DM Sans',system-ui,sans-serif;--display:'Manrope','DM Sans',system-ui,sans-serif}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.65 var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button{font:inherit}.page-width{width:min(1160px,calc(100% - 56px));margin-inline:auto}
@@ -170,7 +171,6 @@ body{background:var(--paper);color:var(--ink)}
 
 
 /* CenAI 2026 visual refresh — editorial product studio */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 :root{--paper:#f3f1eb;--ink:#18251f;--ink-2:#34443b;--muted:#68756d;--line:#d9ddd5;--blue:#315b48;--blue-soft:#e5eee7;--green:#a6c94b;--font:'DM Sans',system-ui,sans-serif;--display:'Space Grotesk','DM Sans',system-ui,sans-serif}
 body{background:#f3f1eb;color:#18251f}
 .announcement{height:34px;background:#1b2b23;color:#dce5d8;font-size:10px;letter-spacing:.07em;text-transform:uppercase}
