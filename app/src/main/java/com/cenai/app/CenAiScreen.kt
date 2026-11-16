@@ -67,6 +67,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -552,7 +554,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     Scaffold(
-        containerColor = palette.background,
+        modifier = Modifier.background(if (palette.glass) Brush.linearGradient(listOf(Color(0xFFE6EEF9), Color(0xFFF5F6FA), Color(0xFFE9EAF4))) else SolidColor(palette.background)),
+        containerColor = if (palette.glass) Color.Transparent else palette.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -570,16 +573,16 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     IconButton(onClick = { if (messages.isNotEmpty()) { val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }; val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }; context.startActivity(Intent.createChooser(send, "Share conversation")) } }) { Icon(Icons.Default.Share, "Share conversation", tint = palette.text) }
                     IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = if (vault.get("ui_style", "DEFAULT") == "IOS") palette.surface.copy(alpha = 0.82f) else palette.background)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = if (palette.glass) Color.Transparent else palette.background)
             )
         },
         bottomBar = {
-            Surface(color = palette.background, tonalElevation = 4.dp) {
+            Surface(color = if (palette.glass) palette.surface.copy(alpha = 0.64f) else palette.background, shape = if (palette.glass) RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) else RoundedCornerShape(0.dp), border = if (palette.glass) androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.82f), palette.accent.copy(alpha = 0.18f), Color.White.copy(alpha = 0.24f)))) else null, shadowElevation = if (palette.glass) 18.dp else 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
                     AnimatedVisibility(visible = error.isNotBlank()) {
                         Text(error, color = Color(0xFFFF938B), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
                     }
-                    Surface(color = palette.surface, shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = if (palette.glass) palette.surface.copy(alpha = 0.56f) else palette.surface, shape = RoundedCornerShape(26.dp), border = if (palette.glass) androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), palette.accent.copy(alpha = 0.22f), Color.White.copy(alpha = 0.28f)))) else null, shadowElevation = if (palette.glass) 10.dp else 0.dp, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
                             BasicTextField(
                                 value = draft, onValueChange = { draft = it },
@@ -1436,9 +1439,10 @@ private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, m
     Surface(
         onClick = onClick,
         modifier = modifier.heightIn(min = 96.dp),
-        color = palette.background,
+        color = if (palette.glass) palette.surface.copy(alpha = 0.56f) else palette.background,
         shape = RoundedCornerShape(17.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (palette.glass) Color.White.copy(alpha = 0.76f) else palette.raised),
+        shadowElevation = if (palette.glass) 8.dp else 0.dp
     ) {
         Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(21.dp))
@@ -1451,7 +1455,7 @@ private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, m
 @Composable
 private fun SuggestionChip(label: String, onClick: () -> Unit) {
     val palette = LocalCenAiPalette.current
-    Surface(onClick = onClick, color = palette.surface, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)) {
+    Surface(onClick = onClick, color = if (palette.glass) palette.surface.copy(alpha = 0.62f) else palette.surface, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (palette.glass) Color.White.copy(alpha = 0.76f) else palette.raised), shadowElevation = if (palette.glass) 5.dp else 0.dp) {
         Text(label, color = palette.text, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp))
     }
 }
@@ -1481,7 +1485,7 @@ private fun MessageBubble(
             Surface(
                 color = when {
                     ios && user -> palette.accent
-                    ios && !user -> Color.Transparent
+                    ios && !user -> palette.surface.copy(alpha = 0.62f)
                     editorial && !user -> palette.surface
                     user -> palette.raised
                     else -> palette.surface
@@ -1493,7 +1497,7 @@ private fun MessageBubble(
                     user -> RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
                     else -> RoundedCornerShape(6.dp, 22.dp, 22.dp, 22.dp)
                 },
-                border = if (editorial && !user) androidx.compose.foundation.BorderStroke(1.dp, palette.raised) else null,
+                border = when { ios -> androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.88f), palette.accent.copy(alpha = 0.20f), Color.White.copy(alpha = 0.32f)))); editorial && !user -> androidx.compose.foundation.BorderStroke(1.dp, palette.raised); else -> null },
                 modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
             ) {
                 Column(Modifier.fillMaxWidth().padding(if (ios && !user) 4.dp else 15.dp)) {
