@@ -39,7 +39,7 @@
   <div id="site-page-content" class="rows"></div>
 </section>
 <section id="tab-quotas" class="card panel" hidden>
-  <h2>CenAI API quotas</h2><p class="muted">These limits are enforced by the CenAI Public API. They do not meter direct calls from the Android app to a provider using a user's own API key; those calls bypass the CenAI server.</p>
+  <h2>CenAI API quotas</h2><p class="muted">These limits apply to the CenAI Public API. The current public API exposes model and usage endpoints; token limits apply to token usage recorded by CenAI gateway events. Direct Android calls to third-party providers using a user's own API key bypass the CenAI server and cannot be centrally metered yet.</p>
   <form id="quota-form" class="rows">
     <label>Owner user UUID<input id="quota-user-id" required placeholder="Supabase user UUID"></label>
     <label>Daily API request limit<input id="quota-daily" type="number" min="1" max="1000000" value="100" required></label>
