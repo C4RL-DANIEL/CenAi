@@ -26,7 +26,6 @@ Set these in Supabase Edge Function Secrets (not Vercel):
 - `PAYPAL_CLIENT_SECRET`
 - `PAYPAL_WEBHOOK_ID`
 - `CENAI_PUBLIC_URL` (for example `https://cenai-website.vercel.app`)
-- `CENAI_PUBLIC_ORIGIN` (the same production website origin)
 
 Create the PayPal webhook against `https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing`. Subscribe to the billing subscription lifecycle events (created, activated, updated, cancelled, suspended, expired, payment failed) and the supported payment sale completion/refund/reversal events. The function verifies each signature and deduplicates event IDs.
 
