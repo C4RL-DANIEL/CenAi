@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -687,12 +688,12 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text("START WITH A TASK", color = palette.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                                    HomeActionCard("✧", "Explore an idea", "Think it through", Modifier.weight(1f)) { draft = "Help me explore an idea: " }
-                                    HomeActionCard("⌘", "Write something", "Create a first draft", Modifier.weight(1f)) { draft = "Help me write: " }
+                                    HomeActionCard(Icons.Default.Info, "Explore an idea", "Think it through", Modifier.weight(1f)) { draft = "Help me explore an idea: " }
+                                    HomeActionCard(Icons.Default.Save, "Write something", "Create a first draft", Modifier.weight(1f)) { draft = "Help me write: " }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                                    HomeActionCard("▤", "Learn a topic", "Clear explanations", Modifier.weight(1f)) { draft = "Explain this topic clearly, with examples: " }
-                                    HomeActionCard("⌁", "Review code", "Find issues & improve", Modifier.weight(1f)) { draft = "Review this code for bugs, security issues and improvements: " }
+                                    HomeActionCard(Icons.Default.History, "Learn a topic", "Clear explanations", Modifier.weight(1f)) { draft = "Explain this topic clearly, with examples: " }
+                                    HomeActionCard(Icons.Default.Settings, "Review code", "Find issues & improve", Modifier.weight(1f)) { draft = "Review this code for bugs, security issues and improvements: " }
                                 }
                             }
                         }
@@ -1360,7 +1361,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
 }
 
 @Composable
-private fun HomeActionCard(icon: String, title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val palette = LocalCenAiPalette.current
     Surface(
         onClick = onClick,
@@ -1370,7 +1371,7 @@ private fun HomeActionCard(icon: String, title: String, subtitle: String, modifi
         border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised)
     ) {
         Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(icon, color = palette.accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(21.dp))
             Text(title, color = palette.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = palette.muted, fontSize = 10.sp, lineHeight = 14.sp)
         }
