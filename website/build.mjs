@@ -1,5 +1,5 @@
-// Cloudflare Pages build entrypoint: copy public site files and package the advanced-mode Worker.
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+// Build a self-contained Cloudflare Worker bundle with the public CenAI site embedded.
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.dirname(new URL(import.meta.url).pathname);
@@ -23,6 +23,22 @@ async function copyTree(from, to, relative = "") {
   }
 }
 await copyTree(root, output);
-await cp(path.join(root, "worker.js"), path.join(output, "_worker.js"));
-const countFiles = async (dir) => (await Promise.all((await readdir(dir, { withFileTypes: true })).map(async (entry) => entry.isDirectory() ? countFiles(path.join(dir, entry.name)) : 1))).reduce((a, b) => a + b, 0);
-console.log(`Prepared ${await countFiles(output)} static assets for Cloudflare Workers.`);
+
+const assets = {};
+async function collectAssets(directory, prefix = "") {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    const relative = path.posix.join(prefix, entry.name);
+    if (entry.isDirectory()) await collectAssets(absolute, relative);
+    else if (entry.isFile()) assets["/" + relative] = await readFile(absolute, "utf8");
+  }
+}
+await collectAssets(output);
+
+const template = await readFile(path.join(root, "worker.js"), "utf8");
+const marker = "const STATIC_ASSETS = {};";
+if (!template.includes(marker)) throw new Error("Worker static asset injection marker is missing");
+const bundledWorker = template.replace(marker, "const STATIC_ASSETS = " + JSON.stringify(assets) + ";");
+await writeFile(path.join(output, "_worker.js"), bundledWorker, "utf8");
+
+console.log(`Prepared ${Object.keys(assets).length} public assets and a ${Buffer.byteLength(bundledWorker)}-byte standalone Worker bundle.`);
