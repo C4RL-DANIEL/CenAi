@@ -396,7 +396,7 @@ async function proxyFunction(request, env, slug) {
   if (!["GET", "HEAD"].includes(request.method)) init.body = await request.arrayBuffer();
   try {
         const supabaseBase = env.SUPABASE_URL.endsWith("/") ? env.SUPABASE_URL.slice(0, -1) : env.SUPABASE_URL;
-        const response = await fetch(supabaseBase + "/functions/v1/cenai-paypal-billing", {
+    const response = await fetch(supabaseBase + "/functions/v1/" + encodeURIComponent(slug), init);
     const body = await response.arrayBuffer();
     const resultHeaders = new Headers(response.headers);
     resultHeaders.set("Cache-Control", "no-store");
