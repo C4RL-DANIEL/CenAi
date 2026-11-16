@@ -177,3 +177,56 @@ footer{padding:22px 0 34px;color:#8492a0;font-size:11px}
 }
 @media(max-width:420px){.shell{width:calc(100% - 24px)}.brand{font-size:17px}.secure{letter-spacing:.06em}.stats b{font-size:27px}.analytics-metrics{grid-template-columns:1fr 1fr}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+/* CenAI editorial control center — operational layout */
+:root{color-scheme:light;--bg:#f1f0e9;--panel:#fbfaf6;--line:#d9dfd4;--text:#1b2b23;--muted:#68766b;--blue:#315b48;--green:#8eae4a;--red:#a94f4a}
+body{background:#f1f0e9;color:#1b2b23;font-family:'DM Sans',system-ui,sans-serif}
+.shell{width:min(1320px,calc(100% - 48px))}
+.top{height:82px;border-bottom-color:#d5dbd0}
+.brand{font:700 20px 'Space Grotesk','DM Sans',sans-serif;letter-spacing:-.07em}
+.brand .mark{width:38px;height:38px;border-radius:50%;background:#a6c94b;color:#1b2b23;font:700 19px 'Space Grotesk',sans-serif}
+.brand small{color:#60794c;font-size:8px;letter-spacing:.22em}
+.secure,.eyebrow,.stats span{color:#5b7553;letter-spacing:.17em}
+.secure{padding:8px 12px;border:1px solid #d4dfcb;border-radius:999px;background:#e9eee2;color:#536c47}
+.card{background:#fbfaf6;border:1px solid #d9dfd4;border-radius:17px;box-shadow:0 12px 34px #1b2b2308}
+.login{max-width:490px;margin:7vh auto;padding:clamp(26px,4vw,42px)}
+h1{font:600 clamp(32px,5vw,48px)/1.05 'Space Grotesk','DM Sans',sans-serif;letter-spacing:-.075em;color:#1b2b23}
+h2{font:600 22px 'Space Grotesk','DM Sans',sans-serif;letter-spacing:-.055em;color:#1b2b23}
+p{color:#68766b}
+label{color:#4d5e50;font-size:11px;font-weight:650;letter-spacing:.02em}
+input,textarea,select{border:1px solid #d7ded2;border-radius:8px;background:#f6f6ef;color:#1b2b23}
+input:focus,textarea:focus,select:focus{outline:2px solid #d5e3bd;border-color:#81986c}
+button{border:1px solid #d4dbd0;border-radius:999px;background:#f7f7f0;color:#34483a;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+button:hover{background:#e9eee2;border-color:#b8c7ae}
+.primary{background:#1b2b23;color:#fff;border:0;border-radius:999px}
+.primary:hover{background:#315b48;color:#fff}
+.quiet{background:transparent}
+.welcome{padding:42px 0 22px}
+.stats{gap:14px}.stats .card{padding:21px 23px;border-radius:15px}.stats b{font:600 32px 'Space Grotesk',sans-serif;letter-spacing:-.07em;color:#1b2b23}
+.tabs{gap:7px;padding:18px 0 12px;background:#f1f0e9}
+.tabs button{border:1px solid transparent;border-radius:999px;color:#647267;background:transparent;font-size:9px;letter-spacing:.055em}
+.tabs button.active{background:#1b2b23;border-color:#1b2b23;color:#f7f8f1;box-shadow:0 6px 16px #1b2b231a}
+.panel{margin:8px 0 26px;padding:clamp(20px,3vw,30px);min-height:230px;border-radius:18px}
+.item{border-top-color:#e1e5dc}
+.pill{border-color:#d6e1ca;color:#54723e;background:#eef3e7}
+.notice{border-color:#d9dfd4;border-radius:10px;background:#f4f5ed;color:#68766b}
+.notice.bad{border-color:#e9cbc7;color:#a94f4a;background:#fff4f1}
+.toolbar{gap:10px}
+.toolbar select{border-radius:999px}
+.billing-grid{border-color:#d9dfd4;border-radius:14px;background:#f5f5ee}
+.mfa-qr{border-radius:14px;border-color:#d9dfd4}
+.mfa-secret{background:#eef0e8;color:#34483a}
+.analytics-metric,.chart-card{border-color:#d9dfd4;border-radius:14px;background:#fbfaf6}
+.analytics-metric b{font:600 29px 'Space Grotesk',sans-serif;color:#1b2b23}
+.bar-track{background:#e9ece3}.bar-track i{background:#75934c}
+.chart-empty{background:#f4f5ed;border-color:#d9dfd4}
+#dashboard{display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+#dashboard>.welcome,#dashboard>#notice,#dashboard>.stats,#dashboard>#password-panel{grid-column:1/-1}
+#dashboard>.tabs{grid-column:1/-1;position:sticky;top:0;z-index:8}
+#dashboard>.panel{grid-column:1/-1}
+[hidden]{display:none!important}
+footer{color:#7b877a;border-top:1px solid #d9dfd4}
+:focus-visible{outline:3px solid #a6c94b;outline-offset:3px}
+@media(max-width:700px){.shell{width:calc(100% - 28px)}.top{height:72px}.welcome{padding:28px 0 18px}.stats{grid-template-columns:1fr}.stats .card{padding:16px 18px}.tabs{overflow-x:auto;scrollbar-width:thin}.panel{padding:19px}.analytics-metrics{grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
