@@ -59,8 +59,13 @@
         button.textContent = "Preparing secure checkout…";
         try {
           const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
+          if (typeof checkout.approvalUrl !== "string" || !checkout.approvalUrl) throw new Error("PayPal did not return an approval link.");
           const approval = new URL(checkout.approvalUrl);
-          if (approval.protocol !== "https:" || !(approval.hostname !== "paypal.com" && !approval.hostname.endsWith(".paypal.com"))) throw new Error("PayPal returned an unexpected approval destination.");
+          const approvalHost = approval.hostname.toLowerCase();
+          const isPayPalHost = approvalHost === "paypal.com" || approvalHost.endsWith(".paypal.com");
+          if (approval.protocol !== "https:" || !isPayPalHost || approval.username || approval.password) {
+            throw new Error("PayPal returned an unexpected approval destination. Checkout was stopped for your protection.");
+          }
           location.assign(approval.toString());
         } catch (error) {
           status(error.message, true);
