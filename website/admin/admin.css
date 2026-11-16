@@ -230,3 +230,18 @@ footer{color:#7b877a;border-top:1px solid #d9dfd4}
 :focus-visible{outline:3px solid #a6c94b;outline-offset:3px}
 @media(max-width:700px){.shell{width:calc(100% - 28px)}.top{height:72px}.welcome{padding:28px 0 18px}.stats{grid-template-columns:1fr}.stats .card{padding:16px 18px}.tabs{overflow-x:auto;scrollbar-width:thin}.panel{padding:19px}.analytics-metrics{grid-template-columns:1fr 1fr}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+/* Shared CenAI glass finish — aligned with homepage palette */
+:root{--cenai-glass:rgba(251,250,246,.76);--cenai-glass-line:rgba(255,255,255,.78);--cenai-glow:rgba(166,201,75,.22)}
+body{background:radial-gradient(ellipse at 92% 2%,rgba(166,201,75,.20),transparent 34%),radial-gradient(ellipse at 4% 35%,rgba(49,91,72,.08),transparent 32%),#f3f1eb}
+.card,.panel,.stats .card,.analytics-metric,.chart-card{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(251,250,246,.72));border-color:rgba(217,223,212,.88);box-shadow:0 16px 42px rgba(27,43,35,.075),inset 0 1px 0 var(--cenai-glass-line);backdrop-filter:blur(18px) saturate(135%);-webkit-backdrop-filter:blur(18px) saturate(135%)}
+.tabs{background:rgba(243,241,235,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+button,.toolbar select{transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease}
+button:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 9px 22px rgba(27,43,35,.12)}
+.primary{background:linear-gradient(115deg,#1b2b23 0%,#315b48 58%,#52794b 100%);box-shadow:0 9px 24px rgba(49,91,72,.22),inset 0 1px 0 rgba(255,255,255,.2)}
+.primary:hover{background:linear-gradient(115deg,#263b2e,#3d6c50 60%,#668e50);box-shadow:0 13px 28px rgba(49,91,72,.28)}
+.tabs button.active{background:linear-gradient(115deg,#1b2b23,#315b48);box-shadow:0 7px 20px rgba(49,91,72,.23)}
+input,textarea,select{background:rgba(246,246,239,.82);border-color:rgba(215,222,210,.95)}
+.secure,.pill{background:linear-gradient(135deg,rgba(238,243,231,.92),rgba(217,232,198,.62));box-shadow:inset 0 1px 0 rgba(255,255,255,.85)}
+@media(prefers-reduced-motion:reduce){button,.toolbar select{transition:none}}
