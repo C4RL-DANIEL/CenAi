@@ -260,6 +260,36 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
   return status === "ACTIVE" ? "AWAITING_PAYMENT" : status;
 }
 
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function cleanupExpiredAttempts() {
+  const now = new Date().toISOString();
+  const { data: attempts, error } = await db.from("billing_checkout_attempts")
+    .select("user_id,provider_subscription_id,plan_key,expires_at")
+    .eq("status", "AWAITING_APPROVAL").lte("expires_at", now).limit(100);
+  if (error) throw error;
+  let cancelled = 0;
+  let expired = 0;
+  let stillWaiting = 0;
+  for (const attempt of attempts || []) {
+    try {
+      const result = await settleCheckoutAttempt(String(attempt.user_id), attempt, false);
+      if (result === "CANCELLED") cancelled++;
+      else if (result === "EXPIRED" || result === "CANCELLED") expired++;
+      else stillWaiting++;
+    } catch (error) {
+      console.error("Scheduled PayPal checkout cleanup failed", String(attempt.provider_subscription_id), error instanceof Error ? error.message : "unknown");
+      stillWaiting++;
+    }
+  }
+  return { scanned: (attempts || []).length, cancelled, expired, stillWaiting };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return fail(405, "POST required");
@@ -284,6 +314,15 @@ Deno.serve(async (req: Request) => {
       });
       if (insertError && insertError.code !== "23505") throw insertError;
       return json(200, { received: true });
+    }
+
+    const cronSecret = req.headers.get("x-cenai-checkout-cron") || "";
+    if (cronSecret) {
+      const { data: storedSecret, error: secretError } = await db.from("cenai_internal_secrets")
+        .select("secret_value").eq("name", "paypal_checkout_cleanup").maybeSingle();
+      if (secretError) throw secretError;
+      if (!storedSecret?.secret_value || !constantTimeEqual(cronSecret, String(storedSecret.secret_value))) return fail(401, "Invalid scheduled cleanup credential");
+      return json(200, await cleanupExpiredAttempts());
     }
 
     const user = await currentUser(req);
