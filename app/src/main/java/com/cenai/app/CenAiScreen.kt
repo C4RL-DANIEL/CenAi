@@ -1089,7 +1089,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                                         if (approval.scheme != "https" || !(approval.host == "paypal.com" || approval.host?.endsWith(".paypal.com") == true)) throw IllegalStateException("PayPal returned an unexpected approval destination.")
                                                         context.startActivity(Intent(Intent.ACTION_VIEW, approval))
                                                         paypalStatus = "PayPal approval opened. Return here and refresh subscription status after approval."
-                                                    } catch (e: Exception) { paypalStatus = e.message ?: "Could not start PayPal checkout." }
+                                                    } catch (e: Exception) {
+                                                        runCatching { cloud.paypalBilling("cancel_open_checkouts") }
+                                                        paypalStatus = (e.message ?: "Could not start PayPal checkout.") + " Any unfinished checkout was sent for cancellation."
+                                                    }
                                                     finally { paypalBusy = false }
                                                 }
                                             }, modifier = Modifier.fillMaxWidth()) { Text(if (paypalBillingEnabled) "Continue to PayPal" else "Checkout locked pending verification") }
