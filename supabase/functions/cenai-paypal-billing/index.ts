@@ -376,7 +376,21 @@ Deno.serve(async (req: Request) => {
       });
       const subscriptionId = String(subscription.id || "");
       const approvalUrl = (subscription.links || []).find((link: any) => link.rel === "approve")?.href;
-      if (!subscriptionId || !approvalUrl) return fail(502, "PayPal did not return a subscription approval URL.");
+      if (!subscriptionId) return fail(502, "PayPal did not return a subscription ID.");
+      let safeApprovalUrl = false;
+      try {
+        const parsedApproval = new URL(String(approvalUrl || ""));
+        safeApprovalUrl = parsedApproval.protocol === "https:" &&
+          (parsedApproval.hostname === "paypal.com" || parsedApproval.hostname.endsWith(".paypal.com"));
+      } catch {}
+      if (!safeApprovalUrl) {
+        try {
+          await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "PayPal did not return a valid CenAI approval page." });
+        } catch (cancelError) {
+          console.error("Could not cancel PayPal checkout with invalid approval URL", subscriptionId, cancelError instanceof Error ? cancelError.message : "unknown");
+        }
+        return fail(502, "PayPal did not return a safe approval page. The unfinished checkout was sent for cancellation.");
+      }
       const { error: saveError } = await db.from("billing_checkout_attempts").insert({
         user_id: user.id, provider_subscription_id: subscriptionId, plan_key: plan.plan_key,
         status: "AWAITING_APPROVAL", expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
