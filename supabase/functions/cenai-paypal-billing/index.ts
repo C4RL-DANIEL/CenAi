@@ -31,6 +31,14 @@ async function isAdmin(userId: string) {
   if (error) throw error;
   return Boolean(data?.is_active && ["owner", "admin"].includes(data.role));
 }
+function tokenAal(req: Request) {
+  try {
+    const token = (req.headers.get("Authorization") || "").trim().split(" ").pop() || "";
+    const part = token.split(".")[1] || "";
+    const normalized = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+    return String(JSON.parse(atob(normalized)).aal || "aal1");
+  } catch { return "aal1"; }
+}
 function paypalConfig() {
   const clientId = Deno.env.get("PAYPAL_CLIENT_ID") || "";
   const clientSecret = Deno.env.get("PAYPAL_CLIENT_SECRET") || "";
@@ -224,7 +232,13 @@ Deno.serve(async (req: Request) => {
       if (priorError) throw priorError;
       if (prior) return json(200, { received: true, duplicate: true });
       await handleWebhook(event);
-      const { error: insertError } = await db.from("billing_webhook_events").insert({ provider: "paypal", event_id: eventId });
+      const resource = event.resource || {};
+      const { error: insertError } = await db.from("billing_webhook_events").insert({
+        provider: "paypal", event_id: eventId,
+        event_type: String(event.event_type || "").slice(0,120),
+        resource_id: String(resource.id || resource.billing_agreement_id || "").slice(0,160),
+        processing_result: "signature_verified_and_handler_completed"
+      });
       if (insertError && insertError.code !== "23505") throw insertError;
       return json(200, { received: true });
     }
@@ -236,11 +250,20 @@ Deno.serve(async (req: Request) => {
 
     if (action === "configure_plan") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before managing PayPal plans.");
       const plan = await createOrRefreshPlan(body, user.id);
       return json(200, { plan, message: "PayPal Live plan created and activated. New subscriptions can now use this plan." });
     }
+    if (["list_public_plans", "get_plans", "billing_plans", "billing"].includes(action)) {
+      const { data, error } = await db.from("billing_plan_config")
+        .select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id")
+        .eq("enabled", true).order("created_at");
+      if (error) throw error;
+      return json(200, { plans: data || [], billingEnabled: await billingEnabled() });
+    }
     if (action === "list_plans") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before viewing administrator billing controls.");
       const { data, error } = await db.from("billing_plan_config")
         .select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id,updated_at")
         .order("created_at");
