@@ -8,7 +8,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persi
 const authDb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const API = "https://api-m.paypal.com";
 const cors = {
-  "Access-Control-Allow-Origin": Deno.env.get("CENAI_PUBLIC_ORIGIN") || "https://cenai-website.vercel.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, paypal-auth-algo, paypal-cert-url, paypal-transmission-id, paypal-transmission-sig, paypal-transmission-time, paypal-transmission-sig",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
