@@ -1,8 +1,57 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090d18"><meta name="robots" content="noindex,nofollow"><title>CenAI subscriptions</title><link rel="stylesheet" href="/styles.css"><style>
-body{background:#090d18;color:#edf2ff;min-height:100vh}.billing-wrap{width:min(100% - 32px,900px);margin:0 auto;padding:42px 0 80px}.billing-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:38px}.billing-top a{color:#aabaff}.panel{background:#111a2b;border:1px solid #293650;border-radius:22px;padding:clamp(20px,4vw,34px);margin:18px 0}.panel h1,.panel h2{margin-top:0}.muted{color:#aab6ce;line-height:1.65}.field{display:grid;gap:7px;margin:14px 0}.field input{width:100%;padding:13px;border-radius:11px;border:1px solid #394762;background:#0b1220;color:#fff}.primary{border:0;border-radius:12px;padding:13px 18px;background:#91a2ff;color:#081020;font-weight:750;cursor:pointer}.primary:disabled{opacity:.55}.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.plan{border:1px solid #33425e;border-radius:16px;padding:20px;background:#0c1424}.price{font-size:28px;font-weight:800;margin:12px 0}.notice{padding:14px;border-radius:12px;background:#182944;color:#dbe8ff;margin:14px 0;line-height:1.55}.notice.bad{background:#49232d;color:#ffd9df}.notice.good{background:#173d33;color:#c5ffe9}.small{font-size:12px;color:#aab6ce}.hidden{display:none!important}button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #9db2ff;outline-offset:3px}
-</style></head><body><main class="billing-wrap"><header class="billing-top"><a class="brand" href="/"><span class="brand-mark">C</span><span>CenAI</span></a><a href="/">Back to homepage</a></header>
-<section class="panel"><div class="eyebrow">CENAI MEMBERSHIPS</div><h1>Choose your subscription</h1><p class="muted">Sign in with your CenAI account to see currently available plans. Payments are processed by PayPal. Review the amount and recurring interval on PayPal before approving.</p><div id="status" class="notice" role="status" aria-live="polite">Loading secure billing configuration…</div>
-<form id="login-form"><div class="field"><label for="email">CenAI account email</label><input id="email" type="email" autocomplete="username" required></div><div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div><button id="signin" class="primary" type="submit">Sign in and view plans</button></form>
-<div id="account" class="hidden"><p id="signed-in" class="muted"></p><button id="signout" type="button" class="primary">Sign out</button><div id="plans" class="plans"></div></div></section>
-<p class="small">CenAI does not store your PayPal password or card details. A subscription is created only after you approve it on PayPal. You can manage cancellation through the supported account controls.</p></main><script src="/billing.js?v=20261116-3" defer></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f3f6f4">
+<meta name="robots" content="noindex,nofollow">
+<title>CenAI Memberships</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/billing.css">
+</head>
+<body class="billing-page">
+<main class="billing-shell">
+<header class="billing-header">
+<a class="brand" href="/" aria-label="CenAI home"><span class="brand-symbol">C</span><span>CenAI</span></a>
+<nav aria-label="Membership navigation"><a href="/">Home</a><a href="/security.html">Security</a><a href="/updates.html">Updates</a></nav>
+<a class="billing-back" href="/">Back to CenAI <span aria-hidden="true">↗</span></a>
+</header>
+<section class="billing-hero">
+<div class="billing-eyebrow"><span></span> CENAI MEMBERSHIPS</div>
+<h1>Make more room<br>for <em>what’s possible.</em></h1>
+<p>One account for your CenAI workspace. Review available membership options and manage your subscription securely.</p>
+<div class="billing-trust"><span>◈ Secure account access</span><span>↗ PayPal checkout</span><span>✓ Clear recurring terms</span></div>
+</section>
+<section class="billing-layout">
+<div class="billing-main-card">
+<div class="billing-card-heading"><div><span class="billing-step">YOUR ACCOUNT</span><h2>Sign in to continue</h2><p>Use your CenAI account credentials to view the plans available to you.</p></div><div class="billing-lock" aria-hidden="true">⌑</div></div>
+<div id="status" class="notice" role="status" aria-live="polite">Loading secure billing configuration…</div>
+<form id="login-form">
+<div class="field"><label for="email">Email address</label><input id="email" type="email" autocomplete="username" placeholder="you@example.com" required></div>
+<div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required></div>
+<button id="signin" class="primary" type="submit">Continue to memberships <span aria-hidden="true">→</span></button>
+</form>
+<div id="account" class="hidden">
+<div class="signed-in-card"><span class="account-check">✓</span><p id="signed-in" class="muted"></p></div>
+<button id="signout" type="button" class="secondary">Sign out</button>
+<div id="plans" class="plans"></div>
+</div>
+<div class="billing-footnote"><span aria-hidden="true">◈</span><p>Your CenAI password is used only to authenticate your account. Payment details are handled by PayPal and are not stored on this website.</p></div>
+</div>
+<aside class="billing-aside">
+<div class="aside-orbit" aria-hidden="true"><span>C</span></div>
+<span class="billing-step">A BETTER WAY TO BUILD</span>
+<h2>Your work.<br>Your models.<br><em>Your control.</em></h2>
+<p>CenAI brings AI tools and projects into one workspace, with clear permissions and account-level controls.</p>
+<div class="aside-divider"></div>
+<div class="aside-point"><span>01</span><div><b>Transparent plans</b><small>Review price and billing interval before checkout.</small></div></div>
+<div class="aside-point"><span>02</span><div><b>Secure payment</b><small>Approve subscriptions directly with PayPal.</small></div></div>
+<div class="aside-point"><span>03</span><div><b>Account protection</b><small>Access is verified before billing actions.</small></div></div>
+<a class="aside-link" href="/security.html">Explore our security principles <span>↗</span></a>
+</aside>
+</section>
+<footer class="billing-footer"><span>© 2026 CenAI</span><span>Intelligence with permission.</span><a href="/security.html">Security & privacy</a></footer>
+</main>
+<script src="/billing.js?v=20261116-4" defer></script>
+</body>
+</html>
