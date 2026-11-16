@@ -165,14 +165,14 @@ async function emailOtp(request, env) {
     if (action === "send") {
       const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
       const digest = await otpDigest(env.EMAIL_OTP_SECRET, user.id, email, code);
-      const rpc = await fetch(base + "/rest/v1/rpc/cenai_issue_email_otp", {
+      const rpc = await fetch(base + "/functions/v1/cenai-email-otp", {
         method: "POST",
         headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ p_email: email, p_otp_hash: digest })
+        body: JSON.stringify({ action: "issue", email, otpHash: digest })
       });
       if (!rpc.ok) {
         const error = await rpc.json().catch(() => ({}));
-        return json(rpc.status, { error: error.message || "Could not create verification challenge" });
+        return json(rpc.status, { error: error.error || "Could not create verification challenge" });
       }
       await sendGmailOtp(env, email, code);
       return json(200, { ok: true, message: "Verification code sent. Check your inbox." });
@@ -181,13 +181,13 @@ async function emailOtp(request, env) {
       const code = String(body.code || "").trim();
       if (!/^\d{6}$/.test(code)) return json(400, { error: "Enter the six-digit verification code" });
       const digest = await otpDigest(env.EMAIL_OTP_SECRET, user.id, email, code);
-      const rpc = await fetch(base + "/rest/v1/rpc/cenai_verify_email_otp", {
+      const rpc = await fetch(base + "/functions/v1/cenai-email-otp", {
         method: "POST",
         headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ p_email: email, p_otp_hash: digest })
+        body: JSON.stringify({ action: "verify", email, otpHash: digest })
       });
-      const ok = rpc.ok ? await rpc.json() : false;
-      if (!ok) return json(400, { error: "Code is invalid, expired, or already used" });
+      const result = rpc.ok ? await rpc.json().catch(() => ({})) : {};
+      if (!rpc.ok || result.verified !== true) return json(rpc.status || 400, { error: result.error || "Code is invalid, expired, or already used" });
       return json(200, { ok: true, verified: true, message: "Email verified for this CenAI account" });
     }
     return json(400, { error: "Unknown email verification action" });
