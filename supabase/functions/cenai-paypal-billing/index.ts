@@ -90,7 +90,7 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
     throw new Error("Invalid plan settings. Amount must be at least 1.00 and the billing interval must be valid.");
   }
   const token = await accessToken();
-  const { data: current, error: lookupError } = await db.from("billing_plan_config").select("paypal_product_id").eq("plan_key", planKey).maybeSingle();
+  const { data: current, error: lookupError } = await db.from("billing_plan_config").select("paypal_product_id,paypal_plan_id").eq("plan_key", planKey).maybeSingle();
   if (lookupError) throw lookupError;
   let productId = current?.paypal_product_id || "";
   if (!productId) {
@@ -130,6 +130,15 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
     paypal_plan_id: paypalPlanId, updated_by: userId, updated_at: new Date().toISOString(),
   }, { onConflict: "plan_key" }).select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id").single();
   if (error) throw error;
+  // PayPal plans are immutable once created. When an administrator replaces a
+  // plan, retire the old plan only after the new plan is stored successfully.
+  if (current?.paypal_plan_id && current.paypal_plan_id !== paypalPlanId) {
+    try {
+      await paypal("/v1/billing/plans/" + encodeURIComponent(String(current.paypal_plan_id)) + "/deactivate", "POST", token, {});
+    } catch (retireError) {
+      console.error("Could not deactivate the replaced PayPal plan", String(current.paypal_plan_id));
+    }
+  }
   return data;
 }
 async function verifyWebhook(req: Request, event: unknown) {
