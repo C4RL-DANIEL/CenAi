@@ -126,7 +126,7 @@ private suspend fun recognizeBitmapText(bitmap: Bitmap): String {
 private suspend fun extractScannedPdfText(context: android.content.Context, uri: Uri): String {
     val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
         ?: throw IllegalStateException("Android could not open this PDF for OCR.")
-    descriptor.use { fd ->
+    return descriptor.use { fd ->
         PdfRenderer(fd).use { renderer ->
             require(renderer.pageCount in 1..50) {
                 "This scanned PDF has ${renderer.pageCount} pages. OCR is limited to 50 pages per attachment."
