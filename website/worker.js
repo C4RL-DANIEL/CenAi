@@ -486,5 +486,31 @@ export default {
       return json(404, { error: "API route not found" });
     }
     return staticAsset(request, url, ctx);
+  },
+
+  async scheduled(controller, env, ctx) {
+    const task = (async () => {
+      if (!env.CENAI_CHECKOUT_CRON_SECRET || !env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+        console.error("CenAI scheduled checkout cleanup is missing required bindings.");
+        return;
+      }
+      try {
+        const response = await fetch(env.SUPABASE_URL.replace(/\\/$/, "") + "/functions/v1/cenai-paypal-billing", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": env.SUPABASE_PUBLISHABLE_KEY,
+            "x-cenai-checkout-cron": env.CENAI_CHECKOUT_CRON_SECRET
+          },
+          body: JSON.stringify({ action: "cleanup_expired" })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error("Supabase cleanup returned HTTP " + response.status);
+        console.log("CenAI scheduled PayPal cleanup", JSON.stringify(result));
+      } catch (error) {
+        console.error("CenAI scheduled PayPal cleanup failed", error instanceof Error ? error.message : "unknown error");
+      }
+    })();
+    ctx.waitUntil(task);
   }
 };
