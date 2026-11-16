@@ -24,7 +24,8 @@
       const announcementNode = document.querySelector("[data-cms-announcement]");
       if (title && titleNode) titleNode.textContent = title;
       if (description && descriptionNode) descriptionNode.textContent = description;
-      if (announcement && announcementNode) announcementNode.firstChild.textContent = announcement + " ";
+      const announcementText = announcementNode?.querySelector("[data-cms-announcement-text]");
+      if (announcement && announcementText) announcementText.textContent = announcement;
       if (page.title) document.title = page.title;
       if (page.description) document.querySelector('meta[name="description"]')?.setAttribute("content", page.description);
     })
