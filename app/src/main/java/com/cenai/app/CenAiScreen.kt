@@ -76,6 +76,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -656,8 +657,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     Text(if (localModelEnabled && localModelReady) "On-device AI is ready" else "Your models. Your workflow.", color = palette.muted, fontSize = 11.sp)
                                 }
                                 Spacer(Modifier.weight(1f))
-                                Surface(color = Color(0xFF183B35), shape = RoundedCornerShape(30.dp)) {
-                                    Text("● READY", color = Color(0xFF8FE0B5), fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                                val configured = !providerKeys[provider].isNullOrBlank() ||
+                                    (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))
+                                val stateLabel = when {
+                                    localModelEnabled && localModelReady -> "OFFLINE"
+                                    configured -> "READY"
+                                    else -> "SETUP"
+                                }
+                                Surface(color = palette.accent.copy(alpha = 0.14f), shape = RoundedCornerShape(30.dp)) {
+                                    Text("● $stateLabel", color = palette.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                                 }
                             }
@@ -793,6 +801,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
         AlertDialog(
+            modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = { settings = false },
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -801,7 +811,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
