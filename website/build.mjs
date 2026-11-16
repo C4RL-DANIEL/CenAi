@@ -1,3 +1,4 @@
+// Cloudflare Pages build entrypoint: copy public site files and package the advanced-mode Worker.
 import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
