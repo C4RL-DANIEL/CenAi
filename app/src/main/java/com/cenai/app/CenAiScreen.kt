@@ -36,6 +36,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -818,6 +819,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
+        var settingsPage by remember { mutableStateOf("Appearance") }
         AlertDialog(
             modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -832,7 +834,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             },
             text = {
                 Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        listOf("Appearance", "AI & models", "Account", "Device", "Updates").forEach { page ->
+                            FilterChip(
+                                selected = settingsPage == page,
+                                onClick = { settingsPage = page },
+                                label = { Text(page, maxLines = 1) }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (settingsPage == "Appearance") {
+Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
                             value = when (uiStyle) {
@@ -858,7 +874,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         else -> "The original CenAI dark workspace."
                     }, color = palette.muted, fontSize = 10.sp)
                     HorizontalDivider(color = palette.raised)
-                    Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "AI & models") {
+Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
@@ -893,7 +912,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         Switch(checked = multiAgent, onCheckedChange = { multiAgent = it })
                     }
                     HorizontalDivider(color = palette.raised)
-                    Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "AI & models") {
+Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
                     OutlinedTextField(
@@ -934,7 +956,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         taskPrefs["completed_" + entry.key.removePrefix("status_")] as? Long ?: (taskPrefs["scheduled_" + entry.key.removePrefix("status_")] as? Long ?: 0L)
                     }.take(5)
                     if (taskEntries.isNotEmpty()) {
-                        Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        
+                    }
+                    if (settingsPage == "AI & models") {
+Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
                             val taskName = vault.getSecret("scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
@@ -960,7 +985,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     Text("Sensitive Android actions always require your explicit approval. This safety check cannot be disabled.", color = palette.muted, fontSize = 10.sp)
                     Text("The agent can run allow-listed local tools, schedule one-off network tasks, and request narrowly scoped Android actions. Device actions require an explicit approval tap and are handed to Android; CenAI cannot silently place calls or send messages.", color = palette.muted, fontSize = 10.sp)
                     HorizontalDivider(color = palette.raised)
-                    Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "AI & models") {
+Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Enable only the tools you want the agent to access. These run locally and do not execute shell commands or arbitrary code.", color = palette.muted, fontSize = 10.sp)
                     listOf(
                         "current_time" to "Current time",
@@ -986,7 +1014,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                     }
                     HorizontalDivider(color = palette.raised)
-                    Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "AI & models") {
+Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -1006,7 +1037,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                     }
                     HorizontalDivider(color = palette.raised)
-                    Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "AI & models") {
+Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("CenAI account", color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -1024,7 +1058,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                
+                    }
+                    if (settingsPage == "Account") {
+Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text(if (emailVerified) "Email verified for this account." else "Verify your account email with a one-time code before applying for beta access.", color = palette.muted, fontSize = 11.sp)
                                 if (!emailVerified) {
                                     OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.sendEmailOtp() } catch (e: Exception) { cloudStatus = e.message ?: "Could not send verification code." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Send email verification code") }
@@ -1032,7 +1069,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     Button(enabled = !cloudBusy && otpCode.length == 6, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.verifyEmailOtp(otpCode); emailVerified = true; otpCode = "" } catch (e: Exception) { cloudStatus = e.message ?: "Verification failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Verify email") }
                                 }
                                 HorizontalDivider(color = palette.raised)
-                                Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                
+                    }
+                    if (settingsPage == "Account") {
+Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
@@ -1041,7 +1081,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                
+                    }
+                    if (settingsPage == "Account") {
+Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("View and manage PayPal subscriptions here. Checkout opens PayPal's secure approval page; CenAI never handles your PayPal password or card details.", color = palette.muted, fontSize = 10.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(enabled = !paypalBusy, onClick = {
@@ -1124,7 +1167,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                
+                    }
+                    if (settingsPage == "Account") {
+Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("Administrator and owner roles can load privacy-minimized aggregate usage analytics. Ordinary accounts receive an access-denied response.", color = palette.muted, fontSize = 10.sp)
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
                                     cloudBusy = true
@@ -1172,7 +1218,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
-                                Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                
+                    }
+                    if (settingsPage == "Device") {
+Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("Share aggregate usage analytics", color = palette.text, fontSize = 12.sp)
@@ -1205,13 +1254,19 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            
+                    }
+                    if (settingsPage == "Device") {
+Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
                             Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
                             Text("Token count is a local character-based estimate, not provider billing data.", color = palette.muted, fontSize = 10.sp)
                         }
                     }
-                    Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Device") {
+Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("Speech output · Android Text-to-Speech", color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -1226,7 +1281,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             OutlinedButton(enabled = speechOutputReady, onClick = { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak("CenAI voice engine is ready.", TextToSpeech.QUEUE_FLUSH, null, "cenai-voice-test") }, modifier = Modifier.fillMaxWidth()) { Text("Test voice output") }
                         }
                     }
-                    Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Device") {
+Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Private local language model", color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -1256,7 +1314,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             ) { Text("Download recommended 614 MB model") }
                         }
                     }
-                    Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Device") {
+Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1266,7 +1327,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Switch(checked = localKnowledgeEnabled, onCheckedChange = { localKnowledgeEnabled = it })
                         }
                     }
-                    Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Device") {
+Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Local device diagnostics", color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -1292,7 +1356,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             TextButton(onClick = { guardianSnapshot = guardian.snapshot(); monitorSnapshot = appMonitor.snapshot(); guardianHistoryCount = context.getSharedPreferences("cenai_guardian_history", android.content.Context.MODE_PRIVATE).getString("samples", "").orEmpty().lineSequence().count { it.isNotBlank() } }) { Text("Run health check") }
                         }
                     }
-                    Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Device") {
+Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Local runtime health", color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -1355,7 +1422,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text(if (testBusy) "Testing…" else "Test connection") }
                     HorizontalDivider(color = palette.raised)
-                    Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    
+                    }
+                    if (settingsPage == "Updates") {
+Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Release channel", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = updateChannel == "stable", onClick = { updateChannel = "stable" }, label = { Text("Stable") })
@@ -1375,6 +1445,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     }, modifier = Modifier.fillMaxWidth()) { Text("Check for software updates") }
                     Text("Current version 0.2.0 · Updates download and install inside CenAI. Android will ask you to approve installation.", color = palette.muted, fontSize = 10.sp)
                 }
+
+                    }
             },
             confirmButton = { TextButton(onClick = {
                 Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
