@@ -1,6 +1,6 @@
 # CenAI website and Cloudflare Worker
 
-CenAI public website and restricted administrator portal. The deployment is a single Cloudflare Worker with public static assets embedded into its module bundle and authenticated API routes handled at the edge.
+CenAI public website and restricted administrator portal. The deployment is a single Cloudflare Worker with authenticated API routes handled at the edge. Public static files are fetched from the allowlisted GitHub repository on a cache miss and cached at Cloudflare's edge.
 
 ## Hosting
 
