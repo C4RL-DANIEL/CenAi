@@ -257,13 +257,13 @@
   async function loadSitePages() {
     const d=await api("site_pages"); sitePages=d.pages||[];
     $("page-picker").innerHTML='<option value="">Select a saved page</option>'+sitePages.map(p=>'<option value="'+esc(p.slug)+'">'+esc(p.title)+' · '+esc(p.slug)+'</option>').join("");
-    $("site-page-content").innerHTML=sitePages.map(p=>row(p.title,p.slug+" · "+(p.published?"published":"draft")+" · "+p.updated_at,p.published?"live":"draft")).join("")||"<p>No editable pages yet.</p>";
+    $("site-page-content").innerHTML=sitePages.map(p=>row(p.title,p.slug+" · "+(p.published?"published":"draft")+" · "+p.updated_at,p.published?"live":"draft")+(p.published?'<p><a class="inline-link" href="/pages/'+encodeURIComponent(p.slug)+'" target="_blank" rel="noopener">Open published page ↗</a></p>':"")).join("")||"<p>No editable pages yet.</p>";
     const selected=sitePages.find(p=>p.slug===$("page-slug").value)||sitePages.find(p=>p.slug==="home")||sitePages[0];
     if(selected) fillPage(selected);
   }
   function fillPage(page) {
     $("page-slug").value=page.slug; $("page-title").value=page.title||""; $("page-description").value=page.description||"";
-    $("page-content-json").value=JSON.stringify(page.content||{},null,2); $("page-published").checked=page.published===true; $("page-picker").value=page.slug;
+    $("page-content-json").value=JSON.stringify(Object.fromEntries(Object.entries(page.content||{}).filter(([key])=>key!=="bodyMarkdown"&&key!=="body")),null,2); $("page-body").value=page.content?.bodyMarkdown||page.content?.body||""; $("page-published").checked=page.published===true; $("page-picker").value=page.slug;
   }
   async function loadQuotas() {
     const d=await api("quota_list");
@@ -300,7 +300,7 @@
   $("api-key-form")?.addEventListener("submit",async e=>{e.preventDefault();try{const d=await api("api_key_create",{name:$("api-key-name").value});$("api-key-secret").textContent=d.secret;$("api-key-secret").hidden=false;$("copy-api-key").hidden=false;$("api-key-name").value="";status("API key created. Copy it now; it will not be shown again.");await loadApiKeys();}catch(err){status(err.message,true);}});
   $("copy-api-key")?.addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("api-key-secret").textContent);status("API key copied.");}catch(e){status("Clipboard access unavailable; copy the displayed key manually.",true);}});
   $("api-key-content")?.addEventListener("click",async e=>{const b=e.target.closest("[data-revoke-key]");if(!b)return;if(!confirm("Revoke this API key immediately?"))return;try{await api("api_key_revoke",{id:b.dataset.revokeKey});status("API key revoked.");await loadApiKeys();}catch(err){status(err.message,true);}});
-  $("page-form")?.addEventListener("submit",async e=>{e.preventDefault();try{let content;try{content=JSON.parse($("page-content-json").value||"{}");}catch{throw new Error("Page content must be valid JSON.");}const d=await api("site_page_save",{slug:$("page-slug").value,title:$("page-title").value,description:$("page-description").value,content,published:$("page-published").checked});status("Website page saved. "+(d.page.published?"It is published.":"It remains a draft."));await loadSitePages();}catch(err){status(err.message,true);}});
+  $("page-form")?.addEventListener("submit",async e=>{e.preventDefault();try{let content;try{content=JSON.parse($("page-content-json").value||"{}");}catch{throw new Error("Page content must be valid JSON.");}content.bodyMarkdown=$("page-body").value;const d=await api("site_page_save",{slug:$("page-slug").value,title:$("page-title").value,description:$("page-description").value,content,published:$("page-published").checked});status("Website page saved. "+(d.page.published?"It is published.":"It remains a draft."));await loadSitePages();}catch(err){status(err.message,true);}});
   $("page-picker")?.addEventListener("change",()=>{const page=sitePages.find(p=>p.slug===$("page-picker").value);if(page)fillPage(page);});
   $("page-refresh")?.addEventListener("click",()=>loadSitePages().catch(e=>status(e.message,true)));
   $("quota-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("quota_update",{ownerUserId:$("quota-user-id").value.trim(),dailyRequestLimit:Number($("quota-daily").value),monthlyTokenLimit:Number($("quota-monthly").value),enabled:$("quota-enabled").checked});status("Public API quota policy saved and audited.");await loadQuotas();}catch(err){status(err.message,true);}});
