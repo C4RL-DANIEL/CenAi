@@ -1,13 +1,15 @@
 name: Website checks
 on:
   push:
-    branches: [ main, "feat/**" ]
+    branches: [ main, "feat/**", cloudflare-migration ]
     paths:
       - "website/**"
+      - "supabase/**"
       - ".github/workflows/website-check.yml"
   pull_request:
     paths:
       - "website/**"
+      - "supabase/**"
       - ".github/workflows/website-check.yml"
   workflow_dispatch:
 
@@ -15,76 +17,34 @@ permissions:
   contents: read
 
 jobs:
-  static-site:
+  cloudflare-site:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate required pages and local assets
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Cloudflare Pages assets
+        working-directory: website
+        run: |
+          npm run check
+          npm run build
+          test -s dist/index.html
+          test -s dist/admin/index.html
+          test -s dist/_worker.js
+          test -s dist/styles.css
+          test ! -e dist/api/admin.js
+          test ! -e dist/api/email-otp.js
+          test ! -e dist/ADMIN-SETUP.md
+      - name: Verify Cloudflare API and recovery routes
         run: |
           set -euo pipefail
-          test -s website/index.html
-          test -s website/styles.css
-          test -s website/home.js
-          test -s website/page.html
-          test -s website/page.js
-          test -s website/api/site-pages.js
-          test -s website/security.html
-          test -s website/api.html
-          test -s website/roadmap.html
-          test -s website/updates.html
-          test -s website/updates.js
-          test -s website/billing.html
-          test -s website/billing.js
-          test -s website/billing-success.html
-          test -s website/billing-cancel.html
-          test -s website/api/health.js
-          test -s website/api/releases.js
-          test -s website/admin/index.html
-          test -s website/admin/admin.css
-          test -s website/admin/admin.js
-          test -s website/api/admin.js
-          test -s website/api/admin-config.js
-          test -s website/ADMIN-SETUP.md
-          test -s supabase/migrations/202611150001_sendai_control_plane.sql
-          test -s supabase/migrations/202611160001_site_cms_api_quotas.sql
-          test -s supabase/functions/cenai-control-plane/index.ts
-          test -s supabase/functions/cenai-paypal-billing/index.ts
-          test -s supabase/functions/cenai-public-api/index.ts
-          grep -q '/admin/index.html' website/vercel.json
-          grep -q '/billing.html' website/vercel.json
-          grep -q 'Administrator sign in' website/admin/index.html
-          grep -q 'cenai-control-plane' website/api/admin.js
-          test -s website/api/email-otp.js
-          grep -q 'EMAIL_OTP_SECRET' website/api/email-otp.js
-          grep -q 'nodemailer' website/package.json
-          test -s website/beta.html
-          test -s website/beta.js
-          test -s website/vercel.json
-          grep -q 'href="/styles.css"' website/index.html
-          grep -q 'data-cms-title' website/index.html
-          grep -q 'data-cms-description' website/index.html
-          grep -q 'Approval-first agents' website/index.html
-          grep -q 'not live service URLs' website/api.html
-          node --check website/admin/admin.js
-          node --check website/home.js
-          node --check website/page.js
-          node --check website/beta.js
-          node --check website/api/admin.js
-          node --check website/api/beta.js
-          node --check website/api/site-pages.js
-          grep -q '/pages/:slug' website/vercel.json
-          grep -q 'id="page-body"' website/admin/index.html
-          echo "Static website structure and JavaScript syntax checks passed."
-      - name: Verify deployed admin and beta API authentication guards
-        run: |
-          set -euo pipefail
-          BASE="https://cenai-website-3t2so2h8r-carls-projects-e4dd61db.vercel.app"
-          for endpoint in admin beta; do
-            status=$(curl -sS -o "/tmp/cenai-$endpoint.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"admin_preflight"}' "$BASE/api/$endpoint")
-            if [[ "$status" != "401" ]]; then
-              cat "/tmp/cenai-$endpoint.json"
-              echo "Expected 401 from /api/$endpoint without a bearer token, got $status"
-              exit 1
-            fi
-          done
-          echo "Admin and beta API proxy authentication guards passed."
+          grep -q 'cenai-email-otp' website/worker.js
+          grep -q 'cenai-control-plane' website/worker.js
+          grep -q 'cenai-paypal-billing' website/worker.js
+          grep -q 'api/site-pages' website/worker.js
+          grep -q 'api/releases' website/worker.js
+          grep -q 'cenai-website.pages.dev/reset-password' website/reset-password.js
+          grep -q 'site_pages_public_read' supabase/migrations/20261116135000_tighten_cms_and_quota_table_access.sql
+          grep -q 'cenai_issue_email_otp_for_user' supabase/migrations/20261116135500_secure_email_otp_service_role_only.sql
+          echo "Cloudflare site build and backend route checks passed."
