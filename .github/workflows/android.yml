@@ -3,8 +3,34 @@ on:
   push:
     branches: [ main ]
     tags: [ "v*" ]
+    paths:
+      - "AndroidApp/**"
+      - "app/**"
+      - "core/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle.properties"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
   pull_request:
     branches: [ main ]
+    paths:
+      - "AndroidApp/**"
+      - "app/**"
+      - "core/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle.properties"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
 
 permissions:
