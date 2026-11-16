@@ -238,14 +238,14 @@
     $("api-key-content").innerHTML=(d.apiKeys||[]).map(k=>'<div class="item"><div><b>'+esc(k.name)+' · '+esc(k.key_prefix)+'…</b><small>'+esc(k.created_at)+' · Last used: '+esc(k.last_used_at||"Never")+'</small></div>'+(k.enabled?'<button data-revoke-key="'+esc(k.id)+'">Revoke</button>':'<span class="pill">Revoked</span>')).join("")||"<p>No API keys created.</p>";
   }
   function analyticsLineChart(daily) {
-    if (!daily.length) return '<div class="chart-empty">No telemetry events have been recorded yet. Charts will populate when users opt in to usage analytics.</div>';
+    if (!daily.length) return '<svg class="analytics-line" viewBox="0 0 680 190" role="img" aria-label="Request activity chart awaiting telemetry"><line x1="24" y1="24" x2="24" y2="166" stroke="#d9e1e8"/><line x1="24" y1="166" x2="656" y2="166" stroke="#d9e1e8"/><line x1="24" y1="95" x2="656" y2="95" stroke="#edf1f4" stroke-dasharray="4 5"/><text x="340" y="84" text-anchor="middle" fill="#8793a1" font-size="13">No telemetry data yet</text><text x="340" y="106" text-anchor="middle" fill="#a1acb7" font-size="10">Charts populate as users opt in</text></svg><div class="chart-labels"><span>Start</span><span>Today</span></div>';
     const width=680,height=190,pad=24,max=Math.max(1,...daily.map(x=>Number(x.requests)||0));
     const points=daily.map((x,i)=>{const px=pad+(daily.length===1?(width-pad*2)/2:i*(width-pad*2)/(daily.length-1));const py=height-pad-(Number(x.requests)||0)/max*(height-pad*2);return px.toFixed(1)+","+py.toFixed(1);}).join(" ");
     const labels=daily.filter((x,i)=>i===0||i===daily.length-1||i%Math.ceil(daily.length/5)===0).map(x=>'<span>'+esc(String(x.date).slice(5))+'</span>').join("");
     return '<svg class="analytics-line" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Requests per day line chart"><line x1="'+pad+'" y1="'+(height-pad)+'" x2="'+(width-pad)+'" y2="'+(height-pad)+'" stroke="#d9e1e8"/><line x1="'+pad+'" y1="'+(height/2)+'" x2="'+(width-pad)+'" y2="'+(height/2)+'" stroke="#edf1f4"/><polyline points="'+points+'" fill="none" stroke="#6382dc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+daily.map((x,i)=>{const px=pad+(daily.length===1?(width-pad*2)/2:i*(width-pad*2)/(daily.length-1));const py=height-pad-(Number(x.requests)||0)/max*(height-pad*2);return '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="4" fill="#fff" stroke="#4569d4" stroke-width="2"><title>'+esc(x.date)+': '+Number(x.requests||0)+' requests</title></circle>';}).join("")+'</svg><div class="chart-labels">'+labels+'</div>';
   }
   function analyticsBars(items, valueKey, labelKey) {
-    if (!items.length) return '<div class="chart-empty">No data for this period.</div>';
+    if (!items.length) return '<div class="analytics-bars"><div class="analytics-bar-row"><span>Awaiting data</span><div class="bar-track"><i style="width:0%"></i></div><b>0</b></div></div><div class="chart-empty">No recorded events in this period.</div>';
     const max=Math.max(1,...items.map(x=>Number(x[valueKey])||0));
     return '<div class="analytics-bars">'+items.slice(0,7).map(x=>'<div class="analytics-bar-row"><span>'+esc(x[labelKey])+'</span><div class="bar-track"><i style="width:'+Math.max(2,(Number(x[valueKey])||0)/max*100)+'%"></i></div><b>'+Number(x[valueKey]||0).toLocaleString()+'</b></div>').join("")+'</div>';
   }
