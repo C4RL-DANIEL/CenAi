@@ -135,7 +135,8 @@
       else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,"Open release",x.url)).join("") || "<p>No published releases yet.</p>";
       else if (tab === "models") await loadModels();
       else if (tab === "api-keys") await loadApiKeys();
-      else if (tab === "analytics") await loadAnalytics();\n      else if (tab === "billing") await loadBillingPlans();
+      else if (tab === "analytics") await loadAnalytics();
+      else if (tab === "billing") await loadBillingPlans();
       else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
