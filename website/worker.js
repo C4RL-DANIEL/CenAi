@@ -227,6 +227,81 @@ async function health(env) {
   });
 }
 
+function estimateTokens(value) {
+  return Math.max(1, Math.ceil(String(value || "").length / 4));
+}
+
+async function aiChat(request, env) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  if (!token) return json(401, { error: "Sign in required" });
+  const body = await request.json().catch(() => null);
+  if (!body || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
+    return json(400, { error: "Provide between 1 and 50 chat messages." });
+  }
+  if (body.stream === true) return json(400, { error: "Streaming is not enabled for this initial Cloud AI release." });
+  const messages = [];
+  for (const item of body.messages) {
+    const role = String(item?.role || "");
+    const content = typeof item?.content === "string" ? item.content : "";
+    if (!["system", "user", "assistant"].includes(role) || !content || content.length > 20000) {
+      return json(400, { error: "Each message must have a supported role and text content under 20,000 characters." });
+    }
+    messages.push({ role, content });
+  }
+  const totalChars = messages.reduce((sum, item) => sum + item.content.length, 0);
+  if (totalChars > 80000) return json(413, { error: "Conversation is too large for this endpoint." });
+  const model = String(body.model || "cloudflare-gemma-4-26b-a4b-it");
+  const maxTokens = Math.max(1, Math.min(1024, Math.floor(Number(body.max_tokens) || 1024)));
+  const temperature = Math.max(0, Math.min(1.2, Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : 0.7));
+  const inputTokens = estimateTokens(messages.map(item => item.content).join("\\n"));
+  const base = env.SUPABASE_URL.replace(/\\/$/, "");
+  let reservation = null;
+  try {
+    const reserveResponse = await fetch(base + "/functions/v1/cenai-ai-quota", {
+      method: "POST",
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "authorize", model, inputTokens, maxOutputTokens: maxTokens })
+    });
+    reservation = await reserveResponse.json().catch(() => ({}));
+    if (!reserveResponse.ok) return json(reserveResponse.status, reservation);
+    const started = Date.now();
+    const result = await env.AI.run(reservation.modelId, { messages, max_tokens: maxTokens, temperature });
+    const latencyMs = Date.now() - started;
+    const content = typeof result?.response === "string" ? result.response
+      : typeof result?.generated_text === "string" ? result.generated_text
+      : typeof result?.choices?.[0]?.message?.content === "string" ? result.choices[0].message.content
+      : typeof result?.text === "string" ? result.text : "";
+    if (!content) throw new Error("AI provider returned an empty response");
+    const outputTokens = estimateTokens(content);
+    await fetch(base + "/functions/v1/cenai-ai-quota", {
+      method: "POST",
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "record", eventId: reservation.eventId, model, inputTokens, outputTokens, latencyMs, status: "success" })
+    });
+    return json(200, {
+      id: "chatcmpl-" + reservation.eventId,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+      usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
+      quota: reservation.quota
+    });
+  } catch (error) {
+    if (reservation?.eventId) {
+      await fetch(base + "/functions/v1/cenai-ai-quota", {
+        method: "POST",
+        headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "record", eventId: reservation.eventId, model, inputTokens, outputTokens: 0, latencyMs: 0, status: "error", errorCode: "AI_INFERENCE_FAILED" })
+      }).catch(() => null);
+    }
+    console.error("CenAI cloud inference failed", error instanceof Error ? error.message : "unknown error");
+    return json(502, { error: "Cloud AI inference failed. Try again later." });
+  }
+}
+
 async function adminConfig(env) {
   return json(200, { supabaseUrl: env.SUPABASE_URL || "", publishableKey: env.SUPABASE_PUBLISHABLE_KEY || "" });
 }
@@ -396,6 +471,7 @@ export default {
         return releaseFeed();
       }
       if (url.pathname === "/api/beta-notification") return betaNotification(request, env);
+      if (url.pathname === "/api/ai/chat/completions") return aiChat(request, env);
       if (url.pathname === "/api/email-otp") return emailOtp(request, env);
       if (url.pathname === "/api/webhooks/paypal") return proxyFunction(request, env, "cenai-paypal-billing");
       if (url.pathname.startsWith("/api/functions/")) return proxyFunction(request, env, url.pathname.slice("/api/functions/".length));
