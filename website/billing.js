@@ -1,6 +1,21 @@
 (() => {
   const $ = id => document.getElementById(id);
   let supabaseUrl = "", publishableKey = "", accessToken = "", email = "";
+  const SESSION_KEY = "cenai.account.session.v1";
+  let sharedSession = null;
+  function saveSharedSession(value) { sharedSession = value; localStorage.setItem(SESSION_KEY, JSON.stringify({ access_token:value.access_token, refresh_token:value.refresh_token, expires_at:value.expires_at || Math.floor(Date.now()/1000) + Number(value.expires_in || 3600) })); }
+  function clearSharedSession() { sharedSession = null; localStorage.removeItem(SESSION_KEY); }
+  async function restoreSharedSession() {
+    const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); if (!saved?.access_token) return false;
+    sharedSession = saved; accessToken = saved.access_token;
+    if (saved.expires_at && saved.expires_at * 1000 < Date.now() + 60000 && saved.refresh_token) {
+      const refreshed = await fetch(supabaseUrl + "/auth/v1/token?grant_type=refresh_token", {method:"POST",headers:{"Content-Type":"application/json",apikey:publishableKey},body:JSON.stringify({refresh_token:saved.refresh_token})});
+      const data = await refreshed.json().catch(()=>({})); if (refreshed.ok && data.access_token) { saveSharedSession(data); accessToken=data.access_token; }
+    }
+    const check = await fetch(supabaseUrl + "/auth/v1/user", {headers:{apikey:publishableKey,Authorization:"Bearer "+accessToken}});
+    const user = await check.json().catch(()=>({})); if (!check.ok || !user.id) { if(saved.refresh_token && sharedSession===saved) { const rr=await fetch(supabaseUrl+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{"Content-Type":"application/json",apikey:publishableKey},body:JSON.stringify({refresh_token:saved.refresh_token})});const rd=await rr.json().catch(()=>({}));if(rr.ok&&rd.access_token){saveSharedSession(rd);accessToken=rd.access_token;email=rd.user?.email||"";return true;} } clearSharedSession(); return false; }
+    email=user.email||""; return true;
+  }
   const status = (message, bad = false, good = false) => {
     $("status").textContent = message;
     $("status").className = "notice" + (bad ? " bad" : good ? " good" : "");
@@ -125,15 +140,16 @@
       const auth = await response.json().catch(() => ({}));
       if (!response.ok || !auth.access_token) throw new Error(auth.msg || auth.message || "Sign in failed.");
       accessToken = auth.access_token;
+      saveSharedSession(auth);
       await loadPlans();
     } catch (error) { status(error.message, true); }
     finally { $("signin").disabled = false; }
   });
   $("signout").addEventListener("click", () => {
-    accessToken = ""; email = ""; $("password").value = "";
+    accessToken = ""; email = ""; clearSharedSession(); $("password").value = "";
     $("account").classList.add("hidden"); $("login-form").classList.remove("hidden");
     $("plans").replaceChildren(); status("You have signed out.");
   });
-  configure().then(() => status("Secure billing configuration loaded. Sign in to check plan availability."))
+  configure().then(async () => { if (await restoreSharedSession()) await loadPlans(); else status("Secure billing configuration loaded. Sign in to check plan availability."); })
     .catch(error => status(error.message, true));
 })();
