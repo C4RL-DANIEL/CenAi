@@ -128,3 +128,32 @@ body{background:var(--paper);color:var(--ink)}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Real glass-material treatment: translucent surfaces, background refraction cues,
+   specular edges and layered depth — not flat gradient fills. */
+:root{
+  --glass-fill:rgba(255,255,255,.48);
+  --glass-fill-strong:rgba(255,255,255,.66);
+  --glass-edge:rgba(255,255,255,.78);
+  --glass-shadow:0 18px 52px rgba(28,48,75,.13),inset 0 1px 0 rgba(255,255,255,.88),inset 0 -1px 0 rgba(255,255,255,.22);
+}
+.hero{isolation:isolate;overflow:hidden;background:linear-gradient(145deg,#e7edf6 0%,#f5f6f7 48%,#e9edf5 100%)}
+.hero:after{content:"";position:absolute;z-index:-1;inset:-12%;pointer-events:none;background:radial-gradient(ellipse at 72% 32%,rgba(255,255,255,.92),transparent 34%),radial-gradient(ellipse at 86% 74%,rgba(125,165,218,.20),transparent 31%),radial-gradient(ellipse at 52% 92%,rgba(255,255,255,.76),transparent 34%);filter:blur(34px)}
+.app-window{position:relative;background:rgba(250,252,255,.56);backdrop-filter:blur(34px) saturate(185%);-webkit-backdrop-filter:blur(34px) saturate(185%);border:1px solid rgba(255,255,255,.84);box-shadow:0 38px 100px rgba(25,44,72,.18),inset 0 1px 0 rgba(255,255,255,.95),inset 0 -1px 0 rgba(255,255,255,.34)}
+.app-window:before,.floating-note:before,.capability:before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(135deg,rgba(255,255,255,.62),transparent 25%,transparent 68%,rgba(255,255,255,.22));opacity:.78}
+.window-bar{background:rgba(244,248,253,.52);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-bottom-color:rgba(255,255,255,.72)}
+.workspace-card{position:relative;background:rgba(255,255,255,.62);backdrop-filter:blur(24px) saturate(170%);-webkit-backdrop-filter:blur(24px) saturate(170%);border:1px solid rgba(255,255,255,.88);box-shadow:0 10px 28px rgba(26,45,72,.075),inset 0 1px 0 rgba(255,255,255,.95)}
+.floating-note{position:relative;background:rgba(255,255,255,.72);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:1px solid rgba(255,255,255,.9);box-shadow:0 18px 44px rgba(20,36,58,.14),inset 0 1px 0 rgba(255,255,255,.95)}
+.intro-strip,.capability,.security-cards article{position:relative;background:rgba(255,255,255,.64);backdrop-filter:blur(22px) saturate(165%);-webkit-backdrop-filter:blur(22px) saturate(165%);border:1px solid rgba(255,255,255,.86);box-shadow:0 12px 34px rgba(24,44,72,.065),inset 0 1px 0 rgba(255,255,255,.9)}
+.capability-featured{background:rgba(238,244,250,.72)}
+.access-panel{position:relative;overflow:hidden;background:rgba(20,36,58,.82);backdrop-filter:blur(30px) saturate(155%);-webkit-backdrop-filter:blur(30px) saturate(155%);border:1px solid rgba(255,255,255,.22);box-shadow:0 26px 70px rgba(20,36,58,.2),inset 0 1px 0 rgba(255,255,255,.24)}
+.button-dark{position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 20px rgba(20,36,58,.16)}
+.button-dark:after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.2),transparent 38%);pointer-events:none}
+.site-header{background:rgba(255,255,255,.70);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);border-bottom-color:rgba(255,255,255,.82)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ .app-window,.workspace-card,.floating-note,.intro-strip,.capability,.security-cards article,.site-header{background:rgba(255,255,255,.94)}
+}
+@media(prefers-reduced-transparency:reduce){
+ .app-window,.workspace-card,.floating-note,.intro-strip,.capability,.security-cards article,.site-header{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(255,255,255,.96)}
+}
