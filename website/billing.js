@@ -28,6 +28,8 @@
     $("login-form").classList.add("hidden");
     $("account").classList.remove("hidden");
     $("signed-in").textContent = "Signed in as " + email;
+    const checkoutEnabled = data.billingEnabled === true;
+    if (!checkoutEnabled) status("PayPal Live is configured, but checkout is temporarily disabled until subscription lifecycle verification is complete.");
     if (!data.plans?.length) {
       $("plans").textContent = "No subscriptions are currently available.";
       return;
@@ -50,7 +52,8 @@
       const button = document.createElement("button");
       button.className = "primary";
       button.type = "button";
-      button.textContent = "Continue to PayPal";
+      button.disabled = !checkoutEnabled;
+      button.textContent = checkoutEnabled ? "Continue to PayPal" : "Checkout temporarily disabled";
       button.addEventListener("click", async () => {
         button.disabled = true;
         button.textContent = "Preparing secure checkout…";
@@ -68,7 +71,7 @@
       card.append(title, price, interval, warning, button);
       $("plans").append(card);
     }
-    status("Your available plans are ready. Review recurring charges before approving on PayPal.", false, true);
+    if (checkoutEnabled) status("Your available plans are ready. Review recurring charges before approving on PayPal.", false, true);
   }
   $("login-form").addEventListener("submit", async event => {
     event.preventDefault();
