@@ -22,7 +22,7 @@
     const url = window.CENAI_SUPABASE_URL;
     const key = window.CENAI_SUPABASE_PUBLISHABLE_KEY;
     if (!url || !key || !accessToken) throw new Error("Sign in again before managing billing.");
-    const response = await fetch(url.replace(/\\/$/, "") + "/functions/v1/cenai-paypal-billing", {
+    const response = await fetch(url.replace(/\/$/, "") + "/functions/v1/cenai-paypal-billing", {
       method: "POST",
       headers: { "Content-Type": "application/json", "apikey": key, "Authorization": "Bearer " + accessToken },
       body: JSON.stringify({ action, ...payload })
