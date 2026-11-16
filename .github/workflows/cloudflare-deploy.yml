@@ -1,0 +1,61 @@
+name: Deploy CenAI to Cloudflare
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "supabase/functions/**"
+      - "supabase/migrations/**"
+      - ".github/workflows/cloudflare-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate and build Cloudflare Worker
+        working-directory: website
+        run: |
+          npm run check
+          npm run build
+          test -s dist/_worker.js
+          test -s dist/index.html
+          test ! -e dist/api/admin.js
+      - name: Check Cloudflare deployment credential
+        id: cloudflare-auth
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Add the CLOUDFLARE_API_TOKEN repository secret to enable automatic production deployment."
+          fi
+      - name: Deploy production Worker
+        if: steps.cloudflare-auth.outputs.ready == 'true'
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler@4 deploy
+      - name: Verify deployed Worker
+        if: steps.cloudflare-auth.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          BASE="https://cenai-website.aglibotcarldaniel.workers.dev"
+          curl -fsS --retry 5 --retry-delay 3 "$BASE/api/health" | grep -q '"status":"online"'
+          curl -fsS --retry 5 --retry-delay 3 "$BASE/" | grep -qi 'CenAI'
+          echo "Cloudflare production deployment verified."
+      - name: Deployment credential reminder
+        if: steps.cloudflare-auth.outputs.ready != 'true'
+        run: |
+          echo "Build passed. Production deployment was skipped because CLOUDFLARE_API_TOKEN is not configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "Add a Cloudflare API token with Workers Scripts:Edit and Workers AI:Edit permissions as a repository secret named CLOUDFLARE_API_TOKEN." >> "$GITHUB_STEP_SUMMARY"
