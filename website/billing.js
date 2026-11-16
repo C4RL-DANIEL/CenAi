@@ -44,40 +44,6 @@
     $("account").classList.remove("hidden");
     $("signed-in").textContent = "Signed in as " + email;
     const checkoutEnabled = data.billingEnabled === true;
-    const priorDiagnostic = document.getElementById("paypal-diagnostics");
-    if (priorDiagnostic) priorDiagnostic.remove();
-    const diagnosticButton = document.createElement("button");
-    diagnosticButton.id = "paypal-diagnostics";
-    diagnosticButton.type = "button";
-    diagnosticButton.className = "primary";
-    diagnosticButton.textContent = "Inspect latest PayPal attempt";
-    diagnosticButton.style.margin = "0 0 16px";
-    diagnosticButton.addEventListener("click", async () => {
-      diagnosticButton.disabled = true;
-      diagnosticButton.textContent = "Inspecting existing attempt…";
-      try {
-        const diagnostic = await billingApi("diagnose_latest_approval");
-        if (!diagnostic.found) {
-          status("No existing PayPal subscription was found for this account.");
-        } else {
-          const approval = (diagnostic.links || []).find(link => link.rel === "approve");
-          const safeLinks = (diagnostic.links || []).map(link => link.rel + ": " + (link.hostname || "no host") + " (" + link.protocol + ")");
-          status(
-            "Latest PayPal status: " + diagnostic.status + ". " +
-            (approval ? "Approval destination: " + approval.hostname + " (" + approval.protocol + ")." :
-              "PayPal did not include an approval link in its current subscription details.") +
-            (safeLinks.length ? " Links: " + safeLinks.join("; ") : ""),
-            !approval
-          );
-        }
-      } catch (error) {
-        status("Could not inspect the existing PayPal attempt: " + error.message, true);
-      } finally {
-        diagnosticButton.disabled = false;
-        diagnosticButton.textContent = "Inspect latest PayPal attempt";
-      }
-    });
-    $("plans").before(diagnosticButton);
     if (!checkoutEnabled) status("PayPal Live is configured, but checkout is temporarily disabled until subscription lifecycle verification is complete.");
     if (!data.plans?.length) {
       $("plans").textContent = "No subscriptions are currently available.";
