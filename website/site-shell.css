@@ -1,0 +1,56 @@
+/* CenAI shared editorial shell for all secondary pages */
+.content-page{background:#f3f6f4!important;color:#17263b!important;min-height:100vh}
+.content-page .site-header{height:auto;min-height:76px;padding:12px max(22px,calc((100vw - 1160px)/2));gap:22px;flex-wrap:wrap}
+.content-page .main-nav{margin:0;gap:clamp(12px,2vw,28px);flex:1;justify-content:center;flex-wrap:wrap}
+.content-page .main-nav a,.content-page .header-login{font-size:12px;color:#53657a;font-weight:650;transition:color .18s ease}
+.content-page .main-nav a:hover,.content-page .header-login:hover{color:#315fc7}
+.content-page .header-actions{display:flex;align-items:center;gap:16px}
+.content-page .header-actions .button{white-space:nowrap}
+.content-page main.wrap,.content-page .beta-wrap,.content-page .cms-page{width:min(1120px,calc(100% - 44px));max-width:1120px;margin:0 auto;padding:76px 0 92px}
+.content-page main.wrap.section{padding-top:76px;padding-bottom:92px}
+.content-page .eyebrow{color:#5570a3;font:600 10px/1.4 'DM Mono',monospace;letter-spacing:.14em;text-transform:uppercase}
+.content-page h1{max-width:900px;margin:16px 0 18px;color:#17263b;font:800 clamp(42px,6.4vw,76px)/1.02 'Manrope','DM Sans',sans-serif;letter-spacing:-.075em}
+.content-page h2{color:#17263b;font:750 clamp(25px,3.2vw,38px)/1.12 'Manrope','DM Sans',sans-serif;letter-spacing:-.055em}
+.content-page .gradient-text{color:#476cc3;background:none;-webkit-text-fill-color:initial}
+.content-page .lead{max-width:760px;margin:0 0 42px;color:#65768a;font-size:17px;line-height:1.8}
+.content-page .feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin:36px 0}
+.content-page .feature{position:relative;padding:25px 25px 27px;border:1px solid #dfe7e3;border-radius:17px;background:rgba(255,255,255,.88);box-shadow:0 10px 30px rgba(23,42,66,.045);transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.content-page .feature:hover{transform:translateY(-3px);border-color:#c4d2e8;box-shadow:0 18px 38px rgba(23,42,66,.08)}
+.content-page .feature h3{margin:10px 0 8px;color:#1b2b42;font:750 18px/1.3 'Manrope','DM Sans',sans-serif;letter-spacing:-.035em}
+.content-page .feature p,.content-page li{color:#66768a;line-height:1.75}
+.content-page .tag,.content-page .channel{display:inline-flex;align-items:center;border:1px solid #d9e2ee;border-radius:999px;padding:5px 9px;color:#4d6590;background:#f4f7fc;font:600 9px 'DM Mono',monospace;letter-spacing:.08em}
+.content-page .fine-print{margin-top:34px;padding:18px 20px;border:1px solid #dce5e1;border-radius:14px;background:#edf3ef;color:#617286;font-size:12px;line-height:1.7}
+.content-page .card,.content-page .release{border:1px solid #dfe7e3!important;border-radius:17px!important;background:#fff!important;box-shadow:0 10px 30px rgba(23,42,66,.045)}
+.content-page .release{padding:24px!important;margin:14px 0!important}
+.content-page .release p,.content-page .release time{color:#65768a!important}
+.content-page pre{overflow:auto;padding:16px;border:1px solid #dfe6e2;border-radius:12px;background:#f6f8f7;color:#33465d}
+.content-page code{color:#315d9f}
+.content-page .footer{width:100%;max-width:none;margin:0;padding:28px max(22px,calc((100vw - 1120px)/2));border-top:1px solid #dfe6e2;background:#14243a;color:#dce6f0}
+.content-page .footer .brand{color:#fff}
+.content-page .footer span{color:#aab8c8}
+.content-page .beta-wrap{padding-top:56px}
+.content-page .beta-card{border:1px solid #dce5e2!important;border-radius:20px!important;background:#fff!important;box-shadow:0 18px 50px rgba(22,42,68,.07);color:#17263b}
+.content-page .beta-card h1,.content-page .beta-card h2{color:#17263b}
+.content-page .beta-card p,.content-page .beta-small{color:#66768a!important}
+.content-page .beta-form label{color:#33465d}
+.content-page .beta-form input,.content-page .beta-form textarea,.content-page .beta-form select{background:#f8faf9;color:#17263b;border:1px solid #d8e1de;border-radius:11px}
+.content-page .beta-form input:focus,.content-page .beta-form textarea:focus,.content-page .beta-form select:focus{outline:2px solid #9cb4e9;outline-offset:1px}
+.content-page .beta-actions button,.content-page .beta-form button{background:#172b46;color:#fff;border-radius:999px;padding:12px 19px}
+.content-page .beta-actions .secondary{background:#e9eef5;color:#263b58}
+.content-page .beta-status{background:#edf3fb;color:#29476e}
+.content-page .beta-status.error{background:#fff0f0;color:#8a3030}
+.content-page .cms-page{min-height:65vh}
+.content-page .cms-page h1{margin-top:20px}
+@media(max-width:760px){
+ .content-page .site-header{padding:13px 18px;gap:12px}
+ .content-page .main-nav{order:3;flex:1 0 100%;justify-content:flex-start;gap:18px;padding:5px 0 2px;overflow-x:auto;flex-wrap:nowrap}
+ .content-page .main-nav a{white-space:nowrap}
+ .content-page .header-actions{margin-left:auto}
+ .content-page .header-login{display:none}
+ .content-page main.wrap,.content-page .beta-wrap,.content-page .cms-page{width:calc(100% - 36px);padding-top:48px;padding-bottom:64px}
+ .content-page main.wrap.section{padding-top:48px;padding-bottom:64px}
+ .content-page h1{font-size:clamp(39px,11vw,58px)}
+ .content-page .lead{font-size:15px}
+ .content-page .feature{padding:21px}
+}
+@media(prefers-reduced-motion:reduce){.content-page .feature{transition:none}}
