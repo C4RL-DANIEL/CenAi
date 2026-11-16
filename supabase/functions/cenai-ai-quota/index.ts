@@ -33,6 +33,9 @@ Deno.serve(async (req: Request) => {
       if (!model || model.config?.runtime !== "cloudflare-workers-ai") return reply(404, { error: "Requested model is not available.", code: "MODEL_UNAVAILABLE" });
       const inputTokens = Math.max(0, Math.min(20000, Math.floor(Number(body.inputTokens) || 0)));
       const maxOutputTokens = Math.max(1, Math.min(1024, Math.floor(Number(body.maxOutputTokens) || 1024)));
+      const { data: policy } = await adminDb.from("ai_quota_policies").select("daily_request_limit,monthly_token_limit,enabled").eq("owner_user_id",user.id).maybeSingle();
+      const dailyLimit = policy?.daily_request_limit ?? 20;
+      const monthlyTokenLimit = policy?.monthly_token_limit ?? 20000;
       const { data: reservation, error: reserveError } = await adminDb.rpc("cenai_reserve_ai_request", {
         p_user_id: user.id, p_model_id: model.model_id, p_model_slug: model.slug,
         p_input_tokens: inputTokens, p_max_output_tokens: maxOutputTokens,
@@ -48,10 +51,10 @@ Deno.serve(async (req: Request) => {
         return reply(status, {
           error: row?.reason === "daily_request_limit" ? "Daily AI request quota exceeded." : row?.reason === "monthly_token_limit" ? "Monthly AI token quota exceeded." : row?.reason === "rate_limit" ? "AI rate limit exceeded. Try again shortly." : row?.reason === "quota_disabled" ? "Cloud AI quota is disabled for this account." : "AI request could not be authorized.",
           code: row?.reason || "QUOTA_BLOCKED",
-          quota: { dailyLimit: 20, monthlyTokenLimit: 20000, dailyUsed: row?.daily_used || 0, monthlyTokens: row?.monthly_tokens || 0 }
+          quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row?.daily_used || 0, monthlyTokens: row?.monthly_tokens || 0 }
         });
       }
-      return reply(200, { ok: true, eventId: row.event_id, model: model.slug, modelId: model.model_id, displayName: model.display_name, quota: { dailyLimit: 20, monthlyTokenLimit: 20000, dailyUsed: row.daily_used, monthlyTokens: row.monthly_tokens } });
+      return reply(200, { ok: true, eventId: row.event_id, model: model.slug, modelId: model.model_id, displayName: model.display_name, quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row.daily_used, monthlyTokens: row.monthly_tokens } });
     }
     if (action === "record") {
       const eventId = Number(body.eventId);
