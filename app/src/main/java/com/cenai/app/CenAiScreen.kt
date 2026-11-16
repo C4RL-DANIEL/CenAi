@@ -1399,7 +1399,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
             dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } },
-            containerColor = palette.surface,
             titleContentColor = palette.text,
             textContentColor = palette.text,
             shape = RoundedCornerShape(24.dp)
