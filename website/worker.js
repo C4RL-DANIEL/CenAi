@@ -1,5 +1,7 @@
 import { connect } from "cloudflare:sockets";
 
+const STATIC_ASSETS = {};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
@@ -369,9 +371,19 @@ export default {
       }
       return json(404, { error: "API route not found" });
     }
+    if (!["GET", "HEAD"].includes(request.method)) return withSecurity(new Response("Method not allowed", { status: 405 }));
     const rewritten = rewritePath(url);
-    const assetRequest = new Request(rewritten.toString(), request);
-    const response = await env.ASSETS.fetch(assetRequest);
+    const assetPath = rewritten.pathname === "/" ? "/index.html" : rewritten.pathname;
+    const asset = STATIC_ASSETS[assetPath];
+    if (typeof asset !== "string") return withSecurity(new Response("Not found", { status: 404 }));
+    const extension = assetPath.split(".").pop()?.toLowerCase();
+    const types = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8", svg: "image/svg+xml", txt: "text/plain; charset=utf-8", webmanifest: "application/manifest+json" };
+    const response = new Response(request.method === "HEAD" ? null : asset, {
+      headers: {
+        "Content-Type": types[extension] || "application/octet-stream",
+        "Cache-Control": extension === "html" ? "no-store" : "public, max-age=3600"
+      }
+    });
     return withSecurity(response);
   }
 };
