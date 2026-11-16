@@ -789,6 +789,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var usageAnalyticsConsent by remember { mutableStateOf(vault.get("cloud_usage_analytics_consent", "false").toBoolean()) }
         var guardianCloudConsent by remember { mutableStateOf(vault.get("guardian_cloud_consent", "false").toBoolean()) }
         var cloudBusy by remember { mutableStateOf(false) }
+        var paypalBusy by remember { mutableStateOf(false) }
+        var paypalStatus by remember { mutableStateOf("Load plans to check current PayPal availability.") }
+        var paypalBillingEnabled by remember { mutableStateOf(false) }
+        var paypalPlans by remember { mutableStateOf(emptyList<JSONObject>()) }
+        var paypalSubscriptions by remember { mutableStateOf(emptyList<JSONObject>()) }
         var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
         var otpCode by remember { mutableStateOf("") }
         var emailVerified by remember { mutableStateOf(cloud.isEmailVerified()) }
@@ -1022,12 +1027,82 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
                                 Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text("Subscriptions are managed on the secure CenAI website. Sign in with your CenAI account and review the recurring amount before approving payment on PayPal.", color = palette.muted, fontSize = 10.sp)
-                                OutlinedButton(enabled = emailVerified, onClick = {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cenai-website.vercel.app/billing")))
-                                    }.onFailure { cloudStatus = "Could not open the secure billing page: " + (it.message ?: "unknown error") }
-                                }, modifier = Modifier.fillMaxWidth()) { Text("View subscriptions and continue with PayPal") }
+                                Text("View and manage PayPal subscriptions here. Checkout opens PayPal's secure approval page; CenAI never handles your PayPal password or card details.", color = palette.muted, fontSize = 10.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(enabled = !paypalBusy, onClick = {
+                                        paypalBusy = true
+                                        paypalStatus = "Loading PayPal plans…"
+                                        scope.launch {
+                                            try {
+                                                val result = cloud.paypalBilling("list_public_plans")
+                                                paypalBillingEnabled = result.optBoolean("billingEnabled")
+                                                val rows = result.optJSONArray("plans")
+                                                paypalPlans = if (rows == null) emptyList() else (0 until rows.length()).map { rows.getJSONObject(it) }
+                                                paypalStatus = if (paypalBillingEnabled) "PayPal checkout is enabled. Review each recurring amount before approving." else "PayPal checkout is currently locked while live subscription lifecycle checks are completed. You can still view plans."
+                                            } catch (e: Exception) { paypalStatus = e.message ?: "Could not load PayPal plans." }
+                                            finally { paypalBusy = false }
+                                        }
+                                    }, modifier = Modifier.weight(1f)) { Text(if (paypalBusy) "Loading…" else "Load plans") }
+                                    OutlinedButton(enabled = !paypalBusy, onClick = {
+                                        paypalBusy = true
+                                        scope.launch {
+                                            try {
+                                                val result = cloud.paypalBilling("status")
+                                                val rows = result.optJSONArray("subscriptions")
+                                                paypalSubscriptions = if (rows == null) emptyList() else (0 until rows.length()).map { rows.getJSONObject(it) }
+                                                paypalStatus = if (paypalSubscriptions.isEmpty()) "No PayPal subscriptions are linked to this account." else "Your PayPal subscriptions are up to date."
+                                            } catch (e: Exception) { paypalStatus = e.message ?: "Could not load subscription status." }
+                                            finally { paypalBusy = false }
+                                        }
+                                    }, modifier = Modifier.weight(1f)) { Text("My subscriptions") }
+                                }
+                                Text(paypalStatus, color = if (paypalBillingEnabled) palette.accent else palette.muted, fontSize = 11.sp)
+                                paypalPlans.forEach { plan ->
+                                    Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "DEFAULT") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                            Text(plan.optString("display_name", "CenAI plan"), color = palette.text, fontWeight = FontWeight.SemiBold)
+                                            Text("${plan.optString("currency", "PHP")} ${plan.optString("amount")} · every ${plan.optInt("interval_count", 1)} ${plan.optString("interval_unit", "MONTH").lowercase()}", color = palette.text, fontSize = 13.sp)
+                                            if (plan.optBoolean("is_test")) Text("Test-labelled plan — verify the PayPal environment and recurring charge before enabling checkout.", color = Color(0xFFB97832), fontSize = 10.sp)
+                                            Button(enabled = paypalBillingEnabled && !paypalBusy && emailVerified, onClick = {
+                                                paypalBusy = true
+                                                paypalStatus = "Preparing secure PayPal approval…"
+                                                scope.launch {
+                                                    try {
+                                                        val result = cloud.paypalBilling("create_subscription", JSONObject().put("planKey", plan.optString("plan_key")))
+                                                        val approvalUrl = result.optString("approvalUrl")
+                                                        val approval = Uri.parse(approvalUrl)
+                                                        if (approval.scheme != "https" || !(approval.host == "paypal.com" || approval.host?.endsWith(".paypal.com") == true)) throw IllegalStateException("PayPal returned an unexpected approval destination.")
+                                                        context.startActivity(Intent(Intent.ACTION_VIEW, approval))
+                                                        paypalStatus = "PayPal approval opened. Return here and refresh subscription status after approval."
+                                                    } catch (e: Exception) { paypalStatus = e.message ?: "Could not start PayPal checkout." }
+                                                    finally { paypalBusy = false }
+                                                }
+                                            }, modifier = Modifier.fillMaxWidth()) { Text(if (paypalBillingEnabled) "Continue to PayPal" else "Checkout locked pending verification") }
+                                        }
+                                    }
+                                }
+                                paypalSubscriptions.forEach { subscription ->
+                                    Surface(color = palette.raised.copy(alpha = 0.52f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp)) {
+                                            Text(subscription.optString("plan_key") + " · " + subscription.optString("status"), color = palette.text, fontWeight = FontWeight.SemiBold)
+                                            Text("Subscription " + subscription.optString("provider_subscription_id"), color = palette.muted, fontSize = 10.sp)
+                                            if (subscription.optString("status") in setOf("ACTIVE", "APPROVAL_PENDING")) {
+                                                TextButton(enabled = !paypalBusy, onClick = {
+                                                    paypalBusy = true
+                                                    scope.launch {
+                                                        try {
+                                                            cloud.paypalBilling("cancel", JSONObject().put("subscriptionId", subscription.optString("provider_subscription_id")))
+                                                            paypalStatus = "Cancellation requested. Refresh status to confirm."
+                                                            val refreshed = cloud.paypalBilling("status").optJSONArray("subscriptions")
+                                                            paypalSubscriptions = if (refreshed == null) emptyList() else (0 until refreshed.length()).map { refreshed.getJSONObject(it) }
+                                                        } catch (e: Exception) { paypalStatus = e.message ?: "Could not cancel subscription." }
+                                                        finally { paypalBusy = false }
+                                                    }
+                                                }) { Text("Cancel subscription") }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
