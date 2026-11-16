@@ -117,7 +117,8 @@
           }
           location.assign(approval.toString());
         } catch (error) {
-          status(error.message, true);
+          try { await billingApi("cancel_open_checkouts"); } catch {}
+          status(error.message + " Unfinished checkout cancellation was requested.", true);
           button.disabled = false;
           button.textContent = "Continue to PayPal";
         }
