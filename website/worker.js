@@ -234,7 +234,7 @@ function estimateTokens(value) {
 async function aiChat(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in required" });
   const body = await request.json().catch(() => null);
   if (!body || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
@@ -255,8 +255,8 @@ async function aiChat(request, env) {
   const model = String(body.model || "cloudflare-gemma-4-26b-a4b-it");
   const maxTokens = Math.max(1, Math.min(1024, Math.floor(Number(body.max_tokens) || 1024)));
   const temperature = Math.max(0, Math.min(1.2, Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : 0.7));
-  const inputTokens = estimateTokens(messages.map(item => item.content).join("\\n"));
-  const base = env.SUPABASE_URL.replace(/\\/$/, "");
+  const inputTokens = estimateTokens(messages.map(item => item.content).join("\n"));
+  const base = env.SUPABASE_URL.replace(/\/$/, "");
   let reservation = null;
   try {
     const reserveResponse = await fetch(base + "/functions/v1/cenai-ai-quota", {
