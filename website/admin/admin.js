@@ -305,6 +305,7 @@
   $("page-refresh")?.addEventListener("click",()=>loadSitePages().catch(e=>status(e.message,true)));
   $("quota-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("quota_update",{ownerUserId:$("quota-user-id").value.trim(),dailyRequestLimit:Number($("quota-daily").value),monthlyTokenLimit:Number($("quota-monthly").value),enabled:$("quota-enabled").checked});status("Public API quota policy saved and audited.");await loadQuotas();}catch(err){status(err.message,true);}});
   $("mfa-verify")?.addEventListener("click",verifyMfa);
+  $("mfa-signout")?.addEventListener("click",()=>{accessToken=null;refreshToken=null;userEmail="";mfaFactorId="";$("mfa-gate").hidden=true;$("login").hidden=false;$("mfa-code").value="";$("mfa-status").textContent="";});
   $("mfa-code")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
   $("analytics-refresh")?.addEventListener("click",()=>loadAnalytics().catch(e=>status(e.message,true)));
   $("analytics-days")?.addEventListener("change",()=>loadAnalytics().catch(e=>status(e.message,true)));
