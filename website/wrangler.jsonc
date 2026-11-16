@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cenai-website",
+  "account_id": "cb6c48b22237621d902bce3d6d19ab09",
   "main": "./dist/_worker.js",
   "compatibility_date": "2026-11-16",
   "workers_dev": true,
