@@ -446,12 +446,12 @@ function rewritePath(url) {
     "/reset-password/": "/reset-password.html",
     "/account": "/account.html",
     "/account/": "/account.html",
-    "/billing": "/billing.html",
-    "/billing/": "/billing.html",
+    "/billing": "/account.html",
+    "/billing/": "/account.html",
     "/billing/success": "/billing-success.html",
     "/billing/cancel": "/billing-cancel.html"
   };
-  if (exact[path]) url.pathname = exact[path];
+  if (exact[path]) { url.pathname = exact[path]; if (path === "/billing" || path === "/billing/") url.searchParams.set("tab", "membership"); }
   else if (path.startsWith("/pages/")) {
     url.pathname = "/page.html";
     url.searchParams.set("slug", path.slice("/pages/".length));
