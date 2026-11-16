@@ -63,6 +63,7 @@
   }
   async function beginMfa() {
     try {
+      await api("admin_preflight");
       if (jwtAal(accessToken) === "aal2") {
         $("mfa-gate").hidden = true; $("dashboard").hidden = false;
         await load("overview"); return;
