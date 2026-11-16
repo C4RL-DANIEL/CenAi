@@ -1,20 +1,15 @@
-# CenAI website
+# CenAI website and Cloudflare Worker
 
-CenAI public website and restricted operations portal.
+CenAI public website and restricted administrator portal. The deployment is a single Cloudflare Worker with public static assets embedded into its module bundle and authenticated API routes handled at the edge.
 
 ## Hosting
 
-The Cloudflare Pages project `cenai-website` builds from this directory:
-- Build command: `npm run build`
-- Output directory: `dist`
-- Runtime: Cloudflare Pages advanced-mode Worker at `dist/_worker.js`
-- Production site: `https://cenai-website.pages.dev` (custom domain can be attached after DNS ownership is confirmed)
-
-The build script copies public website files into `dist`, excludes server source under `api/`, and packages the Cloudflare Worker as `_worker.js`. The Worker owns all `/api/*` requests and never serves source files from the API directory.
-
-## Local validation
-
-Run `npm run build` then inspect `dist/`. Run `npm run check` to syntax-check the Worker and build script.
+- Worker: `cenai-website`
+- Production URL: `https://cenai-website.aglibotcarldaniel.workers.dev`
+- Source: this repository, `website/`
+- Build: `npm run build`
+- Deploy: `npm run deploy` (requires Wrangler authentication)
+- Static assets are embedded into `dist/_worker.js`; no public server source directory is deployed.
 
 ## Routes
 
@@ -22,19 +17,35 @@ Run `npm run build` then inspect `dist/`. Run `npm run check` to syntax-check th
 - `/admin`: restricted administrator control center.
 - `/beta`: beta application and feedback.
 - `/api/admin` and `/api/beta`: authenticated Supabase control-plane proxy.
-- `/api/email-otp`: authenticated email verification; Gmail SMTP credentials are server-side Cloudflare secrets.
-- `/api/health`: non-secret integration configuration status.
-- Other product services (public API, billing, PayPal billing and telemetry) remain in Supabase Edge Functions and must be proxied through the Worker or called from the app with their existing authentication.
+- `/api/admin-config`: public Supabase URL and publishable key.
+- `/api/site-pages`: published CMS pages only.
+- `/api/releases`: GitHub release feed.
+- `/api/email-otp`: authenticated OTP delivery and verification.
+- `/api/beta-notification`: administrator-reviewed beta email notifications.
+- `/api/functions/:slug`: allowlisted Supabase Edge Function proxy, including PayPal billing, public API, billing, and telemetry.
+- `/api/webhooks/paypal`: PayPal webhook proxy with signature headers preserved.
+- `/api/health`: non-secret service and configuration status.
 
-## Required Cloudflare runtime variables
+## Cloudflare runtime variables
 
+Plain-text variables:
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`
 - `CENAI_PUBLIC_URL`
-- `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_OTP_SECRET` for Gmail OTP
 
-Do not commit credentials. Add OTP variables as encrypted production and preview environment secrets in Cloudflare Pages settings.
+Encrypted secrets required for email:
+- `EMAIL_USER`
+- `EMAIL_PASS` (Gmail app password)
+- `EMAIL_OTP_SECRET` (random high-entropy HMAC secret)
 
-## Backend status
+Do not commit secrets. Configure them in Cloudflare Worker Settings > Variables and Secrets for production.
 
-The admin and beta workflows use the Supabase `cenai-control-plane` function. Supabase remains the PostgreSQL/authentication system of record during migration to preserve accounts and data. Billing, PayPal, telemetry and public API are separately deployed Supabase Edge Functions; their secrets and webhook configuration remain server-side.
+## Backend and data
+
+Supabase remains the PostgreSQL and Auth system of record to preserve accounts and existing data. The control plane, PayPal billing, public API, billing, and telemetry remain deployed as Supabase Edge Functions and are routed through the Cloudflare Worker. No service-role key or payment secret is exposed to the browser or Worker bundle.
+
+Email OTP challenge writes and verification now use the `cenai-email-otp` Edge Function with service-role-only database RPCs. The original user-callable OTP SECURITY DEFINER functions have had public/authenticated execution revoked.
+
+## Local validation
+
+Run `npm run check` and `npm run build`. The build excludes `api/`, internal setup docs, and Vercel configuration, then embeds only public assets in the Worker module.
