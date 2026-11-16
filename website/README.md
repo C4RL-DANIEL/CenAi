@@ -1,6 +1,6 @@
 # CenAI website and Cloudflare Worker
 
-CenAI public website and restricted administrator portal. The deployment is a single Cloudflare Worker with authenticated API routes handled at the edge. Public static files are fetched from the allowlisted GitHub repository on a cache miss and cached at Cloudflare's edge.
+CenAI public website and restricted administrator portal. The deployment is a single Cloudflare Worker with authenticated API routes handled at the edge. Public static files are fetched from the allowlisted GitHub repository on a cache miss and cached at Cloudflare's edge. This is the current bridge while the Cloudflare Git build integration is unavailable; the Worker and API runtime are hosted directly on Cloudflare.
 
 ## Hosting
 
@@ -8,7 +8,7 @@ CenAI public website and restricted administrator portal. The deployment is a si
 - Production URL: `https://cenai-website.aglibotcarldaniel.workers.dev`
 - Source: this repository, `website/`
 - Build: `npm run build`
-- Deploy: `npm run deploy` (requires Wrangler authentication)
+- Deploy: GitHub Actions workflow `.github/workflows/cloudflare-deploy.yml`; requires repository secret `CLOUDFLARE_API_TOKEN` with Workers Scripts:Edit and Workers AI:Edit. Manual `npm run deploy` requires Wrangler authentication.
 - Static assets are embedded into `dist/_worker.js`; no public server source directory is deployed.
 
 ## Routes
