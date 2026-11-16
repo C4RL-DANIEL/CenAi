@@ -45,6 +45,24 @@ jobs:
           gradle-version: "8.9"
       - name: Run unit tests and build debug APK
         run: gradle testDebugUnitTest assembleDebug
+      - name: Check release signing readiness without exposing secrets
+        if: github.event_name == 'pull_request'
+        env:
+          CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
+          CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
+          CENAI_KEY_ALIAS: ${{ secrets.CENAI_KEY_ALIAS }}
+          CENAI_KEY_PASSWORD: ${{ secrets.CENAI_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "$CENAI_KEYSTORE_BASE64" ]] || missing+=(CENAI_KEYSTORE_BASE64)
+          [[ -n "$CENAI_KEYSTORE_PASSWORD" ]] || missing+=(CENAI_KEYSTORE_PASSWORD)
+          [[ -n "$CENAI_KEY_ALIAS" ]] || missing+=(CENAI_KEY_ALIAS)
+          [[ -n "$CENAI_KEY_PASSWORD" ]] || missing+=(CENAI_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            echo "Release signing is not fully configured. Missing secret names: ${missing[*]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Release signing secrets are present. Values were not printed." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Run Android emulator smoke tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
