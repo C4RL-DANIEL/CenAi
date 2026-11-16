@@ -219,6 +219,7 @@ async function health(env) {
     adminPanel: "available-at-/admin",
     emailOtp: missingOtp.length === 0 ? "configuration-present-needs-delivery-test" : "not-configured",
     controlPlane: missing.length === 0 ? "configuration-present" : "not-configured",
+    cloudAI: env.AI && typeof env.AI.run === "function" ? "binding-present; feature-flag-controlled" : "not-configured",
     paypal: "managed-by-supabase-paypal-edge-function",
     integrations: configured,
     missingConfiguration: missing,
