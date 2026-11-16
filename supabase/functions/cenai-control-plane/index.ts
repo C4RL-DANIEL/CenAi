@@ -13,6 +13,13 @@ async function audit(user: any, action: string, details: Record<string, unknown>
   const { error } = await adminDb.from("admin_audit_logs").insert({ actor_user_id: user.id, actor_email: user.email ?? "", action, details });
   if (error) throw error;
 }
+function tokenAal(token: string) {
+  try {
+    const part = token.split(".")[1] || "";
+    const normalized = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+    return String(JSON.parse(atob(normalized)).aal || "aal1");
+  } catch { return "aal1"; }
+}
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return fail(405, "Method not allowed");
@@ -45,7 +52,9 @@ Deno.serve(async (req: Request) => {
     if (action === "status") {
       const { data, error } = await adminDb.from("beta_applications").select("id,display_name,status,reviewer_note,created_at,reviewed_at").eq("user_id", user.id).maybeSingle();
       if (error) throw error;
-      return response(200, { application: data, isBetaTester: data?.status === "approved" });
+      const { data: verified, error: verifiedError } = await adminDb.from("email_verifications").select("email").eq("user_id", user.id).eq("email", String(user.email ?? "").toLowerCase()).maybeSingle();
+      if (verifiedError) throw verifiedError;
+      return response(200, { application: data, isBetaTester: data?.status === "approved", emailVerified: Boolean(verified) });
     }
     if (action === "feedback") {
       const { data: feedbackFlag, error: feedbackFlagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "beta.feedback.enabled").maybeSingle();
@@ -60,9 +69,16 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       return response(201, { feedback: data });
     }
+    if (action === "admin_preflight") {
+      const { data: preflightAdmin, error: preflightError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id", user.id).maybeSingle();
+      if (preflightError) throw preflightError;
+      if (!preflightAdmin?.is_active || !["owner","admin","operator"].includes(preflightAdmin.role)) return fail(403, "Administrator access denied");
+      return response(200, { authorized:true, mfaRequired:tokenAal(token) !== "aal2" });
+    }
     const { data: adminRow, error: adminError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id", user.id).maybeSingle();
     if (adminError) throw adminError;
     if (!adminRow?.is_active || !["owner","admin","operator"].includes(adminRow.role)) return fail(403, "Administrator access denied");
+    if (tokenAal(token) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before using administrator functions.");
     const role = adminRow.role;
     if (action === "models") {
       const { data, error } = await adminDb.from("model_registry").select("id,slug,provider,model_id,display_name,description,tasks,modalities,enabled,public,updated_at").order("provider").order("slug");
@@ -181,12 +197,53 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       return response(200, { feedback: data ?? [] });
     }
+    if (action === "site_pages") {
+      const { data, error } = await adminDb.from("site_pages").select("slug,title,description,content,published,updated_at").order("slug");
+      if (error) throw error;
+      await audit(user, "site.pages.view", { count: data?.length ?? 0 });
+      return response(200, { pages: data ?? [] });
+    }
+    if (action === "site_page_save") {
+      if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const slug = String(body.slug ?? "").trim().toLowerCase();
+      const title = String(body.title ?? "").trim();
+      const description = String(body.description ?? "").trim();
+      const content = body.content && typeof body.content === "object" && !Array.isArray(body.content) ? body.content : {};
+      const published = body.published === true;
+      if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(slug) || title.length < 2 || title.length > 120 || description.length > 500 || JSON.stringify(content).length > 20000) return fail(400, "Invalid page. Check slug, title, description, and content size.");
+      const { data, error } = await adminDb.from("site_pages").upsert({ slug, title, description, content, published, updated_by:user.id, updated_at:new Date().toISOString() }, { onConflict:"slug" }).select("slug,title,description,content,published,updated_at").single();
+      if (error) throw error;
+      await audit(user, "site.page.saved", { slug, published });
+      return response(200, { page:data });
+    }
+    if (action === "quota_list") {
+      const { data, error } = await adminDb.from("ai_quota_policies").select("owner_user_id,daily_request_limit,monthly_token_limit,enabled,updated_at").order("updated_at",{ascending:false}).limit(200);
+      if (error) throw error;
+      await audit(user, "ai.quota.view", { count:data?.length ?? 0 });
+      return response(200, { policies:data ?? [], defaults:{ dailyRequestLimit:100, monthlyTokenLimit:500000, enforcement:"CenAI Public API requests only" } });
+    }
+    if (action === "quota_update") {
+      if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const ownerUserId = String(body.ownerUserId ?? "");
+      const daily = Number(body.dailyRequestLimit), monthly = Number(body.monthlyTokenLimit), enabled = body.enabled !== false;
+      if (!/^[0-9a-f-]{36}$/i.test(ownerUserId) || !Number.isInteger(daily) || daily < 1 || daily > 1000000 || !Number.isSafeInteger(monthly) || monthly < 1000 || monthly > 100000000000) return fail(400, "Invalid quota policy values.");
+      const { data, error } = await adminDb.from("ai_quota_policies").upsert({ owner_user_id:ownerUserId, daily_request_limit:daily, monthly_token_limit:monthly, enabled, updated_by:user.id, updated_at:new Date().toISOString() }, { onConflict:"owner_user_id" }).select("owner_user_id,daily_request_limit,monthly_token_limit,enabled,updated_at").single();
+      if (error) throw error;
+      await audit(user, "ai.quota.updated", { owner_user_id:ownerUserId, daily_request_limit:daily, monthly_token_limit:monthly, enabled });
+      return response(200, { policy:data });
+    }
     if (action === "overview" || action === "flags" || action === "audit" || action === "integrations" || action === "update_flag" || action === "releases") {
       if (action === "overview" || action === "flags") {
         const { data: flags, error } = await adminDb.from("admin_feature_flags").select("key,enabled,description,updated_at").order("key");
         if (error) throw error;
         if (action === "flags") return response(200, { flags });
-        const integrations = [{ name: "Supabase Auth + Database", connected: true, detail: "Authenticated session and database verified." }, { name: "GitHub Releases", connected: true, detail: "Public release feed available." }, { name: "CenAI Public API", connected: true, detail: "API-key service deployed; public access remains disabled by the api.public.enabled launch flag." }, { name: "Model registry", connected: true, detail: "Server-managed model registry is available." }, { name: "Usage analytics", connected: true, detail: "Privacy-minimized usage event aggregation is available." }, { name: "Guardian device diagnostics", connected: true, detail: "Local device diagnostics are available; cloud ingestion is not enabled." }, { name: "Billing provider", connected: Boolean(Deno.env.get("STRIPE_SECRET_KEY") && Deno.env.get("STRIPE_WEBHOOK_SECRET")), detail: Deno.env.get("STRIPE_SECRET_KEY") && Deno.env.get("STRIPE_WEBHOOK_SECRET") ? "Stripe secrets configured; webhook and checkout validation still required." : "Not connected. Requires a Stripe account and server-side keys." }, { name: "PayPal Live subscriptions", connected: Boolean(Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID")), detail: Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID") ? "Live API credentials and webhook ID are present; end-to-end verification is still required." : "Not connected. Requires rotated Live API credentials and a verified webhook ID." }, { name: "AI provider gateway", connected: false, detail: "Not connected." }];
+        const { data: paypalPlan, error: paypalPlanError } = await adminDb.from("billing_plan_config").select("paypal_plan_id,enabled").eq("plan_key","live_test").maybeSingle();
+        if (paypalPlanError) throw paypalPlanError;
+        const { data: billingFlag, error: billingFlagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key","billing.enabled").maybeSingle();
+        if (billingFlagError) throw billingFlagError;
+        const { count: webhookCount, error: webhookCountError } = await adminDb.from("billing_webhook_events").select("event_id",{count:"exact",head:true}).eq("provider","paypal");
+        if (webhookCountError) throw webhookCountError;
+        const integrations = [{ name: "Supabase Auth + Database", connected: true, detail: "Authenticated session and database verified." }, { name: "GitHub Releases", connected: true, detail: "Public release feed available." }, { name: "CenAI Public API", connected: true, detail: "API-key service deployed; public access remains disabled by the api.public.enabled launch flag." }, { name: "Model registry", connected: true, detail: "Server-managed model registry is available." }, { name: "Usage analytics", connected: true, detail: "Privacy-minimized usage event aggregation is available." }, { name: "Guardian device diagnostics", connected: true, detail: "Local diagnostics are available; cloud ingestion is opt-in and currently disabled." }, { name: "PayPal Live", connected: Boolean(paypalPlan?.paypal_plan_id && Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID")), detail: "Live plan: " + (paypalPlan?.paypal_plan_id ? "present" : "missing") + "; PayPal credentials/webhook ID: " + (Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID") ? "configured" : "incomplete") + "; signed webhook events recorded: " + (webhookCount ?? 0) + "; billing launch flag: " + (billingFlag?.enabled === true ? "enabled" : "disabled") + ". Keep checkout disabled until subscription lifecycle tests pass." }, { name: "Cloud AI gateway", connected: false, detail: "No centralized provider gateway is deployed; Android provider calls currently use user-managed provider credentials." }];
         await audit(user, "admin.overview.view");
         return response(200, { controlPlane: "authenticated", role, items: [{ name: "Administrator", detail: user.email ?? "", status: role }, { name: "Feature flags", detail: flags.length + " stored flags", status: "database" }, { name: "Privileged actions", detail: "Server authorization and audit enabled", status: "protected" }], integrations, flags });
       }
@@ -194,6 +251,16 @@ Deno.serve(async (req: Request) => {
         if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
         const key = String(body.key ?? ""), enabled = body.enabled;
         if (!/^[a-z0-9._-]{2,80}$/.test(key) || typeof enabled !== "boolean") return fail(400, "Invalid feature flag");
+        if (key === "billing.enabled" && enabled) {
+          const { data: webhookRows, error: webhookError } = await adminDb.from("billing_webhook_events").select("event_type").eq("provider","paypal").limit(1000);
+          if (webhookError) throw webhookError;
+          const eventTypes = new Set((webhookRows ?? []).map((row:any)=>String(row.event_type || "")));
+          const { count: lifecycleRows, error: lifecycleError } = await adminDb.from("billing_subscriptions").select("provider_subscription_id",{count:"exact",head:true}).eq("provider","paypal").eq("status","CANCELLED");
+          if (lifecycleError) throw lifecycleError;
+          const requiredEvents = ["BILLING.SUBSCRIPTION.ACTIVATED","BILLING.SUBSCRIPTION.CANCELLED","PAYMENT.SALE.COMPLETED"];
+          const missing = requiredEvents.filter(eventType=>!eventTypes.has(eventType));
+          if (missing.length || (lifecycleRows ?? 0) < 1) return fail(409, "Billing launch blocked: PayPal activation, completed-payment, and cancellation events plus a cancelled subscription record must be verified first. No live checkout was enabled.");
+        }
         const { data, error } = await adminDb.from("admin_feature_flags").update({ enabled, updated_by: user.id, updated_at: new Date().toISOString() }).eq("key", key).select().maybeSingle();
         if (error) throw error;
         if (!data) return fail(404, "Feature flag not found");
@@ -205,7 +272,16 @@ Deno.serve(async (req: Request) => {
         if (error) throw error;
         return response(200, { events: data ?? [] });
       }
-      if (action === "integrations") return response(200, { integrations: [{ name: "Supabase Auth + Postgres", connected: true, detail: "Verified for this request." }, { name: "GitHub Releases", connected: true, detail: "Public release feed available." }, { name: "CenAI Public API", connected: true, detail: "API-key service deployed; public access remains disabled by launch flag." }, { name: "Model registry", connected: true, detail: "Server-managed registry deployed." }, { name: "Usage analytics", connected: true, detail: "Aggregate usage analytics deployed." }, { name: "Guardian", connected: true, detail: "Local Android diagnostics deployed; remote ingestion is off." }, { name: "Billing", connected: Boolean(Deno.env.get("STRIPE_SECRET_KEY") && Deno.env.get("STRIPE_WEBHOOK_SECRET")), detail: Deno.env.get("STRIPE_SECRET_KEY") && Deno.env.get("STRIPE_WEBHOOK_SECRET") ? "Stripe keys configured; production checkout still requires verification." : "Not connected. Requires Stripe credentials." }, { name: "PayPal Live subscriptions", connected: Boolean(Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID")), detail: Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID") ? "Live API credentials and webhook ID are present; end-to-end verification is still required." : "Not connected. Requires rotated Live API credentials and a verified webhook ID." }, { name: "AI Gateway", connected: false, detail: "Not connected." }] });
+      if (action === "integrations") {
+        const { data: paypalPlan, error: planError } = await adminDb.from("billing_plan_config").select("paypal_plan_id").eq("plan_key","live_test").maybeSingle();
+        if (planError) throw planError;
+        const { data: billingFlag, error: billingError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key","billing.enabled").maybeSingle();
+        if (billingError) throw billingError;
+        const { count: webhookCount, error: eventError } = await adminDb.from("billing_webhook_events").select("event_id",{count:"exact",head:true}).eq("provider","paypal");
+        if (eventError) throw eventError;
+        const paypalReady = Boolean(paypalPlan?.paypal_plan_id && Deno.env.get("PAYPAL_CLIENT_ID") && Deno.env.get("PAYPAL_CLIENT_SECRET") && Deno.env.get("PAYPAL_WEBHOOK_ID"));
+        return response(200, { integrations: [{ name: "Supabase Auth + Postgres", connected: true, detail: "Verified for this request." }, { name: "GitHub Releases", connected: true, detail: "Public release feed available." }, { name: "CenAI Public API", connected: true, detail: "API-key service deployed; public access remains disabled by launch flag." }, { name: "Model registry", connected: true, detail: "Server-managed registry deployed." }, { name: "Usage analytics", connected: true, detail: "Aggregate usage analytics deployed." }, { name: "Guardian", connected: true, detail: "Local Android diagnostics deployed; remote ingestion is off." }, { name: "PayPal Live", connected: paypalReady, detail: "Plan " + (paypalPlan?.paypal_plan_id ? "present" : "missing") + "; signed events recorded: " + (webhookCount ?? 0) + "; billing flag: " + (billingFlag?.enabled === true ? "enabled" : "disabled") + ". Event receipt does not replace a completed subscription lifecycle test." }, { name: "Cloud AI gateway", connected: false, detail: "No centralized provider gateway is deployed; app provider calls currently use user-managed credentials." }] });
+      }
       if (action === "releases") {
         const r = await fetch("https://api.github.com/repos/C4RL-DANIEL/CenAi/releases?per_page=20", { headers: { "Accept": "application/vnd.github+json", "User-Agent": "CenAI-Control-Plane" } });
         if (!r.ok) return fail(502, "GitHub Releases API unavailable");
