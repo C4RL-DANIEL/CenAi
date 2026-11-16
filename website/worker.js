@@ -395,7 +395,8 @@ async function proxyFunction(request, env, slug) {
   const init = { method: request.method, headers };
   if (!["GET", "HEAD"].includes(request.method)) init.body = await request.arrayBuffer();
   try {
-    const response = await fetch(env.SUPABASE_URL.replace(/\/$/, "") + "/functions/v1/" + slug, init);
+        const supabaseBase = env.SUPABASE_URL.endsWith("/") ? env.SUPABASE_URL.slice(0, -1) : env.SUPABASE_URL;
+        const response = await fetch(supabaseBase + "/functions/v1/cenai-paypal-billing", {
     const body = await response.arrayBuffer();
     const resultHeaders = new Headers(response.headers);
     resultHeaders.set("Cache-Control", "no-store");
@@ -495,7 +496,8 @@ export default {
         return;
       }
       try {
-        const response = await fetch(env.SUPABASE_URL.replace(/\\/$/, "") + "/functions/v1/cenai-paypal-billing", {
+        const supabaseBase = env.SUPABASE_URL.endsWith("/") ? env.SUPABASE_URL.slice(0, -1) : env.SUPABASE_URL;
+        const response = await fetch(supabaseBase + "/functions/v1/cenai-paypal-billing", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
