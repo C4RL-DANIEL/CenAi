@@ -104,10 +104,20 @@
     return data;
   }
   async function loadPlans() {
-    const data = await billingApi("list_public_plans");
+    const [data, membership] = await Promise.all([billingApi("list_public_plans"), billingApi("status")]);
     $("login-form").classList.add("hidden");
     $("account").classList.remove("hidden");
     $("signed-in").textContent = "Signed in as " + email;
+    if (membership.hasActiveMembership && membership.activeMembership) {
+      const current = membership.activeMembership;
+      const until = current.current_period_end ? new Date(current.current_period_end).toLocaleDateString("en-PH", {year:"numeric",month:"long",day:"numeric"}) : "until further notice";
+      const panel = document.createElement("section");
+      panel.className = "notice good active-membership-notice";
+      panel.innerHTML = "<strong>Your CenAI membership is active.</strong><br>Plan: " + String(current.plan_key || "CenAI membership").replace(/[&<>\"]/g, "") + "<br>Access through: " + until + "<br>New purchases are disabled while your membership is active.";
+      $("plans").replaceChildren(panel);
+      status("Your membership is active. You do not need to purchase another plan.", false, true);
+      return;
+    }
     const checkoutEnabled = data.billingEnabled === true;
     if (!checkoutEnabled) status("PayPal Live is configured, but checkout is temporarily disabled until subscription lifecycle verification is complete.");
     if (!data.plans?.length) {
