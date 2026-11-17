@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261117-cenai-account-mfa-billing-fix-6";
+const STATIC_CACHE_VERSION = "20261117-cenai-paypal-checkout-fix-7";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
@@ -31,7 +31,7 @@ function withSecurity(response) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://bqkzehozezvepbthglyj.supabase.co https://*.supabase.co; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests");
+  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.paypal.com; font-src 'self' https://fonts.gstatic.com https://www.paypalobjects.com; img-src 'self' data: https://www.paypalobjects.com; connect-src 'self' https://bqkzehozezvepbthglyj.supabase.co https://*.supabase.co https://www.paypal.com https://api-m.paypal.com https://*.paypal.com; frame-src https://www.paypal.com https://*.paypal.com https://www.paypalobjects.com; form-action 'self' https://www.paypal.com https://*.paypal.com; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
