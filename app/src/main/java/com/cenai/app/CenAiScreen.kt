@@ -163,7 +163,7 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
 
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
-    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
+    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
     CenAiTheme(style = selectedStyle) {
         CenAiScreenContent(vault) { style ->
             selectedStyle = style
@@ -569,7 +569,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (vault.get("ui_style", "DEFAULT") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "DEFAULT") == "FIGMA") 1.2.sp else 0.sp)
+                        Text(if (vault.get("ui_style", "AURORA") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "AURORA") == "FIGMA") 1.2.sp else 0.sp)
                         Text(provider.label + "  ·  " + model, color = palette.muted, fontSize = 11.sp, maxLines = 1)
                     }
                 },
@@ -731,7 +731,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     itemsIndexed(messages, key = { index, _ -> "$currentId-$index" }) { index, message ->
                         MessageBubble(
                             message = message, index = index, last = index == messages.lastIndex,
-                            busy = busy, style = vault.get("ui_style", "DEFAULT"),
+                            busy = busy, style = vault.get("ui_style", "AURORA"),
                             onApproveDeviceAction = { name, rawArgs ->
                                 runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
                                     .onSuccess { result ->
@@ -818,7 +818,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskPrompt by remember { mutableStateOf("") }
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
-        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "DEFAULT")) }
+        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
         var settingsPage by remember { mutableStateOf("Appearance") }
         AlertDialog(
             modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
@@ -862,12 +862,13 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
-                            listOf("DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
+                            listOf("AURORA" to "CenAI Aurora · Glass", "DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = {\n                                    uiStyle = key\n                                    themeExpanded = false\n                                    onUiStyleChange(key)\n                                    vault.put("ui_style", key)\n                                })
                             }
                         }
                     }
                     Text(when (uiStyle) {
+                        "AURORA" -> "A calm, layered workspace with soft aurora lighting, translucent surfaces and crisp teal accents."
                         "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
                         "IOS" -> "Translucent glass chrome, reflective edges, layered depth and restrained spring motion."
                         "FIGMA" -> "A distinct editorial workspace with bold hierarchy, framed panels, vivid accent rails and asymmetric composition."
@@ -1114,9 +1115,41 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                         }
                                     }, modifier = Modifier.weight(1f)) { Text("My subscriptions") }
                                 }
+                                OutlinedButton(
+                                    enabled = !paypalBusy && cloudSignedIn,
+                                    onClick = {
+                                        paypalBusy = true
+                                        paypalStatus = "Checking the latest PayPal checkout records…"
+                                        scope.launch {
+                                            try {
+                                                val result = cloud.paypalBilling("diagnose_recent_checkouts")
+                                                val rows = result.optJSONArray("diagnostics")
+                                                paypalStatus = if (rows == null || rows.length() == 0) {
+                                                    "No recent checkout attempts were found for this account."
+                                                } else {
+                                                    (0 until rows.length()).joinToString("\\n\\n") { index ->
+                                                        val row = rows.getJSONObject(index)
+                                                        val id = row.optString("subscriptionId").takeLast(8)
+                                                        val failure = row.optString("error")
+                                                        if (failure.isNotBlank()) {
+                                                            "Checkout …$id · ${row.optString("recordedStatus")}\\nPayPal lookup: $failure"
+                                                        } else {
+                                                            "Checkout …$id · ${row.optString("paypalStatus")}\\nPlan: ${row.optString("planAmount")} ${row.optString("planCurrency")} · ${row.optString("planStatus")}\\nFailed payments: ${row.optInt("failedPaymentsCount")}\\n${row.optString("statusChangeNote")}".trim()
+                                                        }
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                paypalStatus = e.message ?: "Could not diagnose PayPal checkout."
+                                            } finally {
+                                                paypalBusy = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text(if (paypalBusy) "Checking…" else "Diagnose latest checkout") }
                                 Text(paypalStatus, color = if (paypalBillingEnabled) palette.accent else palette.muted, fontSize = 11.sp)
                                 paypalPlans.forEach { plan ->
-                                    Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "DEFAULT") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
+                                    Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "AURORA") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                             Text(plan.optString("display_name", "CenAI plan"), color = palette.text, fontWeight = FontWeight.SemiBold)
                                             Text("${plan.optString("currency", "PHP")} ${plan.optString("amount")} · every ${plan.optInt("interval_count", 1)} ${plan.optString("interval_unit", "MONTH").lowercase()}", color = palette.text, fontSize = 13.sp)
@@ -1524,14 +1557,22 @@ private fun HomeActionCard(icon: ImageVector, title: String, subtitle: String, m
     val palette = LocalCenAiPalette.current
     Surface(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 96.dp),
-        color = if (palette.glass) palette.surface.copy(alpha = 0.56f) else palette.background,
-        shape = RoundedCornerShape(17.dp),
-        border = if (palette.glass) cenAiGlassBorder() else androidx.compose.foundation.BorderStroke(1.dp, palette.raised),
-        shadowElevation = if (palette.glass) 8.dp else 0.dp
+        modifier = modifier.heightIn(min = 108.dp),
+        color = if (palette.glass) palette.surface.copy(alpha = 0.58f) else palette.surface,
+        shape = RoundedCornerShape(19.dp),
+        border = if (palette.glass) cenAiGlassBorder() else androidx.compose.foundation.BorderStroke(1.dp, palette.accent.copy(alpha = 0.20f)),
+        shadowElevation = if (palette.glass) 9.dp else 3.dp
     ) {
-        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(21.dp))
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(
+                color = palette.accent.copy(alpha = 0.13f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = palette.accent, modifier = Modifier.size(19.dp))
+                }
+            }
             Text(title, color = palette.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = palette.muted, fontSize = 10.sp, lineHeight = 14.sp)
         }
