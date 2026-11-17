@@ -11,6 +11,9 @@
   "observability": {
     "enabled": true
   },
+  "secrets": {
+    "required": ["EMAIL_PASS"]
+  },
   "vars": {
     "EMAIL_USER": "yergebeen@gmail.com",
     "SUPABASE_URL": "https://bqkzehozezvepbthglyj.supabase.co",
