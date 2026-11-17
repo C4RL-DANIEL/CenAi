@@ -18,6 +18,18 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 });
 const fail = (status: number, error: string) => json(status, { error });
 const baseUrl = () => "https://cenai-website.cenai-app.workers.dev";
+const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
+  "BILLING.SUBSCRIPTION.CREATED",
+  "BILLING.SUBSCRIPTION.ACTIVATED",
+  "BILLING.SUBSCRIPTION.UPDATED",
+  "BILLING.SUBSCRIPTION.EXPIRED",
+  "BILLING.SUBSCRIPTION.CANCELLED",
+  "BILLING.SUBSCRIPTION.SUSPENDED",
+  "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+  "PAYMENT.SALE.COMPLETED",
+  "PAYMENT.SALE.REFUNDED",
+  "PAYMENT.SALE.REVERSED",
+] as const;
 
 async function currentUser(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -304,19 +316,7 @@ async function repairWebhookConfiguration() {
   const expectedUrl = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing";
   const detail = await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "GET", token);
   if (String(detail.url || "") !== expectedUrl) return { repaired: false, reason: "Configured PayPal webhook URL does not match the CenAI billing endpoint. No changes were made." };
-  const required = [
-    "BILLING.SUBSCRIPTION.CREATED",
-    "BILLING.SUBSCRIPTION.ACTIVATED",
-    "BILLING.SUBSCRIPTION.UPDATED",
-    "BILLING.SUBSCRIPTION.CANCELLED",
-    "BILLING.SUBSCRIPTION.SUSPENDED",
-    "BILLING.SUBSCRIPTION.EXPIRED",
-    "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
-    "PAYMENT.SALE.COMPLETED",
-    "PAYMENT.SALE.DENIED",
-    "PAYMENT.SALE.REFUNDED",
-    "PAYMENT.SALE.REVERSED"
-  ];
+  const required = PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS;
   const current = Array.isArray(detail.event_types) ? detail.event_types : [];
   const names = new Set(current.map((item: any) => String(item.name || "")));
   const merged = [...current];
@@ -494,12 +494,7 @@ Deno.serve(async (req: Request) => {
       if (String(detail.url || "") !== expectedUrl) {
         return fail(409, "Configured PayPal webhook URL does not match the CenAI billing endpoint. No webhook changes were made.");
       }
-      const required = [
-        "BILLING.SUBSCRIPTION.ACTIVATED",
-        "BILLING.SUBSCRIPTION.CANCELLED",
-        "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
-        "PAYMENT.SALE.COMPLETED",
-      ];
+      const required = PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS;
       const current = Array.isArray(detail.event_types) ? detail.event_types : [];
       const names = new Set(current.map((item: any) => String(item.name || "")));
       const merged = [...current];
@@ -528,13 +523,13 @@ Deno.serve(async (req: Request) => {
       if (attemptsError) throw attemptsError;
       const token = await accessToken();
       const webhookId = Deno.env.get("PAYPAL_WEBHOOK_ID") || "";
-      let webhook: Record<string, unknown> = { configuredIdPresent: Boolean(webhookId), registered: false, requiredEventsMissing: ["BILLING.SUBSCRIPTION.ACTIVATED", "BILLING.SUBSCRIPTION.CANCELLED", "BILLING.SUBSCRIPTION.PAYMENT.FAILED", "PAYMENT.SALE.COMPLETED"] };
+      let webhook: Record<string, unknown> = { configuredIdPresent: Boolean(webhookId), registered: false, requiredEventsMissing: [...PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS] };
       if (webhookId) {
         try {
           const webhookList = await paypal("/v1/notifications/webhooks", "GET", token);
           const registered = (webhookList.webhooks || []).find((item: any) => String(item.id || "") === webhookId);
           const eventNames = (registered?.event_types || []).map((item: any) => String(item.name || ""));
-          const required = ["BILLING.SUBSCRIPTION.ACTIVATED", "BILLING.SUBSCRIPTION.CANCELLED", "BILLING.SUBSCRIPTION.PAYMENT.FAILED", "PAYMENT.SALE.COMPLETED"];
+          const required = PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS;
           webhook = { configuredIdPresent: true, registered: Boolean(registered), url: String(registered?.url || ""), events: eventNames, requiredEventsMissing: required.filter(name => !eventNames.includes(name)) };
         } catch (webhookError) {
           webhook = { configuredIdPresent: true, registered: false, error: webhookError instanceof Error ? webhookError.message : "Could not inspect PayPal webhook registration." };
