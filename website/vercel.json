@@ -5,6 +5,14 @@
       "destination": "/page.html?slug=:slug"
     },
     {
+      "source": "/account",
+      "destination": "/account.html"
+    },
+    {
+      "source": "/account/",
+      "destination": "/account.html"
+    },
+    {
       "source": "/billing/success",
       "destination": "/billing-success.html"
     },
