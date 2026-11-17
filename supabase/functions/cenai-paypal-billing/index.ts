@@ -405,7 +405,23 @@ async function cleanupExpiredAttempts() {
       stillWaiting++;
     }
   }
-  return { scanned: (attempts || []).length, cancelled, expired, stillWaiting };
+  const { data: oneTime, error: oneTimeError } = await db.from("billing_one_time_payments")
+    .select("provider_order_id,user_id").eq("status", "COMPLETED").lte("access_expires_at", now).limit(100);
+  if (oneTimeError) throw oneTimeError;
+  let expiredOneTime = 0;
+  for (const payment of oneTime || []) {
+    const { error: paymentError } = await db.from("billing_one_time_payments")
+      .update({ status: "EXPIRED", updated_at: now })
+      .eq("provider_order_id", payment.provider_order_id).eq("status", "COMPLETED");
+    if (paymentError) throw paymentError;
+    const { error: entitlementError } = await db.from("billing_subscriptions")
+      .update({ status: "EXPIRED", cancel_at_period_end: false, updated_at: now })
+      .eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + payment.provider_order_id)
+      .eq("user_id", payment.user_id);
+    if (entitlementError) throw entitlementError;
+    expiredOneTime++;
+  }
+  return { scanned: (attempts || []).length, cancelled, expired, stillWaiting, expiredOneTime };
 }
 
 Deno.serve(async (req: Request) => {
@@ -579,6 +595,98 @@ Deno.serve(async (req: Request) => {
         }
       }
       return json(200, { diagnostics, webhook, checkedAt: new Date().toISOString() });
+    }
+
+    if (action === "create_guest_order") {
+      if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
+      const planKey = String(body.planKey || "live_test").trim().toLowerCase();
+      const { data: plan, error: planError } = await db.from("billing_plan_config")
+        .select("plan_key,display_name,amount,currency,enabled").eq("plan_key", planKey).eq("enabled", true).maybeSingle();
+      if (planError) throw planError;
+      if (!plan) return fail(404, "The selected CenAI plan is unavailable.");
+      const amount = Number(plan.amount);
+      const currency = String(plan.currency || "PHP").toUpperCase();
+      if (!Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency)) return fail(400, "The selected plan has an invalid price.");
+      const token = await accessToken();
+      const order = await paypal("/v2/checkout/orders", "POST", token, {
+        intent: "CAPTURE",
+        purchase_units: [{
+          reference_id: plan.plan_key,
+          custom_id: user.id,
+          description: "CenAI " + String(plan.display_name || "membership") + " — 30-day access",
+          amount: { currency_code: currency, value: amount.toFixed(2) },
+        }],
+        payment_source: undefined,
+        application_context: {
+          brand_name: "CenAI",
+          locale: "en-PH",
+          user_action: "PAY_NOW",
+          shipping_preference: "NO_SHIPPING",
+          return_url: baseUrl() + "/billing/success",
+          cancel_url: baseUrl() + "/billing/cancel",
+        },
+      });
+      const orderId = String(order.id || "");
+      if (!orderId) return fail(502, "PayPal did not return a guest payment order.");
+      const { error: saveError } = await db.from("billing_one_time_payments").insert({
+        user_id: user.id, provider_order_id: orderId, plan_key: plan.plan_key,
+        amount, currency, status: "CREATED",
+      });
+      if (saveError) throw saveError;
+      return json(200, { orderId, amount: amount.toFixed(2), currency, accessDays: 30, paymentType: "ONE_TIME" });
+    }
+
+    if (action === "capture_guest_order") {
+      const orderId = String(body.orderId || "").trim();
+      if (!/^[A-Z0-9-]{8,80}$/i.test(orderId)) return fail(400, "Invalid PayPal order ID.");
+      const { data: payment, error: paymentError } = await db.from("billing_one_time_payments")
+        .select("user_id,provider_order_id,plan_key,amount,currency,status,access_expires_at")
+        .eq("provider_order_id", orderId).eq("user_id", user.id).maybeSingle();
+      if (paymentError) throw paymentError;
+      if (!payment) return fail(404, "This guest checkout does not belong to your CenAI account.");
+      if (payment.status === "COMPLETED" && payment.access_expires_at) {
+        return json(200, { captured: true, alreadyCaptured: true, accessExpiresAt: payment.access_expires_at, accessDays: 30 });
+      }
+      if (payment.status !== "CREATED") return fail(409, "This guest payment is no longer available.");
+      const token = await accessToken();
+      const orderDetail = await paypal("/v2/checkout/orders/" + encodeURIComponent(orderId), "GET", token);
+      const unit = Array.isArray(orderDetail.purchase_units) ? orderDetail.purchase_units[0] : null;
+      const orderAmount = unit?.amount || {};
+      if (String(unit?.custom_id || "") !== user.id ||
+          String(unit?.reference_id || "") !== String(payment.plan_key) ||
+          String(orderAmount.currency_code || "").toUpperCase() !== String(payment.currency).toUpperCase() ||
+          Number(orderAmount.value) !== Number(payment.amount) ||
+          !["CREATED", "APPROVED"].includes(String(orderDetail.status || ""))) {
+        return fail(403, "PayPal order ownership, price, or approval verification failed.");
+      }
+      const captured = await paypal("/v2/checkout/orders/" + encodeURIComponent(orderId) + "/capture", "POST", token, {});
+      const capturedUnit = Array.isArray(captured.purchase_units) ? captured.purchase_units[0] : null;
+      const capture = capturedUnit?.payments?.captures?.[0];
+      const captureAmount = capture?.amount || {};
+      if (String(captured.status || "") !== "COMPLETED" || String(capture?.status || "") !== "COMPLETED" ||
+          String(capturedUnit?.custom_id || unit.custom_id || "") !== user.id ||
+          String(captureAmount.currency_code || "").toUpperCase() !== String(payment.currency).toUpperCase() ||
+          Number(captureAmount.value) !== Number(payment.amount)) {
+        await db.from("billing_one_time_payments").update({ status: "FAILED", updated_at: new Date().toISOString() })
+          .eq("provider_order_id", orderId).eq("user_id", user.id).eq("status", "CREATED");
+        return fail(409, "PayPal did not confirm the full one-time payment. No membership access was granted.");
+      }
+      const paidAt = capture?.create_time && !Number.isNaN(Date.parse(String(capture.create_time)))
+        ? new Date(String(capture.create_time)).toISOString() : new Date().toISOString();
+      const expiresAt = new Date(Date.parse(paidAt) + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { error: saveError } = await db.from("billing_one_time_payments").update({
+        status: "COMPLETED", paid_at: paidAt, access_expires_at: expiresAt,
+        provider_capture_id: String(capture.id || ""), updated_at: new Date().toISOString(),
+      }).eq("provider_order_id", orderId).eq("user_id", user.id).eq("status", "CREATED");
+      if (saveError) throw saveError;
+      const { error: entitlementError } = await db.from("billing_subscriptions").upsert({
+        user_id: user.id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + orderId,
+        plan_key: payment.plan_key, status: "ACTIVE", current_period_end: expiresAt,
+        cancel_at_period_end: true, updated_at: new Date().toISOString(),
+      }, { onConflict: "provider_subscription_id" });
+      if (entitlementError) throw entitlementError;
+      return json(200, { captured: true, paymentType: "ONE_TIME", accessDays: 30, accessExpiresAt: expiresAt,
+        message: "Your one-time payment is confirmed. CenAI membership is active for 30 days and will not renew automatically." });
     }
 
     if (action === "record_sdk_subscription") {
