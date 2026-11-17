@@ -30,16 +30,21 @@ CenAI public website and restricted administrator portal. The deployment is a si
 ## Cloudflare runtime variables
 
 Plain-text variables:
+- `EMAIL_USER` (Gmail sender address; non-secret)
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`
-- `CENAI_PUBLIC_URL`
 
-Encrypted secrets required for email:
-- `EMAIL_USER`
-- `EMAIL_PASS` (Gmail app password)
-- `EMAIL_OTP_SECRET` (random high-entropy HMAC secret)
+Encrypted secrets:
+- `EMAIL_PASS` (required Gmail app password; never store it in `vars`)
+- `EMAIL_OTP_SECRET` (high-entropy HMAC secret)
 
-Do not commit secrets. Configure them in Cloudflare Worker Settings > Variables and Secrets for production.
+The Wrangler config declares `EMAIL_PASS` in `secrets.required`, so a future deploy is blocked until the encrypted binding exists. After rotating the exposed Gmail app password, add the replacement directly in Cloudflare (do not paste it into chat or commit it):
+
+```sh
+npx wrangler secret put EMAIL_PASS --config website/wrangler.jsonc
+```
+
+Do not commit secrets. Production secrets are managed in Cloudflare Worker Settings > Variables and Secrets. The repository's Cloudflare deploy workflow also needs the `CLOUDFLARE_API_TOKEN` GitHub Actions secret to deploy automatically.
 
 ## Backend and data
 
