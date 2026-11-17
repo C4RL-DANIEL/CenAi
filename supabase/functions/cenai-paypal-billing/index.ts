@@ -74,8 +74,17 @@ async function paypal(path: string, method: string, token: string, body?: unknow
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error("PayPal API error", method, path, response.status, String(data.name || "unknown"));
-    throw new Error("PayPal rejected the request (" + response.status + "). Check the PayPal account and subscription permissions.");
+    const issueSummary = Array.isArray(data.details)
+      ? data.details.map((item: any) => ({ issue: String(item.issue || ""), description: String(item.description || "").slice(0, 240) }))
+      : [];
+    console.error("PayPal API error", method, path, response.status, JSON.stringify({
+      name: String(data.name || "unknown"),
+      message: String(data.message || "").slice(0, 400),
+      debug_id: String(data.debug_id || ""),
+      details: issueSummary,
+    }));
+    throw new Error("PayPal rejected the request (" + response.status + "). " +
+      (issueSummary[0]?.issue || String(data.name || "Check PayPal account eligibility and subscription permissions.")));
   }
   return data;
 }
@@ -359,6 +368,55 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       return json(200, { plans: data || [] });
     }
+    if (action === "diagnose_recent_checkouts") {
+      const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
+        .select("provider_subscription_id,plan_key,status,expires_at,created_at")
+        .eq("user_id", user.id).order("created_at", { ascending: false }).limit(5);
+      if (attemptsError) throw attemptsError;
+      const token = await accessToken();
+      const diagnostics: Record<string, unknown>[] = [];
+      for (const attempt of attempts || []) {
+        const subscriptionId = String(attempt.provider_subscription_id || "");
+        try {
+          const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+          const planId = String(detail.plan_id || "");
+          let planStatus = "UNKNOWN";
+          let planAmount = "";
+          let planCurrency = "";
+          if (planId) {
+            const plan = await paypal("/v1/billing/plans/" + encodeURIComponent(planId), "GET", token);
+            planStatus = String(plan.status || "UNKNOWN");
+            const fixedPrice = plan.billing_cycles?.[0]?.pricing_scheme?.fixed_price;
+            planAmount = String(fixedPrice?.value || "");
+            planCurrency = String(fixedPrice?.currency_code || "");
+          }
+          const lastPayment = detail.billing_info?.last_payment || {};
+          diagnostics.push({
+            subscriptionId,
+            recordedStatus: String(attempt.status || ""),
+            paypalStatus: String(detail.status || "UNKNOWN"),
+            statusUpdateTime: String(detail.status_update_time || ""),
+            statusChangeNote: String(detail.status_change_note || "").slice(0, 300),
+            planId,
+            planStatus,
+            planAmount,
+            planCurrency,
+            failedPaymentsCount: Number(detail.billing_info?.failed_payments?.count || 0),
+            lastPaymentTime: String(lastPayment.time || ""),
+            lastPaymentAmount: String(lastPayment.amount?.value || ""),
+            lastPaymentCurrency: String(lastPayment.amount?.currency_code || ""),
+          });
+        } catch (diagnosticError) {
+          diagnostics.push({
+            subscriptionId,
+            recordedStatus: String(attempt.status || ""),
+            error: diagnosticError instanceof Error ? diagnosticError.message : "PayPal could not retrieve this subscription.",
+          });
+        }
+      }
+      return json(200, { diagnostics, checkedAt: new Date().toISOString() });
+    }
+
     if (action === "create_subscription") {
       if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
       const planKey = String(body.planKey || "live_test");
