@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#f2f5f3"><title>Send.ai Control · CenAI</title><link rel="stylesheet" href="/admin/admin.css?v=20261117-live-billing-1"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#f2f5f3"><title>Send.ai Control · CenAI</title><link rel="stylesheet" href="/admin/admin.css?v=20261117-email-mfa-2"></head>
 <body><main class="shell"><header class="top"><a class="brand" href="/"><span class="mark">C</span><span>CenAI <small>CONTROL</small></span></a><span class="secure">● PRIVATE ADMIN</span></header>
 <section id="login" class="login card"><div class="eyebrow">SEND.AI CONTROL PLANE</div><h1>Administrator sign in</h1><p>Sign in with an authorized CenAI administrator account. Access is verified by the server on every request.</p><form id="login-form"><label>Username or email<input id="email" type="text" autocomplete="username" placeholder="CenAI or administrator email" required></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Sign in securely</button><button id="reset-password" class="quiet" type="button">Send password reset email</button><p id="login-error" class="error" role="alert"></p></form><small class="muted">Public registration is disabled. The CenAI owner account is already provisioned.</small></section>
 <section id="mfa-gate" class="login card" hidden>
   <div class="eyebrow">CENAI ADMIN SECURITY</div><h1>Verify your identity</h1>
-  <p class="muted" id="mfa-instructions">Set up an authenticator app to protect administrator access.</p>
+  <p class="muted" id="mfa-instructions">Verify with your authenticator or receive a one-time code by email.</p>
   <img id="mfa-qr" class="mfa-qr" alt="Authenticator enrollment QR code" hidden>
   <div id="mfa-secret-wrap" hidden><small class="muted">Manual setup key</small><code id="mfa-secret" class="mfa-secret"></code></div>
-  <label>Six-digit authenticator code<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required></label>
+  <label>Six-digit verification code<input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required></label>
   <button id="mfa-verify" class="primary" type="button">Verify and continue</button><button id="mfa-signout" class="quiet" type="button">Cancel and sign out</button>
   <p id="mfa-status" class="error" role="alert"></p>
-  <small class="muted">Use an authenticator app such as Google Authenticator, Microsoft Authenticator, or 1Password. Keep your recovery options secure.</small>
+  <small class="muted">If no authenticator is enrolled, CenAI sends a one-time code to your administrator email. Codes expire after 10 minutes.</small>
 </section>
 <section id="dashboard" hidden><div class="welcome"><div><div class="eyebrow">SEND.AI · OPERATIONS</div><h1>Control center</h1><p class="muted">Manage the CenAI ecosystem from one restricted workspace.</p></div><button id="signout" class="quiet">Sign out</button></div>
 <div id="notice" class="notice" role="status">Checking authorization…</div>
