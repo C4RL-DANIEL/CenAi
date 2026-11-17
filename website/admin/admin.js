@@ -88,8 +88,10 @@
         if (!sent.ok) throw new Error(sentData.error || "Could not send the email verification code.");
         $("mfa-status").textContent = sentData.message || "Verification code sent. Check your email.";
       }
-      $("mfa-status").textContent = "";
+      if (mfaMode !== "email") $("mfa-status").textContent = "";
+      else $("mfa-verify").disabled = false;
     } catch (error) {
+      $("mfa-verify").disabled = false;
       $("mfa-status").textContent = error.message;
     }
   }
