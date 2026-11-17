@@ -595,6 +595,25 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "create_subscription");
 
+    if (action === "paypal_client_token") {
+      if (!await billingEnabled()) return fail(503, "Billing is temporarily unavailable.");
+      const { clientId, clientSecret } = paypalConfig();
+      const response = await fetch(API + "/v1/oauth2/token", {
+        signal: AbortSignal.timeout(20000),
+        method: "POST",
+        headers: {
+          Authorization: "Basic " + btoa(clientId + ":" + clientSecret),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "grant_type=client_credentials&response_type=client_token&intent=sdk_init",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.access_token) {
+        console.error("PayPal v6 client-token request failed", response.status, String(result.error_description || result.error || "unknown").slice(0, 240));
+        return fail(502, "PayPal could not initialize secure card checkout. Please try again later.");
+      }
+      return json(200, { clientToken: String(result.access_token), expiresIn: Number(result.expires_in || 0) });
+    }
     if (action === "configure_plan") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
       if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
