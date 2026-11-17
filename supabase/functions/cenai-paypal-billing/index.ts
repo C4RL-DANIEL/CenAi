@@ -833,9 +833,10 @@ Deno.serve(async (req: Request) => {
           brand_name: "CenAI",
           locale: "en-PH",
           user_action: "SUBSCRIBE_NOW",
-          // This route is exclusively the recurring PayPal-account subscription.
-          // Guest debit/credit cards use the separate Orders v2 one-time flow.
-          payment_method: { payer_selected: "PAYPAL", payee_preferred: "IMMEDIATE_PAYMENT_REQUIRED" },
+          // Do not force a specific payer funding source. Let PayPal show
+          // every funding method the merchant and buyer are eligible to use.
+          // Guest card payments remain available through the separate one-time Orders v2 flow.
+          payment_method: { payee_preferred: "UNRESTRICTED" },
           shipping_preference: "NO_SHIPPING",
           return_url: baseUrl() + "/billing/success",
           cancel_url: baseUrl() + "/billing/cancel",
