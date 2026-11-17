@@ -1127,14 +1127,14 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                                 paypalStatus = if (rows == null || rows.length() == 0) {
                                                     "No recent checkout attempts were found for this account."
                                                 } else {
-                                                    (0 until rows.length()).joinToString("\\n\\n") { index ->
+                                                    (0 until rows.length()).joinToString("\n\n") { index ->
                                                         val row = rows.getJSONObject(index)
                                                         val id = row.optString("subscriptionId").takeLast(8)
                                                         val failure = row.optString("error")
                                                         if (failure.isNotBlank()) {
-                                                            "Checkout …$id · ${row.optString("recordedStatus")}\\nPayPal lookup: $failure"
+                                                            "Checkout …$id · ${row.optString("recordedStatus")}\nPayPal lookup: $failure"
                                                         } else {
-                                                            "Checkout …$id · ${row.optString("paypalStatus")}\\nPlan: ${row.optString("planAmount")} ${row.optString("planCurrency")} · ${row.optString("planStatus")}\\nFailed payments: ${row.optInt("failedPaymentsCount")}\\n${row.optString("statusChangeNote")}".trim()
+                                                            "Checkout …$id · ${row.optString("paypalStatus")}\nPlan: ${row.optString("planAmount")} ${row.optString("planCurrency")} · ${row.optString("planStatus")}\nFailed payments: ${row.optInt("failedPaymentsCount")}\n${row.optString("statusChangeNote")}".trim()
                                                         }
                                                     }
                                                 }
