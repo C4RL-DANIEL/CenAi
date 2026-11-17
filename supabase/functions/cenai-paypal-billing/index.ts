@@ -200,12 +200,21 @@ async function handleWebhook(event: Record<string, any>) {
   }
   if (!userId) return;
   const statusMap: Record<string, string> = {
-    "BILLING.SUBSCRIPTION.UPDATED": ["CANCELLED", "SUSPENDED", "EXPIRED"].includes(String(resource.status || "")) ? String(resource.status) : "",
+    // Activation means the buyer approved the recurring agreement. Keep it
+    // separate from ACTIVE entitlement until PayPal confirms the first sale.
+    "BILLING.SUBSCRIPTION.ACTIVATED": "APPROVED",
+    "BILLING.SUBSCRIPTION.UPDATED": (() => {
+      const current = String(resource.status || "");
+      if (current === "ACTIVE") return "APPROVED";
+      return ["CANCELLED", "SUSPENDED", "EXPIRED"].includes(current) ? current : "";
+    })(),
     "BILLING.SUBSCRIPTION.CANCELLED": "CANCELLED",
     "BILLING.SUBSCRIPTION.SUSPENDED": "SUSPENDED",
     "BILLING.SUBSCRIPTION.EXPIRED": "EXPIRED",
     "BILLING.SUBSCRIPTION.PAYMENT.FAILED": "PAST_DUE",
+    "PAYMENT.SALE.PENDING": "PENDING_PAYMENT",
     "PAYMENT.SALE.COMPLETED": "ACTIVE",
+    "PAYMENT.SALE.DENIED": "PAST_DUE",
     "PAYMENT.SALE.REFUNDED": "REFUNDED",
     "PAYMENT.SALE.REVERSED": "REVERSED",
   };
@@ -232,7 +241,7 @@ async function handleWebhook(event: Record<string, any>) {
   }, { onConflict: "provider_subscription_id" });
   if (error) throw error;
   if (attempt) {
-    const attemptStatus = status === "ACTIVE" ? "ACTIVE" : status === "CANCELLED" ? "CANCELLED" : status === "EXPIRED" ? "EXPIRED" : status === "SUSPENDED" || status === "PAST_DUE" ? "FAILED" : null;
+    const attemptStatus = status === "ACTIVE" ? "ACTIVE" : status === "APPROVED" || status === "PENDING_PAYMENT" ? "APPROVED" : status === "CANCELLED" ? "CANCELLED" : status === "EXPIRED" ? "EXPIRED" : status === "SUSPENDED" || status === "PAST_DUE" ? "FAILED" : null;
     if (attemptStatus) await db.from("billing_checkout_attempts").update({ status: attemptStatus, updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
   }
 }
@@ -261,6 +270,10 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
     await db.from("billing_checkout_attempts").update({ status, updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
     return status;
   }
+  if (status === "ACTIVE" && !firstPaymentConfirmed) return "AWAITING_PAYMENT";
+  if (status === "APPROVED") {
+    await db.from("billing_checkout_attempts").update({ status: "APPROVED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
+  }
   const expired = row.expires_at && Date.parse(String(row.expires_at)) <= Date.now();
   if ((status === "APPROVAL_PENDING" || status === "APPROVED" || status === "ACTIVE") && (forceCancel || expired)) {
     try {
@@ -287,7 +300,7 @@ async function cleanupExpiredAttempts() {
   const now = new Date().toISOString();
   const { data: attempts, error } = await db.from("billing_checkout_attempts")
     .select("user_id,provider_subscription_id,plan_key,expires_at")
-    .eq("status", "AWAITING_APPROVAL").lte("expires_at", now).limit(100);
+    .in("status", ["AWAITING_APPROVAL", "APPROVED"]).lte("expires_at", now).limit(100);
   if (error) throw error;
   let cancelled = 0;
   let expired = 0;
@@ -474,7 +487,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "cancel_open_checkouts" || action === "status") {
       const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
-        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).eq("status", "AWAITING_APPROVAL");
+        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).in("status", ["AWAITING_APPROVAL", "APPROVED"]);
       if (attemptsError) throw attemptsError;
       for (const attempt of attempts || []) {
         try { await settleCheckoutAttempt(user.id, attempt, action === "cancel_open_checkouts"); }
