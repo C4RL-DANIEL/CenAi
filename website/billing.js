@@ -130,8 +130,8 @@
           const walletButton = document.createElement("button");
           walletButton.type = "button";
           walletButton.className = "secondary paypal-recurring-button";
-          walletButton.textContent = "Continue with PayPal · " + new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount)) + " / month";
-          walletButton.setAttribute("aria-label", "Start recurring monthly PayPal subscription");
+          walletButton.textContent = "PayPal account · " + new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount)) + " / month";
+          walletButton.setAttribute("aria-label", "Start recurring monthly subscription using a PayPal account");
           checkoutMount.append(cardMount, walletButton);
           walletButton.addEventListener("click", async () => {
             walletButton.disabled = true;
