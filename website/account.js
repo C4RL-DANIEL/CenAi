@@ -15,44 +15,59 @@ function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;",
 function fmtDate(v){if(!v)return "Not provided";const d=new Date(v);return Number.isNaN(d.getTime())?"Not provided":d.toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"});}
 
 let mfaCleanupTimer=null;
-let paypalV6Promise=null;
-async function loadPayPalV6(currency="PHP"){
+let paypalGuestSdkPromise=null;
+async function loadPayPalGuestSdk(clientId,currency="PHP",amount){
  const normalized=String(currency||"PHP").toUpperCase();
  if(!/^[A-Z]{3}$/.test(normalized))throw Error("The payment currency is invalid.");
- if(!paypalV6Promise)paypalV6Promise=(async()=>{
-  const tokenResult=await api("paypal_client_token");
-  if(!tokenResult.clientToken)throw Error("PayPal did not issue a secure checkout token.");
+ if(!clientId)throw Error("PayPal checkout is not configured. Please use the PayPal account option.");
+ if(!paypalGuestSdkPromise)paypalGuestSdkPromise=(async()=>{
   if(!window.paypal?.createInstance)await new Promise((resolve,reject)=>{
    const script=document.createElement("script");script.src="https://www.paypal.com/web-sdk/v6/core";script.async=true;
-   script.onload=resolve;script.onerror=()=>reject(Error("Could not load PayPal Web SDK v6. Check your connection and try again."));
+   script.onload=resolve;script.onerror=()=>reject(Error("Could not load PayPal checkout. Check your connection and try again."));
    document.head.append(script);
   });
   if(!window.paypal?.createInstance)throw Error("PayPal Web SDK v6 did not initialize.");
-  return window.paypal.createInstance({clientToken:tokenResult.clientToken,components:["card-fields"],pageType:"checkout"});
- })().catch(error=>{paypalV6Promise=null;throw error;});
- const sdk=await paypalV6Promise;
- const eligible=await sdk.findEligibleMethods({currencyCode:normalized});
- if(!eligible?.isEligible("advanced_cards"))throw Error("PayPal v6 reports that advanced debit/credit card fields are not eligible for this merchant, currency, or buyer region.");
+  return window.paypal.createInstance({clientId,components:["paypal-guest-payments"],pageType:"checkout",locale:"en-PH"});
+ })().catch(error=>{paypalGuestSdkPromise=null;throw error;});
+ const sdk=await paypalGuestSdkPromise;
+ const options={currencyCode:normalized};
+ if(Number.isFinite(Number(amount))&&Number(amount)>0)options.amount=Number(amount).toFixed(2);
+ const eligible=await sdk.findEligibleMethods(options);
+ if(!eligible?.isEligible("card"))throw Error("PayPal guest debit/credit card checkout is not available for this merchant or buyer region yet. You can still use the PayPal account subscription option.");
  return sdk;
 }
-async function mountPayPalCardFields(sdk,mount,planKey,currency,onStatus,onSuccess){
- const session=sdk.createCardFieldsOneTimePaymentSession();
- const makeField=(type,placeholder)=>{const wrap=document.createElement("div");wrap.style.cssText="height:48px;min-width:0;border:1px solid #cbd5d1;border-radius:9px;background:#fff;padding:4px 10px;box-sizing:border-box;margin:7px 0";const field=session.createCardFieldsComponent({type,placeholder,style:{input:{fontSize:"15px",color:"#17231f",fontFamily:"inherit",lineHeight:"24px"}}});wrap.appendChild(field);mount.appendChild(wrap);};
- mount.replaceChildren();makeField("number","Card number");makeField("expiry","MM/YY");makeField("cvv","Security code");
- const pay=document.createElement("button");pay.type="button";pay.className="account-btn";pay.textContent="Pay by debit or credit card";pay.style.width="100%";mount.appendChild(pay);
- pay.addEventListener("click",async()=>{pay.disabled=true;onStatus("Creating your secure one-time card order…");
+async function mountPayPalGuestCard(sdk,mount,planKey,onStatus,onSuccess){
+ mount.replaceChildren();
+ const container=document.createElement("paypal-basic-card-container");
+ const pay=document.createElement("paypal-basic-card-button");
+ pay.setAttribute("aria-label","Pay once by debit or credit card without a PayPal account");
+ container.appendChild(pay);mount.appendChild(container);
+ const guestSession=await sdk.createPayPalGuestOneTimePaymentSession({
+  onApprove:async data=>{
+   const orderId=String(data?.orderId||"");
+   if(!orderId)throw Error("PayPal did not return an approved order ID.");
+   onStatus("Payment approved. Capturing and verifying your one-time card payment…");
+   const captured=await api("capture_guest_order",{orderId});
+   onSuccess(captured);
+  },
+  onComplete:()=>{},
+  onCancel:()=>{pay.disabled=false;pay.removeAttribute("disabled");onStatus("Card checkout was cancelled. No membership was activated.");},
+  onError:error=>{pay.disabled=false;pay.removeAttribute("disabled");onStatus("PayPal card checkout: "+(error?.message||"Payment could not be completed."),true);},
+  onWarn:data=>onStatus(data?.message||"PayPal could not process that card. Check the details or try another card.",true)
+ });
+ pay.addEventListener("click",async()=>{
+  pay.disabled=true;pay.setAttribute("disabled","");
+  onStatus("Opening PayPal's secure guest card checkout…");
   try{
-   const order=await api("create_guest_order",{planKey});if(!order.orderId)throw Error("PayPal did not create a one-time payment order.");
-   const result=await session.submit(order.orderId);
-   if(result.state==="succeeded"){
-    onStatus("Card authentication succeeded. Capturing and verifying payment…");
-    const captured=await api("capture_guest_order",{orderId:result.data?.orderId||order.orderId});
-    onSuccess(captured);
-   }else if(result.state==="canceled"){onStatus("Card authentication was cancelled. No membership was activated.");}
-   else if(result.state==="failed"){throw Error(result.data?.message||"PayPal could not process this card. Check the details or try another card.");}
-   else{throw Error("PayPal returned an unrecognized card-payment result. No membership was activated.");}
-  }catch(error){onStatus("Card checkout: "+(error?.message||"Payment could not be completed."),true);}
-  finally{pay.disabled=false;}
+   const orderPromise=api("create_guest_order",{planKey}).then(order=>{
+    if(!order.orderId)throw Error("PayPal did not create a one-time payment order.");
+    return {orderId:order.orderId};
+   });
+   await guestSession.start({presentationMode:"auto",targetElement:pay},orderPromise);
+  }catch(error){
+   pay.disabled=false;pay.removeAttribute("disabled");
+   onStatus("Card checkout: "+(error?.message||"Payment could not be completed."),true);
+  }
  });
 }
 function schedulePendingMfaCleanup(factor){if(mfaCleanupTimer)clearTimeout(mfaCleanupTimer);if(!factor?.id)return;const created=Date.parse(factor.created_at||"");const started=Number.isFinite(created)?created:Date.now();const remaining=Math.max(1000,10*60*1000-(Date.now()-started));mfaCleanupTimer=setTimeout(async()=>{if(!pendingMfaFactor||pendingMfaFactor.id!==factor.id||mfaFactor?.status==="verified")return;try{await auth("factors/"+encodeURIComponent(factor.id),undefined,"DELETE",session.access_token);pendingMfaFactor=null;mfaFactor=null;$("mfa-setup").classList.add("account-hidden");$("mfa-enroll").classList.remove("account-hidden");$("mfa-code").value="";$("mfa-qr").replaceChildren();note("mfa-status","CenAI automatically cleared an unfinished authenticator setup after 10 minutes. You can start again whenever you're ready.");$("security-summary").textContent="No verified authenticator is enrolled. An expired setup was automatically cleared.";}catch(e){note("mfa-status","Automatic cleanup will retry when you next open account security: "+e.message,true);}},remaining);}
@@ -78,7 +93,7 @@ async function loadBilling(){
    const box=document.createElement("div");box.className="account-plan";
    const info=document.createElement("div");const h=document.createElement("h3");h.textContent=p.display_name;
    const priceEl=document.createElement("div");priceEl.className="account-price";priceEl.textContent=new Intl.NumberFormat("en-PH",{style:"currency",currency:p.currency||"PHP"}).format(Number(p.amount));
-   const terms=document.createElement("p");terms.textContent="PayPal account: recurring monthly · Guest debit/credit card: one-time charge for 30 days";
+   const terms=document.createElement("p");terms.textContent="PayPal account: recurring monthly · Guest debit/credit card: one-time PayPal guest payment for 30 days";
    info.append(h,priceEl,terms);if(p.is_test){const warn=document.createElement("span");warn.className="account-pill warn";warn.textContent="TEST PRICE · REAL PAYMENT";info.append(warn);}
    const actions=document.createElement("div");actions.style.cssText="min-width:220px;max-width:340px;flex:1;display:grid;gap:9px";
    const wallet=document.createElement("button");wallet.type="button";wallet.className="account-btn";wallet.textContent="PayPal account · recurring monthly";
@@ -93,11 +108,11 @@ async function loadBilling(){
    });
    try{
     if(!user?.id)throw Error("Your CenAI session expired. Sign in again.");
-    const sdk=await loadPayPalV6(p.currency||"PHP");
-    await mountPayPalCardFields(sdk,cardMount,p.plan_key,p.currency||"PHP",
+    const sdk=await loadPayPalGuestSdk(publicPlans.paypalClientId,p.currency||"PHP",p.amount);
+     await mountPayPalGuestCard(sdk,cardMount,p.plan_key,
      (message,bad=false)=>note("global-status",message,bad),
      async result=>{note("global-status",result.message||"Payment confirmed. Your 30-day access is active and will not renew.",false);await loadBilling();});
-   }catch(e){cardMount.textContent=e.message||"PayPal v6 card checkout could not be initialized.";}
+   }catch(e){cardMount.textContent=e.message||"PayPal guest card checkout could not be initialized.";}
   }
  }catch(e){note("global-status","Membership could not be loaded: "+e.message,true);$("member-state").textContent="Unavailable";}
 }
