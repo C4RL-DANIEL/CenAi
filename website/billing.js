@@ -24,7 +24,7 @@
     const options = { currencyCode: normalized };
     if (Number.isFinite(Number(amount)) && Number(amount) > 0) options.amount = Number(amount).toFixed(2);
     const eligible = await sdk.findEligibleMethods(options);
-    if (!eligible?.isEligible("card")) throw new Error("PayPal guest debit/credit card checkout is not available for this merchant or buyer region yet. You can still use the PayPal account subscription option.");
+    if (!eligible?.isEligible("card")) throw new Error("PayPal guest card checkout is unavailable for this payment. Check that your PayPal Business account is verified, your email is confirmed, and Account Settings → Website payments → PayPal account optional is ON. PayPal can still restrict guest checkout for individual buyers based on risk or region. You can use the PayPal account option instead.");
     return sdk;
   }
   async function mountPayPalGuestCard(sdk, mount, planKey, status) {
@@ -42,10 +42,10 @@
         const capture = await billingApi("capture_guest_order", { orderId });
         status(capture.message || "One-time payment confirmed. Your 30-day membership is active and will not renew.", false, true);
       },
-      onComplete: () => {},
+      onComplete: () => { pay.disabled = false; pay.removeAttribute("disabled"); },
       onCancel: () => { pay.disabled = false; pay.removeAttribute("disabled"); status("Card checkout was cancelled. No membership was activated."); },
       onError: error => { pay.disabled = false; pay.removeAttribute("disabled"); status("PayPal card checkout: " + (error?.message || "Payment could not be completed."), true); },
-      onWarn: data => status(data?.message || "PayPal could not process that card. Check the details or try another card.", true),
+      onWarn: data => { pay.disabled = false; pay.removeAttribute("disabled"); status(data?.message || "PayPal could not process that card. Check the details or try another card.", true); },
     });
     pay.addEventListener("click", async () => {
       pay.disabled = true;
