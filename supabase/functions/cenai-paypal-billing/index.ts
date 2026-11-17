@@ -228,7 +228,7 @@ async function handleWebhook(event: Record<string, any>) {
       const { error: entitlementError } = await db.from("billing_subscriptions").upsert({
         user_id: payment.user_id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + orderId,
         plan_key: payment.plan_key, status: "ACTIVE", current_period_end: expiresAt,
-        cancel_at_period_end: true, updated_at: new Date().toISOString(),
+        cancel_at_period_end: false, updated_at: new Date().toISOString(),
       }, { onConflict: "provider_subscription_id" });
       if (entitlementError) throw entitlementError;
     } else if (eventType === "PAYMENT.CAPTURE.REFUNDED" || eventType === "PAYMENT.CAPTURE.REVERSED") {
@@ -741,7 +741,7 @@ Deno.serve(async (req: Request) => {
       const { error: entitlementError } = await db.from("billing_subscriptions").upsert({
         user_id: user.id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + orderId,
         plan_key: payment.plan_key, status: "ACTIVE", current_period_end: expiresAt,
-        cancel_at_period_end: true, updated_at: new Date().toISOString(),
+        cancel_at_period_end: false, updated_at: new Date().toISOString(),
       }, { onConflict: "provider_subscription_id" });
       if (entitlementError) throw entitlementError;
       return json(200, { captured: true, paymentType: "ONE_TIME", accessDays: 30, accessExpiresAt: expiresAt,
