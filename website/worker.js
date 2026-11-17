@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261117-cenai-domain-paypal-4";
+const STATIC_CACHE_VERSION = "20261117-cenai-live-billing-5";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
