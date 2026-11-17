@@ -33,7 +33,7 @@ async function loadPayPalGuestSdk(clientId,currency="PHP",amount){
  const options={currencyCode:normalized};
  if(Number.isFinite(Number(amount))&&Number(amount)>0)options.amount=Number(amount).toFixed(2);
  const eligible=await sdk.findEligibleMethods(options);
- if(!eligible?.isEligible("card"))throw Error("PayPal guest debit/credit card checkout is not available for this merchant or buyer region yet. You can still use the PayPal account subscription option.");
+ if(!eligible?.isEligible("card"))throw Error("PayPal guest card checkout is unavailable for this payment. Check that your PayPal Business account is verified, your email is confirmed, and Account Settings → Website payments → PayPal account optional is ON. PayPal can still restrict guest checkout for individual buyers based on risk or region. You can use the PayPal account option instead.");
  return sdk;
 }
 async function mountPayPalGuestCard(sdk,mount,planKey,onStatus,onSuccess){
@@ -50,10 +50,10 @@ async function mountPayPalGuestCard(sdk,mount,planKey,onStatus,onSuccess){
    const captured=await api("capture_guest_order",{orderId});
    onSuccess(captured);
   },
-  onComplete:()=>{},
+  onComplete:()=>{pay.disabled=false;pay.removeAttribute("disabled");},
   onCancel:()=>{pay.disabled=false;pay.removeAttribute("disabled");onStatus("Card checkout was cancelled. No membership was activated.");},
   onError:error=>{pay.disabled=false;pay.removeAttribute("disabled");onStatus("PayPal card checkout: "+(error?.message||"Payment could not be completed."),true);},
-  onWarn:data=>onStatus(data?.message||"PayPal could not process that card. Check the details or try another card.",true)
+  onWarn:data=>{pay.disabled=false;pay.removeAttribute("disabled");onStatus(data?.message||"PayPal could not process that card. Check the details or try another card.",true);}
  });
  pay.addEventListener("click",async()=>{
   pay.disabled=true;pay.setAttribute("disabled","");
