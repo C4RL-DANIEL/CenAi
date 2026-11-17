@@ -1,6 +1,6 @@
 (() => {
   const $ = id => document.getElementById(id);
-  let supabaseUrl = "", publishableKey = "", accessToken = "", email = "";
+  let supabaseUrl = "", publishableKey = "", accessToken = "", email = "", userId = "";
   const SESSION_KEY = "cenai.account.session.v1";
   let sharedSession = null;
   let paypalSdkPromise = null;
@@ -29,7 +29,7 @@
     }
     const check = await fetch(supabaseUrl + "/auth/v1/user", {headers:{apikey:publishableKey,Authorization:"Bearer "+accessToken}});
     const user = await check.json().catch(()=>({})); if (!check.ok || !user.id) { if(saved.refresh_token && sharedSession===saved) { const rr=await fetch(supabaseUrl+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{"Content-Type":"application/json",apikey:publishableKey},body:JSON.stringify({refresh_token:saved.refresh_token})});const rd=await rr.json().catch(()=>({}));if(rr.ok&&rd.access_token){saveSharedSession(rd);accessToken=rd.access_token;email=rd.user?.email||"";return true;} } clearSharedSession(); return false; }
-    email=user.email||""; return true;
+    email=user.email||""; userId=user.id||""; return true;
   }
   const status = (message, bad = false, good = false) => {
     $("status").textContent = message;
@@ -98,18 +98,17 @@
           const paypal = await loadPayPalSdk(data.paypalClientId);
           const buttons = paypal.Buttons({
             style: { layout: "vertical", shape: "rect", label: "subscribe", color: "gold", tagline: false },
-            createSubscription: async () => {
-              const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
-              if (!checkout.subscriptionId) throw new Error("PayPal did not return a subscription ID.");
-              return checkout.subscriptionId;
+            createSubscription: (_data, actions) => {
+              if (!userId) throw new Error("Your CenAI session expired. Please sign in again.");
+              return actions.subscription.create({ plan_id: plan.paypal_plan_id, custom_id: userId });
             },
-            onApprove: async () => {
+            onApprove: async (approval) => {
               status("PayPal approval received. Verifying your subscription with PayPal…");
               try {
-                const result = await billingApi("status");
-                status(result.message || "Approval received. Your subscription will appear after PayPal confirms its first payment.", false, true);
+                const result = await billingApi("record_sdk_subscription", { subscriptionId: approval.subscriptionID, planKey: plan.plan_key });
+                status(result.message || "PayPal approval verified. Membership activation is being confirmed.", false, true);
               } catch (error) {
-                status("PayPal approval was received, but CenAI could not refresh the status: " + error.message + ". Your payment is not being treated as confirmed yet.", true);
+                status("PayPal approval was received, but CenAI could not verify it: " + error.message + ". No membership access was granted yet.", true);
               }
             },
             onCancel: async () => {
@@ -198,6 +197,7 @@
       const auth = await response.json().catch(() => ({}));
       if (!response.ok || !auth.access_token) throw new Error(auth.msg || auth.message || "Sign in failed.");
       accessToken = auth.access_token;
+      userId=auth.user?.id||"";
       saveSharedSession(auth);
       await loadPlans();
     } catch (error) { status(error.message, true); }
