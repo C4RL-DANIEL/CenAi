@@ -376,7 +376,10 @@ Deno.serve(async (req: Request) => {
           brand_name: "CenAI",
           locale: "en-PH",
           user_action: "SUBSCRIBE_NOW",
-          payment_method: { payer_selected: "PAYPAL", payee_preferred: "IMMEDIATE_PAYMENT_REQUIRED" },
+          // Do not pin the payer to the PayPal wallet. UNRESTRICTED lets
+          // PayPal present every funding source enabled for this merchant and buyer,
+          // including eligible guest card/bank funding.
+          payment_method: { payee_preferred: "UNRESTRICTED" },
           return_url: baseUrl() + "/billing/success",
           cancel_url: baseUrl() + "/billing/cancel",
         },
