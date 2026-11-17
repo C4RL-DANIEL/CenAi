@@ -96,6 +96,54 @@
       card.append(title, price, interval, warning, button);
       $("plans").append(card);
     }
+
+    let diagnosticPanel = $("billing-diagnostics");
+    if (!diagnosticPanel) {
+      diagnosticPanel = document.createElement("section");
+      diagnosticPanel.id = "billing-diagnostics";
+      diagnosticPanel.className = "billing-diagnostics";
+      const heading = document.createElement("h3");
+      heading.textContent = "Checkout diagnostics";
+      const explanation = document.createElement("p");
+      explanation.className = "small muted";
+      explanation.textContent = "If PayPal shows an error, check the latest subscription status and the reason PayPal reports.";
+      const diagnose = document.createElement("button");
+      diagnose.id = "diagnose-checkout";
+      diagnose.type = "button";
+      diagnose.className = "secondary";
+      diagnose.textContent = "Check latest PayPal checkout";
+      const output = document.createElement("pre");
+      output.id = "diagnostic-output";
+      output.className = "small";
+      output.setAttribute("aria-live", "polite");
+      diagnosticPanel.append(heading, explanation, diagnose, output);
+      $("account").append(diagnosticPanel);
+      diagnose.addEventListener("click", async () => {
+        diagnose.disabled = true;
+        diagnose.textContent = "Checking PayPal…";
+        output.textContent = "Retrieving the latest subscription details from PayPal.";
+        try {
+          const result = await billingApi("diagnose_recent_checkouts");
+          const rows = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+          output.textContent = rows.length ? rows.map(row => {
+            const id = String(row.subscriptionId || "").slice(-8);
+            if (row.error) return `Checkout …${id}\nPayPal lookup: ${row.error}`;
+            return [
+              `Checkout …${id}: ${row.paypalStatus || "UNKNOWN"} (CenAI: ${row.recordedStatus || "unknown"})`,
+              `Plan: ${row.planAmount || "?"} ${row.planCurrency || ""} · ${row.planStatus || "unknown"}`,
+              `Last failed payment: ${row.lastFailedPaymentReasonCode || "none reported"}`,
+              `PayPal status note: ${row.statusChangeNote || "none supplied"}`,
+              `Next retry: ${row.nextPaymentRetryTime || "not scheduled"}`,
+            ].join("\n");
+          }).join("\n\n") : "No recent checkout attempts were found for this account.";
+        } catch (error) {
+          output.textContent = error.message || "Could not retrieve PayPal diagnostics.";
+        } finally {
+          diagnose.disabled = false;
+          diagnose.textContent = "Check latest PayPal checkout";
+        }
+      });
+    }
     if (checkoutEnabled) status("Your available plans are ready. Review recurring charges before approving on PayPal.", false, true);
   }
   $("login-form").addEventListener("submit", async event => {
