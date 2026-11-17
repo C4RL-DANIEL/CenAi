@@ -76,7 +76,8 @@ async function loadBilling(){
   const [status,publicPlans]=await Promise.all([api("status"),api("list_public_plans")]);
   plans=publicPlans.plans||[];
   const subs=status.subscriptions||[];
-  $("member-state").textContent=subs.some(s=>s.status==="ACTIVE")?"Active membership":subs.length?subs[0].status.replaceAll("_"," "):"No active plan";
+  const activeMembership=status.activeMembership||subs.find(s=>s.status==="ACTIVE"&&(!s.current_period_end||Date.parse(s.current_period_end)>Date.now()))||null;
+  $("member-state").textContent=activeMembership?"Active membership":subs.length?subs[0].status.replaceAll("_"," "):"No active plan";
   $("subscription-list").replaceChildren();
   if(!subs.length)$("subscription-list").innerHTML='<div class="account-note">No CenAI membership is linked to this account yet.</div>';
   else subs.forEach(s=>{
@@ -100,6 +101,12 @@ async function loadBilling(){
    const cardMount=document.createElement("div");cardMount.style.cssText="min-width:220px";
    const termsNote=document.createElement("p");termsNote.style.cssText="font-size:11px;color:#718095;margin:0";termsNote.textContent="Card payment does not renew. PayPal account payment renews monthly until cancelled.";
    actions.append(wallet,cardMount,termsNote);box.append(info,actions);$("plan-list").append(box);
+   if(activeMembership){
+    wallet.disabled=true;wallet.textContent="Membership already active";
+    cardMount.textContent="You already have active CenAI access. New purchases are disabled until this membership expires.";
+    termsNote.textContent="Current access ends "+fmtDate(activeMembership.current_period_end||activeMembership.expires_at)+". You will be able to renew when eligible.";
+    continue;
+   }
    if(publicPlans.billingEnabled!==true){wallet.disabled=true;wallet.textContent="Checkout temporarily unavailable";cardMount.textContent="Checkout is temporarily unavailable.";continue;}
    wallet.addEventListener("click",async()=>{
     wallet.disabled=true;note("global-status","Creating your recurring PayPal account subscription…");
