@@ -270,7 +270,6 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
     await db.from("billing_checkout_attempts").update({ status, updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
     return status;
   }
-  if (status === "ACTIVE" && !firstPaymentConfirmed) return "AWAITING_PAYMENT";
   if (status === "APPROVED") {
     await db.from("billing_checkout_attempts").update({ status: "APPROVED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
   }
