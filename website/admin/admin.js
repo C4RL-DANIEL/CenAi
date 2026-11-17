@@ -286,10 +286,10 @@
         currency: "PHP",
         intervalUnit: $("billing-plan-interval").value,
         intervalCount: 1,
-        isTest: $("billing-plan-test").checked,
+        isTest: false,
         enabled: $("billing-plan-enabled").checked
       });
-      statusNode.textContent = "PayPal plan created and activated: " + data.plan.paypal_plan_id + ". This only makes the plan available; it does not charge anyone until they approve a subscription.";
+      statusNode.textContent = "PayPal Live plan created and activated: " + data.plan.paypal_plan_id + ". Customers can subscribe and will be charged according to the displayed recurring price after approving PayPal checkout.";
       await loadBillingPlans();
     } catch (error) {
       statusNode.textContent = error.message;
