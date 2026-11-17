@@ -1134,7 +1134,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                                         if (failure.isNotBlank()) {
                                                             "Checkout …$id · ${row.optString("recordedStatus")}\nPayPal lookup: $failure"
                                                         } else {
-                                                            "Checkout …$id · ${row.optString("paypalStatus")}\nPlan: ${row.optString("planAmount")} ${row.optString("planCurrency")} · ${row.optString("planStatus")}\nFailed payments: ${row.optInt("failedPaymentsCount")}\n${row.optString("statusChangeNote")}".trim()
+                                                            "Checkout …$id · ${row.optString("paypalStatus")}\nPlan: ${row.optString("planAmount")} ${row.optString("planCurrency")} · ${row.optString("planStatus")}\nFailed payments: ${row.optInt("failedPaymentsCount")}\nReason: ${row.optString("lastFailedPaymentReasonCode").ifBlank { "Not reported" }}\nRetry: ${row.optString("nextPaymentRetryTime").ifBlank { "Not scheduled" }}\n${row.optString("statusChangeNote")}".trim()
                                                         }
                                                     }
                                                 }
