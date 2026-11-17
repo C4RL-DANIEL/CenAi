@@ -29,11 +29,15 @@
     if (!supabaseUrl || !publishableKey) throw new Error("Billing authentication is not configured.");
   }
   async function billingApi(action, payload = {}) {
-    const response = await fetch("/api/functions/cenai-paypal-billing", {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    let response;
+    try { response = await fetch("/api/functions/cenai-paypal-billing", {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: publishableKey, Authorization: "Bearer " + accessToken },
       body: JSON.stringify({ action, ...payload })
-    });
+    }); } catch (error) { if (error?.name === "AbortError") throw new Error("PayPal checkout timed out after 45 seconds. No approval page was returned. Please retry; any incomplete attempt will be cancelled."); throw error; } finally { clearTimeout(timeout); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Billing request failed.");
     return data;
@@ -71,7 +75,7 @@
       button.textContent = checkoutEnabled ? "Continue to PayPal" : "Checkout temporarily disabled";
       button.addEventListener("click", async () => {
         button.disabled = true;
-        button.textContent = "Preparing secure checkout…";
+        button.textContent = "Connecting to PayPal…";
         try {
           const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
           if (typeof checkout.approvalUrl !== "string" || !checkout.approvalUrl) throw new Error("PayPal did not return an approval link.");
@@ -84,7 +88,7 @@
           location.assign(approval.toString());
         } catch (error) {
           try { await billingApi("cancel_open_checkouts"); } catch {}
-          status(error.message + " Unfinished checkout cancellation was requested.", true);
+          status(error.message + " You can safely retry once the connection is available.", true);
           button.disabled = false;
           button.textContent = "Continue to PayPal";
         }
