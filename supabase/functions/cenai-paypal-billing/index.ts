@@ -83,8 +83,10 @@ async function paypal(path: string, method: string, token: string, body?: unknow
       debug_id: String(data.debug_id || ""),
       details: issueSummary,
     }));
-    throw new Error("PayPal rejected the request (" + response.status + "). " +
-      (issueSummary[0]?.issue || String(data.name || "Check PayPal account eligibility and subscription permissions.")));
+    const issue = issueSummary[0]?.issue || String(data.name || "UNKNOWN_PAYPAL_ERROR");
+    const description = issueSummary[0]?.description || String(data.message || "No description returned.");
+    const debugId = String(data.debug_id || "");
+    throw new Error("PayPal " + method + " " + path + " failed (HTTP " + response.status + "): " + issue + " — " + description.slice(0, 220) + (debugId ? " [debug " + debugId + "]" : ""));
   }
   return data;
 }
@@ -295,6 +297,94 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+async function repairWebhookConfiguration() {
+  const { webhookId } = paypalConfig();
+  if (!webhookId) return { repaired: false, reason: "PAYPAL_WEBHOOK_ID is not configured." };
+  const token = await accessToken();
+  const expectedUrl = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing";
+  const detail = await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "GET", token);
+  if (String(detail.url || "") !== expectedUrl) return { repaired: false, reason: "Configured PayPal webhook URL does not match the CenAI billing endpoint. No changes were made." };
+  const required = [
+    "BILLING.SUBSCRIPTION.CREATED",
+    "BILLING.SUBSCRIPTION.ACTIVATED",
+    "BILLING.SUBSCRIPTION.UPDATED",
+    "BILLING.SUBSCRIPTION.CANCELLED",
+    "BILLING.SUBSCRIPTION.SUSPENDED",
+    "BILLING.SUBSCRIPTION.EXPIRED",
+    "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+    "PAYMENT.SALE.COMPLETED",
+    "PAYMENT.SALE.DENIED",
+    "PAYMENT.SALE.REFUNDED",
+    "PAYMENT.SALE.REVERSED"
+  ];
+  const current = Array.isArray(detail.event_types) ? detail.event_types : [];
+  const names = new Set(current.map((item: any) => String(item.name || "")));
+  const merged = [...current];
+  for (const name of required) if (!names.has(name)) merged.push({ name });
+  const addedEvents = required.filter(name => !names.has(name));
+  if (addedEvents.length) {
+    await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "PATCH", token, [
+      { op: "replace", path: "/event_types", value: merged }
+    ]);
+  }
+  const verified = await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "GET", token);
+  const verifiedNames = (verified.event_types || []).map((item: any) => String(item.name || ""));
+  const missing = required.filter(name => !verifiedNames.includes(name));
+  return {
+    repaired: missing.length === 0,
+    webhookUrl: String(verified.url || ""),
+    addedEvents,
+    requiredEventsMissing: missing,
+    totalSubscribedEvents: verifiedNames.length
+  };
+}
+
+async function cleanupExpiredMfaFactors() {
+  const headers = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: "Bearer " + SUPABASE_SERVICE_ROLE_KEY,
+    Accept: "application/json"
+  };
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  let scannedUsers = 0;
+  let removed = 0;
+  let failed = 0;
+  for (let page = 1; page <= 5; page++) {
+    const usersResponse = await fetch(SUPABASE_URL.replace(/\/$/, "") + "/auth/v1/admin/users?page=" + page + "&per_page=100", {
+      headers, signal: AbortSignal.timeout(15000)
+    });
+    const usersPayload = await usersResponse.json().catch(() => ({}));
+    if (!usersResponse.ok) throw new Error("Auth admin user listing failed (HTTP " + usersResponse.status + ").");
+    const users = Array.isArray(usersPayload.users) ? usersPayload.users : [];
+    scannedUsers += users.length;
+    for (const user of users) {
+      if (!user?.id) continue;
+      try {
+        const factorsResponse = await fetch(SUPABASE_URL.replace(/\/$/, "") + "/auth/v1/admin/users/" + encodeURIComponent(String(user.id)) + "/factors", {
+          headers, signal: AbortSignal.timeout(10000)
+        });
+        const factorsPayload = await factorsResponse.json().catch(() => []);
+        if (!factorsResponse.ok) { failed++; continue; }
+        const factors = Array.isArray(factorsPayload) ? factorsPayload : Array.isArray(factorsPayload.factors) ? factorsPayload.factors : [];
+        for (const factor of factors) {
+          if (factor.factor_type !== "totp" || factor.status === "verified" || factor.friendly_name !== "CenAI account authenticator") continue;
+          const created = Date.parse(String(factor.created_at || ""));
+          if (!Number.isFinite(created) || created > cutoff || !factor.id) continue;
+          const deleted = await fetch(SUPABASE_URL.replace(/\/$/, "") + "/auth/v1/admin/users/" + encodeURIComponent(String(user.id)) + "/factors/" + encodeURIComponent(String(factor.id)), {
+            method: "DELETE", headers, signal: AbortSignal.timeout(10000)
+          });
+          if (deleted.ok) removed++;
+          else failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+    if (users.length < 100) break;
+  }
+  return { scannedUsers, removedPendingFactors: removed, failedOperations: failed, expiryMinutes: 10 };
+}
+
 async function cleanupExpiredAttempts() {
   const now = new Date().toISOString();
   const { data: attempts, error } = await db.from("billing_checkout_attempts")
@@ -350,7 +440,20 @@ Deno.serve(async (req: Request) => {
         .select("secret_value").eq("name", "paypal_checkout_cleanup").maybeSingle();
       if (secretError) throw secretError;
       if (!storedSecret?.secret_value || !constantTimeEqual(cronSecret, String(storedSecret.secret_value))) return fail(401, "Invalid scheduled cleanup credential");
-      return json(200, await cleanupExpiredAttempts());
+      const cleanup = await cleanupExpiredAttempts();
+      let mfaCleanup: Record<string, unknown>;
+      try { mfaCleanup = await cleanupExpiredMfaFactors(); }
+      catch (mfaError) {
+        mfaCleanup = { error: mfaError instanceof Error ? mfaError.message : "Automatic MFA cleanup failed." };
+        console.error("Scheduled CenAI MFA cleanup failed", mfaError instanceof Error ? mfaError.message : "unknown error");
+      }
+      let webhook: Record<string, unknown>;
+      try { webhook = await repairWebhookConfiguration(); }
+      catch (webhookError) {
+        webhook = { repaired: false, error: webhookError instanceof Error ? webhookError.message : "Automatic PayPal webhook repair failed." };
+        console.error("Scheduled PayPal webhook repair failed", webhookError instanceof Error ? webhookError.message : "unknown error");
+      }
+      return json(200, { ...cleanup, mfaCleanup, webhook });
     }
 
     const user = await currentUser(req);
@@ -369,7 +472,7 @@ Deno.serve(async (req: Request) => {
         .select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id")
         .eq("enabled", true).order("created_at");
       if (error) throw error;
-      return json(200, { plans: data || [], billingEnabled: await billingEnabled() });
+      return json(200, { plans: data || [], billingEnabled: await billingEnabled(), paypalClientId: paypalConfig().clientId });
     }
     if (action === "list_plans") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
@@ -380,12 +483,63 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       return json(200, { plans: data || [] });
     }
+    if (action === "repair_paypal_webhook") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
+      const { webhookId } = paypalConfig();
+      if (!webhookId) return fail(400, "PAYPAL_WEBHOOK_ID is not configured.");
+      const token = await accessToken();
+      const detail = await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "GET", token);
+      const expectedUrl = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing";
+      if (String(detail.url || "") !== expectedUrl) {
+        return fail(409, "Configured PayPal webhook URL does not match the CenAI billing endpoint. No webhook changes were made.");
+      }
+      const required = [
+        "BILLING.SUBSCRIPTION.ACTIVATED",
+        "BILLING.SUBSCRIPTION.CANCELLED",
+        "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+        "PAYMENT.SALE.COMPLETED",
+      ];
+      const current = Array.isArray(detail.event_types) ? detail.event_types : [];
+      const names = new Set(current.map((item: any) => String(item.name || "")));
+      const merged = [...current];
+      for (const name of required) if (!names.has(name)) merged.push({ name });
+      if (merged.length !== current.length) {
+        await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "PATCH", token, [
+          { op: "replace", path: "/event_types", value: merged },
+        ]);
+      }
+      const verified = await paypal("/v1/notifications/webhooks/" + encodeURIComponent(webhookId), "GET", token);
+      const verifiedNames = (verified.event_types || []).map((item: any) => String(item.name || ""));
+      const missing = required.filter(name => !verifiedNames.includes(name));
+      if (missing.length) throw new Error("PayPal webhook update completed but verification still reports missing events: " + missing.join(", "));
+      return json(200, {
+        repaired: true,
+        webhookUrl: String(verified.url || ""),
+        addedEvents: required.filter(name => !names.has(name)),
+        requiredEventsMissing: [],
+        totalSubscribedEvents: verifiedNames.length,
+      });
+    }
     if (action === "diagnose_recent_checkouts") {
       const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
         .select("provider_subscription_id,plan_key,status,expires_at,created_at")
         .eq("user_id", user.id).order("created_at", { ascending: false }).limit(5);
       if (attemptsError) throw attemptsError;
       const token = await accessToken();
+      const webhookId = Deno.env.get("PAYPAL_WEBHOOK_ID") || "";
+      let webhook: Record<string, unknown> = { configuredIdPresent: Boolean(webhookId), registered: false, requiredEventsMissing: ["BILLING.SUBSCRIPTION.ACTIVATED", "BILLING.SUBSCRIPTION.CANCELLED", "BILLING.SUBSCRIPTION.PAYMENT.FAILED", "PAYMENT.SALE.COMPLETED"] };
+      if (webhookId) {
+        try {
+          const webhookList = await paypal("/v1/notifications/webhooks", "GET", token);
+          const registered = (webhookList.webhooks || []).find((item: any) => String(item.id || "") === webhookId);
+          const eventNames = (registered?.event_types || []).map((item: any) => String(item.name || ""));
+          const required = ["BILLING.SUBSCRIPTION.ACTIVATED", "BILLING.SUBSCRIPTION.CANCELLED", "BILLING.SUBSCRIPTION.PAYMENT.FAILED", "PAYMENT.SALE.COMPLETED"];
+          webhook = { configuredIdPresent: true, registered: Boolean(registered), url: String(registered?.url || ""), events: eventNames, requiredEventsMissing: required.filter(name => !eventNames.includes(name)) };
+        } catch (webhookError) {
+          webhook = { configuredIdPresent: true, registered: false, error: webhookError instanceof Error ? webhookError.message : "Could not inspect PayPal webhook registration." };
+        }
+      }
       const diagnostics: Record<string, unknown>[] = [];
       for (const attempt of attempts || []) {
         const subscriptionId = String(attempt.provider_subscription_id || "");
@@ -429,7 +583,36 @@ Deno.serve(async (req: Request) => {
           });
         }
       }
-      return json(200, { diagnostics, checkedAt: new Date().toISOString() });
+      return json(200, { diagnostics, webhook, checkedAt: new Date().toISOString() });
+    }
+
+    if (action === "record_sdk_subscription") {
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const planKey = String(body.planKey || "").trim().toLowerCase();
+      if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return fail(400, "Invalid PayPal subscription ID.");
+      const { data: plan, error: planError } = await db.from("billing_plan_config")
+        .select("plan_key,paypal_plan_id").eq("plan_key", planKey).eq("enabled", true).maybeSingle();
+      if (planError) throw planError;
+      if (!plan?.paypal_plan_id) return fail(400, "The selected subscription plan is unavailable.");
+      const token = await accessToken();
+      const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+      if (String(detail.custom_id || "") !== user.id || String(detail.plan_id || "") !== String(plan.paypal_plan_id)) {
+        return fail(403, "PayPal subscription ownership or plan verification failed.");
+      }
+      const providerStatus = String(detail.status || "UNKNOWN");
+      if (!["APPROVAL_PENDING", "APPROVED", "ACTIVE"].includes(providerStatus)) {
+        return fail(409, "PayPal has not confirmed subscription approval. Current status: " + providerStatus);
+      }
+      const attempt = {
+        user_id: user.id, provider_subscription_id: subscriptionId, plan_key: plan.plan_key,
+        status: "APPROVED", expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      };
+      const { error: saveError } = await db.from("billing_checkout_attempts").upsert(attempt, { onConflict: "provider_subscription_id" });
+      if (saveError) throw saveError;
+      const result = await settleCheckoutAttempt(user.id, attempt, false);
+      return json(200, { verified: true, status: result, message: result === "ACTIVE"
+        ? "PayPal confirmed your first payment. Your membership is active."
+        : "PayPal approval was verified. Membership access will activate after the first payment is confirmed." });
     }
 
     if (action === "create_subscription") {
@@ -453,12 +636,20 @@ Deno.serve(async (req: Request) => {
           // PayPal present every funding source enabled for this merchant and buyer,
           // including eligible guest card/bank funding.
           payment_method: { payee_preferred: "UNRESTRICTED" },
+          shipping_preference: "NO_SHIPPING",
           return_url: baseUrl() + "/billing/success",
           cancel_url: baseUrl() + "/billing/cancel",
         },
       });
       const subscriptionId = String(subscription.id || "");
       const approvalUrl = (subscription.links || []).find((link: any) => link.rel === "approve")?.href;
+      console.info("PayPal subscription created", JSON.stringify({
+        subscriptionId,
+        status: String(subscription.status || "UNKNOWN"),
+        planId: String(subscription.plan_id || plan.paypal_plan_id),
+        approvalHost: (() => { try { return new URL(String(approvalUrl || "")).hostname; } catch { return "missing"; } })(),
+        approveLinkPresent: Boolean(approvalUrl),
+      }));
       if (!subscriptionId) return fail(502, "PayPal did not return a subscription ID.");
       let safeApprovalUrl = false;
       try {
