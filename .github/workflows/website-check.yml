@@ -33,6 +33,13 @@ jobs:
           test -s dist/admin/index.html
           test -s dist/_worker.js
           test -s dist/styles.css
+          test -s dist/editorial.css
+          test -s dist/robots.txt
+          test -s dist/sitemap.xml
+          test -s dist/guides/index.html
+          test -s dist/guides/choosing-ai-models.html
+          test -s dist/privacy.html
+          test -s dist/terms.html
           test ! -e dist/api/admin.js
           test ! -e dist/api/email-otp.js
           test ! -e dist/ADMIN-SETUP.md
@@ -67,7 +74,7 @@ jobs:
             exit 1
           fi
           node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
-          for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html; do
+          for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html /about.html /privacy.html /terms.html /contact.html /guides/ /guides/choosing-ai-models.html /guides/approval-first-agents.html /guides/organizing-ai-projects.html /guides/local-vs-cloud-ai.html /guides/checking-ai-answers.html /robots.txt /sitemap.xml; do
             code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
             if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi
           done
@@ -77,6 +84,8 @@ jobs:
           done
           curl -fsS "$BASE/api/admin-config" | grep -q "bqkzehozezvepbthglyj.supabase.co"
           curl -fsS "$BASE/api/site-pages" >/tmp/cenai-pages.json
+          curl -fsS "$BASE/robots.txt" | grep -q "Sitemap:"
+          curl -fsS "$BASE/sitemap.xml" | grep -q "guides/choosing-ai-models.html"
 
           ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
           if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi

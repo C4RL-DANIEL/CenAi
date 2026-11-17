@@ -1,8 +1,11 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261117-cenai-account-paypal-dual-mode-11";
+const STATIC_CACHE_VERSION = "20261117-adsense-content-readiness-1";
 const STATIC_FILES = new Set([
-  "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
+  "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
+  "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
+  "/guides/index.html", "/guides/choosing-ai-models.html", "/guides/approval-first-agents.html",
+  "/guides/organizing-ai-projects.html", "/guides/local-vs-cloud-ai.html", "/guides/checking-ai-answers.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
   "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
   "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
@@ -31,7 +34,7 @@ function withSecurity(response) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.paypal.com; font-src 'self' https://fonts.gstatic.com https://www.paypalobjects.com; img-src 'self' data: https://www.paypalobjects.com; connect-src 'self' https://bqkzehozezvepbthglyj.supabase.co https://*.supabase.co https://www.paypal.com https://api-m.paypal.com https://*.paypal.com; frame-src https://www.paypal.com https://*.paypal.com https://www.paypalobjects.com; form-action 'self' https://www.paypal.com https://*.paypal.com; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests");
+  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://pagead2.googlesyndication.com https://securepubads.g.doubleclick.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://www.paypal.com; font-src 'self' https://fonts.gstatic.com https://www.paypalobjects.com; img-src 'self' data: https://www.paypalobjects.com https://*.googlesyndication.com https://*.doubleclick.net; connect-src 'self' https://bqkzehozezvepbthglyj.supabase.co https://*.supabase.co https://www.paypal.com https://api-m.paypal.com https://*.paypal.com https://*.googlesyndication.com https://*.doubleclick.net; frame-src https://www.paypal.com https://*.paypal.com https://www.paypalobjects.com https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; form-action 'self' https://www.paypal.com https://*.paypal.com; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -421,7 +424,7 @@ async function staticAsset(request, url, ctx) {
       const upstream = await fetch(origin);
       if (!upstream.ok) return withSecurity(new Response("Website asset unavailable", { status: 502 }));
       const extension = assetPath.split(".").pop()?.toLowerCase();
-      const types = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8", svg: "image/svg+xml", txt: "text/plain; charset=utf-8" };
+      const types = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8", svg: "image/svg+xml", txt: "text/plain; charset=utf-8", xml: "application/xml; charset=utf-8" };
       const headers = new Headers(upstream.headers);
       headers.set("Content-Type", types[extension] || "application/octet-stream");
       headers.set("Cache-Control", extension === "html" ? "public, max-age=300" : "public, max-age=3600");
@@ -439,6 +442,11 @@ async function staticAsset(request, url, ctx) {
 function rewritePath(url) {
   const path = url.pathname;
   const exact = {
+    "/about": "/about.html", "/about/": "/about.html",
+    "/privacy": "/privacy.html", "/privacy/": "/privacy.html",
+    "/terms": "/terms.html", "/terms/": "/terms.html",
+    "/contact": "/contact.html", "/contact/": "/contact.html",
+    "/guides": "/guides/index.html", "/guides/": "/guides/index.html",
     "/beta": "/beta.html",
     "/beta/": "/beta.html",
     "/admin": "/admin/index.html",
@@ -453,6 +461,7 @@ function rewritePath(url) {
     "/billing/cancel": "/billing-cancel.html"
   };
   if (exact[path]) { url.pathname = exact[path]; if (path === "/billing" || path === "/billing/") url.searchParams.set("tab", "membership"); }
+  else if (path.startsWith("/guides/") && !path.endsWith(".html")) { url.pathname = path + ".html"; }
   else if (path.startsWith("/pages/")) {
     url.pathname = "/page.html";
     url.searchParams.set("slug", path.slice("/pages/".length));

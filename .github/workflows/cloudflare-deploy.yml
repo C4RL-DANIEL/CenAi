@@ -53,6 +53,7 @@ jobs:
           BASE="https://cenai-website.cenai-app.workers.dev"
           curl -fsS --retry 5 --retry-delay 3 "$BASE/api/health" | grep -q '"status":"online"'
           curl -fsS --retry 5 --retry-delay 3 "$BASE/" | grep -qi 'CenAI'
+          for route in /guides/ /about.html /privacy.html /terms.html /contact.html /robots.txt /sitemap.xml; do curl -fsS --retry 5 --retry-delay 3 "$BASE$route" >/dev/null; done
           echo "Cloudflare production deployment verified."
       - name: Deployment credential reminder
         if: steps.cloudflare-auth.outputs.ready != 'true'
