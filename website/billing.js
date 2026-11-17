@@ -30,8 +30,7 @@
       const params = new URLSearchParams({
         "client-id": clientId,
         currency: normalizedCurrency,
-        vault: "true",
-        intent: "subscription",
+        intent: "capture",
         components: "buttons",
         "enable-funding": "card"
       });
@@ -108,10 +107,10 @@
       price.textContent = new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount));
       const interval = document.createElement("p");
       interval.className = "muted";
-      interval.textContent = "Every " + plan.interval_count + " " + String(plan.interval_unit).toLowerCase();
+      interval.textContent = "PayPal account: recurring monthly subscription · Guest card: one-time payment for 30 days";
       const warning = document.createElement("p");
       warning.className = "small";
-      warning.textContent = plan.is_test ? "Temporary live-price plan — this is a real recurring payment, not PayPal Sandbox." : "Recurring subscription billed through PayPal.";
+      warning.textContent = "Choose your payment type: PayPal account renews monthly; guest debit/credit card is charged once for 30 days.";
       const checkoutMount = document.createElement("div");
       checkoutMount.className = "paypal-button-mount";
       checkoutMount.setAttribute("aria-label", "PayPal subscription checkout");
@@ -125,65 +124,65 @@
         try {
           if (!data.paypalClientId) throw new Error("PayPal checkout is not fully configured. Please contact CenAI support.");
           const paypal = await loadPayPalSdk(data.paypalClientId, plan.currency || "PHP");
-          const subscriptionCallbacks = {
-            createSubscription: (_data, actions) => {
-              if (!userId) throw new Error("Your CenAI session expired. Please sign in again.");
-              return actions.subscription.create({ plan_id: plan.paypal_plan_id, custom_id: userId });
-            },
-            onApprove: async (approval) => {
-              status("PayPal approval received. Verifying your subscription with PayPal…");
-              try {
-                const result = await billingApi("record_sdk_subscription", { subscriptionId: approval.subscriptionID, planKey: plan.plan_key });
-                status(result.message || "PayPal approval verified. Membership activation is being confirmed.", false, true);
-              } catch (error) {
-                status("PayPal approval was received, but CenAI could not verify it: " + error.message + ". No membership access was granted yet.", true);
-              }
-            },
-            onCancel: async () => {
-              try { await billingApi("cancel_open_checkouts"); } catch {}
-              status("Checkout cancelled. No subscription access was granted.");
-            },
-            onError: async (error) => {
-              const detail = error?.message || "PayPal could not complete checkout.";
-              status("PayPal checkout error: " + detail + " If PayPal displays a generic error page, check the seller account for restrictions or required verification.", true);
-            }
-          };
           const cardMount = document.createElement("div");
           cardMount.className = "paypal-card-button";
-          cardMount.setAttribute("aria-label", "Debit or credit card subscription checkout");
-          const walletMount = document.createElement("div");
-          walletMount.className = "paypal-wallet-button";
-          walletMount.setAttribute("aria-label", "PayPal wallet subscription checkout");
-          checkoutMount.append(cardMount, walletMount);
-          let renderedAny = false;
-          let cardEligible = false;
+          cardMount.setAttribute("aria-label", "One-time debit or credit card payment");
+          const walletButton = document.createElement("button");
+          walletButton.type = "button";
+          walletButton.className = "secondary paypal-recurring-button";
+          walletButton.textContent = "Continue with PayPal · " + new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount)) + " / month";
+          walletButton.setAttribute("aria-label", "Start recurring monthly PayPal subscription");
+          checkoutMount.append(cardMount, walletButton);
+          walletButton.addEventListener("click", async () => {
+            walletButton.disabled = true;
+            status("Creating your recurring PayPal subscription…");
+            try {
+              const result = await billingApi("create_subscription", { planKey: plan.plan_key });
+              if (!result.approvalUrl || !/^https:\/\/(?:www\.)?paypal\.com\//i.test(result.approvalUrl)) {
+                throw new Error("PayPal did not return a valid subscription approval page.");
+              }
+              window.location.assign(result.approvalUrl);
+            } catch (error) {
+              status(error.message || "Could not start the PayPal subscription.", true);
+              walletButton.disabled = false;
+            }
+          });
           if (paypal.FUNDING?.CARD) {
             const cardButtons = paypal.Buttons({
-              ...subscriptionCallbacks,
               fundingSource: paypal.FUNDING.CARD,
-              style: { shape: "pill", color: "black", layout: "vertical", label: "subscribe", tagline: false }
+              style: { shape: "pill", color: "black", layout: "vertical", label: "pay", tagline: false },
+              createOrder: async () => {
+                if (!userId) throw new Error("Your CenAI session expired. Please sign in again.");
+                const result = await billingApi("create_guest_order", { planKey: plan.plan_key });
+                if (!result.orderId) throw new Error("PayPal did not create a one-time payment order.");
+                return result.orderId;
+              },
+              onApprove: async (approval) => {
+                status("Card payment approved. Capturing and verifying the one-time payment…");
+                try {
+                  const result = await billingApi("capture_guest_order", { orderId: approval.orderID });
+                  status(result.message || "One-time payment confirmed. Your 30-day membership is active and will not renew.", false, true);
+                } catch (error) {
+                  status("PayPal approval was received, but capture could not be verified: " + error.message + ". Membership was not activated.", true);
+                }
+              },
+              onCancel: () => status("Card checkout cancelled. No membership access was granted."),
+              onError: (error) => status("Card checkout error: " + (error?.message || "PayPal could not complete the payment."), true)
             });
             if (cardButtons.isEligible()) {
               await cardButtons.render(cardMount);
-              cardEligible = true;
-              renderedAny = true;
+            } else {
+              const cardNotice = document.createElement("p");
+              cardNotice.className = "small muted";
+              cardNotice.textContent = "Guest card checkout is not currently available for this PayPal merchant or buyer region. PayPal account subscriptions remain available.";
+              checkoutMount.prepend(cardNotice);
             }
-          }
-          const walletButtons = paypal.Buttons({
-            ...subscriptionCallbacks,
-            style: { shape: "pill", color: "gold", layout: "vertical", label: "subscribe", tagline: false }
-          });
-          if (walletButtons.isEligible()) {
-            await walletButtons.render(walletMount);
-            renderedAny = true;
-          }
-          if (!cardEligible) {
+          } else {
             const cardNotice = document.createElement("p");
             cardNotice.className = "small muted";
-            cardNotice.textContent = "Debit/credit card guest checkout is not enabled for this merchant yet. PayPal must activate Enhanced Automatic Payments for eligible subscription card payments.";
-            checkoutMount.append(cardNotice);
+            cardNotice.textContent = "Guest card checkout is not currently available. You can still subscribe with your PayPal account.";
+            checkoutMount.prepend(cardNotice);
           }
-          if (!renderedAny) throw new Error("PayPal has not enabled an eligible subscription funding method for this account or region.");
         } catch (error) {
           checkoutMount.textContent = "";
           const message = document.createElement("p");
