@@ -50,6 +50,7 @@ async function accessToken() {
   const { clientId, clientSecret } = paypalConfig();
   const basic = btoa(clientId + ":" + clientSecret);
   const response = await fetch(API + "/v1/oauth2/token", {
+    signal: AbortSignal.timeout(20000),
     method: "POST",
     headers: { Authorization: "Basic " + basic, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
@@ -60,6 +61,7 @@ async function accessToken() {
 }
 async function paypal(path: string, method: string, token: string, body?: unknown) {
   const response = await fetch(API + path, {
+    signal: AbortSignal.timeout(30000),
     method,
     headers: {
       Authorization: "Bearer " + token,
@@ -82,6 +84,11 @@ async function billingEnabled() {
   if (error) throw error;
   return data?.enabled === true;
 }
+async function hasEmailMfa(userId: string) {
+  const { data, error } = await db.from("admin_email_mfa").select("verified_until").eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.verified_until && Date.parse(String(data.verified_until)) > Date.now());
+}
 async function createOrRefreshPlan(body: Record<string, unknown>, userId: string) {
   const planKey = String(body.planKey || "").trim().toLowerCase();
   const name = String(body.displayName || "").trim();
@@ -90,7 +97,7 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
   const intervalUnit = String(body.intervalUnit || "MONTH").toUpperCase();
   const intervalCount = Number(body.intervalCount || 1);
   const enabled = body.enabled === true;
-  const isTest = body.isTest === true;
+  const isTest = false;
   if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(planKey) || name.length < 2 || name.length > 80 ||
       !Number.isFinite(amount) || amount < 1 || amount > 100000 ||
       !/^[A-Z]{3}$/.test(currency) || !["DAY", "WEEK", "MONTH", "YEAR"].includes(intervalUnit) ||
@@ -332,7 +339,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "configure_plan") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
-      if (tokenAal(req) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before managing PayPal plans.");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
       const plan = await createOrRefreshPlan(body, user.id);
       return json(200, { plan, message: "PayPal Live plan created and activated. New subscriptions can now use this plan." });
     }
@@ -345,7 +352,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "list_plans") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
-      if (tokenAal(req) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before viewing administrator billing controls.");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
       const { data, error } = await db.from("billing_plan_config")
         .select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id,updated_at")
         .order("created_at");
@@ -360,7 +367,7 @@ Deno.serve(async (req: Request) => {
         .eq("plan_key", planKey).eq("enabled", true).maybeSingle();
       if (error) throw error;
       if (!plan?.paypal_plan_id) return fail(400, "This subscription plan is not configured yet.");
-      if (plan.is_test !== true && planKey === "live_test") return fail(409, "The live test plan configuration is inconsistent.");
+      
       const token = await accessToken();
       const subscription = await paypal("/v1/billing/subscriptions", "POST", token, {
         plan_id: plan.paypal_plan_id,
