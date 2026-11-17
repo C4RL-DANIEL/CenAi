@@ -29,6 +29,10 @@ const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
   "PAYMENT.SALE.COMPLETED",
   "PAYMENT.SALE.REFUNDED",
   "PAYMENT.SALE.REVERSED",
+  "PAYMENT.CAPTURE.COMPLETED",
+  "PAYMENT.CAPTURE.REFUNDED",
+  "PAYMENT.CAPTURE.REVERSED",
+  "PAYMENT.CAPTURE.DENIED",
 ] as const;
 
 async function currentUser(req: Request) {
@@ -198,6 +202,51 @@ async function verifyWebhook(req: Request, event: unknown) {
 async function handleWebhook(event: Record<string, any>) {
   const resource = event.resource || {};
   const eventType = String(event.event_type || "");
+  if (eventType.startsWith("PAYMENT.CAPTURE.")) {
+    const orderId = String(resource.supplementary_data?.related_ids?.order_id || resource.related_ids?.order_id || "");
+    if (!orderId) return;
+    const { data: payment, error: paymentError } = await db.from("billing_one_time_payments")
+      .select("user_id,provider_order_id,plan_key,amount,currency,status,paid_at,access_expires_at")
+      .eq("provider_order_id", orderId).maybeSingle();
+    if (paymentError) throw paymentError;
+    if (!payment) return;
+    const captureAmount = resource.amount || {};
+    if (captureAmount.value && (Number(captureAmount.value) !== Number(payment.amount) ||
+        String(captureAmount.currency_code || "").toUpperCase() !== String(payment.currency).toUpperCase())) {
+      throw new Error("PayPal capture webhook amount does not match the CenAI order.");
+    }
+    if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+      if (["REFUNDED", "REVERSED", "EXPIRED"].includes(String(payment.status))) return;
+      const paidAt = resource.create_time && !Number.isNaN(Date.parse(String(resource.create_time)))
+        ? new Date(String(resource.create_time)).toISOString() : new Date().toISOString();
+      const expiresAt = payment.access_expires_at || new Date(Date.parse(paidAt) + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { error } = await db.from("billing_one_time_payments").update({
+        status: "COMPLETED", paid_at: payment.paid_at || paidAt, access_expires_at: expiresAt,
+        provider_capture_id: String(resource.id || ""), updated_at: new Date().toISOString(),
+      }).eq("provider_order_id", orderId);
+      if (error) throw error;
+      const { error: entitlementError } = await db.from("billing_subscriptions").upsert({
+        user_id: payment.user_id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + orderId,
+        plan_key: payment.plan_key, status: "ACTIVE", current_period_end: expiresAt,
+        cancel_at_period_end: true, updated_at: new Date().toISOString(),
+      }, { onConflict: "provider_subscription_id" });
+      if (entitlementError) throw entitlementError;
+    } else if (eventType === "PAYMENT.CAPTURE.REFUNDED" || eventType === "PAYMENT.CAPTURE.REVERSED") {
+      const nextStatus = eventType.endsWith("REFUNDED") ? "REFUNDED" : "REVERSED";
+      const { error } = await db.from("billing_one_time_payments").update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq("provider_order_id", orderId);
+      if (error) throw error;
+      const { error: entitlementError } = await db.from("billing_subscriptions").update({
+        status: nextStatus, cancel_at_period_end: false, updated_at: new Date().toISOString(),
+      }).eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + orderId).eq("user_id", payment.user_id);
+      if (entitlementError) throw entitlementError;
+    } else if (eventType === "PAYMENT.CAPTURE.DENIED") {
+      const { error } = await db.from("billing_one_time_payments").update({ status: "FAILED", updated_at: new Date().toISOString() })
+        .eq("provider_order_id", orderId).eq("status", "CREATED");
+      if (error) throw error;
+    }
+    return;
+  }
   let subscriptionId = String(resource.id || resource.billing_agreement_id || "");
   if (eventType.startsWith("PAYMENT.SALE.") && resource.billing_agreement_id) subscriptionId = String(resource.billing_agreement_id);
   if (!subscriptionId) return;
@@ -408,6 +457,16 @@ async function cleanupExpiredAttempts() {
   const { data: oneTime, error: oneTimeError } = await db.from("billing_one_time_payments")
     .select("provider_order_id,user_id").eq("status", "COMPLETED").lte("access_expires_at", now).limit(100);
   if (oneTimeError) throw oneTimeError;
+  const staleBefore = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: staleOrders, error: staleError } = await db.from("billing_one_time_payments")
+    .select("provider_order_id").eq("status", "CREATED").lte("created_at", staleBefore).limit(100);
+  if (staleError) throw staleError;
+  if (staleOrders?.length) {
+    const ids = staleOrders.map((row: Record<string, unknown>) => String(row.provider_order_id));
+    const { error: expireOrdersError } = await db.from("billing_one_time_payments")
+      .update({ status: "EXPIRED", updated_at: now }).in("provider_order_id", ids).eq("status", "CREATED");
+    if (expireOrdersError) throw expireOrdersError;
+  }
   let expiredOneTime = 0;
   for (const payment of oneTime || []) {
     const { error: paymentError } = await db.from("billing_one_time_payments")
