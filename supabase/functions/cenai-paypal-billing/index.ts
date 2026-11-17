@@ -473,7 +473,7 @@ async function cleanupExpiredAttempts() {
   const now = new Date().toISOString();
   const { data: attempts, error } = await db.from("billing_checkout_attempts")
     .select("user_id,provider_subscription_id,plan_key,expires_at")
-    .in("status", ["AWAITING_APPROVAL", "APPROVED"]).lte("expires_at", now).limit(100);
+    .in("status", ["AWAITING_APPROVAL", "APPROVED", "EXPIRED"]).lte("expires_at", now).limit(100);
   if (error) throw error;
   let cancelled = 0;
   let expired = 0;
@@ -877,7 +877,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "cancel_open_checkouts" || action === "status") {
       const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
-        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).in("status", ["AWAITING_APPROVAL", "APPROVED"]);
+        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).in("status", ["AWAITING_APPROVAL", "APPROVED", "EXPIRED"]);
       if (attemptsError) throw attemptsError;
       for (const attempt of attempts || []) {
         try { await settleCheckoutAttempt(user.id, attempt, action === "cancel_open_checkouts"); }
