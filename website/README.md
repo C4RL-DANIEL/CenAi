@@ -59,3 +59,8 @@ Run `npm run check` and `npm run build`. The build excludes `api/`, internal set
 - Privacy, terms and contact pages are published and linked in the footer.
 - AdSense code and `ads.txt` are intentionally not populated until the owner supplies the real publisher ID from an approved AdSense account. Never publish a placeholder seller ID.
 - The Cloudflare Worker CSP permits the standard Google advertising script and ad-serving domains, but no ads are loaded until a real publisher ID is configured.
+
+
+## Engineering architecture
+
+See [../docs/ENGINEERING-ARCHITECTURE.md](../docs/ENGINEERING-ARCHITECTURE.md) for platform boundaries, dependency direction, security invariants, refactor boundaries, and deployment verification.

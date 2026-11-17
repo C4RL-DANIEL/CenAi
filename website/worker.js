@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261117-adsense-content-readiness-1";
+const STATIC_CACHE_VERSION = "20261117-edge-proxy-hardening-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
@@ -386,8 +386,11 @@ async function betaNotification(request, env) {
 }
 
 async function proxyFunction(request, env, slug) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  const declaredLength = Number(request.headers.get("Content-Length") || 0);
+  if (declaredLength > 1_048_576) return json(413, { error: "Request body exceeds the 1 MB limit" });
   const allowed = new Set(["cenai-paypal-billing", "cenai-billing", "cenai-public-api", "cenai-telemetry", "cenai-control-plane"]);
-  if (!allowed.has(slug)) return json(404, { error: "Backend function not found" });
+  if (!/^[a-z0-9-]+$/.test(slug) || !allowed.has(slug)) return json(404, { error: "Backend function not found" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"])) return json(503, { error: "Supabase integration is not configured" });
   const headers = new Headers();
   for (const name of ["authorization", "content-type", "apikey", "paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"]) {
@@ -396,7 +399,11 @@ async function proxyFunction(request, env, slug) {
   }
   if (!headers.has("apikey")) headers.set("apikey", env.SUPABASE_PUBLISHABLE_KEY);
   const init = { method: request.method, headers };
-  if (!["GET", "HEAD"].includes(request.method)) init.body = await request.arrayBuffer();
+  if (!["GET", "HEAD"].includes(request.method)) {
+    const body = await request.arrayBuffer();
+    if (body.byteLength > 1_048_576) return json(413, { error: "Request body exceeds the 1 MB limit" });
+    init.body = body;
+  }
   try {
         const supabaseBase = env.SUPABASE_URL.endsWith("/") ? env.SUPABASE_URL.slice(0, -1) : env.SUPABASE_URL;
     const response = await fetch(supabaseBase + "/functions/v1/" + encodeURIComponent(slug), init);
