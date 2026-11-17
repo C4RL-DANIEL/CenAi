@@ -37,6 +37,7 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
+        compose.onNodeWithText("Device").performScrollTo()
         compose.onNodeWithText("Device").performClick()
         listOf(
             "VOICE ENGINE",
@@ -50,6 +51,7 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
+        compose.onNodeWithText("Updates").performScrollTo()
         compose.onNodeWithText("Updates").performClick()
         val softwareUpdate = compose.onNodeWithText("SOFTWARE UPDATE", substring = true)
         softwareUpdate.performScrollTo()
