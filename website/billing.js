@@ -32,7 +32,8 @@
         currency: normalizedCurrency,
         vault: "true",
         intent: "subscription",
-        components: "buttons"
+        components: "buttons",
+        "enable-funding": "card"
       });
       script.src = "https://www.paypal.com/sdk/js?" + params.toString();
       script.async = true;
@@ -124,8 +125,7 @@
         try {
           if (!data.paypalClientId) throw new Error("PayPal checkout is not fully configured. Please contact CenAI support.");
           const paypal = await loadPayPalSdk(data.paypalClientId, plan.currency || "PHP");
-          const buttons = paypal.Buttons({
-            style: { shape: "pill", color: "gold", layout: "vertical", label: "subscribe", tagline: false },
+          const subscriptionCallbacks = {
             createSubscription: (_data, actions) => {
               if (!userId) throw new Error("Your CenAI session expired. Please sign in again.");
               return actions.subscription.create({ plan_id: plan.paypal_plan_id, custom_id: userId });
@@ -147,9 +147,43 @@
               const detail = error?.message || "PayPal could not complete checkout.";
               status("PayPal checkout error: " + detail + " If PayPal displays a generic error page, check the seller account for restrictions or required verification.", true);
             }
+          };
+          const cardMount = document.createElement("div");
+          cardMount.className = "paypal-card-button";
+          cardMount.setAttribute("aria-label", "Debit or credit card subscription checkout");
+          const walletMount = document.createElement("div");
+          walletMount.className = "paypal-wallet-button";
+          walletMount.setAttribute("aria-label", "PayPal wallet subscription checkout");
+          checkoutMount.append(cardMount, walletMount);
+          let renderedAny = false;
+          let cardEligible = false;
+          if (paypal.FUNDING?.CARD) {
+            const cardButtons = paypal.Buttons({
+              ...subscriptionCallbacks,
+              fundingSource: paypal.FUNDING.CARD,
+              style: { shape: "pill", color: "black", layout: "vertical", label: "subscribe", tagline: false }
+            });
+            if (cardButtons.isEligible()) {
+              await cardButtons.render(cardMount);
+              cardEligible = true;
+              renderedAny = true;
+            }
+          }
+          const walletButtons = paypal.Buttons({
+            ...subscriptionCallbacks,
+            style: { shape: "pill", color: "gold", layout: "vertical", label: "subscribe", tagline: false }
           });
-          if (buttons.isEligible()) await buttons.render(checkoutMount);
-          else throw new Error("PayPal says this subscription checkout is not eligible for this account or region.");
+          if (walletButtons.isEligible()) {
+            await walletButtons.render(walletMount);
+            renderedAny = true;
+          }
+          if (!cardEligible) {
+            const cardNotice = document.createElement("p");
+            cardNotice.className = "small muted";
+            cardNotice.textContent = "Debit/credit card guest checkout is not enabled for this merchant yet. PayPal must activate Enhanced Automatic Payments for eligible subscription card payments.";
+            checkoutMount.append(cardNotice);
+          }
+          if (!renderedAny) throw new Error("PayPal has not enabled an eligible subscription funding method for this account or region.");
         } catch (error) {
           checkoutMount.textContent = "";
           const message = document.createElement("p");
