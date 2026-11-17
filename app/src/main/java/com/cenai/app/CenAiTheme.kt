@@ -59,6 +59,15 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             if (dark) Color(0xFFB7C2D4) else Color(0xFF66758B),
             true
         )
+        "AURORA" -> CenAiPalette(
+            if (dark) Color(0xFF090F1C) else Color(0xFFF3F7FC),
+            if (dark) Color(0xFF121D30) else Color(0xFFFFFFFF),
+            if (dark) Color(0xFF1C2B42) else Color(0xFFE7EDF6),
+            if (dark) Color(0xFF8DE4D8) else Color(0xFF315FC8),
+            if (dark) Color(0xFFF1F6FF) else Color(0xFF17243A),
+            if (dark) Color(0xFFA2B1C8) else Color(0xFF687891),
+            true
+        )
         "FIGMA" -> CenAiPalette(
             if (dark) Color(0xFF100D1B) else Color(0xFFF6F3FF),
             if (dark) Color(0xFF1D1730) else Color(0xFFFFFFFF),
