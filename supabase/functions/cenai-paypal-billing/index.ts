@@ -183,6 +183,41 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
   }
   return data;
 }
+async function ensurePayPalPlanCurrency(plan: Record<string, any>, userId: string) {
+  const expectedCurrency = String(plan.currency || "PHP").toUpperCase();
+  const expectedAmount = Number(plan.amount);
+  if (plan.plan_key === "live_test" && (expectedCurrency !== "PHP" || expectedAmount !== 1)) {
+    throw new Error("CenAI Starter is locked to PHP 1.00. Checkout was stopped to prevent an incorrect charge.");
+  }
+  const inspect = async (planId: string) => {
+    const token = await accessToken();
+    const detail = await paypal("/v1/billing/plans/" + encodeURIComponent(planId), "GET", token);
+    const cycles = Array.isArray(detail.billing_cycles) ? detail.billing_cycles : [];
+    return cycles.some((cycle: any) => {
+      const price = cycle?.pricing_scheme?.fixed_price || {};
+      return String(cycle?.tenure_type || "").toUpperCase() === "REGULAR" &&
+        String(price.currency_code || "").toUpperCase() === expectedCurrency &&
+        Number(price.value) === expectedAmount;
+    });
+  };
+  if (await inspect(String(plan.paypal_plan_id || ""))) return plan;
+  console.warn("PayPal plan currency/amount differs from CenAI configuration; rebuilding before checkout", {
+    planKey: String(plan.plan_key), expectedCurrency, expectedAmount,
+  });
+  const refreshed = await createOrRefreshPlan({
+    planKey: String(plan.plan_key),
+    displayName: String(plan.display_name || "CenAI membership"),
+    amount: expectedAmount,
+    currency: expectedCurrency,
+    intervalUnit: String(plan.interval_unit || "MONTH"),
+    intervalCount: Number(plan.interval_count || 1),
+    enabled: true,
+  }, userId);
+  if (!refreshed?.paypal_plan_id || !await inspect(String(refreshed.paypal_plan_id))) {
+    throw new Error("PayPal's subscription plan does not match the configured price and currency. Checkout was stopped; no charge was requested.");
+  }
+  return { ...plan, paypal_plan_id: refreshed.paypal_plan_id };
+}
 async function verifyWebhook(req: Request, event: unknown) {
   const { webhookId } = paypalConfig();
   if (!webhookId) throw new Error("PayPal webhook ID is not configured.");
@@ -666,6 +701,9 @@ Deno.serve(async (req: Request) => {
       const amount = Number(plan.amount);
       const currency = String(plan.currency || "PHP").toUpperCase();
       if (!Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency)) return fail(400, "The selected plan has an invalid price.");
+      if (plan.plan_key === "live_test" && (currency !== "PHP" || amount !== 1)) {
+        return fail(409, "CenAI Starter is locked to PHP 1.00. Checkout was stopped to prevent an incorrect charge.");
+      }
       const token = await accessToken();
       const order = await paypal("/v2/checkout/orders", "POST", token, {
         intent: "CAPTURE",
@@ -785,10 +823,11 @@ Deno.serve(async (req: Request) => {
         .eq("plan_key", planKey).eq("enabled", true).maybeSingle();
       if (error) throw error;
       if (!plan?.paypal_plan_id) return fail(400, "This subscription plan is not configured yet.");
+      const verifiedPlan = await ensurePayPalPlanCurrency(plan, user.id);
       
       const token = await accessToken();
       const subscription = await paypal("/v1/billing/subscriptions", "POST", token, {
-        plan_id: plan.paypal_plan_id,
+        plan_id: verifiedPlan.paypal_plan_id,
         custom_id: user.id,
         application_context: {
           brand_name: "CenAI",
@@ -807,7 +846,7 @@ Deno.serve(async (req: Request) => {
       console.info("PayPal subscription created", JSON.stringify({
         subscriptionId,
         status: String(subscription.status || "UNKNOWN"),
-        planId: String(subscription.plan_id || plan.paypal_plan_id),
+        planId: String(subscription.plan_id || verifiedPlan.paypal_plan_id),
         approvalHost: (() => { try { return new URL(String(approvalUrl || "")).hostname; } catch { return "missing"; } })(),
         approveLinkPresent: Boolean(approvalUrl),
       }));
