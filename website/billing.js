@@ -4,16 +4,44 @@
   const SESSION_KEY = "cenai.account.session.v1";
   let sharedSession = null;
   let paypalSdkPromise = null;
-  function loadPayPalSdk(clientId) {
-    if (window.paypal?.Buttons) return Promise.resolve(window.paypal);
+  function loadPayPalSdk(clientId, currency = "PHP") {
+    const normalizedCurrency = String(currency || "PHP").toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
+      return Promise.reject(new Error("The subscription currency is invalid."));
+    }
+    if (window.paypal?.Buttons) {
+      const existingScript = document.querySelector('script[src*="paypal.com/sdk/js"]');
+      if (existingScript) {
+        const existingUrl = new URL(existingScript.src);
+        const existingClientId = existingUrl.searchParams.get("client-id");
+        const existingCurrency = (existingUrl.searchParams.get("currency") || "USD").toUpperCase();
+        if (existingClientId && existingClientId !== clientId) {
+          return Promise.reject(new Error("A different PayPal merchant SDK is already loaded. Reload the billing page before checkout."));
+        }
+        if (existingCurrency !== normalizedCurrency) {
+          return Promise.reject(new Error("The loaded PayPal SDK currency does not match this subscription plan. Reload the billing page."));
+        }
+      }
+      return Promise.resolve(window.paypal);
+    }
     if (paypalSdkPromise) return paypalSdkPromise;
     paypalSdkPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      const params = new URLSearchParams({ "client-id": clientId, vault: "true", intent: "subscription", components: "buttons" });
+      const params = new URLSearchParams({
+        "client-id": clientId,
+        currency: normalizedCurrency,
+        vault: "true",
+        intent: "subscription",
+        components: "buttons"
+      });
       script.src = "https://www.paypal.com/sdk/js?" + params.toString();
       script.async = true;
+      script.dataset.cenaiPaypalSdk = "true";
       script.onload = () => window.paypal?.Buttons ? resolve(window.paypal) : reject(new Error("PayPal checkout components did not initialize."));
-      script.onerror = () => reject(new Error("Could not load PayPal checkout. Check your connection and try again."));
+      script.onerror = () => {
+        paypalSdkPromise = null;
+        reject(new Error("Could not load PayPal checkout. Check your connection and try again."));
+      };
       document.head.append(script);
     });
     return paypalSdkPromise;
@@ -95,9 +123,9 @@
       } else {
         try {
           if (!data.paypalClientId) throw new Error("PayPal checkout is not fully configured. Please contact CenAI support.");
-          const paypal = await loadPayPalSdk(data.paypalClientId);
+          const paypal = await loadPayPalSdk(data.paypalClientId, plan.currency || "PHP");
           const buttons = paypal.Buttons({
-            style: { layout: "vertical", shape: "rect", label: "subscribe", color: "gold", tagline: false },
+            style: { shape: "pill", color: "gold", layout: "vertical", label: "subscribe", tagline: false },
             createSubscription: (_data, actions) => {
               if (!userId) throw new Error("Your CenAI session expired. Please sign in again.");
               return actions.subscription.create({ plan_id: plan.paypal_plan_id, custom_id: userId });
