@@ -20,6 +20,11 @@ function tokenAal(token: string) {
     return String(JSON.parse(atob(normalized)).aal || "aal1");
   } catch { return "aal1"; }
 }
+async function hasEmailMfa(userId: string) {
+  const { data, error } = await adminDb.from("admin_email_mfa").select("verified_until").eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.verified_until && Date.parse(String(data.verified_until)) > Date.now());
+}
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return fail(405, "Method not allowed");
@@ -73,12 +78,12 @@ Deno.serve(async (req: Request) => {
       const { data: preflightAdmin, error: preflightError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id", user.id).maybeSingle();
       if (preflightError) throw preflightError;
       if (!preflightAdmin?.is_active || !["owner","admin","operator"].includes(preflightAdmin.role)) return fail(403, "Administrator access denied");
-      return response(200, { authorized:true, mfaRequired:tokenAal(token) !== "aal2" });
+      return response(200, { authorized:true, mfaRequired:tokenAal(token) !== "aal2" && !await hasEmailMfa(user.id) });
     }
     const { data: adminRow, error: adminError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id", user.id).maybeSingle();
     if (adminError) throw adminError;
     if (!adminRow?.is_active || !["owner","admin","operator"].includes(adminRow.role)) return fail(403, "Administrator access denied");
-    if (tokenAal(token) !== "aal2") return fail(403, "MFA_REQUIRED: Verify your authenticator code before using administrator functions.");
+    if (tokenAal(token) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
     const role = adminRow.role;
     if (action === "models") {
       const { data, error } = await adminDb.from("model_registry").select("id,slug,provider,model_id,display_name,description,tasks,modalities,enabled,public,updated_at").order("provider").order("slug");
