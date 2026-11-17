@@ -794,10 +794,9 @@ Deno.serve(async (req: Request) => {
           brand_name: "CenAI",
           locale: "en-PH",
           user_action: "SUBSCRIBE_NOW",
-          // Do not pin the payer to the PayPal wallet. UNRESTRICTED lets
-          // PayPal present every funding source enabled for this merchant and buyer,
-          // including eligible guest card/bank funding.
-          payment_method: { payee_preferred: "UNRESTRICTED" },
+          // This route is exclusively the recurring PayPal-account subscription.
+          // Guest debit/credit cards use the separate Orders v2 one-time flow.
+          payment_method: { payer_selected: "PAYPAL", payee_preferred: "IMMEDIATE_PAYMENT_REQUIRED" },
           shipping_preference: "NO_SHIPPING",
           return_url: baseUrl() + "/billing/success",
           cancel_url: baseUrl() + "/billing/cancel",
