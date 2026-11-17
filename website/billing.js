@@ -3,6 +3,21 @@
   let supabaseUrl = "", publishableKey = "", accessToken = "", email = "";
   const SESSION_KEY = "cenai.account.session.v1";
   let sharedSession = null;
+  let paypalSdkPromise = null;
+  function loadPayPalSdk(clientId) {
+    if (window.paypal?.Buttons) return Promise.resolve(window.paypal);
+    if (paypalSdkPromise) return paypalSdkPromise;
+    paypalSdkPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      const params = new URLSearchParams({ "client-id": clientId, vault: "true", intent: "subscription", components: "buttons" });
+      script.src = "https://www.paypal.com/sdk/js?" + params.toString();
+      script.async = true;
+      script.onload = () => window.paypal?.Buttons ? resolve(window.paypal) : reject(new Error("PayPal checkout components did not initialize."));
+      script.onerror = () => reject(new Error("Could not load PayPal checkout. Check your connection and try again."));
+      document.head.append(script);
+    });
+    return paypalSdkPromise;
+  }
   function saveSharedSession(value) { sharedSession = value; localStorage.setItem(SESSION_KEY, JSON.stringify({ access_token:value.access_token, refresh_token:value.refresh_token, expires_at:value.expires_at || Math.floor(Date.now()/1000) + Number(value.expires_in || 3600) })); }
   function clearSharedSession() { sharedSession = null; localStorage.removeItem(SESSION_KEY); }
   async function restoreSharedSession() {
@@ -68,32 +83,56 @@
       const warning = document.createElement("p");
       warning.className = "small";
       warning.textContent = plan.is_test ? "Temporary live-price plan — this is a real recurring payment, not PayPal Sandbox." : "Recurring subscription billed through PayPal.";
-      const button = document.createElement("button");
-      button.className = "primary";
-      button.type = "button";
-      button.disabled = !checkoutEnabled;
-      button.textContent = checkoutEnabled ? "Continue to PayPal" : "Checkout temporarily disabled";
-      button.addEventListener("click", async () => {
-        button.disabled = true;
-        button.textContent = "Connecting to PayPal…";
+      const checkoutMount = document.createElement("div");
+      checkoutMount.className = "paypal-button-mount";
+      checkoutMount.setAttribute("aria-label", "PayPal subscription checkout");
+      card.append(title, price, interval, warning, checkoutMount);
+      if (!checkoutEnabled) {
+        const disabled = document.createElement("p");
+        disabled.className = "small muted";
+        disabled.textContent = "Checkout temporarily unavailable.";
+        card.append(disabled);
+      } else {
         try {
-          const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
-          if (typeof checkout.approvalUrl !== "string" || !checkout.approvalUrl) throw new Error("PayPal did not return an approval link.");
-          const approval = new URL(checkout.approvalUrl);
-          const approvalHost = approval.hostname.toLowerCase();
-          const isPayPalHost = approvalHost === "paypal.com" || approvalHost.endsWith(".paypal.com");
-          if (approval.protocol !== "https:" || !isPayPalHost || approval.username || approval.password) {
-            throw new Error("PayPal returned an unexpected approval destination. Checkout was stopped for your protection.");
-          }
-          location.assign(approval.toString());
+          if (!data.paypalClientId) throw new Error("PayPal checkout is not fully configured. Please contact CenAI support.");
+          const paypal = await loadPayPalSdk(data.paypalClientId);
+          const buttons = paypal.Buttons({
+            style: { layout: "vertical", shape: "rect", label: "subscribe", color: "gold", tagline: false },
+            createSubscription: async () => {
+              const checkout = await billingApi("create_subscription", { planKey: plan.plan_key });
+              if (!checkout.subscriptionId) throw new Error("PayPal did not return a subscription ID.");
+              return checkout.subscriptionId;
+            },
+            onApprove: async () => {
+              status("PayPal approval received. Verifying your subscription with PayPal…");
+              try {
+                const result = await billingApi("status");
+                status(result.message || "Approval received. Your subscription will appear after PayPal confirms its first payment.", false, true);
+              } catch (error) {
+                status("PayPal approval was received, but CenAI could not refresh the status: " + error.message + ". Your payment is not being treated as confirmed yet.", true);
+              }
+            },
+            onCancel: async () => {
+              try { await billingApi("cancel_open_checkouts"); } catch {}
+              status("Checkout cancelled. No subscription access was granted.");
+            },
+            onError: async (error) => {
+              const detail = error?.message || "PayPal could not complete checkout.";
+              status("PayPal checkout error: " + detail + " If PayPal displays a generic error page, check the seller account for restrictions or required verification.", true);
+            }
+          });
+          if (buttons.isEligible()) await buttons.render(checkoutMount);
+          else throw new Error("PayPal says this subscription checkout is not eligible for this account or region.");
         } catch (error) {
-          try { await billingApi("cancel_open_checkouts"); } catch {}
-          status(error.message + " You can safely retry once the connection is available.", true);
-          button.disabled = false;
-          button.textContent = "Continue to PayPal";
+          checkoutMount.textContent = "";
+          const message = document.createElement("p");
+          message.className = "small";
+          message.textContent = error.message || "PayPal checkout could not be initialized.";
+          checkoutMount.append(message);
+          status(message.textContent, true);
         }
-      });
-      card.append(title, price, interval, warning, button);
+      }
+
       $("plans").append(card);
     }
 
