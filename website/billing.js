@@ -3,60 +3,65 @@
   let supabaseUrl = "", publishableKey = "", accessToken = "", email = "", userId = "";
   const SESSION_KEY = "cenai.account.session.v1";
   let sharedSession = null;
-  let paypalV6Promise = null;
-  async function loadPayPalV6(currency = "PHP") {
+  let paypalGuestSdkPromise = null;
+  async function loadPayPalGuestSdk(clientId, currency = "PHP", amount) {
     const normalized = String(currency || "PHP").toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalized)) throw new Error("The payment currency is invalid.");
-    if (!paypalV6Promise) paypalV6Promise = (async () => {
-      const tokenResult = await billingApi("paypal_client_token");
-      if (!tokenResult.clientToken) throw new Error("PayPal did not issue a secure checkout token.");
+    if (!clientId) throw new Error("PayPal checkout is not configured. Please use the PayPal account option.");
+    if (!paypalGuestSdkPromise) paypalGuestSdkPromise = (async () => {
       if (!window.paypal?.createInstance) await new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = "https://www.paypal.com/web-sdk/v6/core";
         script.async = true;
         script.onload = resolve;
-        script.onerror = () => reject(new Error("Could not load PayPal Web SDK v6. Check your connection and try again."));
+        script.onerror = () => reject(new Error("Could not load PayPal checkout. Check your connection and try again."));
         document.head.append(script);
       });
       if (!window.paypal?.createInstance) throw new Error("PayPal Web SDK v6 did not initialize.");
-      return window.paypal.createInstance({ clientToken: tokenResult.clientToken, components: ["card-fields"], pageType: "checkout" });
-    })().catch(error => { paypalV6Promise = null; throw error; });
-    const sdk = await paypalV6Promise;
-    const eligible = await sdk.findEligibleMethods({ currencyCode: normalized });
-    if (!eligible?.isEligible("advanced_cards")) throw new Error("PayPal v6 reports that advanced debit/credit card fields are not eligible for this merchant, currency, or buyer region.");
+      return window.paypal.createInstance({ clientId, components: ["paypal-guest-payments"], pageType: "checkout", locale: "en-PH" });
+    })().catch(error => { paypalGuestSdkPromise = null; throw error; });
+    const sdk = await paypalGuestSdkPromise;
+    const options = { currencyCode: normalized };
+    if (Number.isFinite(Number(amount)) && Number(amount) > 0) options.amount = Number(amount).toFixed(2);
+    const eligible = await sdk.findEligibleMethods(options);
+    if (!eligible?.isEligible("card")) throw new Error("PayPal guest debit/credit card checkout is not available for this merchant or buyer region yet. You can still use the PayPal account subscription option.");
     return sdk;
   }
-  async function mountPayPalCardFields(sdk, mount, planKey, status) {
-    const session = sdk.createCardFieldsOneTimePaymentSession();
+  async function mountPayPalGuestCard(sdk, mount, planKey, status) {
     mount.replaceChildren();
-    const addField = (type, placeholder) => {
-      const wrap = document.createElement("div");
-      wrap.style.cssText = "height:48px;min-width:0;border:1px solid #cbd5d1;border-radius:10px;background:#fff;padding:4px 10px;box-sizing:border-box;margin:8px 0";
-      wrap.appendChild(session.createCardFieldsComponent({ type, placeholder, style: { input: { fontSize: "15px", color: "#17231f", fontFamily: "inherit", lineHeight: "24px" } } }));
-      mount.appendChild(wrap);
-    };
-    addField("number", "Card number");
-    addField("expiry", "MM/YY");
-    addField("cvv", "Security code");
-    const pay = document.createElement("button");
-    pay.type = "button"; pay.className = "secondary paypal-recurring-button";
-    pay.textContent = "Pay by debit or credit card"; pay.style.width = "100%";
-    mount.appendChild(pay);
+    const container = document.createElement("paypal-basic-card-container");
+    const pay = document.createElement("paypal-basic-card-button");
+    pay.setAttribute("aria-label", "Pay once by debit or credit card without a PayPal account");
+    container.appendChild(pay);
+    mount.appendChild(container);
+    const guestSession = await sdk.createPayPalGuestOneTimePaymentSession({
+      onApprove: async data => {
+        const orderId = String(data?.orderId || "");
+        if (!orderId) throw new Error("PayPal did not return an approved order ID.");
+        status("Payment approved. Capturing and verifying your one-time card payment…");
+        const capture = await billingApi("capture_guest_order", { orderId });
+        status(capture.message || "One-time payment confirmed. Your 30-day membership is active and will not renew.", false, true);
+      },
+      onComplete: () => {},
+      onCancel: () => { pay.disabled = false; pay.removeAttribute("disabled"); status("Card checkout was cancelled. No membership was activated."); },
+      onError: error => { pay.disabled = false; pay.removeAttribute("disabled"); status("PayPal card checkout: " + (error?.message || "Payment could not be completed."), true); },
+      onWarn: data => status(data?.message || "PayPal could not process that card. Check the details or try another card.", true),
+    });
     pay.addEventListener("click", async () => {
-      pay.disabled = true; status("Creating your secure one-time card order…");
+      pay.disabled = true;
+      pay.setAttribute("disabled", "");
+      status("Opening PayPal's secure guest card checkout…");
       try {
-        const order = await billingApi("create_guest_order", { planKey });
-        if (!order.orderId) throw new Error("PayPal did not create a one-time payment order.");
-        const result = await session.submit(order.orderId);
-        if (result.state === "succeeded") {
-          status("Card authentication succeeded. Capturing and verifying payment…");
-          const capture = await billingApi("capture_guest_order", { orderId: result.data?.orderId || order.orderId });
-          status(capture.message || "One-time payment confirmed. Your 30-day membership is active and will not renew.", false, true);
-        } else if (result.state === "canceled") status("Card authentication was cancelled. No membership was activated.");
-        else if (result.state === "failed") throw new Error(result.data?.message || "PayPal could not process this card. Check the details or try another card.");
-        else throw new Error("PayPal returned an unrecognized card-payment result. No membership was activated.");
-      } catch (error) { status("Card checkout: " + (error.message || "Payment could not be completed."), true); }
-      finally { pay.disabled = false; }
+        const orderPromise = billingApi("create_guest_order", { planKey }).then(order => {
+          if (!order.orderId) throw new Error("PayPal did not create a one-time payment order.");
+          return { orderId: order.orderId };
+        });
+        await guestSession.start({ presentationMode: "auto", targetElement: pay }, orderPromise);
+      } catch (error) {
+        pay.disabled = false;
+        pay.removeAttribute("disabled");
+        status("Card checkout: " + (error.message || "Payment could not be completed."), true);
+      }
     });
   }
   function saveSharedSession(value) { sharedSession = value; localStorage.setItem(SESSION_KEY, JSON.stringify({ access_token:value.access_token, refresh_token:value.refresh_token, expires_at:value.expires_at || Math.floor(Date.now()/1000) + Number(value.expires_in || 3600) })); }
@@ -120,7 +125,7 @@
       price.textContent = new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount));
       const interval = document.createElement("p");
       interval.className = "muted";
-      interval.textContent = "PayPal account: recurring monthly subscription · Guest card: one-time payment for 30 days";
+      interval.textContent = "PayPal account: recurring monthly subscription · Guest debit/credit card: one-time PayPal guest payment for 30 days";
       const warning = document.createElement("p");
       warning.className = "small";
       warning.textContent = "Choose your payment type: PayPal account renews monthly; guest debit/credit card is charged once for 30 days.";
@@ -159,8 +164,8 @@
             }
           });
           try {
-            const sdk = await loadPayPalV6(plan.currency || "PHP");
-            await mountPayPalCardFields(sdk, cardMount, plan.plan_key, status);
+            const sdk = await loadPayPalGuestSdk(data.paypalClientId, plan.currency || "PHP", plan.amount);
+            await mountPayPalGuestCard(sdk, cardMount, plan.plan_key, status);
           } catch (cardError) {
             const cardNotice = document.createElement("p");
             cardNotice.className = "small muted";
