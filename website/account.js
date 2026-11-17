@@ -14,25 +14,46 @@ function setTab(name){["overview","profile","security","membership"].forEach(t=>
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmtDate(v){if(!v)return "Not provided";const d=new Date(v);return Number.isNaN(d.getTime())?"Not provided":d.toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric"});}
 
-let paypalSdkPromise=null,mfaCleanupTimer=null;
-function loadPayPalSdk(clientId,currency="PHP"){
+let mfaCleanupTimer=null;
+let paypalV6Promise=null;
+async function loadPayPalV6(currency="PHP"){
  const normalized=String(currency||"PHP").toUpperCase();
- if(!/^[A-Z]{3}$/.test(normalized))return Promise.reject(Error("The payment currency is invalid."));
- if(window.paypal?.Buttons){
-  const existing=document.querySelector('script[src*="paypal.com/sdk/js"]');
-  if(existing){const u=new URL(existing.src);if(u.searchParams.get("intent")==="subscription")return Promise.reject(Error("An outdated PayPal subscription checkout is loaded. Reload this page to use the corrected one-time card checkout."));}
-  return Promise.resolve(window.paypal);
- }
- if(paypalSdkPromise)return paypalSdkPromise;
- paypalSdkPromise=new Promise((resolve,reject)=>{
-  const script=document.createElement("script");
-  const params=new URLSearchParams({"client-id":clientId,currency:normalized,intent:"capture",components:"buttons","enable-funding":"card"});
-  script.src="https://www.paypal.com/sdk/js?"+params.toString();script.async=true;script.dataset.cenaiPaypalSdk="capture";
-  script.onload=()=>window.paypal?.Buttons?resolve(window.paypal):reject(Error("PayPal checkout components did not initialize."));
-  script.onerror=()=>{paypalSdkPromise=null;reject(Error("Could not load PayPal checkout. Check your connection and try again."));};
-  document.head.append(script);
+ if(!/^[A-Z]{3}$/.test(normalized))throw Error("The payment currency is invalid.");
+ if(!paypalV6Promise)paypalV6Promise=(async()=>{
+  const tokenResult=await api("paypal_client_token");
+  if(!tokenResult.clientToken)throw Error("PayPal did not issue a secure checkout token.");
+  if(!window.paypal?.createInstance)await new Promise((resolve,reject)=>{
+   const script=document.createElement("script");script.src="https://www.paypal.com/web-sdk/v6/core";script.async=true;
+   script.onload=resolve;script.onerror=()=>reject(Error("Could not load PayPal Web SDK v6. Check your connection and try again."));
+   document.head.append(script);
+  });
+  if(!window.paypal?.createInstance)throw Error("PayPal Web SDK v6 did not initialize.");
+  return window.paypal.createInstance({clientToken:tokenResult.clientToken,components:["card-fields"],pageType:"checkout"});
+ })().catch(error=>{paypalV6Promise=null;throw error;});
+ const sdk=await paypalV6Promise;
+ const eligible=await sdk.findEligibleMethods({currencyCode:normalized});
+ if(!eligible?.isEligible("advanced_cards"))throw Error("PayPal v6 reports that advanced debit/credit card fields are not eligible for this merchant, currency, or buyer region.");
+ return sdk;
+}
+async function mountPayPalCardFields(sdk,mount,planKey,currency,onStatus,onSuccess){
+ const session=sdk.createCardFieldsOneTimePaymentSession();
+ const makeField=(type,placeholder)=>{const wrap=document.createElement("div");wrap.style.cssText="height:48px;min-width:0;border:1px solid #cbd5d1;border-radius:9px;background:#fff;padding:4px 10px;box-sizing:border-box;margin:7px 0";const field=session.createCardFieldsComponent({type,placeholder,style:{input:{fontSize:"15px",color:"#17231f",fontFamily:"inherit",lineHeight:"24px"}}});wrap.appendChild(field);mount.appendChild(wrap);};
+ mount.replaceChildren();makeField("number","Card number");makeField("expiry","MM/YY");makeField("cvv","Security code");
+ const pay=document.createElement("button");pay.type="button";pay.className="account-btn";pay.textContent="Pay by debit or credit card";pay.style.width="100%";mount.appendChild(pay);
+ pay.addEventListener("click",async()=>{pay.disabled=true;onStatus("Creating your secure one-time card order…");
+  try{
+   const order=await api("create_guest_order",{planKey});if(!order.orderId)throw Error("PayPal did not create a one-time payment order.");
+   const result=await session.submit(order.orderId);
+   if(result.state==="succeeded"){
+    onStatus("Card authentication succeeded. Capturing and verifying payment…");
+    const captured=await api("capture_guest_order",{orderId:result.data?.orderId||order.orderId});
+    onSuccess(captured);
+   }else if(result.state==="canceled"){onStatus("Card authentication was cancelled. No membership was activated.");}
+   else if(result.state==="failed"){throw Error(result.data?.message||"PayPal could not process this card. Check the details or try another card.");}
+   else{throw Error("PayPal returned an unrecognized card-payment result. No membership was activated.");}
+  }catch(error){onStatus("Card checkout: "+(error?.message||"Payment could not be completed."),true);}
+  finally{pay.disabled=false;}
  });
- return paypalSdkPromise;
 }
 function schedulePendingMfaCleanup(factor){if(mfaCleanupTimer)clearTimeout(mfaCleanupTimer);if(!factor?.id)return;const created=Date.parse(factor.created_at||"");const started=Number.isFinite(created)?created:Date.now();const remaining=Math.max(1000,10*60*1000-(Date.now()-started));mfaCleanupTimer=setTimeout(async()=>{if(!pendingMfaFactor||pendingMfaFactor.id!==factor.id||mfaFactor?.status==="verified")return;try{await auth("factors/"+encodeURIComponent(factor.id),undefined,"DELETE",session.access_token);pendingMfaFactor=null;mfaFactor=null;$("mfa-setup").classList.add("account-hidden");$("mfa-enroll").classList.remove("account-hidden");$("mfa-code").value="";$("mfa-qr").replaceChildren();note("mfa-status","CenAI automatically cleared an unfinished authenticator setup after 10 minutes. You can start again whenever you're ready.");$("security-summary").textContent="No verified authenticator is enrolled. An expired setup was automatically cleared.";}catch(e){note("mfa-status","Automatic cleanup will retry when you next open account security: "+e.message,true);}},remaining);}
 async function loadBilling(){
@@ -71,20 +92,12 @@ async function loadBilling(){
     catch(e){note("global-status",e.message||"Could not start the PayPal subscription.",true);wallet.disabled=false;}
    });
    try{
-    if(!publicPlans.paypalClientId)throw Error("PayPal checkout is not fully configured.");
-    const paypal=await loadPayPalSdk(publicPlans.paypalClientId,p.currency||"PHP");
-    if(!paypal.FUNDING?.CARD)throw Error("Guest card checkout is not available for this merchant.");
-    const buttons=paypal.Buttons({
-     fundingSource:paypal.FUNDING.CARD,
-     style:{shape:"rect",color:"black",layout:"vertical",label:"pay",tagline:false},
-     createOrder:async()=>{if(!user?.id)throw Error("Your CenAI session expired. Sign in again.");const result=await api("create_guest_order",{planKey:p.plan_key});if(!result.orderId)throw Error("PayPal did not create a one-time payment order.");return result.orderId;},
-     onApprove:async approval=>{note("global-status","Card approved. Capturing and verifying the one-time payment…");try{const result=await api("capture_guest_order",{orderId:approval.orderID});note("global-status",result.message||"Payment confirmed. Your 30-day access is active and will not renew.",false);await loadBilling();}catch(e){note("global-status","PayPal approval was received, but capture could not be verified: "+e.message+". Membership was not activated.",true);}},
-     onCancel:()=>note("global-status","Card checkout cancelled. No payment or membership was recorded."),
-     onError:e=>note("global-status","Guest card checkout error: "+(e?.message||"PayPal could not complete the payment."),true)
-    });
-    if(buttons.isEligible())await buttons.render(cardMount);
-    else cardMount.textContent="Guest debit/credit card checkout is not available for this PayPal merchant or buyer region. Use the PayPal account option instead.";
-   }catch(e){cardMount.textContent=e.message||"Guest card checkout could not be initialized.";}
+    if(!user?.id)throw Error("Your CenAI session expired. Sign in again.");
+    const sdk=await loadPayPalV6(p.currency||"PHP");
+    await mountPayPalCardFields(sdk,cardMount,p.plan_key,p.currency||"PHP",
+     (message,bad=false)=>note("global-status",message,bad),
+     async result=>{note("global-status",result.message||"Payment confirmed. Your 30-day access is active and will not renew.",false);await loadBilling();});
+   }catch(e){cardMount.textContent=e.message||"PayPal v6 card checkout could not be initialized.";}
   }
  }catch(e){note("global-status","Membership could not be loaded: "+e.message,true);$("member-state").textContent="Unavailable";}
 }
