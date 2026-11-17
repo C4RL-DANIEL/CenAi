@@ -348,7 +348,22 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
   const subscriptionId = String(row.provider_subscription_id || "");
   if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return "INVALID";
   const token = await accessToken();
-  const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+  let detail: Record<string, any>;
+  try {
+    detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // PayPal can return RESOURCE_NOT_FOUND for stale IDs that no longer exist
+    // in the merchant account. Close the local attempt and stop retrying it.
+    if (/HTTP 404.*(?:INVALID_RESOURCE_ID|RESOURCE_NOT_FOUND)/i.test(message)) {
+      await db.from("billing_checkout_attempts").update({
+        status: "EXPIRED", updated_at: new Date().toISOString()
+      }).eq("provider_subscription_id", subscriptionId);
+      console.warn("PayPal checkout resource no longer exists; local attempt expired", subscriptionId);
+      return "EXPIRED";
+    }
+    throw error;
+  }
   if (String(detail.custom_id || "") !== userId) throw new Error("PayPal checkout ownership verification failed.");
   const status = String(detail.status || "UNKNOWN");
   const lastPaymentAmount = Number(detail.billing_info?.last_payment?.amount?.value || 0);
@@ -372,13 +387,22 @@ async function settleCheckoutAttempt(userId: string, row: Record<string, any>, f
     await db.from("billing_checkout_attempts").update({ status: "APPROVED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
   }
   const expired = row.expires_at && Date.parse(String(row.expires_at)) <= Date.now();
-  if ((status === "APPROVAL_PENDING" || status === "APPROVED" || status === "ACTIVE") && (forceCancel || expired)) {
+  // An approval-pending subscription has not been activated by the buyer.
+  // Do not call the cancellation endpoint for it: PayPal responds with
+  // INVALID_RESOURCE_ID in this state. Expire it locally and stop retries.
+  if (status === "APPROVAL_PENDING" && (forceCancel || expired)) {
+    await db.from("billing_checkout_attempts").update({
+      status: "EXPIRED", updated_at: new Date().toISOString()
+    }).eq("provider_subscription_id", subscriptionId);
+    return "EXPIRED";
+  }
+  if ((status === "APPROVED" || status === "ACTIVE") && (forceCancel || expired)) {
     try {
       await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason: "CenAI checkout was not completed before its expiry." });
       await db.from("billing_checkout_attempts").update({ status: "CANCELLED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
       return "CANCELLED";
     } catch (error) {
-      console.error("PayPal refused cancellation of an unapproved checkout", subscriptionId, error instanceof Error ? error.message : "unknown");
+      console.error("PayPal could not cancel an approved or active unpaid checkout", subscriptionId, error instanceof Error ? error.message : "unknown");
       await db.from("billing_checkout_attempts").update({ status: "EXPIRED", updated_at: new Date().toISOString() }).eq("provider_subscription_id", subscriptionId);
       return "EXPIRED";
     }
