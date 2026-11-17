@@ -863,7 +863,12 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
                             listOf("AURORA" to "CenAI Aurora · Glass", "DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = {\n                                    uiStyle = key\n                                    themeExpanded = false\n                                    onUiStyleChange(key)\n                                    vault.put("ui_style", key)\n                                })
+                                DropdownMenuItem(text = { Text(label) }, onClick = {
+                                    uiStyle = key
+                                    themeExpanded = false
+                                    onUiStyleChange(key)
+                                    vault.put("ui_style", key)
+                                })
                             }
                         }
                     }
