@@ -223,7 +223,7 @@
   async function loadBillingPlans() {
     const data = await paypalApi("list_plans");
     $("billing-plan-content").innerHTML = (data.plans || []).map(p =>
-      '<div class="item"><div><b>' + esc(p.display_name) + ' · ' + esc(p.plan_key) + '</b><small>' +
+      '<div class="item"><div><b>' + esc(p.display_name) + '</b><small>' +
       esc(p.amount) + ' ' + esc(p.currency) + ' / ' + esc(p.interval_count) + ' ' + esc(p.interval_unit) +
       ' · PayPal plan ' + esc(p.paypal_plan_id || "not created") + '</small></div><span class="pill">' +
       (p.enabled ? "Live · enabled" : "disabled") + '</span></div>'
