@@ -75,19 +75,18 @@
         mfaFactorId = verified[0].id; mfaMode = "challenge";
         $("mfa-instructions").textContent = "Enter the current six-digit code from your authenticator app to continue.";
       } else {
-        const enrolled = await authMfa("factors", "POST", { factor_type: "totp", friendly_name: "CenAI Administrator" });
-        mfaFactorId = enrolled.id; mfaMode = "enroll";
-        if (!mfaFactorId) throw new Error("Supabase did not return an authenticator factor.");
-        const qr = enrolled.totp?.qr_code || "";
-        if (qr) {
-          $("mfa-qr").src = qr.startsWith("data:") ? qr : "data:image/svg+xml;charset=utf-8," + encodeURIComponent(qr);
-          $("mfa-qr").hidden = false;
-        }
-        if (enrolled.totp?.secret) {
-          $("mfa-secret").textContent = enrolled.totp.secret;
-          $("mfa-secret-wrap").hidden = false;
-        }
-        $("mfa-instructions").textContent = "Scan this QR code with an authenticator app, then enter the generated six-digit code below. Save the secret securely if you need manual setup.";
+        mfaFactorId = ""; mfaMode = "email";
+        $("mfa-instructions").textContent = "No authenticator is enrolled. We’ll send a one-time verification code to your administrator email.";
+        $("mfa-verify").disabled = true;
+        $("mfa-status").textContent = "Sending email verification code…";
+        const sent = await fetch("/api/email-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken },
+          body: JSON.stringify({ action: "admin_send" })
+        });
+        const sentData = await sent.json().catch(() => ({}));
+        if (!sent.ok) throw new Error(sentData.error || "Could not send the email verification code.");
+        $("mfa-status").textContent = sentData.message || "Verification code sent. Check your email.";
       }
       $("mfa-status").textContent = "";
     } catch (error) {
@@ -96,9 +95,18 @@
   }
   async function verifyMfa() {
     const code = $("mfa-code").value.trim();
-    if (!/^\d{6}$/.test(code) || !mfaFactorId) { $("mfa-status").textContent = "Enter a valid six-digit code."; return; }
-    $("mfa-verify").disabled = true; $("mfa-status").textContent = "Verifying authenticator…";
+    if (!/^\d{6}$/.test(code) || (mfaMode !== "email" && !mfaFactorId)) { $("mfa-status").textContent = "Enter a valid six-digit code."; return; }
+    $("mfa-verify").disabled = true; $("mfa-status").textContent = mfaMode === "email" ? "Verifying email code…" : "Verifying authenticator…";
     try {
+      if (mfaMode === "email") {
+        const response = await fetch("/api/email-otp", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken }, body: JSON.stringify({ action: "admin_verify", code }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.verified !== true) throw new Error(result.error || "Email verification failed.");
+        $("mfa-gate").hidden = true; $("dashboard").hidden = false; $("mfa-code").value = "";
+        status("Email OTP verified · signed in as " + userEmail + ".");
+        await load("overview");
+        return;
+      }
       const challenge = await authMfa("factors/" + encodeURIComponent(mfaFactorId) + "/challenge", "POST", {});
       const verified = await authMfa("factors/" + encodeURIComponent(mfaFactorId) + "/verify", "POST", { challenge_id: challenge.id, code });
       if (verified.access_token) accessToken = verified.access_token;
