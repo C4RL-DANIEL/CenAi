@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261117-cenai-live-billing-5";
+const STATIC_CACHE_VERSION = "20261117-cenai-email-mfa-checkout-timeout-6";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
@@ -171,13 +171,13 @@ async function emailOtp(request, env) {
     const action = String(body.action || "");
     const email = String(body.email || user.email).trim().toLowerCase();
     if (email !== String(user.email).toLowerCase()) return json(403, { error: "You can only verify the email on your signed-in account" });
-    if (action === "send") {
+    if (action === "send" || action === "admin_send") {
       const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
       const digest = await otpDigest(env.EMAIL_OTP_SECRET, user.id, email, code);
       const rpc = await fetch(base + "/functions/v1/cenai-email-otp", {
         method: "POST",
         headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "issue", email, otpHash: digest })
+        body: JSON.stringify({ action: action === "admin_send" ? "issue_admin" : "issue", email, otpHash: digest })
       });
       if (!rpc.ok) {
         const error = await rpc.json().catch(() => ({}));
@@ -186,14 +186,14 @@ async function emailOtp(request, env) {
       await sendGmailOtp(env, email, code);
       return json(200, { ok: true, message: "Verification code sent. Check your inbox." });
     }
-    if (action === "verify") {
+    if (action === "verify" || action === "admin_verify") {
       const code = String(body.code || "").trim();
       if (!/^\d{6}$/.test(code)) return json(400, { error: "Enter the six-digit verification code" });
       const digest = await otpDigest(env.EMAIL_OTP_SECRET, user.id, email, code);
       const rpc = await fetch(base + "/functions/v1/cenai-email-otp", {
         method: "POST",
         headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", email, otpHash: digest })
+        body: JSON.stringify({ action: action === "admin_verify" ? "verify_admin" : "verify", email, otpHash: digest })
       });
       const result = rpc.ok ? await rpc.json().catch(() => ({})) : {};
       if (!rpc.ok || result.verified !== true) return json(rpc.status || 400, { error: result.error || "Code is invalid, expired, or already used" });
