@@ -33,7 +33,7 @@ async function loadPayPalGuestSdk(clientId,currency="PHP",amount){
  const options={currencyCode:normalized};
  if(Number.isFinite(Number(amount))&&Number(amount)>0)options.amount=Number(amount).toFixed(2);
  const eligible=await sdk.findEligibleMethods(options);
- if(!eligible?.isEligible("card"))throw Error("PayPal guest card checkout is unavailable for this payment. Check that your PayPal Business account is verified, your email is confirmed, and Account Settings → Website payments → PayPal account optional is ON. PayPal can still restrict guest checkout for individual buyers based on risk or region. You can use the PayPal account option instead.");
+ if(!eligible?.isEligible("card"))throw Error("PayPal guest card checkout is not eligible for this buyer or transaction. Availability can depend on the merchant account, buyer country, currency, card network, and PayPal risk checks. You can still choose PayPal account checkout.");
  return sdk;
 }
 async function mountPayPalGuestCard(sdk,mount,planKey,onStatus,onSuccess){
