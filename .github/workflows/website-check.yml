@@ -49,8 +49,9 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          deno check --no-lock supabase/functions/cenai-paypal-billing/index.ts
-          deno check --no-lock supabase/functions/cenai-control-plane/index.ts
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-paypal-billing cenai-public-api cenai-telemetry; do
+            deno check --no-lock "supabase/functions/$function/index.ts"
+          done
 
       - name: Verify Cloudflare API and recovery routes
         run: |
@@ -65,8 +66,7 @@ jobs:
           grep -q 'site_pages_updated_by_idx' supabase/migrations/20261118134037_index_foreign_keys_and_dedupe_site_page_policy.sql
           grep -q 'customer-refund-form' website/account.html
           grep -q 'refund-requests-content' website/admin/index.html
-          node --check website/account.js
-          node --check website/admin/admin.js
+          for script in website/*.js website/api/*.js website/api/v1/*.js website/admin/*.js; do node --check "$script"; done
           grep -q 'cenai-ai-quota' website/worker.js
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q 'api/site-pages' website/worker.js
