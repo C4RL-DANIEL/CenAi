@@ -89,6 +89,11 @@ async function sendGmailMessage(env, to, subject, text, html) {
   const writer = socket.writable.getWriter();
   const decoder = new TextDecoder();
   let buffer = "";
+  let stage = "connect";
+  const withTimeout = (promise, label) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Gmail SMTP timed out during " + label)), 8000))
+  ]);
   async function readReply() {
     for (;;) {
       const end = buffer.indexOf("\n");
@@ -98,29 +103,30 @@ async function sendGmailMessage(env, to, subject, text, html) {
         if (/^\d{3} /.test(line)) return line;
         continue;
       }
-      const chunk = await reader.read();
-      if (chunk.done) throw new Error("Gmail SMTP connection closed unexpectedly");
+      const chunk = await withTimeout(reader.read(), stage);
+      if (chunk.done) throw new Error("Gmail SMTP connection closed during " + stage);
       buffer += decoder.decode(chunk.value, { stream: true });
     }
   }
   async function expect(codes) {
     const reply = await readReply();
-    if (!codes.some((codeValue) => reply.startsWith(String(codeValue)))) throw new Error("Gmail SMTP rejected a command: " + reply.slice(0, 120));
+    if (!codes.some((codeValue) => reply.startsWith(String(codeValue)))) throw new Error("Gmail SMTP rejected " + stage + " (" + reply.slice(0, 120) + ")");
     return reply;
   }
-  async function command(value, codes) {
-    await writer.write(new TextEncoder().encode(value + "\r\n"));
+  async function command(value, codes, nextStage) {
+    stage = nextStage || stage;
+    await withTimeout(writer.write(new TextEncoder().encode(value + "\r\n")), stage + " write");
     return expect(codes);
   }
   try {
     await expect([220]);
-    await command("EHLO cenai.app", [250]);
-    await command("AUTH LOGIN", [334]);
-    await command(base64(env.EMAIL_USER), [334]);
-    await command(base64(env.EMAIL_PASS), [235]);
-    await command("MAIL FROM:<" + env.EMAIL_USER + ">", [250]);
-    await command("RCPT TO:<" + to + ">", [250, 251]);
-    await command("DATA", [354]);
+    await command("EHLO cenai.app", [250], "EHLO");
+    await command("AUTH LOGIN", [334], "authentication");
+    await command(base64(env.EMAIL_USER), [334], "username authentication");
+    await command(base64(env.EMAIL_PASS), [235], "password authentication");
+    await command("MAIL FROM:<" + env.EMAIL_USER + ">", [250], "sender validation");
+    await command("RCPT TO:<" + to + ">", [250, 251], "recipient validation");
+    await command("DATA", [354], "message transfer");
     const boundary = "cenai_" + crypto.randomUUID().replace(/-/g, "");
     const message = [
       "From: CenAI Security <" + env.EMAIL_USER + ">",
@@ -142,13 +148,20 @@ async function sendGmailMessage(env, to, subject, text, html) {
       "--" + boundary + "--",
       "."
     ].join("\r\n").replace(/\r?\n\./g, "\r\n..");
-    await writer.write(new TextEncoder().encode(message + "\r\n"));
+    stage = "message acceptance";
+    await withTimeout(writer.write(new TextEncoder().encode(message + "\r\n")), "message write");
     await expect([250]);
-    await command("QUIT", [221]);
+    console.log("CenAI administrator email accepted by Gmail SMTP");
+    // Gmail has accepted the message at this point. Do not block delivery confirmation
+    // on waiting for the optional QUIT reply.
+    try { await writer.write(new TextEncoder().encode("QUIT\r\n")); } catch {}
+  } catch (error) {
+    console.error("CenAI Gmail SMTP delivery failed at", stage, error instanceof Error ? error.message : "unknown error");
+    throw error;
   } finally {
-    try { await writer.close(); } catch {}
-    try { await reader.cancel(); } catch {}
     try { socket.close(); } catch {}
+    try { reader.releaseLock(); } catch {}
+    try { writer.releaseLock(); } catch {}
   }
 }
 
