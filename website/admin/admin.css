@@ -245,3 +245,28 @@ button:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 9px 22px rgb
 input,textarea,select{background:rgba(246,246,239,.82);border-color:rgba(215,222,210,.95)}
 .secure,.pill{background:linear-gradient(135deg,rgba(238,243,231,.92),rgba(217,232,198,.62));box-shadow:inset 0 1px 0 rgba(255,255,255,.85)}
 @media(prefers-reduced-motion:reduce){button,.toolbar select{transition:none}}
+
+
+/* Administrator MFA — focused, branded verification experience */
+.mfa-card{position:relative;overflow:hidden;border-color:#d6dfd0;background:linear-gradient(155deg,rgba(255,255,255,.97),rgba(248,249,241,.96));box-shadow:0 26px 80px rgba(27,43,35,.12)}
+.mfa-card:before{content:"";position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,#1b2b23 0%,#75934c 58%,#a6c94b 100%)}
+.mfa-emblem{display:grid;place-items:center;width:48px;height:48px;margin:0 0 22px;border-radius:15px;background:#1b2b23;color:#b9d47b;font:800 24px 'Space Grotesk',sans-serif;box-shadow:0 8px 18px rgba(27,43,35,.16)}
+.mfa-card .eyebrow{margin-bottom:9px}
+.mfa-card h1{font-size:clamp(31px,5vw,42px);margin:0 0 11px}
+.mfa-card #mfa-instructions{margin:0 0 18px;font-size:13px;line-height:1.7}
+.mfa-context{display:flex;align-items:center;gap:9px;margin:0 0 22px;padding:10px 12px;border:1px solid #e0e6d9;border-radius:9px;background:#f4f6ee;color:#65765a;font:600 9px 'DM Mono',monospace;letter-spacing:.09em}
+.mfa-context-dot{width:7px;height:7px;border-radius:50%;background:#8eae4a;box-shadow:0 0 0 3px #8eae4a22}
+.mfa-context-divider{height:12px;width:1px;background:#d6dfce;margin:0 2px}
+.mfa-code-label{display:block;margin:0 0 14px;color:#405447;font-size:11px}
+.mfa-code-input{height:58px!important;text-align:center;font:700 25px 'DM Mono',monospace!important;letter-spacing:.42em!important;padding-left:calc(.42em + 13px)!important;background:#fff!important;border-color:#cfdac9!important;border-radius:12px!important}
+.mfa-code-input::placeholder{color:#c1cbbd;letter-spacing:.42em}
+.mfa-code-input:focus{border-color:#78965e!important;box-shadow:0 0 0 4px rgba(142,174,74,.16)!important}
+.mfa-verify{width:100%;min-height:48px!important;margin:3px 0 8px;background:#1b2b23!important;letter-spacing:.04em!important;text-transform:none!important;font-size:12px!important}
+.mfa-verify:hover{background:#315b48!important}
+.mfa-fallback,.mfa-signout{width:100%;margin-top:7px;text-transform:none!important;letter-spacing:.02em!important;font-size:11px!important}
+.mfa-status{margin:12px 0 0;padding:10px 12px;border-radius:9px;background:#f2f4ec;color:#61715a;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.mfa-status:empty{display:none}
+.mfa-security-note{display:flex;gap:10px;align-items:flex-start;margin-top:17px;padding:13px 14px;border:1px solid #e3e8dc;border-radius:10px;background:#f7f8f2}
+.mfa-security-note>span{flex:0 0 auto;color:#79964e;font-size:15px}
+.mfa-security-note p{margin:0;color:#788375;font-size:10px;line-height:1.65}
+@media(max-width:760px){.mfa-card{padding:23px}.mfa-context{font-size:8px}.mfa-code-input{height:55px!important;font-size:23px!important}}
