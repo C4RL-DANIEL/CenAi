@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261118-paypal-membership-release-1";
+const STATIC_CACHE_VERSION = "20261118-customer-refund-center-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
