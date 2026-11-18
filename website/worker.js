@@ -90,10 +90,13 @@ async function sendGmailMessage(env, to, subject, text, html) {
   const decoder = new TextDecoder();
   let buffer = "";
   let stage = "connect";
-  const withTimeout = (promise, label) => Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Gmail SMTP timed out during " + label)), 8000))
-  ]);
+  const withTimeout = (promise, label) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Gmail SMTP timed out during " + label)), 8000);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
   async function readReply() {
     for (;;) {
       const end = buffer.indexOf("\n");
