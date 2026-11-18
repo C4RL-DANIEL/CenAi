@@ -30,6 +30,7 @@ const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
   "PAYMENT.SALE.COMPLETED",
   "PAYMENT.SALE.REFUNDED",
   "PAYMENT.SALE.REVERSED",
+  "PAYMENT.CAPTURE.PENDING",
   "PAYMENT.CAPTURE.COMPLETED",
   "PAYMENT.CAPTURE.REFUNDED",
   "PAYMENT.CAPTURE.REVERSED",
@@ -247,48 +248,82 @@ async function handleWebhook(event: Record<string, any>) {
   const resource = event.resource || {};
   const eventType = String(event.event_type || "");
   if (eventType.startsWith("PAYMENT.CAPTURE.")) {
-    const orderId = String(resource.supplementary_data?.related_ids?.order_id || resource.related_ids?.order_id || "");
-    if (!orderId) return;
-    const { data: payment, error: paymentError } = await db.from("billing_one_time_payments")
-      .select("user_id,provider_order_id,plan_key,amount,currency,status,paid_at,access_expires_at")
-      .eq("provider_order_id", orderId).maybeSingle();
+    let capture = resource;
+    let captureId = String(resource.id || "");
+    if (eventType === "PAYMENT.CAPTURE.REFUNDED") {
+      // Refund events identify the refund, not the original capture. Resolve the
+      // parent capture before looking up the CenAI order or revoking entitlement.
+      const upHref = (Array.isArray(resource.links) ? resource.links : [])
+        .find((link: any) => String(link.rel || "") === "up")?.href || "";
+      const match = String(upHref).match(/\/v2\/payments\/captures\/([^/?]+)/i);
+      captureId = String(match?.[1] || resource.capture_id || "");
+      if (!captureId) throw new Error("PayPal refund webhook did not identify its parent capture.");
+      const token = await accessToken();
+      capture = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId), "GET", token);
+    }
+    const orderId = String(capture.supplementary_data?.related_ids?.order_id ||
+      capture.related_ids?.order_id || resource.supplementary_data?.related_ids?.order_id || "");
+    let paymentQuery = db.from("billing_one_time_payments")
+      .select("user_id,provider_order_id,provider_capture_id,plan_key,amount,currency,status,paid_at,access_expires_at");
+    if (orderId) paymentQuery = paymentQuery.eq("provider_order_id", orderId);
+    else if (captureId) paymentQuery = paymentQuery.eq("provider_capture_id", captureId);
+    else return;
+    const { data: payment, error: paymentError } = await paymentQuery.maybeSingle();
     if (paymentError) throw paymentError;
     if (!payment) return;
-    const captureAmount = resource.amount || {};
-    if (captureAmount.value && (Number(captureAmount.value) !== Number(payment.amount) ||
-        String(captureAmount.currency_code || "").toUpperCase() !== String(payment.currency).toUpperCase())) {
-      throw new Error("PayPal capture webhook amount does not match the CenAI order.");
-    }
+    const resolvedOrderId = String(payment.provider_order_id || orderId);
     if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+      const captureAmount = resource.amount || {};
+      if (!captureAmount.value || !captureAmount.currency_code ||
+          Number(captureAmount.value) !== Number(payment.amount) ||
+          String(captureAmount.currency_code).toUpperCase() !== String(payment.currency).toUpperCase()) {
+        throw new Error("PayPal capture webhook amount does not match the CenAI order.");
+      }
       if (["REFUNDED", "REVERSED", "EXPIRED"].includes(String(payment.status))) return;
       const paidAt = resource.create_time && !Number.isNaN(Date.parse(String(resource.create_time)))
         ? new Date(String(resource.create_time)).toISOString() : new Date().toISOString();
       const expiresAt = payment.access_expires_at || new Date(Date.parse(paidAt) + 30 * 24 * 60 * 60 * 1000).toISOString();
       const { error } = await db.from("billing_one_time_payments").update({
         status: "COMPLETED", paid_at: payment.paid_at || paidAt, access_expires_at: expiresAt,
-        provider_capture_id: String(resource.id || ""), updated_at: new Date().toISOString(),
-      }).eq("provider_order_id", orderId);
+        provider_capture_id: captureId, updated_at: new Date().toISOString(),
+      }).eq("provider_order_id", resolvedOrderId);
       if (error) throw error;
       const { error: entitlementError } = await db.from("billing_subscriptions").upsert({
-        user_id: payment.user_id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + orderId,
+        user_id: payment.user_id, provider: "paypal", provider_subscription_id: "ONE_TIME:" + resolvedOrderId,
         plan_key: payment.plan_key, status: "ACTIVE", current_period_end: expiresAt,
         cancel_at_period_end: false, updated_at: new Date().toISOString(),
       }, { onConflict: "provider_subscription_id" });
       if (entitlementError) throw entitlementError;
-    } else if (eventType === "PAYMENT.CAPTURE.REFUNDED" || eventType === "PAYMENT.CAPTURE.REVERSED") {
-      const nextStatus = eventType.endsWith("REFUNDED") ? "REFUNDED" : "REVERSED";
-      const { error } = await db.from("billing_one_time_payments").update({ status: nextStatus, updated_at: new Date().toISOString() })
-        .eq("provider_order_id", orderId);
+    } else if (eventType === "PAYMENT.CAPTURE.REFUNDED") {
+      const captureStatus = String(capture.status || "").toUpperCase();
+      if (captureStatus === "PARTIALLY_REFUNDED") {
+        console.info("Partial PayPal card refund recorded; CenAI membership remains active", JSON.stringify({ captureId, orderId: resolvedOrderId }));
+        return;
+      }
+      if (captureStatus !== "REFUNDED") {
+        throw new Error("PayPal refund event could not be reconciled to a fully refunded capture.");
+      }
+      const { error } = await db.from("billing_one_time_payments").update({ status: "REFUNDED", updated_at: new Date().toISOString() })
+        .eq("provider_order_id", resolvedOrderId);
       if (error) throw error;
       const { error: entitlementError } = await db.from("billing_subscriptions").update({
-        status: nextStatus, cancel_at_period_end: false, updated_at: new Date().toISOString(),
-      }).eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + orderId).eq("user_id", payment.user_id);
+        status: "REFUNDED", cancel_at_period_end: false, updated_at: new Date().toISOString(),
+      }).eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + resolvedOrderId).eq("user_id", payment.user_id);
+      if (entitlementError) throw entitlementError;
+    } else if (eventType === "PAYMENT.CAPTURE.REVERSED") {
+      const { error } = await db.from("billing_one_time_payments").update({ status: "REVERSED", updated_at: new Date().toISOString() })
+        .eq("provider_order_id", resolvedOrderId);
+      if (error) throw error;
+      const { error: entitlementError } = await db.from("billing_subscriptions").update({
+        status: "REVERSED", cancel_at_period_end: false, updated_at: new Date().toISOString(),
+      }).eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + resolvedOrderId).eq("user_id", payment.user_id);
       if (entitlementError) throw entitlementError;
     } else if (eventType === "PAYMENT.CAPTURE.DENIED") {
       const { error } = await db.from("billing_one_time_payments").update({ status: "FAILED", updated_at: new Date().toISOString() })
-        .eq("provider_order_id", orderId).eq("status", "CREATED");
+        .eq("provider_order_id", resolvedOrderId).eq("status", "CREATED");
       if (error) throw error;
     }
+    // PAYMENT.CAPTURE.PENDING intentionally leaves the order unfulfilled.
     return;
   }
   let subscriptionId = String(resource.billing_agreement_id || resource.subscription_id || resource.id || "");
