@@ -120,6 +120,11 @@ async function billingEnabled() {
   if (error) throw error;
   return data?.enabled === true;
 }
+async function recurringBillingEnabled() {
+  const { data, error } = await db.from("admin_feature_flags").select("enabled").eq("key", "billing.recurring_enabled").maybeSingle();
+  if (error) throw error;
+  return data?.enabled === true && await billingEnabled();
+}
 
 async function activeMembershipForUser(userId: string) {
   const now = Date.now();
@@ -799,7 +804,7 @@ Deno.serve(async (req: Request) => {
         .select("plan_key,display_name,amount,currency,interval_unit,interval_count,enabled,is_test,paypal_plan_id")
         .eq("enabled", true).order("created_at");
       if (error) throw error;
-      return json(200, { plans: data || [], billingEnabled: await billingEnabled(), paypalClientId: paypalConfig().clientId });
+      return json(200, { plans: data || [], billingEnabled: await billingEnabled(), recurringBillingEnabled: await recurringBillingEnabled(), paypalClientId: paypalConfig().clientId });
     }
     if (action === "list_plans") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
@@ -909,7 +914,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create_guest_order") {
-      if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
+      if (!await recurringBillingEnabled()) return fail(503, "Recurring PayPal subscriptions are temporarily paused while activation and renewal are verified. One-time card payments remain available.");
       const existingMembership = await activeMembershipForUser(user.id);
       if (existingMembership) return fail(409, "You already have an active CenAI membership. Manage or renew it from Account → Membership after your current access expires.");
       const planKey = String(body.planKey || "live_test").trim().toLowerCase();
