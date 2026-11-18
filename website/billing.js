@@ -159,6 +159,7 @@
           walletButton.textContent = "PayPal account · " + new Intl.NumberFormat("en-PH", { style: "currency", currency: plan.currency || "PHP" }).format(Number(plan.amount)) + " / month";
           walletButton.setAttribute("aria-label", "Start recurring monthly subscription using a PayPal account");
           checkoutMount.append(cardMount, walletButton);
+          if (data.recurringBillingEnabled === true) {
           walletButton.addEventListener("click", async () => {
             walletButton.disabled = true;
             status("Creating your recurring PayPal subscription…");
@@ -173,6 +174,14 @@
               walletButton.disabled = false;
             }
           });
+          } else {
+            walletButton.disabled = true;
+            walletButton.textContent = "Recurring subscription temporarily paused";
+            const recurringNotice = document.createElement("p");
+            recurringNotice.className = "small muted";
+            recurringNotice.textContent = "Recurring PayPal checkout is paused while activation and renewal are verified. One-time card payment remains available for 30 days.";
+            checkoutMount.append(recurringNotice);
+          }
           try {
             const sdk = await loadPayPalGuestSdk(data.paypalClientId, plan.currency || "PHP", plan.amount);
             await mountPayPalGuestCard(sdk, cardMount, plan.plan_key, status);

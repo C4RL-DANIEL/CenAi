@@ -108,11 +108,13 @@ async function loadBilling(){
     continue;
    }
    if(publicPlans.billingEnabled!==true){wallet.disabled=true;wallet.textContent="Checkout temporarily unavailable";cardMount.textContent="Checkout is temporarily unavailable.";continue;}
+   if(publicPlans.recurringBillingEnabled===true){
    wallet.addEventListener("click",async()=>{
     wallet.disabled=true;note("global-status","Creating your recurring PayPal account subscription…");
     try{const result=await api("create_subscription",{planKey:p.plan_key});const approval=result.approvalUrl;let safe=false;try{const u=new URL(approval);safe=u.protocol==="https:"&&(u.hostname==="paypal.com"||u.hostname.endsWith(".paypal.com"));}catch{}if(!safe)throw Error("PayPal did not return a valid subscription approval page.");location.assign(approval);}
     catch(e){note("global-status",e.message||"Could not start the PayPal subscription.",true);wallet.disabled=false;}
    });
+   }else{wallet.disabled=true;wallet.textContent="Recurring subscription temporarily paused";termsNote.textContent="Recurring PayPal checkout is paused while activation and renewal are verified. One-time card payment remains available for 30 days.";}
    try{
     if(!user?.id)throw Error("Your CenAI session expired. Sign in again.");
     const sdk=await loadPayPalGuestSdk(publicPlans.paypalClientId,p.currency||"PHP",p.amount);
