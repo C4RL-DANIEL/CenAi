@@ -232,11 +232,19 @@
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
   }
   let memberRows = [];
-  async function loadMembers() {
-    const data = await api("members_list", { page:1, perPage:100 });
+  let memberPage = 1;
+  const memberPerPage = 100;
+  let memberHasMore = false;
+  async function loadMembers(page = memberPage) {
+    const data = await api("members_list", { page, perPage:memberPerPage });
     memberRows = data.members || [];
+    memberPage = Number(data.page || page);
+    memberHasMore = memberRows.length === memberPerPage;
     renderMembers();
-    $("members-summary").textContent = "Showing " + memberRows.length + " accounts from page 1. Membership is active only when a verified billing record is ACTIVE and its period has not expired.";
+    $("members-summary").textContent = "Page " + memberPage + " · " + memberRows.length + " accounts loaded. Search filters this page. Membership is active only when a verified billing record is ACTIVE and its period has not expired.";
+    $("members-page-label").textContent = "Page " + memberPage;
+    $("members-prev").disabled = memberPage <= 1;
+    $("members-next").disabled = !memberHasMore;
   }
   function renderMembers() {
     const query = ($("members-search")?.value || "").trim().toLowerCase();
@@ -261,6 +269,8 @@
   }
   $("members-search")?.addEventListener("input", renderMembers);
   $("members-refresh")?.addEventListener("click", () => loadMembers().catch(e => status(e.message,true)));
+  $("members-prev")?.addEventListener("click", () => loadMembers(Math.max(1, memberPage - 1)).catch(e => status(e.message,true)));
+  $("members-next")?.addEventListener("click", () => loadMembers(memberPage + 1).catch(e => status(e.message,true)));
   $("members-content")?.addEventListener("click", async e => {
     const button = e.target.closest("button[data-member-action]");
     if (!button) return;
