@@ -331,8 +331,9 @@ async function handleWebhook(event: Record<string, any>) {
     const saleId = String(resource.id || "");
     if (!saleId) throw new Error("PayPal sale refund webhook did not include its sale ID.");
     const token = await accessToken();
-    saleDetail = await paypal("/v1/payments/sale/" + encodeURIComponent(saleId), "GET", token);
-    const saleState = String(saleDetail.state || "").toLowerCase();
+    const detail = await paypal("/v1/payments/sale/" + encodeURIComponent(saleId), "GET", token);
+    saleDetail = detail;
+    const saleState = String(detail.state || "").toLowerCase();
     if (saleState === "partially_refunded") {
       console.info("Partial PayPal recurring sale refund recorded; membership remains active", JSON.stringify({ saleId }));
       return;
