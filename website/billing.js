@@ -251,7 +251,7 @@
         }
       });
     }
-    if (checkoutEnabled) status("Your available plans are ready. Review recurring charges before approving on PayPal.", false, true);
+    if (checkoutEnabled) status(data.recurringBillingEnabled === true ? "Your available plans are ready. Review recurring charges before approving on PayPal." : "Recurring PayPal subscriptions are temporarily paused while activation and renewal are verified. One-time card payments remain available.", false, true);
   }
   $("login-form").addEventListener("submit", async event => {
     event.preventDefault();
