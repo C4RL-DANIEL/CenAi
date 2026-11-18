@@ -63,6 +63,22 @@ jobs:
           grep -q 'issue_admin' website/api/email-otp.js
           grep -q 'verify_admin' website/api/email-otp.js
           grep -q 'email MFA fallback' website/admin/admin.js
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("website/worker.js", "utf8");
+          if (!source.includes('message.replace(/(^|\\\\r\\\\n)\\\\./g, "$1..") + "\\\\r\\\\n.\\\\r\\\\n"')) {
+            throw new Error("SMTP DATA must dot-stuff content but preserve the single-dot terminator");
+          }
+          if (source.includes('.replace(/\\\\r?\\\\n\\\\./g, "\\\\r\\\\n..")')) {
+            throw new Error("Legacy SMTP formatter still corrupts the DATA terminator");
+          }
+          const body = "Subject: test\\r\\n\\r\\n.first line\\r\\n..second line";
+          const formatted = body.replace(/(^|\\r\\n)\\./g, "$1..") + "\\r\\n.\\r\\n";
+          if (!formatted.endsWith("\\r\\n.\\r\\n") || formatted.endsWith("\\r\\n..\\r\\n")) {
+            throw new Error("SMTP terminator regression test failed");
+          }
+          console.log("SMTP DATA terminator regression test passed.");
+          NODE
           node --check website/api/email-otp.js
           grep -q 'recurringBillingEnabled' supabase/functions/cenai-paypal-billing/index.ts
           grep -q 'billing.recurring_enabled' supabase/migrations/20261118134515_pause_unverified_recurring_paypal.sql
