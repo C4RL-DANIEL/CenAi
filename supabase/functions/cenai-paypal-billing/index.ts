@@ -731,6 +731,59 @@ Deno.serve(async (req: Request) => {
       }
       return json(200, { clientToken: String(result.access_token), expiresIn: Number(result.expires_in || 0) });
     }
+    if (action === "list_customer_refunds") {
+      const { data: payments, error: paymentsError } = await db.from("billing_one_time_payments").select("provider_order_id,plan_key,amount,currency,status,paid_at,access_expires_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
+      if (paymentsError) throw paymentsError;
+      const { data: requests, error: requestsError } = await db.from("billing_refund_requests").select("id,provider_order_id,amount,currency,reason,details,status,decision_note,created_at,updated_at,reviewed_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
+      if (requestsError) throw requestsError;
+      return json(200, { payments: payments || [], refundRequests: requests || [] });
+    }
+    if (action === "create_customer_refund_request") {
+      const orderId = String(body.orderId || "").trim();
+      const reason = String(body.reason || "").trim();
+      const details = String(body.details || "").trim().slice(0, 2000);
+      const allowedReasons = ["Accidental purchase", "Duplicate payment", "Payment issue", "Product or access issue", "Other"];
+      if (!/^[A-Z0-9-]{8,80}$/i.test(orderId)) return fail(400, "Select a valid CenAI payment.");
+      if (!allowedReasons.includes(reason)) return fail(400, "Choose a valid refund reason.");
+      const { data: payment, error: paymentError } = await db.from("billing_one_time_payments").select("user_id,provider_order_id,amount,currency,status,paid_at,provider_capture_id").eq("provider_order_id", orderId).eq("user_id", user.id).maybeSingle();
+      if (paymentError) throw paymentError;
+      if (!payment) return fail(404, "That payment was not found on your account.");
+      if (payment.status !== "COMPLETED" || !payment.provider_capture_id) return fail(409, "Only completed one-time card payments can be submitted for a refund.");
+      const paidAt = Date.parse(String(payment.paid_at || ""));
+      if (!Number.isFinite(paidAt) || Date.now() - paidAt > 30 * 24 * 60 * 60 * 1000) return fail(409, "Refund requests must be submitted within 30 days of the payment date.");
+      const { data: existing, error: existingError } = await db.from("billing_refund_requests").select("id,status").eq("provider_order_id", orderId).maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) return fail(409, "A refund request already exists for this payment (" + String(existing.status).toLowerCase() + ").");
+      const { data: request, error: insertError } = await db.from("billing_refund_requests").insert({ user_id: user.id, customer_email: String(user.email || ""), provider_order_id: orderId, amount: payment.amount, currency: payment.currency, reason, details, status: "PENDING" }).select("id,provider_order_id,amount,currency,reason,details,status,created_at").single();
+      if (insertError) { if (String(insertError.code || "") === "23505") return fail(409, "A refund request already exists for this payment."); throw insertError; }
+      return json(201, { request, message: "Your refund request was submitted. CenAI will review it before any refund is sent to PayPal." });
+    }
+    if (action === "admin_list_refund_requests") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify your administrator identity before reviewing refund requests.");
+      const { data, error } = await db.from("billing_refund_requests").select("id,user_id,customer_email,provider_order_id,amount,currency,reason,details,status,decision_note,created_at,updated_at,reviewed_at").order("created_at", { ascending: false }).limit(100);
+      if (error) throw error;
+      return json(200, { requests: data || [] });
+    }
+    if (action === "admin_decide_refund_request") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify your administrator identity before reviewing refund requests.");
+      const requestId = String(body.requestId || "").trim();
+      const decision = String(body.decision || "").toLowerCase();
+      const note = String(body.note || "").trim().slice(0, 1000);
+      if (!/^[0-9a-f-]{36}$/i.test(requestId) || !["approve", "reject"].includes(decision)) return fail(400, "Invalid refund decision.");
+      const { data: request, error: requestError } = await db.from("billing_refund_requests").select("id,user_id,provider_order_id,status,amount,currency").eq("id", requestId).maybeSingle();
+      if (requestError) throw requestError;
+      if (!request) return fail(404, "Refund request not found.");
+      if (request.status !== "PENDING") return fail(409, "This refund request has already been reviewed.");
+      const now = new Date().toISOString(), nextStatus = decision === "approve" ? "APPROVED" : "REJECTED";
+      const { data: updated, error: updateError } = await db.from("billing_refund_requests").update({ status: nextStatus, decision_note: note, reviewed_by: user.id, reviewed_at: now, updated_at: now }).eq("id", requestId).eq("status", "PENDING").select("id,status,provider_order_id,decision_note").maybeSingle();
+      if (updateError) throw updateError;
+      if (!updated) return fail(409, "This refund request was reviewed by another administrator.");
+      const { error: auditError } = await db.from("admin_audit_logs").insert({ actor_user_id: user.id, actor_email: String(user.email || ""), action: "billing.refund_request." + decision, details: { request_id: requestId, target_user_id: request.user_id, order_id: request.provider_order_id, amount: request.amount, currency: request.currency, decision_note: note } });
+      if (auditError) console.error("Refund request decision audit write failed", auditError.message);
+      return json(200, { request: updated, auditLogged: !auditError });
+    }
     if (action === "configure_plan") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
       if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
@@ -1127,6 +1180,10 @@ Deno.serve(async (req: Request) => {
           reconciled = true;
         }
       }
+      const { error: requestSyncError } = await db.from("billing_refund_requests")
+        .update({ status: reconciled ? "COMPLETED" : "PROCESSING", updated_at: new Date().toISOString() })
+        .eq("provider_order_id", orderId).in("status", ["APPROVED", "PROCESSING"]);
+      if (requestSyncError) console.error("Refund request status sync failed", requestSyncError.message);
       const { error: auditError } = await db.from("admin_audit_logs").insert({
         actor_user_id: user.id, actor_email: String(user.email || ""),
         action: "billing.payment.full_refund",
