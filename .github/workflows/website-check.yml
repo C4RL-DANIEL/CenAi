@@ -61,7 +61,7 @@ jobs:
           grep -q 'cenai-paypal-billing' website/worker.js
           grep -q 'create_customer_refund_request' supabase/functions/cenai-paypal-billing/index.ts
           grep -q 'recurringBillingEnabled' supabase/functions/cenai-paypal-billing/index.ts
-          grep -q 'billing.recurring_enabled' supabase/migrations/20261118134300_pause_unverified_recurring_paypal.sql
+          grep -q 'billing.recurring_enabled' supabase/migrations/20261118134515_pause_unverified_recurring_paypal.sql
           grep -q 'Recurring subscription temporarily paused' website/account.js
           grep -q 'Recurring subscription temporarily paused' website/billing.js
           grep -q 'admin_decide_refund_request' supabase/functions/cenai-paypal-billing/index.ts
