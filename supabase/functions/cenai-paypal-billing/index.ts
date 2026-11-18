@@ -27,6 +27,8 @@ const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
   "BILLING.SUBSCRIPTION.SUSPENDED",
   "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
   "BILLING.SUBSCRIPTION.PAYMENT.SUCCEEDED",
+  "PAYMENT.SALE.PENDING",
+  "PAYMENT.SALE.DENIED",
   "PAYMENT.SALE.COMPLETED",
   "PAYMENT.SALE.REFUNDED",
   "PAYMENT.SALE.REVERSED",
@@ -633,19 +635,48 @@ Deno.serve(async (req: Request) => {
       if (!await verifyWebhook(req, event)) return fail(400, "Invalid PayPal webhook signature");
       const eventId = String(event.id || "");
       if (!eventId) return fail(400, "Missing PayPal webhook event ID");
-      const { data: prior, error: priorError } = await db.from("billing_webhook_events")
-        .select("event_id").eq("provider", "paypal").eq("event_id", eventId).maybeSingle();
-      if (priorError) throw priorError;
-      if (prior) return json(200, { received: true, duplicate: true });
-      await handleWebhook(event);
       const resource = event.resource || {};
-      const { error: insertError } = await db.from("billing_webhook_events").insert({
-        provider: "paypal", event_id: eventId,
+      const eventRecord = {
+        provider: "paypal",
+        event_id: eventId,
         event_type: String(event.event_type || "").slice(0,120),
-        resource_id: String(resource.id || resource.billing_agreement_id || "").slice(0,160),
-        processing_result: "signature_verified_and_handler_completed"
-      });
-      if (insertError && insertError.code !== "23505") throw insertError;
+        resource_id: String(resource.id || resource.billing_agreement_id || resource.subscription_id || "").slice(0,160),
+        processing_result: "processing",
+        processed_at: new Date().toISOString(),
+      };
+      // Claim the event before mutating billing state. The unique provider/event
+      // key prevents two simultaneous PayPal retries from fulfilling twice.
+      const { error: claimError } = await db.from("billing_webhook_events").insert(eventRecord);
+      if (claimError && claimError.code !== "23505") throw claimError;
+      if (claimError?.code === "23505") {
+        const { data: prior, error: priorError } = await db.from("billing_webhook_events")
+          .select("processing_result,processed_at").eq("provider", "paypal").eq("event_id", eventId).maybeSingle();
+        if (priorError) throw priorError;
+        if (prior?.processing_result === "signature_verified_and_handler_completed") {
+          return json(200, { received: true, duplicate: true });
+        }
+        const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data: reclaimed, error: reclaimError } = await db.from("billing_webhook_events")
+          .update({ processing_result: "processing", processed_at: new Date().toISOString() })
+          .eq("provider", "paypal").eq("event_id", eventId)
+          .or("processing_result.eq.failed,processed_at.lt." + staleBefore)
+          .select("event_id").maybeSingle();
+        if (reclaimError) throw reclaimError;
+        if (!reclaimed) return fail(503, "This PayPal event is already being processed. PayPal may retry it.");
+      }
+      try {
+        await handleWebhook(event);
+        const { error: completeError } = await db.from("billing_webhook_events")
+          .update({ processing_result: "signature_verified_and_handler_completed", processed_at: new Date().toISOString() })
+          .eq("provider", "paypal").eq("event_id", eventId);
+        if (completeError) throw completeError;
+      } catch (handlerError) {
+        const { error: markError } = await db.from("billing_webhook_events")
+          .update({ processing_result: "failed", processed_at: new Date().toISOString() })
+          .eq("provider", "paypal").eq("event_id", eventId);
+        if (markError) console.error("Could not mark PayPal webhook event as failed", eventId, markError.message);
+        throw handlerError;
+      }
       return json(200, { received: true });
     }
 
