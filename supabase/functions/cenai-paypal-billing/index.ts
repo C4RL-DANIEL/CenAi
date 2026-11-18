@@ -79,7 +79,12 @@ async function accessToken() {
   if (!response.ok || !result.access_token) throw new Error("PayPal authentication failed. Check the server-side Live API credentials.");
   return String(result.access_token);
 }
-async function paypal(path: string, method: string, token: string, body?: unknown) {
+async function stablePayPalRequestId(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  const hex = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return "cenai-" + hex.slice(0, 32);
+}
+async function paypal(path: string, method: string, token: string, body?: unknown, requestId?: string) {
   const response = await fetch(API + path, {
     signal: AbortSignal.timeout(30000),
     method,
@@ -88,7 +93,7 @@ async function paypal(path: string, method: string, token: string, body?: unknow
       "Content-Type": "application/json",
       Accept: "application/json",
       Prefer: "return=representation",
-      "PayPal-Request-Id": crypto.randomUUID(),
+      "PayPal-Request-Id": requestId || crypto.randomUUID(),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -1076,6 +1081,65 @@ Deno.serve(async (req: Request) => {
       const activeMembership = await activeMembershipForUser(user.id);
       return json(200, { subscriptions: data || [], hasActiveMembership: Boolean(activeMembership), activeMembership });
     }
+    if (action === "admin_refund_one_time_payment") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) {
+        return fail(403, "MFA_REQUIRED: Verify your administrator identity before issuing a refund.");
+      }
+      const orderId = String(body.orderId || "").trim();
+      if (!orderId || orderId.length > 128) return fail(400, "A valid CenAI PayPal order ID is required.");
+      const { data: payment, error: paymentError } = await db.from("billing_one_time_payments")
+        .select("user_id,provider_order_id,provider_capture_id,amount,currency,status")
+        .eq("provider_order_id", orderId).maybeSingle();
+      if (paymentError) throw paymentError;
+      if (!payment) return fail(404, "CenAI one-time payment was not found.");
+      if (String(payment.status) === "REFUNDED") return json(200, { refunded: false, alreadyRefunded: true });
+      if (String(payment.status) !== "COMPLETED" || !payment.provider_capture_id) {
+        return fail(409, "Only completed one-time PayPal card payments with a recorded capture can be refunded.");
+      }
+      const token = await accessToken();
+      const captureId = String(payment.provider_capture_id);
+      const capture = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId), "GET", token);
+      if (String(capture.status || "").toUpperCase() !== "COMPLETED") {
+        return fail(409, "PayPal capture is not fully refundable. Current capture status: " + String(capture.status || "UNKNOWN"));
+      }
+      const capturedAmount = capture.amount || {};
+      if (Number(capturedAmount.value) !== Number(payment.amount) ||
+          String(capturedAmount.currency_code || "").toUpperCase() !== String(payment.currency).toUpperCase()) {
+        return fail(409, "PayPal capture amount does not match the CenAI payment record. No refund was submitted.");
+      }
+      const refundKey = await stablePayPalRequestId("cenai-full-refund:" + captureId);
+      const refund = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId) + "/refund", "POST", token, {}, refundKey);
+      const refundStatus = String(refund.status || "PENDING").toUpperCase();
+      let reconciled = false;
+      if (refundStatus === "COMPLETED") {
+        const refreshedCapture = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId), "GET", token);
+        if (String(refreshedCapture.status || "").toUpperCase() === "REFUNDED") {
+          const now = new Date().toISOString();
+          const { error: paymentUpdateError } = await db.from("billing_one_time_payments")
+            .update({ status: "REFUNDED", updated_at: now }).eq("provider_order_id", orderId);
+          if (paymentUpdateError) throw paymentUpdateError;
+          const { error: entitlementError } = await db.from("billing_subscriptions")
+            .update({ status: "REFUNDED", cancel_at_period_end: false, updated_at: now })
+            .eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + orderId)
+            .eq("user_id", payment.user_id);
+          if (entitlementError) throw entitlementError;
+          reconciled = true;
+        }
+      }
+      const { error: auditError } = await db.from("admin_audit_logs").insert({
+        actor_user_id: user.id, actor_email: String(user.email || ""),
+        action: "billing.payment.full_refund",
+        details: { target_user_id: payment.user_id, order_id: orderId, capture_id: captureId,
+          amount: payment.amount, currency: payment.currency, paypal_refund_id: String(refund.id || ""),
+          refund_status: refundStatus, reconciled },
+      });
+      if (auditError) console.error("PayPal refund audit write failed", auditError.message);
+      return json(200, { refunded: refundStatus === "COMPLETED", refundPending: refundStatus !== "COMPLETED",
+        reconciled, auditLogged: !auditError, refundId: String(refund.id || ""), refundStatus,
+        message: refundStatus === "COMPLETED" ? "PayPal confirmed the refund." : "PayPal accepted the refund request; membership remains active until PayPal confirms the full refund." });
+    }
+
     if (action === "admin_cancel_subscription") {
       if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
       if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) {
