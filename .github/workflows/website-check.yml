@@ -60,6 +60,10 @@ jobs:
           grep -q 'cenai-control-plane' website/worker.js
           grep -q 'cenai-paypal-billing' website/worker.js
           grep -q 'create_customer_refund_request' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'issue_admin' website/api/email-otp.js
+          grep -q 'verify_admin' website/api/email-otp.js
+          grep -q 'email MFA fallback' website/admin/admin.js
+          node --check website/api/email-otp.js
           grep -q 'recurringBillingEnabled' supabase/functions/cenai-paypal-billing/index.ts
           grep -q 'billing.recurring_enabled' supabase/migrations/20261118134515_pause_unverified_recurring_paypal.sql
           grep -q 'Recurring subscription temporarily paused' website/account.js
