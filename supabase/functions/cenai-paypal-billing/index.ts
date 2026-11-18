@@ -111,6 +111,28 @@ async function billingEnabled() {
   if (error) throw error;
   return data?.enabled === true;
 }
+
+async function activeMembershipForUser(userId: string) {
+  const now = Date.now();
+  const { data, error } = await db.from("billing_subscriptions")
+    .select("provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end")
+    .eq("user_id", userId).eq("status", "ACTIVE").order("updated_at", { ascending: false }).limit(25);
+  if (error) throw error;
+  const active = (data || []).find((row: any) => {
+    if (!row.current_period_end) return true;
+    const expiry = Date.parse(String(row.current_period_end));
+    return Number.isFinite(expiry) && expiry > now;
+  });
+  if (active) return active;
+  // Expire stale ACTIVE rows so the database and UI do not retain access forever.
+  const stale = (data || []).filter((row: any) => row.current_period_end && Date.parse(String(row.current_period_end)) <= now);
+  for (const row of stale) {
+    const { error: expireError } = await db.from("billing_subscriptions").update({ status: "EXPIRED", updated_at: new Date().toISOString() })
+      .eq("user_id", userId).eq("provider_subscription_id", row.provider_subscription_id).eq("status", "ACTIVE");
+    if (expireError) throw expireError;
+  }
+  return null;
+}
 async function hasEmailMfa(userId: string) {
   const { data, error } = await db.from("admin_email_mfa").select("verified_until").eq("user_id", userId).maybeSingle();
   if (error) throw error;
@@ -187,8 +209,10 @@ async function ensurePayPalPlanCurrency(plan: Record<string, any>, userId: strin
   const expectedCurrency = String(plan.currency || "PHP").toUpperCase();
   const expectedAmount = Number(plan.amount);
   const inspect = async (planId: string) => {
+    if (!/^P-[A-Z0-9]+$/i.test(planId)) return false;
     const token = await accessToken();
     const detail = await paypal("/v1/billing/plans/" + encodeURIComponent(planId), "GET", token);
+    if (String(detail.status || "").toUpperCase() !== "ACTIVE") return false;
     const cycles = Array.isArray(detail.billing_cycles) ? detail.billing_cycles : [];
     return cycles.some((cycle: any) => {
       const price = cycle?.pricing_scheme?.fixed_price || {};
@@ -197,23 +221,10 @@ async function ensurePayPalPlanCurrency(plan: Record<string, any>, userId: strin
         Number(price.value) === expectedAmount;
     });
   };
-  if (await inspect(String(plan.paypal_plan_id || ""))) return plan;
-  console.warn("PayPal plan currency/amount differs from CenAI configuration; rebuilding before checkout", {
-    planKey: String(plan.plan_key), expectedCurrency, expectedAmount,
-  });
-  const refreshed = await createOrRefreshPlan({
-    planKey: String(plan.plan_key),
-    displayName: String(plan.display_name || "CenAI membership"),
-    amount: expectedAmount,
-    currency: expectedCurrency,
-    intervalUnit: String(plan.interval_unit || "MONTH"),
-    intervalCount: Number(plan.interval_count || 1),
-    enabled: true,
-  }, userId);
-  if (!refreshed?.paypal_plan_id || !await inspect(String(refreshed.paypal_plan_id))) {
-    throw new Error("PayPal's subscription plan does not match the configured price and currency. Checkout was stopped; no charge was requested.");
+  if (!await inspect(String(plan.paypal_plan_id || ""))) {
+    throw new Error("PayPal's active subscription plan does not match the saved CenAI price and currency. Checkout was stopped without creating a new plan or requesting a charge. An administrator must review and save the intended price in Billing plans.");
   }
-  return { ...plan, paypal_plan_id: refreshed.paypal_plan_id };
+  return plan;
 }
 async function verifyWebhook(req: Request, event: unknown) {
   const { webhookId } = paypalConfig();
@@ -283,7 +294,7 @@ async function handleWebhook(event: Record<string, any>) {
   if (eventType.startsWith("PAYMENT.SALE.") && resource.billing_agreement_id) subscriptionId = String(resource.billing_agreement_id);
   if (!subscriptionId) return;
   const { data: existing, error: lookupError } = await db.from("billing_subscriptions")
-    .select("user_id,plan_key").eq("provider", "paypal")
+    .select("user_id,plan_key,status,current_period_end").eq("provider", "paypal")
     .eq("provider_subscription_id", subscriptionId).maybeSingle();
   if (lookupError) throw lookupError;
   const { data: attempt } = await db.from("billing_checkout_attempts").select("user_id,plan_key").eq("provider_subscription_id", subscriptionId).maybeSingle();
@@ -313,11 +324,30 @@ async function handleWebhook(event: Record<string, any>) {
     "PAYMENT.SALE.REFUNDED": "REFUNDED",
     "PAYMENT.SALE.REVERSED": "REVERSED",
   };
-  const status = statusMap[eventType];
+  let status = statusMap[eventType];
   if (!status) return;
-  const nextBilling = resource.billing_info?.next_billing_time || resource.billing_info?.next_billing_date;
+  let subscriptionDetail: Record<string, any> | null = null;
+  if (eventType === "PAYMENT.SALE.COMPLETED") {
+    const token = await accessToken();
+    subscriptionDetail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+    if (String(subscriptionDetail.custom_id || "") !== userId) {
+      throw new Error("PayPal recurring payment ownership verification failed.");
+    }
+    const providerStatus = String(subscriptionDetail.status || "").toUpperCase();
+    if (providerStatus !== "ACTIVE") {
+      status = ["CANCELLED", "SUSPENDED", "EXPIRED"].includes(providerStatus)
+        ? providerStatus
+        : "PAST_DUE";
+      console.warn("Recurring sale completed while PayPal subscription is not active", JSON.stringify({
+        subscriptionId, providerStatus, mappedStatus: status,
+      }));
+    }
+  }
+  const nextBilling = subscriptionDetail?.billing_info?.next_billing_time ||
+    resource.billing_info?.next_billing_time || resource.billing_info?.next_billing_date ||
+    existing?.current_period_end || null;
   let planKey = String(existing?.plan_key || attempt?.plan_key || "live_test");
-  const paypalPlanId = String(resource.plan_id || "");
+  const paypalPlanId = String(subscriptionDetail?.plan_id || resource.plan_id || "");
   if (paypalPlanId) {
     const { data: configuredPlan, error: planError } = await db.from("billing_plan_config")
       .select("plan_key").eq("paypal_plan_id", paypalPlanId).maybeSingle();
@@ -330,7 +360,7 @@ async function handleWebhook(event: Record<string, any>) {
     provider_subscription_id: subscriptionId,
     plan_key: planKey,
     status,
-    current_period_end: nextBilling && !Number.isNaN(Date.parse(String(nextBilling))) ? new Date(String(nextBilling)).toISOString() : null,
+    current_period_end: nextBilling && !Number.isNaN(Date.parse(String(nextBilling))) ? new Date(String(nextBilling)).toISOString() : existing?.current_period_end || null,
     cancel_at_period_end: status === "CANCELLED",
     updated_at: new Date().toISOString(),
   }, { onConflict: "provider_subscription_id" });
@@ -731,31 +761,10 @@ Deno.serve(async (req: Request) => {
       return json(200, { diagnostics, webhook, checkedAt: new Date().toISOString() });
     }
 
-    if (action === "admin_cancel_subscription") {
-      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
-      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify your administrator identity before changing memberships.");
-      const subscriptionId = String(body.subscriptionId || "").trim();
-      const reason = String(body.reason || "Cancelled by CenAI administrator").trim().slice(0, 128);
-      if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return fail(400, "Only recurring PayPal subscriptions can be cancelled here.");
-      const { data: row, error: rowError } = await db.from("billing_subscriptions")
-        .select("user_id,status,provider,provider_subscription_id")
-        .eq("provider","paypal").eq("provider_subscription_id",subscriptionId).maybeSingle();
-      if (rowError) throw rowError;
-      if (!row) return fail(404, "PayPal membership subscription not found.");
-      if (["CANCELLED","EXPIRED","REFUNDED","REVERSED"].includes(String(row.status))) return json(200, { cancelled:false, alreadyInactive:true, status:row.status });
-      const token = await accessToken();
-      await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason });
-      const { data: updated, error: updateError } = await db.from("billing_subscriptions")
-        .update({ status:"CANCELLED", cancel_at_period_end:false, updated_at:new Date().toISOString() })
-        .eq("provider","paypal").eq("provider_subscription_id",subscriptionId)
-        .select("user_id,provider_subscription_id,status").single();
-      if (updateError) throw updateError;
-      console.info("Administrator cancelled CenAI membership", JSON.stringify({ actor:user.id, target:row.user_id, subscriptionId }));
-      return json(200, { cancelled:true, subscription:updated });
-    }
-
     if (action === "create_guest_order") {
       if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
+      const existingMembership = await activeMembershipForUser(user.id);
+      if (existingMembership) return fail(409, "You already have an active CenAI membership. Manage or renew it from Account → Membership after your current access expires.");
       const planKey = String(body.planKey || "live_test").trim().toLowerCase();
       const { data: plan, error: planError } = await db.from("billing_plan_config")
         .select("plan_key,display_name,amount,currency,enabled").eq("plan_key", planKey).eq("enabled", true).maybeSingle();
@@ -877,13 +886,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === "create_subscription") {
       if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
+      const existingMembership = await activeMembershipForUser(user.id);
+      if (existingMembership) return fail(409, "You already have an active CenAI membership. Manage or renew it from Account → Membership after your current access expires.");
       const planKey = String(body.planKey || "live_test");
       const { data: plan, error } = await db.from("billing_plan_config")
         .select("plan_key,display_name,amount,currency,interval_unit,interval_count,paypal_plan_id,is_test")
         .eq("plan_key", planKey).eq("enabled", true).maybeSingle();
       if (error) throw error;
       if (!plan?.paypal_plan_id) return fail(400, "This subscription plan is not configured yet.");
-      const verifiedPlan = await ensurePayPalPlanCurrency(plan, user.id);
+      const verifiedPlan = await ensurePayPalPlanCurrency(plan);
       
       const token = await accessToken();
       const subscription = await paypal("/v1/billing/subscriptions", "POST", token, {
@@ -975,10 +986,49 @@ Deno.serve(async (req: Request) => {
       if (action === "cancel_open_checkouts") return json(200, { cancelled: (attempts || []).length + (legacy || []).length, message: "Unfinished PayPal checkouts were cancelled where PayPal allowed cancellation." });
       const { data, error } = await db.from("billing_subscriptions")
         .select("provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at")
-        .eq("user_id", user.id).eq("provider", "paypal").neq("status", "APPROVAL_PENDING").neq("status", "EXPIRED").order("updated_at", { ascending: false }).limit(5);
+        .eq("user_id", user.id).eq("provider", "paypal").neq("status", "APPROVAL_PENDING").neq("status", "EXPIRED").order("updated_at", { ascending: false }).limit(25);
       if (error) throw error;
-      return json(200, { subscriptions: data || [] });
+      const activeMembership = await activeMembershipForUser(user.id);
+      return json(200, { subscriptions: data || [], hasActiveMembership: Boolean(activeMembership), activeMembership });
     }
+    if (action === "admin_cancel_subscription") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) {
+        return fail(403, "MFA_REQUIRED: Verify your administrator identity before changing memberships.");
+      }
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const reason = String(body.reason || "Cancelled by CenAI administrator").trim().slice(0, 128);
+      if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) {
+        return fail(400, "Only recurring PayPal subscriptions can be cancelled here.");
+      }
+      const { data: row, error: rowError } = await db.from("billing_subscriptions")
+        .select("user_id,status,provider,provider_subscription_id")
+        .eq("provider", "paypal").eq("provider_subscription_id", subscriptionId).maybeSingle();
+      if (rowError) throw rowError;
+      if (!row) return fail(404, "PayPal membership subscription not found.");
+      if (["CANCELLED", "EXPIRED", "REFUNDED", "REVERSED"].includes(String(row.status))) {
+        return json(200, { cancelled: false, alreadyInactive: true, status: row.status });
+      }
+      const token = await accessToken();
+      await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason });
+      const { data: updated, error: updateError } = await db.from("billing_subscriptions")
+        .update({ status: "CANCELLED", cancel_at_period_end: false, updated_at: new Date().toISOString() })
+        .eq("provider", "paypal").eq("provider_subscription_id", subscriptionId)
+        .select("user_id,provider_subscription_id,status").single();
+      if (updateError) throw updateError;
+      const { error: auditError } = await db.from("admin_audit_logs").insert({
+        actor_user_id: user.id,
+        actor_email: String(user.email || ""),
+        action: "billing.subscription.admin_cancel",
+        details: { target_user_id: row.user_id, subscription_id: subscriptionId, reason },
+      });
+      if (auditError) console.error("PayPal cancellation audit write failed", auditError.message);
+      console.info("Administrator cancelled CenAI membership", JSON.stringify({
+        actor: user.id, target: row.user_id, subscriptionId,
+      }));
+      return json(200, { cancelled: true, auditLogged: !auditError, subscription: updated });
+    }
+
     if (action === "cancel") {
       const subscriptionId = String(body.subscriptionId || "");
       if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return fail(400, "Invalid subscription ID");
