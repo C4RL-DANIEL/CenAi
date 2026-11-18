@@ -93,16 +93,18 @@ Deno.serve(async (req: Request) => {
       const users = authPage?.users ?? [];
       const ids = users.map((entry:any) => String(entry.id)).filter((id:string) => /^[0-9a-f-]{36}$/i.test(id));
       if (!ids.length) return response(200, { members: [], page, perPage, total: 0 });
-      const [subsResult, betaResult, adminsResult, plansResult] = await Promise.all([
+      const [subsResult, betaResult, adminsResult, plansResult, paymentsResult] = await Promise.all([
         adminDb.from("billing_subscriptions").select("user_id,provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at").in("user_id", ids).order("updated_at", { ascending:false }),
         adminDb.from("beta_applications").select("user_id,status").in("user_id", ids),
         adminDb.from("admin_users").select("user_id,role,is_active").in("user_id", ids),
-        adminDb.from("billing_plan_config").select("plan_key,display_name,amount,currency,interval_unit,interval_count")
+        adminDb.from("billing_plan_config").select("plan_key,display_name,amount,currency,interval_unit,interval_count"),
+        adminDb.from("billing_one_time_payments").select("user_id,provider_order_id,provider_capture_id,plan_key,amount,currency,status,paid_at,access_expires_at").in("user_id", ids).order("created_at", { ascending:false })
       ]);
       if (subsResult.error) throw subsResult.error;
       if (betaResult.error) throw betaResult.error;
       if (adminsResult.error) throw adminsResult.error;
       if (plansResult.error) throw plansResult.error;
+      if (paymentsResult.error) throw paymentsResult.error;
       const byUser = (rows:any[]) => new Map(rows.map(row => [String(row.user_id), row]));
       const betaByUser = byUser(betaResult.data ?? []);
       const adminByUser = byUser(adminsResult.data ?? []);
@@ -126,7 +128,12 @@ Deno.serve(async (req: Request) => {
             return { provider:sub.provider, subscriptionId:sub.provider_subscription_id, planKey:sub.plan_key,
               planName:plan?.display_name ?? sub.plan_key, amount:plan?.amount ?? null, currency:plan?.currency ?? null,
               status:sub.status, currentPeriodEnd:sub.current_period_end, cancelAtPeriodEnd:sub.cancel_at_period_end };
-          })
+          }),
+          payments: (paymentsResult.data ?? []).filter((payment:any) => String(payment.user_id) === id).map((payment:any) => ({
+            orderId:payment.provider_order_id, captureId:payment.provider_capture_id, planKey:payment.plan_key,
+            amount:payment.amount, currency:payment.currency, status:payment.status,
+            paidAt:payment.paid_at, accessExpiresAt:payment.access_expires_at,
+          }))
         };
       });
       await audit(user, "members.list.view", { page, per_page:perPage, returned:members.length });
