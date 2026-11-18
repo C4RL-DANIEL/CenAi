@@ -207,9 +207,9 @@
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-    ["overview","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
+    ["overview","members","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing"].includes(tab) ? {} : await api(tab);
+      const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing","members"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
@@ -220,6 +220,7 @@
       else if (tab === "audit") $("audit-content").innerHTML = (data.events||[]).map(e=>row(e.action,e.created_at+" · "+e.actor_email,e.status||"recorded")).join("") || "<p>No audit events.</p>";
       else if (tab === "integrations") $("integration-content").innerHTML = (data.integrations||[]).map(x=>row(x.name,x.detail,x.connected?"connected":"not connected")).join("");
       else if (tab === "releases") $("release-content").innerHTML = (data.releases||[]).map(x=>row(x.name,x.tag+" · "+x.publishedAt,"Open release",x.url)).join("") || "<p>No published releases yet.</p>";
+      else if (tab === "members") await loadMembers();
       else if (tab === "models") await loadModels();
       else if (tab === "api-keys") await loadApiKeys();
       else if (tab === "analytics") await loadAnalytics();
@@ -230,6 +231,51 @@
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
   }
+  let memberRows = [];
+  async function loadMembers() {
+    const data = await api("members_list", { page:1, perPage:100 });
+    memberRows = data.members || [];
+    renderMembers();
+    $("members-summary").textContent = "Showing " + memberRows.length + " accounts from page 1. Membership is active only when a verified billing record is ACTIVE and its period has not expired.";
+  }
+  function renderMembers() {
+    const query = ($("members-search")?.value || "").trim().toLowerCase();
+    const rows = memberRows.filter(m => !query || (m.email+" "+m.displayName).toLowerCase().includes(query));
+    $("members-content").innerHTML = rows.map(m => {
+      const active = m.subscriptions.filter(s => s.status === "ACTIVE" && (!s.currentPeriodEnd || Date.parse(s.currentPeriodEnd) > Date.now()));
+      const subscriptions = m.subscriptions.length ? m.subscriptions.map(s => {
+        const oneTime = String(s.subscriptionId || "").startsWith("ONE_TIME:");
+        return '<div class="member-subscription"><b>'+esc(s.planName)+'</b><small>'+esc(s.provider)+' · '+esc(s.status.replaceAll("_"," "))+(s.amount !== null ? ' · '+esc(s.currency||"PHP")+' '+esc(s.amount) : '')+(s.currentPeriodEnd ? ' · ends '+esc(s.currentPeriodEnd) : '')+(s.cancelAtPeriodEnd ? ' · cancels at period end' : '')+(oneTime ? ' · one-time' : '')+'</small></div>';
+      }).join("") : '<p class="muted">No membership or payment-backed entitlement recorded.</p>';
+      const suspended = m.bannedUntil && Date.parse(m.bannedUntil) > Date.now();
+      const admin = Boolean(m.adminRole);
+      return '<article class="item member-card" data-member-id="'+esc(m.id)+'"><div class="member-main"><div class="member-heading"><b>'+esc(m.displayName || m.email || m.id)+'</b><span class="pill">'+(admin ? esc(m.adminRole) : 'member')+'</span><span class="pill">'+(suspended ? 'suspended' : 'account active')+'</span></div><small>'+esc(m.email)+' · joined '+esc(m.createdAt || 'unknown')+' · last sign-in '+esc(m.lastSignInAt || 'never')+'</small><small>Email: '+(m.emailConfirmedAt ? 'verified' : 'not verified')+' · Beta: '+esc(m.betaStatus)+'</small><div class="member-subscriptions">'+subscriptions+'</div><div class="member-actions"><label>Display name<input data-member-name maxlength="80" value="'+esc(m.displayName)+'" placeholder="Display name"></label><button data-member-action="save" type="button">Save profile</button>'+(admin ? '' : '<button data-member-action="'+(suspended?'restore':'suspend')+'" type="button" class="'+(suspended?'':'danger')+'">'+(suspended?'Restore account':'Suspend account')+'</button>')+'</div></div></article>';
+    }).join("") || "<p>No members match this search.</p>";
+  }
+  $("members-search")?.addEventListener("input", renderMembers);
+  $("members-refresh")?.addEventListener("click", () => loadMembers().catch(e => status(e.message,true)));
+  $("members-content")?.addEventListener("click", async e => {
+    const button = e.target.closest("button[data-member-action]");
+    if (!button) return;
+    const card = button.closest("[data-member-id]");
+    const userId = card?.dataset.memberId;
+    if (!userId) return;
+    const action = button.dataset.memberAction;
+    try {
+      button.disabled = true;
+      if (action === "save") {
+        await api("member_update", { userId, displayName:card.querySelector("[data-member-name]").value.trim() });
+        status("Member profile updated and audited.");
+      } else {
+        const verb = action === "suspend" ? "suspend" : "restore";
+        if (!confirm("Are you sure you want to "+verb+" this member account?")) return;
+        await api(action === "suspend" ? "member_suspend" : "member_restore", { userId });
+        status("Member account "+(action === "suspend" ? "suspended" : "restored")+".");
+      }
+      await loadMembers();
+    } catch (err) { status(err.message,true); }
+    finally { button.disabled = false; }
+  });
   async function loadBillingPlans() {
     const data = await paypalApi("list_plans");
     $("billing-plan-content").innerHTML = (data.plans || []).map(p =>
