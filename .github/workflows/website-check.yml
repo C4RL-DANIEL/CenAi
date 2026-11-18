@@ -62,6 +62,7 @@ jobs:
           grep -q 'admin_decide_refund_request' supabase/functions/cenai-paypal-billing/index.ts
           grep -q 'billing_refund_requests' supabase/migrations/20261118133800_customer_refund_requests.sql
           grep -q 'billing_refund_requests_reviewed_by_idx' supabase/migrations/20261118133934_index_refund_request_reviewer.sql
+          grep -q 'site_pages_updated_by_idx' supabase/migrations/20261118134037_index_foreign_keys_and_dedupe_site_page_policy.sql
           grep -q 'customer-refund-form' website/account.html
           grep -q 'refund-requests-content' website/admin/index.html
           node --check website/account.js
