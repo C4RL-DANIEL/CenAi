@@ -245,7 +245,9 @@
       const active = m.subscriptions.filter(s => s.status === "ACTIVE" && (!s.currentPeriodEnd || Date.parse(s.currentPeriodEnd) > Date.now()));
       const subscriptions = m.subscriptions.length ? m.subscriptions.map(s => {
         const oneTime = String(s.subscriptionId || "").startsWith("ONE_TIME:");
-        return '<div class="member-subscription"><b>'+esc(s.planName)+'</b><small>'+esc(s.provider)+' · '+esc(s.status.replaceAll("_"," "))+(s.amount !== null ? ' · '+esc(s.currency||"PHP")+' '+esc(s.amount) : '')+(s.currentPeriodEnd ? ' · ends '+esc(s.currentPeriodEnd) : '')+(s.cancelAtPeriodEnd ? ' · cancels at period end' : '')+(oneTime ? ' · one-time' : '')+'</small></div>';
+        const effectiveStatus = s.status === "ACTIVE" && s.currentPeriodEnd && Date.parse(s.currentPeriodEnd) <= Date.now() ? "EXPIRED" : s.status;
+        const cancelAction = !oneTime && effectiveStatus === "ACTIVE" ? '<button data-member-action="cancel-subscription" data-subscription-id="'+esc(s.subscriptionId)+'" type="button" class="danger">Cancel recurring plan</button>' : '';
+        return '<div class="member-subscription"><b>'+esc(s.planName)+'</b><small>'+esc(s.provider)+' · '+esc(effectiveStatus.replaceAll("_"," "))+(s.amount !== null ? ' · '+esc(s.currency||"PHP")+' '+esc(s.amount) : '')+(s.currentPeriodEnd ? ' · ends '+esc(s.currentPeriodEnd) : '')+(s.cancelAtPeriodEnd ? ' · cancels at period end' : '')+(oneTime ? ' · one-time' : '')+'</small>'+cancelAction+'</div>';
       }).join("") : '<p class="muted">No membership or payment-backed entitlement recorded.</p>';
       const suspended = m.bannedUntil && Date.parse(m.bannedUntil) > Date.now();
       const admin = Boolean(m.adminRole);
@@ -266,6 +268,11 @@
       if (action === "save") {
         await api("member_update", { userId, displayName:card.querySelector("[data-member-name]").value.trim() });
         status("Member profile updated and audited.");
+      } else if (action === "cancel-subscription") {
+        const subscriptionId = button.dataset.subscriptionId;
+        if (!subscriptionId || !confirm("Cancel this recurring PayPal membership? PayPal will stop future renewals; this does not issue a refund.")) return;
+        await paypalApi("admin_cancel_subscription", { subscriptionId, reason:"Cancelled by CenAI administrator" });
+        status("Recurring PayPal membership cancelled. No refund was issued.");
       } else {
         const verb = action === "suspend" ? "suspend" : "restore";
         if (!confirm("Are you sure you want to "+verb+" this member account?")) return;
