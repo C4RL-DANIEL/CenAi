@@ -179,7 +179,7 @@ async function sendGmailOtp(env, to, code) {
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center">',
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#fbfaf6;border:1px solid #d9dfd4;border-radius:20px;overflow:hidden">',
     '<tr><td style="padding:26px 30px;background:#1b2b23">',
-    '<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="42" height="42" align="center" valign="middle" style="width:42px;height:42px;border-radius:50%;background:#a6c94b;color:#1b2b23;font-size:21px;font-weight:800">C</td><td style="padding-left:12px;color:#f7f8f1;font-size:20px;font-weight:700;letter-spacing:-1px">CenAI<span style="display:block;margin-top:3px;color:#c4d2b0;font-size:9px;font-weight:600;letter-spacing:2px">ACCOUNT SECURITY</span></td></tr></table>
+    '<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="42" height="42" align="center" valign="middle" style="width:42px;height:42px;border-radius:50%;background:#a6c94b;color:#1b2b23;font-size:21px;font-weight:800">C</td><td style="padding-left:12px;color:#f7f8f1;font-size:20px;font-weight:700;letter-spacing:-1px">CenAI<span style="display:block;margin-top:3px;color:#c4d2b0;font-size:9px;font-weight:600;letter-spacing:2px">ACCOUNT SECURITY</span></td></tr></table>',
     '<p style="margin:24px 0 7px;color:#c6d3b7;font-size:10px;font-weight:700;letter-spacing:2px">SECURE VERIFICATION</p>',
     '<h1 style="margin:0;color:#fff;font-size:28px;line-height:1.2;letter-spacing:-.7px">Confirm it’s you.</h1>',
     '</td></tr><tr><td style="padding:30px">',
