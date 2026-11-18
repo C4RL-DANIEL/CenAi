@@ -23,6 +23,7 @@
   <div class="toolbar"><input id="members-search" type="search" maxlength="160" placeholder="Search email or display name" aria-label="Search members"><button id="members-refresh" class="quiet" type="button">Refresh members</button></div>
   <div id="members-summary" class="notice" role="status">Load member records to review accounts.</div>
   <div id="members-content" class="rows"></div>
+  <div class="toolbar" aria-label="Member pages"><button id="members-prev" class="quiet" type="button" disabled>Previous page</button><span id="members-page-label" class="muted">Page 1</span><button id="members-next" class="quiet" type="button" disabled>Next page</button></div>
 </section>
 <section id="tab-overview" class="card panel"><h2>Operations overview</h2><p class="muted">Live status is read from configured services. Missing services are shown as not connected; no demo metrics are generated.</p><div id="overview-content" class="rows"></div></section>
 <section id="tab-flags" class="card panel" hidden><h2>Feature flags</h2><p class="muted">Changes are recorded in the audit log. Billing is controlled by its live feature flag and PayPal Live configuration.</p><div id="flags-content" class="rows"></div></section>
