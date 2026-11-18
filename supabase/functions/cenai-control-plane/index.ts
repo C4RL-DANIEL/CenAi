@@ -85,6 +85,84 @@ Deno.serve(async (req: Request) => {
     if (!adminRow?.is_active || !["owner","admin","operator"].includes(adminRow.role)) return fail(403, "Administrator access denied");
     if (tokenAal(token) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify the email code sent to your administrator address.");
     const role = adminRow.role;
+    if (action === "members_list") {
+      const page = Math.max(1, Math.min(100, Number(body.page) || 1));
+      const perPage = Math.max(10, Math.min(100, Number(body.perPage) || 100));
+      const { data: authPage, error: usersError } = await adminDb.auth.admin.listUsers({ page, perPage });
+      if (usersError) throw usersError;
+      const users = authPage?.users ?? [];
+      const ids = users.map((entry:any) => String(entry.id)).filter((id:string) => /^[0-9a-f-]{36}$/i.test(id));
+      if (!ids.length) return response(200, { members: [], page, perPage, total: 0 });
+      const [subsResult, betaResult, adminsResult, plansResult] = await Promise.all([
+        adminDb.from("billing_subscriptions").select("user_id,provider,provider_subscription_id,plan_key,status,current_period_end,cancel_at_period_end,updated_at").in("user_id", ids).order("updated_at", { ascending:false }),
+        adminDb.from("beta_applications").select("user_id,status").in("user_id", ids),
+        adminDb.from("admin_users").select("user_id,role,is_active").in("user_id", ids),
+        adminDb.from("billing_plan_config").select("plan_key,display_name,amount,currency,interval_unit,interval_count")
+      ]);
+      if (subsResult.error) throw subsResult.error;
+      if (betaResult.error) throw betaResult.error;
+      if (adminsResult.error) throw adminsResult.error;
+      if (plansResult.error) throw plansResult.error;
+      const byUser = (rows:any[]) => new Map(rows.map(row => [String(row.user_id), row]));
+      const betaByUser = byUser(betaResult.data ?? []);
+      const adminByUser = byUser(adminsResult.data ?? []);
+      const planByKey = new Map((plansResult.data ?? []).map((row:any) => [String(row.plan_key), row]));
+      const subsByUser = new Map<string, any[]>();
+      for (const sub of subsResult.data ?? []) {
+        const key = String(sub.user_id);
+        const rows = subsByUser.get(key) ?? [];
+        rows.push(sub); subsByUser.set(key, rows);
+      }
+      const members = users.map((entry:any) => {
+        const id = String(entry.id), admin = adminByUser.get(id), subscriptions = subsByUser.get(id) ?? [];
+        return {
+          id, email: String(entry.email ?? ""), displayName: String(entry.user_metadata?.display_name ?? entry.user_metadata?.full_name ?? ""),
+          createdAt: entry.created_at ?? null, lastSignInAt: entry.last_sign_in_at ?? null,
+          emailConfirmedAt: entry.email_confirmed_at ?? null, bannedUntil: entry.banned_until ?? null,
+          betaStatus: betaByUser.get(id)?.status ?? "none",
+          adminRole: admin?.is_active ? admin.role : null,
+          subscriptions: subscriptions.map((sub:any) => {
+            const plan:any = planByKey.get(String(sub.plan_key));
+            return { provider:sub.provider, subscriptionId:sub.provider_subscription_id, planKey:sub.plan_key,
+              planName:plan?.display_name ?? sub.plan_key, amount:plan?.amount ?? null, currency:plan?.currency ?? null,
+              status:sub.status, currentPeriodEnd:sub.current_period_end, cancelAtPeriodEnd:sub.cancel_at_period_end };
+          })
+        };
+      });
+      await audit(user, "members.list.view", { page, per_page:perPage, returned:members.length });
+      return response(200, { members, page, perPage, total:members.length, note:"Auth users are paginated by Supabase. Membership is derived from verified billing_subscriptions records." });
+    }
+    if (action === "member_update") {
+      if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const userId = String(body.userId ?? "");
+      const displayName = String(body.displayName ?? "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(userId) || displayName.length < 1 || displayName.length > 80) return fail(400, "Provide a valid member ID and a display name between 1 and 80 characters.");
+      const { data: target, error: targetError } = await adminDb.auth.admin.getUserById(userId);
+      if (targetError) throw targetError;
+      if (!target?.user) return fail(404, "Member account not found.");
+      const { data, error } = await adminDb.auth.admin.updateUserById(userId, {
+        user_metadata: { ...(target.user.user_metadata ?? {}), display_name: displayName }
+      });
+      if (error) throw error;
+      await audit(user, "member.profile.updated", { target_user_id:userId });
+      return response(200, { member:{ id:data.user.id, email:data.user.email, displayName:String(data.user.user_metadata?.display_name ?? displayName) } });
+    }
+    if (action === "member_suspend" || action === "member_restore") {
+      if (!["owner","admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const userId = String(body.userId ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(userId)) return fail(400, "Invalid member ID.");
+      const { data: target, error: targetError } = await adminDb.auth.admin.getUserById(userId);
+      if (targetError) throw targetError;
+      if (!target?.user) return fail(404, "Member account not found.");
+      const { data: targetAdmin, error: targetAdminError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id",userId).maybeSingle();
+      if (targetAdminError) throw targetAdminError;
+      if (targetAdmin?.is_active) return fail(409, "Administrator accounts cannot be suspended from member management.");
+      const banDuration = action === "member_suspend" ? "876000h" : "none";
+      const { data, error } = await adminDb.auth.admin.updateUserById(userId, { ban_duration:banDuration });
+      if (error) throw error;
+      await audit(user, action === "member_suspend" ? "member.account.suspended" : "member.account.restored", { target_user_id:userId });
+      return response(200, { member:{ id:data.user.id, email:data.user.email, bannedUntil:data.user.banned_until ?? null } });
+    }
     if (action === "models") {
       const { data, error } = await adminDb.from("model_registry").select("id,slug,provider,model_id,display_name,description,tasks,modalities,enabled,public,updated_at").order("provider").order("slug");
       if (error) throw error;
