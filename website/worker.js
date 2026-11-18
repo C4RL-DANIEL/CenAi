@@ -150,11 +150,12 @@ async function sendGmailMessage(env, to, subject, text, html) {
       "Content-Transfer-Encoding: 8bit",
       "",
       html,
-      "--" + boundary + "--",
-      "."
-    ].join("\r\n").replace(/\r?\n\./g, "\r\n..");
+      "--" + boundary + "--"
+    ].join("\r\n");
+    // Dot-stuff message content lines, but keep SMTP's final DATA terminator as one dot.
+    const smtpData = message.replace(/(^|\r\n)\./g, "$1..") + "\r\n.\r\n";
     stage = "message acceptance";
-    await withTimeout(writer.write(new TextEncoder().encode(message + "\r\n")), "message write");
+    await withTimeout(writer.write(new TextEncoder().encode(smtpData)), "message write");
     await expect([250]);
     console.log("CenAI administrator email accepted by Gmail SMTP");
     // Gmail has accepted the message at this point. Do not block delivery confirmation
