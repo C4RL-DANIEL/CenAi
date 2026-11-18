@@ -114,10 +114,13 @@ jobs:
           grep -q 'Request a refund' /tmp/cenai-account.html
           curl -fsS "$BASE/admin" -o /tmp/cenai-admin.html
           grep -q 'Customer refund requests' /tmp/cenai-admin.html
-          curl -fsS "$BASE/api/admin-config" | grep -q "bqkzehozezvepbthglyj.supabase.co"
+          curl -fsS "$BASE/api/admin-config" -o /tmp/cenai-admin-config.json
+          grep -q "bqkzehozezvepbthglyj.supabase.co" /tmp/cenai-admin-config.json
           curl -fsS "$BASE/api/site-pages" >/tmp/cenai-pages.json
-          curl -fsS "$BASE/robots.txt" | grep -q "Sitemap:"
-          curl -fsS "$BASE/sitemap.xml" | grep -q "guides/choosing-ai-models.html"
+          curl -fsS "$BASE/robots.txt" -o /tmp/cenai-robots.txt
+          grep -q "Sitemap:" /tmp/cenai-robots.txt
+          curl -fsS "$BASE/sitemap.xml" -o /tmp/cenai-sitemap.xml
+          grep -q "guides/choosing-ai-models.html" /tmp/cenai-sitemap.xml
 
           ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
           if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi
