@@ -326,15 +326,30 @@ async function handleWebhook(event: Record<string, any>) {
     // PAYMENT.CAPTURE.PENDING intentionally leaves the order unfulfilled.
     return;
   }
-  let subscriptionId = String(resource.billing_agreement_id || resource.subscription_id || resource.id || "");
-  if (eventType.startsWith("PAYMENT.SALE.") && resource.billing_agreement_id) subscriptionId = String(resource.billing_agreement_id);
+  let saleDetail: Record<string, any> | null = null;
+  if (eventType === "PAYMENT.SALE.REFUNDED") {
+    const saleId = String(resource.id || "");
+    if (!saleId) throw new Error("PayPal sale refund webhook did not include its sale ID.");
+    const token = await accessToken();
+    saleDetail = await paypal("/v1/payments/sale/" + encodeURIComponent(saleId), "GET", token);
+    const saleState = String(saleDetail.state || "").toLowerCase();
+    if (saleState === "partially_refunded") {
+      console.info("Partial PayPal recurring sale refund recorded; membership remains active", JSON.stringify({ saleId }));
+      return;
+    }
+    if (saleState !== "refunded") throw new Error("PayPal sale refund could not be reconciled to a fully refunded sale.");
+  }
+  let subscriptionId = String(resource.billing_agreement_id || resource.subscription_id || saleDetail?.billing_agreement_id || resource.id || "");
+  if (eventType.startsWith("PAYMENT.SALE.") && (resource.billing_agreement_id || saleDetail?.billing_agreement_id)) {
+    subscriptionId = String(resource.billing_agreement_id || saleDetail?.billing_agreement_id);
+  }
   if (!subscriptionId) return;
   const { data: existing, error: lookupError } = await db.from("billing_subscriptions")
     .select("user_id,plan_key,status,current_period_end").eq("provider", "paypal")
     .eq("provider_subscription_id", subscriptionId).maybeSingle();
   if (lookupError) throw lookupError;
   const { data: attempt } = await db.from("billing_checkout_attempts").select("user_id,plan_key").eq("provider_subscription_id", subscriptionId).maybeSingle();
-  let userId = String(resource.custom_id || resource.custom || existing?.user_id || attempt?.user_id || "");
+  let userId = String(resource.custom_id || resource.custom || saleDetail?.custom_id || existing?.user_id || attempt?.user_id || "");
   if (!userId && resource.supplementary_data?.related_ids?.order_id) {
     const { data: row } = await db.from("billing_subscriptions").select("user_id")
       .eq("provider_subscription_id", String(resource.supplementary_data.related_ids.order_id)).maybeSingle();
