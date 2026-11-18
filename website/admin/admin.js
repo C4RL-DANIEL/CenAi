@@ -270,7 +270,7 @@
         status("Member profile updated and audited.");
       } else if (action === "cancel-subscription") {
         const subscriptionId = button.dataset.subscriptionId;
-        if (!subscriptionId || !confirm("Cancel this recurring PayPal membership? PayPal will stop future renewals; this does not issue a refund.")) return;
+        if (!subscriptionId || !confirm("Cancel this recurring PayPal membership now? PayPal cancellation is immediate and CenAI access will be removed. This does not issue a refund.")) return;
         await paypalApi("admin_cancel_subscription", { subscriptionId, reason:"Cancelled by CenAI administrator" });
         status("Recurring PayPal membership cancelled. No refund was issued.");
       } else {
