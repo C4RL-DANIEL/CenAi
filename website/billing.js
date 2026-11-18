@@ -173,7 +173,7 @@
               status(error.message || "Could not start the PayPal subscription.", true);
               walletButton.disabled = false;
             }
-          })
+          });
           } else {
             walletButton.disabled = true;
             walletButton.textContent = "Recurring subscription temporarily paused";
