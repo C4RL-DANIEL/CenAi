@@ -186,9 +186,6 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
 async function ensurePayPalPlanCurrency(plan: Record<string, any>, userId: string) {
   const expectedCurrency = String(plan.currency || "PHP").toUpperCase();
   const expectedAmount = Number(plan.amount);
-  if (plan.plan_key === "live_test" && (expectedCurrency !== "PHP" || expectedAmount !== 1)) {
-    throw new Error("CenAI Starter is locked to PHP 1.00. Checkout was stopped to prevent an incorrect charge.");
-  }
   const inspect = async (planId: string) => {
     const token = await accessToken();
     const detail = await paypal("/v1/billing/plans/" + encodeURIComponent(planId), "GET", token);
@@ -734,6 +731,29 @@ Deno.serve(async (req: Request) => {
       return json(200, { diagnostics, webhook, checkedAt: new Date().toISOString() });
     }
 
+    if (action === "admin_cancel_subscription") {
+      if (!await isAdmin(user.id)) return fail(403, "Owner or administrator access required");
+      if (tokenAal(req) !== "aal2" && !await hasEmailMfa(user.id)) return fail(403, "MFA_REQUIRED: Verify your administrator identity before changing memberships.");
+      const subscriptionId = String(body.subscriptionId || "").trim();
+      const reason = String(body.reason || "Cancelled by CenAI administrator").trim().slice(0, 128);
+      if (!/^I-[A-Z0-9]+$/i.test(subscriptionId)) return fail(400, "Only recurring PayPal subscriptions can be cancelled here.");
+      const { data: row, error: rowError } = await db.from("billing_subscriptions")
+        .select("user_id,status,provider,provider_subscription_id")
+        .eq("provider","paypal").eq("provider_subscription_id",subscriptionId).maybeSingle();
+      if (rowError) throw rowError;
+      if (!row) return fail(404, "PayPal membership subscription not found.");
+      if (["CANCELLED","EXPIRED","REFUNDED","REVERSED"].includes(String(row.status))) return json(200, { cancelled:false, alreadyInactive:true, status:row.status });
+      const token = await accessToken();
+      await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId) + "/cancel", "POST", token, { reason });
+      const { data: updated, error: updateError } = await db.from("billing_subscriptions")
+        .update({ status:"CANCELLED", cancel_at_period_end:false, updated_at:new Date().toISOString() })
+        .eq("provider","paypal").eq("provider_subscription_id",subscriptionId)
+        .select("user_id,provider_subscription_id,status").single();
+      if (updateError) throw updateError;
+      console.info("Administrator cancelled CenAI membership", JSON.stringify({ actor:user.id, target:row.user_id, subscriptionId }));
+      return json(200, { cancelled:true, subscription:updated });
+    }
+
     if (action === "create_guest_order") {
       if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
       const planKey = String(body.planKey || "live_test").trim().toLowerCase();
@@ -744,9 +764,6 @@ Deno.serve(async (req: Request) => {
       const amount = Number(plan.amount);
       const currency = String(plan.currency || "PHP").toUpperCase();
       if (!Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency)) return fail(400, "The selected plan has an invalid price.");
-      if (plan.plan_key === "live_test" && (currency !== "PHP" || amount !== 1)) {
-        return fail(409, "CenAI Starter is locked to PHP 1.00. Checkout was stopped to prevent an incorrect charge.");
-      }
       const token = await accessToken();
       const order = await paypal("/v2/checkout/orders", "POST", token, {
         intent: "CAPTURE",
