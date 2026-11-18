@@ -205,7 +205,7 @@ async function createOrRefreshPlan(body: Record<string, unknown>, userId: string
   }
   return data;
 }
-async function ensurePayPalPlanCurrency(plan: Record<string, any>, userId: string) {
+async function ensurePayPalPlanCurrency(plan: Record<string, any>) {
   const expectedCurrency = String(plan.currency || "PHP").toUpperCase();
   const expectedAmount = Number(plan.amount);
   const inspect = async (planId: string) => {
