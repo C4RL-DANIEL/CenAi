@@ -51,8 +51,12 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://cenai-website.cenai-app.workers.dev"
-          curl -fsS --retry 5 --retry-delay 3 "$BASE/api/health" | grep -q '"status":"online"'
-          curl -fsS --retry 5 --retry-delay 3 "$BASE/" | grep -qi 'CenAI'
+          HEALTH_BODY="$RUNNER_TEMP/cenai-health.json"
+          HOME_BODY="$RUNNER_TEMP/cenai-home.html"
+          curl -fsS --retry 5 --retry-delay 3 "$BASE/api/health" -o "$HEALTH_BODY"
+          grep -q '"status"[[:space:]]*:[[:space:]]*"online"' "$HEALTH_BODY"
+          curl -fsS --retry 5 --retry-delay 3 "$BASE/" -o "$HOME_BODY"
+          grep -qi 'CenAI' "$HOME_BODY"
           for route in /guides/ /about.html /privacy.html /terms.html /contact.html /robots.txt /sitemap.xml; do curl -fsS --retry 5 --retry-delay 3 "$BASE$route" >/dev/null; done
           echo "Cloudflare production deployment verified."
       - name: Deployment credential reminder
