@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261118-admin-email-fallback-1";
+const STATIC_CACHE_VERSION = "20261118-admin-email-smtp-design-2";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
@@ -122,6 +122,8 @@ async function sendGmailMessage(env, to, subject, text, html) {
     return expect(codes);
   }
   try {
+    // Cloudflare Socket API requires the connection handshake to finish before I/O.
+    await withTimeout(socket.opened, "connection");
     await expect([220]);
     await command("EHLO cenai.app", [250], "EHLO");
     await command("AUTH LOGIN", [334], "authentication");
@@ -169,11 +171,30 @@ async function sendGmailMessage(env, to, subject, text, html) {
 }
 
 async function sendGmailOtp(env, to, code) {
-  const text = "Your CenAI verification code is " + code + ". It expires in 10 minutes. Do not share it.";
-  const html = '<!doctype html><html><body style="margin:0;background:#080d17;font-family:Arial;color:#eaf0ff;padding:32px 12px"><main style="max-width:520px;margin:auto;background:#101827;border:1px solid #29364c;border-radius:20px;padding:30px"><p style="color:#a9baff;letter-spacing:2px;font-weight:bold">CENAI · ACCOUNT SECURITY</p><h1>Verify it\'s really you.</h1><p style="color:#bdc9dc;line-height:1.7">Use this one-time code to continue. It expires in <b>10 minutes</b>.</p><div style="margin:26px 0;padding:20px;background:#080f1d;border:1px solid #34476a;border-radius:14px;text-align:center;font-size:34px;font-weight:800;letter-spacing:9px;color:#a9baff">' + code + '</div><p style="font-size:13px;color:#91a2bc">If you did not request this code, ignore this message. Never share your code with anyone.</p><small>CenAI · Intelligence with permission</small></main></body></html>';
+  const text = "Your CenAI verification code is " + code + ". It expires in 10 minutes. If you did not request it, ignore this email. Never share this code with anyone, including CenAI support.";
+  const html = [
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light only"><title>Your CenAI security code</title></head>',
+    '<body style="margin:0;padding:28px 12px;background:#f1f0e9;font-family:Arial,Helvetica,sans-serif;color:#1b2b23">',
+    '<div style="display:none;max-height:0;overflow:hidden;opacity:0">Your one-time CenAI security code. Expires in 10 minutes.</div>',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#fbfaf6;border:1px solid #d9dfd4;border-radius:20px;overflow:hidden">',
+    '<tr><td style="padding:26px 30px;background:#1b2b23">',
+    '<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="42" height="42" align="center" valign="middle" style="width:42px;height:42px;border-radius:50%;background:#a6c94b;color:#1b2b23;font-size:21px;font-weight:800">C</td><td style="padding-left:12px;color:#f7f8f1;font-size:20px;font-weight:700;letter-spacing:-1px">CenAI<span style="display:block;margin-top:3px;color:#c4d2b0;font-size:9px;font-weight:600;letter-spacing:2px">ACCOUNT SECURITY</span></td></tr></table>
+    '<p style="margin:24px 0 7px;color:#c6d3b7;font-size:10px;font-weight:700;letter-spacing:2px">SECURE VERIFICATION</p>',
+    '<h1 style="margin:0;color:#fff;font-size:28px;line-height:1.2;letter-spacing:-.7px">Confirm it’s you.</h1>',
+    '</td></tr><tr><td style="padding:30px">',
+    '<p style="margin:0 0 18px;color:#536458;font-size:14px;line-height:1.75">Use this one-time code to finish verifying your CenAI account or administrator session. For your security, the code expires in <strong style="color:#1b2b23">10 minutes</strong>.</p>',
+    '<div style="padding:21px 12px;border:1px solid #d9dfd4;border-radius:14px;background:#f1f3e9;text-align:center">',
+    '<div style="margin-bottom:9px;color:#718064;font-size:9px;font-weight:700;letter-spacing:2px">YOUR VERIFICATION CODE</div>',
+    '<div style="color:#1b2b23;font-size:34px;font-weight:800;letter-spacing:9px;font-variant-numeric:tabular-nums">' + code + '</div></div>',
+    '<div style="margin:22px 0 0;padding:14px 15px;border-left:3px solid #a6c94b;background:#f3f4eb;color:#68766b;font-size:12px;line-height:1.7"><strong style="color:#34483a">Didn’t request this?</strong><br>Ignore this message. Never share your code with anyone. CenAI support will never ask you for it.</div>',
+    '<p style="margin:24px 0 0;color:#849083;font-size:11px;line-height:1.7">This message was sent to protect access to your CenAI account. If you need help, visit the official CenAI website.</p>',
+    '<div style="margin-top:22px;padding-top:17px;border-top:1px solid #e1e5dc;color:#7b877a;font-size:10px">CenAI · Intelligence with permission</div>',
+    '</td></tr></table><p style="margin:16px 0 0;color:#98a194;font-size:10px;text-align:center">Automated security notification · Please do not reply</p>',
+    '</td></tr></table></body></html>'
+  ].join("");
   return sendGmailMessage(env, to, "Your CenAI verification code", text, html);
 }
-
 async function emailOtp(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "EMAIL_USER", "EMAIL_PASS", "EMAIL_OTP_SECRET"])) {
@@ -220,8 +241,21 @@ async function emailOtp(request, env) {
     }
     return json(400, { error: "Unknown email verification action" });
   } catch (error) {
-    console.error("CenAI email verification failed", error instanceof Error ? error.message : "unknown error");
-    return json(503, { error: "Email verification service temporarily unavailable" });
+    const detail = error instanceof Error ? error.message : "unknown error";
+    console.error("CenAI email verification failed", detail);
+    let message = "Email verification service is temporarily unavailable. Please try again.";
+    if (/timed out during connection|connect/i.test(detail)) {
+      message = "CenAI could not connect to the email provider. Please retry shortly.";
+    } else if (/password authentication|535|534/i.test(detail)) {
+      message = "The email provider rejected the configured sender credentials. The service administrator must update the Gmail app password.";
+    } else if (/sender validation|MAIL FROM|553/i.test(detail)) {
+      message = "The configured sender address was rejected by the email provider.";
+    } else if (/recipient validation|RCPT TO|550|552/i.test(detail)) {
+      message = "The email provider rejected the destination address. Check the administrator email address.";
+    } else if (/message acceptance|message transfer|DATA|554/i.test(detail)) {
+      message = "The email provider could not accept the verification message. Please retry shortly.";
+    }
+    return json(503, { error: message });
   }
 }
 
