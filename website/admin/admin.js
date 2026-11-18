@@ -226,7 +226,7 @@
       else if (tab === "analytics") await loadAnalytics();
       else if (tab === "website") await loadSitePages();
       else if (tab === "quotas") await loadQuotas();
-      else if (tab === "billing") await loadBillingPlans();
+      else if (tab === "billing") { await loadBillingPlans(); await loadRefundRequests(); }
       else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
@@ -302,6 +302,35 @@
       await loadMembers();
     } catch (err) { status(err.message,true); }
     finally { button.disabled = false; }
+  });
+  async function loadRefundRequests() {
+    const data = await paypalApi("admin_list_refund_requests");
+    const rows = data.requests || [];
+    $("refund-requests-content").innerHTML = rows.map(r => {
+      const actions = r.status === "PENDING"
+        ? '<button data-refund-decision="approve" data-refund-id="' + esc(r.id) + '">Approve</button><button class="danger" data-refund-decision="reject" data-refund-id="' + esc(r.id) + '">Reject</button>'
+        : r.status === "APPROVED"
+          ? '<button data-refund-decision="issue" data-order-id="' + esc(r.provider_order_id) + '">Issue full refund</button>' : "";
+      return '<article class="item"><div><b>' + esc(r.customer_email || r.user_id) + ' · ' + esc(r.amount) + ' ' + esc(r.currency) + '</b><small>' + esc(r.reason) + ' · Order …' + esc(String(r.provider_order_id).slice(-10)) + ' · ' + esc(r.created_at) + '</small><small>' + esc(r.details || "No additional details") + '</small><span class="pill">' + esc(r.status) + '</span>' + (r.decision_note ? '<small>CenAI note: ' + esc(r.decision_note) + '</small>' : "") + '</div><div class="actions">' + actions + '</div></article>';
+    }).join("") || "<p>No customer refund requests.</p>";
+  }
+  $("refund-requests-refresh")?.addEventListener("click", () => loadRefundRequests().catch(e => status(e.message,true)));
+  $("refund-requests-content")?.addEventListener("click", async event => {
+    const button = event.target.closest("button[data-refund-decision]"); if (!button) return;
+    const decision = button.dataset.refundDecision; button.disabled = true;
+    try {
+      if (decision === "approve" || decision === "reject") {
+        if (!confirm(decision === "approve" ? "Approve this request? No money will be sent yet." : "Reject this refund request?")) return;
+        const noteText = prompt("Optional note for the customer:", "") || "";
+        await paypalApi("admin_decide_refund_request", { requestId: button.dataset.refundId, decision, note: noteText });
+        status(decision === "approve" ? "Request approved. Issue the full refund separately when ready." : "Refund request rejected.");
+      } else if (decision === "issue") {
+        if (!confirm("Issue a FULL PayPal refund for this approved payment? This cannot be undone. Access is revoked only after PayPal confirms the full refund.")) return;
+        const result = await paypalApi("admin_refund_one_time_payment", { orderId: button.dataset.orderId });
+        status(result.message || "PayPal refund submitted.");
+      }
+      await loadRefundRequests();
+    } catch (error) { status(error.message,true); } finally { button.disabled = false; }
   });
   async function loadBillingPlans() {
     const data = await paypalApi("list_plans");
