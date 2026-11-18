@@ -58,7 +58,10 @@
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.msg || data.message || data.error_description || "Authenticator verification failed.");
+    if (!response.ok) {
+      const detail = data.msg || data.message || data.error_description || data.error || data.error_code;
+      throw new Error(detail ? String(detail) : `Authenticator status request failed (HTTP ${response.status}).`);
+    }
     return data;
   }
   async function beginMfa() {
@@ -68,8 +71,19 @@
         $("mfa-gate").hidden = true; $("dashboard").hidden = false;
         await load("overview"); return;
       }
-      const factors = await authMfa("factors");
-      const verified = (factors.totp || []).filter(f => f.status === "verified");
+      let factors = null;
+      try {
+        factors = await authMfa("factors");
+      } catch (factorError) {
+        // Email OTP remains a second-factor challenge, not an MFA bypass.
+        // If Supabase cannot return the factor list, attempt the configured,
+        // server-validated administrator email fallback instead of trapping
+        // an administrator on an unusable authenticator screen.
+        console.warn("CenAI authenticator factor lookup failed; attempting email MFA fallback:", factorError.message);
+        $("mfa-status").textContent = "Authenticator status unavailable. Switching to administrator email verification…";
+      }
+      const factorList = Array.isArray(factors?.totp) ? factors.totp : [];
+      const verified = factorList.filter(f => f.status === "verified");
       $("mfa-qr").hidden = true; $("mfa-secret-wrap").hidden = true;
       if (verified.length) {
         mfaFactorId = verified[0].id; mfaMode = "challenge";

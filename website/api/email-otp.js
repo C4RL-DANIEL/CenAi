@@ -32,6 +32,27 @@ export default async function handler(req, res) {
     const action = String(req.body?.action || "");
     const email = String(req.body?.email || user.email).trim().toLowerCase();
     if (email !== String(user.email).toLowerCase()) return json(res,403,{error:"You can only verify the email on your signed-in account"});
+    if (action === "admin_send" || action === "admin_verify") {
+      const code = action === "admin_send" ? String(randomInt(0,1000000)).padStart(6,"0") : String(req.body?.code || "").trim();
+      if (action === "admin_verify" && !/^\d{6}$/.test(code)) return json(res,400,{error:"Enter the six-digit administrator verification code"});
+      const digest = hashCode(user.id,email,code);
+      const upstream = await fetch(url.replace(/\/$/,"")+"/functions/v1/cenai-email-otp", {
+        method:"POST",
+        headers:{apikey:key,Authorization:"Bearer "+userToken,"Content-Type":"application/json"},
+        body:JSON.stringify({action:action === "admin_send" ? "issue_admin" : "verify_admin",email,otpHash:digest})
+      });
+      const result = await upstream.json().catch(()=>({}));
+      if (!upstream.ok) return json(res,upstream.status,{error:result.error || "Administrator email verification failed"});
+      if (action === "admin_verify") return json(res,200,{ok:true,verified:true,message:"Administrator email verification successful"});
+      const transport = nodemailer.createTransport({host:"smtp.gmail.com",port:465,secure:true,auth:{user:process.env.EMAIL_USER,pass:process.env.EMAIL_PASS}});
+      await transport.sendMail({
+        from:`CenAI Security <${process.env.EMAIL_USER}>`,to:email,
+        subject:"Your CenAI administrator verification code",
+        text:`Your CenAI administrator verification code is ${code}. It expires in 10 minutes. Do not share it.`,
+        html:emailHtml(code)
+      });
+      return json(res,200,{ok:true,message:"Administrator verification code sent. Check your inbox."});
+    }
     if (action === "send") {
       const code = String(randomInt(0,1000000)).padStart(6,"0");
       const digest = hashCode(user.id,email,code);
