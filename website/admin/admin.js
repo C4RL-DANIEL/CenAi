@@ -64,6 +64,25 @@
     }
     return data;
   }
+  async function startEmailMfa() {
+    if (!accessToken) throw new Error("Sign in again before requesting an email code.");
+    mfaMode = "email";
+    mfaFactorId = "";
+    $("mfa-code").value = "";
+    $("mfa-verify").disabled = true;
+    $("mfa-email-fallback").hidden = true;
+    $("mfa-instructions").textContent = "We’ll send a one-time verification code to your administrator email address.";
+    $("mfa-status").textContent = "Sending email verification code…";
+    const response = await fetch("/api/email-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken },
+      body: JSON.stringify({ action: "admin_send" })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not send the email verification code.");
+    $("mfa-status").textContent = result.message || "Verification code sent. Check your administrator inbox.";
+    $("mfa-verify").disabled = false;
+  }
   async function beginMfa() {
     try {
       await api("admin_preflight");
@@ -87,23 +106,14 @@
       $("mfa-qr").hidden = true; $("mfa-secret-wrap").hidden = true;
       if (verified.length) {
         mfaFactorId = verified[0].id; mfaMode = "challenge";
-        $("mfa-instructions").textContent = "Enter the current six-digit code from your authenticator app to continue.";
+        $("mfa-instructions").textContent = "Enter the current six-digit code from your authenticator app, or switch to email verification.";
+        $("mfa-email-fallback").hidden = false;
+        $("mfa-status").textContent = "";
       } else {
-        mfaFactorId = ""; mfaMode = "email";
-        $("mfa-instructions").textContent = "No authenticator is enrolled. We’ll send a one-time verification code to your administrator email.";
-        $("mfa-verify").disabled = true;
-        $("mfa-status").textContent = "Sending email verification code…";
-        const sent = await fetch("/api/email-otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken },
-          body: JSON.stringify({ action: "admin_send" })
-        });
-        const sentData = await sent.json().catch(() => ({}));
-        if (!sent.ok) throw new Error(sentData.error || "Could not send the email verification code.");
-        $("mfa-status").textContent = sentData.message || "Verification code sent. Check your email.";
+        $("mfa-email-fallback").hidden = true;
+        await startEmailMfa();
       }
-      if (mfaMode !== "email") $("mfa-status").textContent = "";
-      else $("mfa-verify").disabled = false;
+      if (mfaMode !== "email") $("mfa-verify").disabled = false;
     } catch (error) {
       $("mfa-verify").disabled = false;
       $("mfa-status").textContent = error.message;
@@ -136,7 +146,13 @@
       $("mfa-gate").hidden = true; $("dashboard").hidden = false; $("mfa-code").value = "";
       status("Authenticator verified · signed in as " + userEmail + ".");
       await load("overview");
-    } catch (error) { $("mfa-status").textContent = error.message; }
+    } catch (error) {
+      $("mfa-status").textContent = error.message;
+      if (mfaMode === "challenge") {
+        $("mfa-email-fallback").hidden = false;
+        $("mfa-status").textContent += " If you cannot access the enrolled authenticator, switch to email verification.";
+      }
+    }
     finally { $("mfa-verify").disabled = false; }
   }
   async function signIn(event) {
@@ -446,6 +462,7 @@
   $("page-refresh")?.addEventListener("click",()=>loadSitePages().catch(e=>status(e.message,true)));
   $("quota-form")?.addEventListener("submit",async e=>{e.preventDefault();try{await api("quota_update",{ownerUserId:$("quota-user-id").value.trim(),dailyRequestLimit:Number($("quota-daily").value),monthlyTokenLimit:Number($("quota-monthly").value),enabled:$("quota-enabled").checked});status("Public API quota policy saved and audited.");await loadQuotas();}catch(err){status(err.message,true);}});
   $("mfa-verify")?.addEventListener("click",verifyMfa);
+  $("mfa-email-fallback")?.addEventListener("click",async()=>{const button=$("mfa-email-fallback");button.disabled=true;try{await startEmailMfa();}catch(error){$("mfa-status").textContent=error.message;}finally{button.disabled=false;}});
   $("mfa-signout")?.addEventListener("click",()=>{accessToken=null;refreshToken=null;userEmail="";mfaFactorId="";$("mfa-gate").hidden=true;$("login").hidden=false;$("mfa-code").value="";$("mfa-status").textContent="";});
   $("mfa-code")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();verifyMfa();}});
   $("analytics-refresh")?.addEventListener("click",()=>loadAnalytics().catch(e=>status(e.message,true)));
