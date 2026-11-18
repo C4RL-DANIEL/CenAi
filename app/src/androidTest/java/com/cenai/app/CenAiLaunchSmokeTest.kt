@@ -3,9 +3,12 @@ package com.cenai.app
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -37,7 +40,8 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
-        compose.onNodeWithText("Device").performScrollTo()
+        // The settings page selector is horizontally scrollable; reveal the final tabs before selecting Device.
+        compose.onNodeWithTag("settings-page-tabs").performTouchInput { swipeLeft() }
         compose.onNodeWithText("Device").performClick()
         listOf(
             "VOICE ENGINE",
@@ -51,7 +55,6 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
-        compose.onNodeWithText("Updates").performScrollTo()
         compose.onNodeWithText("Updates").performClick()
         val softwareUpdate = compose.onNodeWithText("SOFTWARE UPDATE", substring = true)
         softwareUpdate.performScrollTo()
