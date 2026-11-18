@@ -43,6 +43,15 @@ jobs:
           test ! -e dist/api/admin.js
           test ! -e dist/api/email-otp.js
           test ! -e dist/ADMIN-SETUP.md
+      - name: Set up Deno for Supabase Edge Function checks
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check PayPal and admin control-plane Edge Functions
+        run: |
+          deno check --no-lock supabase/functions/cenai-paypal-billing/index.ts
+          deno check --no-lock supabase/functions/cenai-control-plane/index.ts
+
       - name: Verify Cloudflare API and recovery routes
         run: |
           set -euo pipefail
