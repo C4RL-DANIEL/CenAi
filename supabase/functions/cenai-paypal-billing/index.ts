@@ -329,11 +329,12 @@ async function handleWebhook(event: Record<string, any>) {
   let subscriptionDetail: Record<string, any> | null = null;
   if (eventType === "PAYMENT.SALE.COMPLETED") {
     const token = await accessToken();
-    subscriptionDetail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
-    if (String(subscriptionDetail.custom_id || "") !== userId) {
+    const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
+    subscriptionDetail = detail;
+    if (String(detail.custom_id || "") !== userId) {
       throw new Error("PayPal recurring payment ownership verification failed.");
     }
-    const providerStatus = String(subscriptionDetail.status || "").toUpperCase();
+    const providerStatus = String(detail.status || "").toUpperCase();
     if (providerStatus !== "ACTIVE") {
       status = ["CANCELLED", "SUSPENDED", "EXPIRED"].includes(providerStatus)
         ? providerStatus
