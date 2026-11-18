@@ -26,6 +26,7 @@ const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
   "BILLING.SUBSCRIPTION.CANCELLED",
   "BILLING.SUBSCRIPTION.SUSPENDED",
   "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+  "BILLING.SUBSCRIPTION.PAYMENT.SUCCEEDED",
   "PAYMENT.SALE.COMPLETED",
   "PAYMENT.SALE.REFUNDED",
   "PAYMENT.SALE.REVERSED",
@@ -290,7 +291,7 @@ async function handleWebhook(event: Record<string, any>) {
     }
     return;
   }
-  let subscriptionId = String(resource.id || resource.billing_agreement_id || "");
+  let subscriptionId = String(resource.billing_agreement_id || resource.subscription_id || resource.id || "");
   if (eventType.startsWith("PAYMENT.SALE.") && resource.billing_agreement_id) subscriptionId = String(resource.billing_agreement_id);
   if (!subscriptionId) return;
   const { data: existing, error: lookupError } = await db.from("billing_subscriptions")
@@ -318,6 +319,7 @@ async function handleWebhook(event: Record<string, any>) {
     "BILLING.SUBSCRIPTION.SUSPENDED": "SUSPENDED",
     "BILLING.SUBSCRIPTION.EXPIRED": "EXPIRED",
     "BILLING.SUBSCRIPTION.PAYMENT.FAILED": "PAST_DUE",
+    "BILLING.SUBSCRIPTION.PAYMENT.SUCCEEDED": "ACTIVE",
     "PAYMENT.SALE.PENDING": "PENDING_PAYMENT",
     "PAYMENT.SALE.COMPLETED": "ACTIVE",
     "PAYMENT.SALE.DENIED": "PAST_DUE",
@@ -327,7 +329,7 @@ async function handleWebhook(event: Record<string, any>) {
   let status = statusMap[eventType];
   if (!status) return;
   let subscriptionDetail: Record<string, any> | null = null;
-  if (eventType === "PAYMENT.SALE.COMPLETED") {
+  if (eventType === "PAYMENT.SALE.COMPLETED" || eventType === "BILLING.SUBSCRIPTION.PAYMENT.SUCCEEDED") {
     const token = await accessToken();
     const detail = await paypal("/v1/billing/subscriptions/" + encodeURIComponent(subscriptionId), "GET", token);
     subscriptionDetail = detail;
