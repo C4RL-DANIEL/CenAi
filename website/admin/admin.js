@@ -73,11 +73,20 @@
     $("mfa-email-fallback").hidden = true;
     $("mfa-instructions").textContent = "We’ll send a one-time verification code to your administrator email address.";
     $("mfa-status").textContent = "Sending email verification code…";
-    const response = await fetch("/api/email-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken },
-      body: JSON.stringify({ action: "admin_send" })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    let response;
+    try {
+      response = await fetch("/api/email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + accessToken },
+        body: JSON.stringify({ action: "admin_send" }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error.name === "AbortError") throw new Error("The email service did not respond within 25 seconds. Please retry; no code was confirmed as sent.");
+      throw error;
+    } finally { clearTimeout(timeout); }
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || "Could not send the email verification code.");
     $("mfa-status").textContent = result.message || "Verification code sent. Check your administrator inbox.";
