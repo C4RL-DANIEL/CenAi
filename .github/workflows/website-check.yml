@@ -99,7 +99,8 @@ jobs:
           for endpoint in admin beta; do
             code=$(curl -sS --max-time 15 -o "/tmp/cenai-$endpoint.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"admin_preflight"}' "$BASE/api/$endpoint")
             if [[ "$code" != "401" ]]; then cat "/tmp/cenai-$endpoint.json"; echo "Expected 401 from /api/$endpoint, got $code"; exit 1; fi
-          done          billing_code=$(curl -sS --max-time 20 -o /tmp/cenai-billing-auth.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"list_customer_refunds"}' "$BASE/api/functions/cenai-paypal-billing")
+          done
+          billing_code=$(curl -sS --max-time 20 -o /tmp/cenai-billing-auth.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"action":"list_customer_refunds"}' "$BASE/api/functions/cenai-paypal-billing")
           if [[ "$billing_code" != "401" ]]; then cat /tmp/cenai-billing-auth.json; echo "Expected 401 from unauthenticated billing API, got $billing_code"; exit 1; fi
           curl -fsS "$BASE/account" -o /tmp/cenai-account.html
           grep -q 'Request a refund' /tmp/cenai-account.html
