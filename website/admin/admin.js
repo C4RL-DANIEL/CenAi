@@ -285,7 +285,19 @@
   });
   async function loadBillingPlans() {
     const data = await paypalApi("list_plans");
-    $("billing-plan-content").innerHTML = (data.plans || []).map(p =>
+    const plans = data.plans || [];
+    const form = $("billing-plan-form");
+    // Never show a misleading default price: hydrate the editor from the saved
+    // database/PayPal plan until the administrator intentionally edits it.
+    if (form && !form.dataset.dirty && plans.length) {
+      const current = plans.find(p => p.plan_key === $("billing-plan-key").value) || plans[0];
+      $("billing-plan-key").value = current.plan_key;
+      $("billing-plan-name").value = current.display_name;
+      $("billing-plan-amount").value = Number(current.amount).toFixed(2);
+      $("billing-plan-interval").value = current.interval_unit;
+      $("billing-plan-enabled").checked = Boolean(current.enabled);
+    }
+    $("billing-plan-content").innerHTML = plans.map(p =>
       '<div class="item"><div><b>' + esc(p.display_name) + '</b><small>' +
       esc(p.amount) + ' ' + esc(p.currency) + ' / ' + esc(p.interval_count) + ' ' + esc(p.interval_unit) +
       ' · PayPal plan ' + esc(p.paypal_plan_id || "not created") + '</small></div><span class="pill">' +
@@ -337,6 +349,8 @@
   $("beta-refresh")?.addEventListener("click",()=>loadBeta().catch(e=>status(e.message,true)));
   $("beta-content")?.addEventListener("click",async e=>{const b=e.target.closest("button[data-review]");if(!b)return;const parent=b.closest("[data-id]");if(!confirm("Are you sure you want to "+b.dataset.review+" this beta application?"))return;try{await betaApi("admin_review",{id:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"});try{const mail=await fetch("/api/beta-notification",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+accessToken},body:JSON.stringify({applicationId:parent.dataset.id,status:b.dataset.review,note:"Reviewed in CenAI Control"})});const md=await mail.json().catch(()=>({}));if(!mail.ok)throw new Error(md.error||"Email send failed");status("Decision saved and notification email sent.");}catch(mailError){status("Decision saved, but notification email failed: "+mailError.message,true);}await loadBeta();}catch(err){status(err.message,true);}});
   function row(name, detail, state, url) { const action = url && /^https:\/\/github\.com\//i.test(url) ? '<a class="pill" target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(state)+' ↗</a>' : '<span class="pill">'+esc(state)+'</span>'; return '<div class="item"><div><b>'+esc(name)+'</b><small>'+esc(detail)+'</small></div>'+action+'</div>'; }
+  $("billing-plan-form")?.addEventListener("input", e => { e.currentTarget.dataset.dirty = "true"; });
+  $("billing-plan-form")?.addEventListener("change", e => { e.currentTarget.dataset.dirty = "true"; });
   $("billing-plan-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     const statusNode = $("billing-plan-status");
@@ -353,6 +367,7 @@
         enabled: $("billing-plan-enabled").checked
       });
       statusNode.textContent = "PayPal Live plan created and activated: " + data.plan.paypal_plan_id + ". Customers can subscribe and will be charged according to the displayed recurring price after approving PayPal checkout.";
+      e.currentTarget.dataset.dirty = "";
       await loadBillingPlans();
     } catch (error) {
       statusNode.textContent = error.message;
