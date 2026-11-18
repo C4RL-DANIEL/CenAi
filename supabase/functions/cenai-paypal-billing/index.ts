@@ -316,6 +316,10 @@ async function handleWebhook(event: Record<string, any>) {
       const { error: entitlementError } = await db.from("billing_subscriptions").update({
         status: "REFUNDED", cancel_at_period_end: false, updated_at: new Date().toISOString(),
       }).eq("provider", "paypal").eq("provider_subscription_id", "ONE_TIME:" + resolvedOrderId).eq("user_id", payment.user_id);
+      const { error: requestSyncError } = await db.from("billing_refund_requests")
+        .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
+        .eq("provider_order_id", resolvedOrderId).in("status", ["PENDING", "APPROVED", "PROCESSING"]);
+      if (requestSyncError) console.error("Webhook refund request sync failed", requestSyncError.message);
       if (entitlementError) throw entitlementError;
     } else if (eventType === "PAYMENT.CAPTURE.REVERSED") {
       const { error } = await db.from("billing_one_time_payments").update({ status: "REVERSED", updated_at: new Date().toISOString() })
