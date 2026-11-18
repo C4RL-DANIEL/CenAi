@@ -249,9 +249,14 @@
         const cancelAction = !oneTime && effectiveStatus === "ACTIVE" ? '<button data-member-action="cancel-subscription" data-subscription-id="'+esc(s.subscriptionId)+'" type="button" class="danger">Cancel recurring plan</button>' : '';
         return '<div class="member-subscription"><b>'+esc(s.planName)+'</b><small>'+esc(s.provider)+' · '+esc(effectiveStatus.replaceAll("_"," "))+(s.amount !== null ? ' · '+esc(s.currency||"PHP")+' '+esc(s.amount) : '')+(s.currentPeriodEnd ? ' · ends '+esc(s.currentPeriodEnd) : '')+(s.cancelAtPeriodEnd ? ' · cancels at period end' : '')+(oneTime ? ' · one-time' : '')+'</small>'+cancelAction+'</div>';
       }).join("") : '<p class="muted">No membership or payment-backed entitlement recorded.</p>';
+      const payments = (m.payments || []).map(p => {
+        const canRefund = p.status === "COMPLETED" && p.captureId;
+        const refundAction = canRefund ? '<button data-member-action="refund-one-time" data-order-id="'+esc(p.orderId)+'" type="button" class="danger">Full refund</button>' : '';
+        return '<div class="member-subscription"><b>One-time card payment</b><small>'+esc(p.currency)+' '+esc(p.amount)+' · '+esc(p.status)+' · paid '+esc(p.paidAt || "unknown")+' · access until '+esc(p.accessExpiresAt || "unknown")+'</small>'+refundAction+'</div>';
+      }).join("");
       const suspended = m.bannedUntil && Date.parse(m.bannedUntil) > Date.now();
       const admin = Boolean(m.adminRole);
-      return '<article class="item member-card" data-member-id="'+esc(m.id)+'"><div class="member-main"><div class="member-heading"><b>'+esc(m.displayName || m.email || m.id)+'</b><span class="pill">'+(admin ? esc(m.adminRole) : 'member')+'</span><span class="pill">'+(suspended ? 'suspended' : 'account active')+'</span></div><small>'+esc(m.email)+' · joined '+esc(m.createdAt || 'unknown')+' · last sign-in '+esc(m.lastSignInAt || 'never')+'</small><small>Email: '+(m.emailConfirmedAt ? 'verified' : 'not verified')+' · Beta: '+esc(m.betaStatus)+'</small><div class="member-subscriptions">'+subscriptions+'</div><div class="member-actions"><label>Display name<input data-member-name maxlength="80" value="'+esc(m.displayName)+'" placeholder="Display name"></label><button data-member-action="save" type="button">Save profile</button>'+(admin ? '' : '<button data-member-action="'+(suspended?'restore':'suspend')+'" type="button" class="'+(suspended?'':'danger')+'">'+(suspended?'Restore account':'Suspend account')+'</button>')+'</div></div></article>';
+      return '<article class="item member-card" data-member-id="'+esc(m.id)+'"><div class="member-main"><div class="member-heading"><b>'+esc(m.displayName || m.email || m.id)+'</b><span class="pill">'+(admin ? esc(m.adminRole) : 'member')+'</span><span class="pill">'+(suspended ? 'suspended' : 'account active')+'</span></div><small>'+esc(m.email)+' · joined '+esc(m.createdAt || 'unknown')+' · last sign-in '+esc(m.lastSignInAt || 'never')+'</small><small>Email: '+(m.emailConfirmedAt ? 'verified' : 'not verified')+' · Beta: '+esc(m.betaStatus)+'</small><div class="member-subscriptions">'+subscriptions+payments+'</div><div class="member-actions"><label>Display name<input data-member-name maxlength="80" value="'+esc(m.displayName)+'" placeholder="Display name"></label><button data-member-action="save" type="button">Save profile</button>'+(admin ? '' : '<button data-member-action="'+(suspended?'restore':'suspend')+'" type="button" class="'+(suspended?'':'danger')+'">'+(suspended?'Restore account':'Suspend account')+'</button>')+'</div></div></article>';
     }).join("") || "<p>No members match this search.</p>";
   }
   $("members-search")?.addEventListener("input", renderMembers);
@@ -273,6 +278,11 @@
         if (!subscriptionId || !confirm("Cancel this recurring PayPal membership now? PayPal cancellation is immediate and CenAI access will be removed. This does not issue a refund.")) return;
         await paypalApi("admin_cancel_subscription", { subscriptionId, reason:"Cancelled by CenAI administrator" });
         status("Recurring PayPal membership cancelled. No refund was issued.");
+      } else if (action === "refund-one-time") {
+        const orderId = button.dataset.orderId;
+        if (!orderId || !confirm("Issue a FULL refund for this completed one-time PayPal card payment? This cannot be undone. CenAI access will be revoked only after PayPal confirms the full refund.")) return;
+        const result = await paypalApi("admin_refund_one_time_payment", { orderId });
+        status(result.message || "PayPal refund request processed.");
       } else {
         const verb = action === "suspend" ? "suspend" : "restore";
         if (!confirm("Are you sure you want to "+verb+" this member account?")) return;
