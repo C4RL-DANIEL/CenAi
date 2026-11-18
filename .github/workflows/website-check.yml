@@ -58,6 +58,13 @@ jobs:
           grep -q 'cenai-email-otp' website/worker.js
           grep -q 'cenai-control-plane' website/worker.js
           grep -q 'cenai-paypal-billing' website/worker.js
+          grep -q 'create_customer_refund_request' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'admin_decide_refund_request' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'billing_refund_requests' supabase/migrations/20261118180000_customer_refund_requests.sql
+          grep -q 'customer-refund-form' website/account.html
+          grep -q 'refund-requests-content' website/admin/index.html
+          node --check website/account.js
+          node --check website/admin/admin.js
           grep -q 'cenai-ai-quota' website/worker.js
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q 'api/site-pages' website/worker.js
