@@ -1159,7 +1159,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         "Privacy & permissions" to "Device",
                         "Agents" to "Agents",
                         "Data & storage" to "Device",
-                        "About & diagnostics" to "Updates"
+                        "About & diagnostics" to "Device"
                     )
                     if (isTabletLayout) {
                         Column(
@@ -1813,6 +1813,9 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                             }) { Text("Reset local analytics", color = Color(0xFFFF938B)) }
                         }
                     }
+                    }
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
+                        Text("CHAT PREFERENCES", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
                     OutlinedTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
                         label = { Text("Maximum output tokens") }, singleLine = true)
@@ -1821,8 +1824,13 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     OutlinedTextField(value = agentMemory, onValueChange = { if (it.length <= 12000) agentMemory = it },
                         label = { Text("Persistent agent memory (optional)") }, minLines = 3)
                     Text("Only details you enter here are retained. Memory is encrypted on this device and can be edited or cleared at any time.", color = palette.muted, fontSize = 10.sp)
-                    Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = palette.muted, fontSize = 10.sp)
-                    if (info.isNotBlank()) Text(info, color = palette.accent, fontSize = 11.sp)
+
+
+                    }
+                    if (selectedSettingsPage == "AI & models" && selectedSettingsCategory == "Providers") {
+                        Text("PROVIDER CONNECTION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = palette.muted, fontSize = 10.sp)
+                        if (info.isNotBlank()) Text(info, color = palette.muted, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
                         appMonitor.recordEvent("provider_test"); monitorSnapshot = appMonitor.snapshot()
                         vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
@@ -1836,9 +1844,8 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                         }
                     }, modifier = Modifier.fillMaxWidth()) { Text(if (testBusy) "Testing…" else "Test connection") }
                     HorizontalDivider(color = palette.raised)
-                    
                     }
-                    if (selectedSettingsPage == "Updates") {
+                    if (selectedSettingsPage == "Updates" || selectedSettingsCategory == "About & diagnostics") {
 Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Release channel", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
