@@ -1171,7 +1171,32 @@ Deno.serve(async (req: Request) => {
         return fail(409, "PayPal capture amount does not match the CenAI payment record. No refund was submitted.");
       }
       const refundKey = await stablePayPalRequestId("cenai-full-refund:" + captureId);
-      const refund = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId) + "/refund", "POST", token, {}, refundKey);
+      let refund: Record<string, any>;
+      try {
+        refund = await paypal("/v2/payments/captures/" + encodeURIComponent(captureId) + "/refund", "POST", token, {}, refundKey);
+      } catch (error) {
+        const providerError = error instanceof Error ? error.message : String(error || "");
+        if (/REFUND_FAILED_INSUFFICIENT_FUNDS/i.test(providerError)) {
+          const message = "PayPal could not fund this refund because the available PayPal balance or verified linked funding source has insufficient funds. No refund was issued. Add sufficient funds or verify and fund the linked bank account, then retry the refund.";
+          const now = new Date().toISOString();
+          const { error: requestUpdateError } = await db.from("billing_refund_requests")
+            .update({ status: "APPROVED", decision_note: message, updated_at: now })
+            .eq("provider_order_id", orderId).in("status", ["APPROVED", "PROCESSING"]);
+          if (requestUpdateError) console.error("PayPal insufficient-funds refund state update failed", requestUpdateError.message);
+          const { error: auditError } = await db.from("admin_audit_logs").insert({
+            actor_user_id: user.id, actor_email: String(user.email || ""),
+            action: "billing.payment.refund_blocked_insufficient_funds",
+            details: { target_user_id: payment.user_id, order_id: orderId, capture_id: captureId,
+              amount: payment.amount, currency: payment.currency, provider_issue: "REFUND_FAILED_INSUFFICIENT_FUNDS" },
+          });
+          if (auditError) console.error("PayPal insufficient-funds refund audit write failed", auditError.message);
+          console.warn("PayPal refund blocked by insufficient merchant funding", JSON.stringify({
+            orderId, captureId, requestStateRestored: !requestUpdateError,
+          }));
+          return fail(422, message);
+        }
+        throw error;
+      }
       const refundStatus = String(refund.status || "PENDING").toUpperCase();
       let reconciled = false;
       if (refundStatus === "COMPLETED") {
