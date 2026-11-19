@@ -48,7 +48,7 @@ Do not commit secrets. Production secrets are managed in Cloudflare Worker Setti
 
 ## Backend and data
 
-Supabase remains the PostgreSQL and Auth system of record to preserve accounts and existing data. The control plane, PayPal billing, public API, billing, and telemetry remain deployed as Supabase Edge Functions and are routed through the Cloudflare Worker. No service-role key or payment secret is exposed to the browser or Worker bundle. Cloud AI uses the Cloudflare `AI` binding and a service-role-only quota reservation RPC. The Gemma 4 model is registered, but `ai.cloud.enabled` is intentionally false until an administrator opts in after reviewing usage costs.
+Supabase remains the PostgreSQL and Auth system of record to preserve accounts and existing data. The control plane, PayPal billing, public API, billing, and telemetry remain deployed as Supabase Edge Functions and are routed through the Cloudflare Worker. No service-role key or payment secret is exposed to the browser or Worker bundle. Cloud AI uses the Cloudflare `AI` binding and a service-role-only quota reservation RPC. The Gemma 4 model is registered. Runtime access is controlled by the `ai.cloud.enabled` feature flag, with per-user request and token quotas enforced before inference; the admin integrations panel reports the current state.
 
 Email OTP challenge writes and verification now use the `cenai-email-otp` Edge Function with service-role-only database RPCs. The original user-callable OTP SECURITY DEFINER functions have had public/authenticated execution revoked.
 
