@@ -875,16 +875,23 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             },
             text = {
                 Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                                        Row(
-                        Modifier.fillMaxWidth().testTag("settings-page-tabs").horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                        Column(
+                        Modifier.fillMaxWidth().testTag("settings-page-tabs"),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("Appearance", "AI & models", "Account", "Device", "Updates").forEach { page ->
-                            FilterChip(
-                                selected = selectedSettingsPage == page,
-                                onClick = { selectedSettingsPage = page },
-                                label = { Text(page, maxLines = 1) }
-                            )
+                        listOf(
+                            listOf("Appearance", "AI & models", "Account"),
+                            listOf("Device", "Updates")
+                        ).forEach { pages ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                pages.forEach { page ->
+                                    FilterChip(
+                                        selected = selectedSettingsPage == page,
+                                        onClick = { selectedSettingsPage = page },
+                                        label = { Text(page, maxLines = 1) }
+                                    )
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(4.dp))
