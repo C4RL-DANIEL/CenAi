@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import org.json.JSONObject
@@ -183,6 +184,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
 private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) -> Unit) {
     val palette = LocalCenAiPalette.current
     val context = LocalContext.current
+    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
+    var wideDestination by remember { mutableStateOf("Chat") }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
@@ -569,7 +572,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 .background(Brush.radialGradient(listOf(Color(0xFFB8C8E8).copy(alpha = 0.34f), Color.Transparent)), CircleShape))
         }
         Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(start = if (isTabletLayout) 80.dp else 0.dp),
         containerColor = if (palette.glass) Color.Transparent else palette.background,
         topBar = {
             TopAppBar(
@@ -767,6 +770,38 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             }
         }
+        }
+        if (isTabletLayout) {
+            NavigationRail(
+                modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight(),
+                containerColor = if (palette.glass) palette.surface.copy(alpha = 0.92f) else palette.surface,
+                contentColor = palette.text
+            ) {
+                NavigationRailItem(
+                    selected = wideDestination == "Chat",
+                    onClick = { wideDestination = "Chat" },
+                    icon = { Icon(Icons.Default.Add, contentDescription = "Chat") },
+                    label = { Text("Chat") }
+                )
+                NavigationRailItem(
+                    selected = wideDestination == "History",
+                    onClick = { wideDestination = "History"; historyOpen = true },
+                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
+                    label = { Text("History") }
+                )
+                NavigationRailItem(
+                    selected = wideDestination == "AI",
+                    onClick = { wideDestination = "AI"; settings = true },
+                    icon = { Icon(Icons.Default.Info, contentDescription = "AI setup") },
+                    label = { Text("AI setup") }
+                )
+                NavigationRailItem(
+                    selected = wideDestination == "Settings",
+                    onClick = { wideDestination = "Settings"; settings = true },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings") }
+                )
+            }
         }
     }
 
