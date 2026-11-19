@@ -80,9 +80,9 @@ internal fun MessageBubble(message: ChatMessage, index: Int, last: Boolean, busy
     AnimatedVisibility(visible = true, enter = fadeIn(tween(320)) + slideInVertically(tween(320)) { it / 8 } +
         androidx.compose.animation.scaleIn(spring(dampingRatio = 0.82f, stiffness = 380f), initialScale = 0.985f)) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-            if (!ios && message.content.isNotBlank()) Text(if (user) "YOU" else if (editorial) "CENAI / RESPONSE" else "CENAI", color = palette.accent,
+            if (!ios && (message.content.isNotBlank() || generating)) Text(if (user) "YOU" else if (generating) "CENAI / GENERATING" else if (editorial) "CENAI / RESPONSE" else "CENAI", color = palette.accent,
                 fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = if (editorial) 1.sp else 0.sp)
-            if (generating) GenerationAura(Modifier.padding(start = 3.dp, bottom = 7.dp))
+            if (generating) Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp), contentAlignment = Alignment.CenterStart) { GenerationAura(Modifier.padding(start = 2.dp)) }
             if (message.content.isNotBlank()) {
                 Surface(color = when { ios && user -> palette.accent; ios && !user -> palette.surface.copy(alpha = 0.62f);
                     editorial && !user -> palette.surface; user -> palette.raised; else -> palette.surface },
