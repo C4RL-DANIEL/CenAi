@@ -619,6 +619,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 containerColor = palette.background,
                 topBar = {
                     TopAppBar(
+                        modifier = Modifier.height(56.dp),
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("CenAI", color = palette.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
@@ -988,6 +989,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
 
     if (historyOpen) {
         ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = palette.surface) {
+            Column(Modifier.fillMaxHeight(0.92f).verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
@@ -996,7 +998,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
-            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp))
+            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).animateContentSize(tween(200)))
             val visibleConversations = conversations.filter { chat ->
                 chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) }
             }
@@ -1072,6 +1074,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             }
             Spacer(Modifier.height(24.dp))
+            }
         }
     }
 
