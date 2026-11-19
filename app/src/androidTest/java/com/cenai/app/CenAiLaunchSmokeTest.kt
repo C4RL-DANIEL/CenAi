@@ -38,9 +38,16 @@ class CenAiLaunchSmokeTest {
         selectSettingsPage("AI & models")
         listOf(
             "PROVIDER",
-            "AGENT WORKSPACE",
             "CENAI CLOUD ACCOUNT · PUBLIC BETA"
         ).forEach { label ->
+            val node = compose.onNodeWithText(label, substring = true)
+            node.performScrollTo()
+            node.assertIsDisplayed()
+        }
+
+        // Agent planning and scheduled tasks moved to their own settings page.
+        selectSettingsPage("Agents")
+        listOf("AGENT CONTROL CENTER", "AGENT WORKSPACE").forEach { label ->
             val node = compose.onNodeWithText(label, substring = true)
             node.performScrollTo()
             node.assertIsDisplayed()
