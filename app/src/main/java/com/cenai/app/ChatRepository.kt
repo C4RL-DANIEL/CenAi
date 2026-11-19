@@ -57,7 +57,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     if (!res.isSuccessful) {
                         val raw = res.body?.string().orEmpty()
                         val message = runCatching {
-                            JSONObject(raw).optJSONObject("error")?.optString("message")
+                            JSONObject(raw).optJSONObject("error")?.stringOrEmpty("message")
                                 ?.takeIf { it.isNotBlank() } ?: raw.take(500)
                         }.getOrDefault(raw.take(500))
                         if (continuation.isActive) continuation.resumeWith(
@@ -70,7 +70,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                             val raw = res.body?.string().orEmpty()
                             val data = JSONObject(raw)
                             val answer = data.optJSONArray("choices")?.optJSONObject(0)
-                                ?.optJSONObject("message")?.optString("content").orEmpty()
+                                ?.optJSONObject("message")?.stringOrEmpty("content").orEmpty()
                             if (answer.isBlank()) throw IOException(data.optString("error", "CenAI Cloud returned an empty response."))
                             if (continuation.isActive) onDelta(answer)
                             if (continuation.isActive) continuation.resume(answer)
@@ -202,15 +202,26 @@ class ChatRepository(private val vault: SecureKeyStore) {
     private fun parseDelta(provider: Provider, raw: String): String = runCatching {
         val obj = JSONObject(raw)
         when (provider) {
-            Provider.CLAUDE -> if (obj.optString("type") == "content_block_delta")
-                obj.optJSONObject("delta")?.optString("text").orEmpty() else ""
-            Provider.GEMINI -> obj.optJSONArray("candidates")?.optJSONObject(0)
-                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+            Provider.CLAUDE -> if (obj.stringOrEmpty("type") == "content_block_delta")
+                obj.optJSONObject("delta")?.stringOrEmpty("text").orEmpty() else ""
+            Provider.GEMINI -> {
+                val parts = obj.optJSONArray("candidates")?.optJSONObject(0)
+                    ?.optJSONObject("content")?.optJSONArray("parts") ?: return@runCatching ""
+                buildString {
+                    for (index in 0 until parts.length()) {
+                        append(parts.optJSONObject(index)?.stringOrEmpty("text").orEmpty())
+                    }
+                }
+            }
             else -> obj.optJSONArray("choices")?.optJSONObject(0)
-                ?.optJSONObject("delta")?.optString("content").orEmpty()
+                ?.optJSONObject("delta")?.stringOrEmpty("content").orEmpty()
         }
-    }.getOrDefault("")
+    }.getOrDefault("").takeUnless { it == "null" }.orEmpty()
 }
+
+/** JSONObject.optString() may stringify JSONObject.NULL as the literal word "null". */
+private fun JSONObject.stringOrEmpty(name: String): String =
+    (opt(name) as? String).orEmpty()
 
 
 /** Converts user-selected image markers into provider-native vision payloads. */
