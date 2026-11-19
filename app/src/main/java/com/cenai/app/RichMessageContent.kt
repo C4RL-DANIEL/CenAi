@@ -20,20 +20,21 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val CodePanel = Color(0xFF101317)
-private val CodeBorder = Color(0xFF343A42)
-private val CodeAccent = Color(0xFF8CC8B0)
+private val CodePanel = Color(0xFF171717)
+private val CodeBorder = Color(0xFF3A3A3A)
+private val CodeAccent = Color(0xFFC4C4C4)
 
 /** Separates Markdown prose from fenced code blocks in assistant and user messages. */
 @Composable
-fun RichMessageContent(content: String, onCopyCode: (String) -> Unit) {
+fun RichMessageContent(content: String, onCopyCode: (String) -> Unit, textColor: Color = Color.Unspecified) {
     val palette = LocalCenAiPalette.current
+    val foreground = if (textColor == Color.Unspecified) palette.text else textColor
     val blocks = remember(content) { splitMessageBlocks(content) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         blocks.forEach { block ->
             when (block) {
                 is MessageBlock.Prose -> if (block.text.isNotBlank()) {
-                    Text(markdownText(block.text), color = palette.text, fontSize = 15.sp, lineHeight = 24.sp)
+                    Text(markdownText(block.text), color = foreground, fontSize = 16.sp, lineHeight = 24.sp)
                 }
                 is MessageBlock.Code -> CodeBlockCard(block.language, block.code, onCopyCode)
             }
@@ -94,8 +95,8 @@ private fun markdownText(source: String) = buildAnnotatedString {
     lines.forEachIndexed { index, raw ->
         val line = raw.trimEnd()
         when {
-            line.startsWith("### ") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp)) { append(line.removePrefix("### ")) }
-            line.startsWith("## ") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp)) { append(line.removePrefix("## ")) }
+            line.startsWith("### ") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp)) { append(line.removePrefix("### ")) }
+            line.startsWith("## ") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 17.sp)) { append(line.removePrefix("## ")) }
             line.startsWith("# ") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 20.sp)) { append(line.removePrefix("# ")) }
             line.startsWith("- ") || line.startsWith("* ") -> {
                 withStyle(SpanStyle(color = CodeAccent, fontWeight = FontWeight.Bold)) { append("• ") }
