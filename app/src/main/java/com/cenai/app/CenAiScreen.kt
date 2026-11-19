@@ -186,6 +186,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val context = LocalContext.current
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
     var wideDestination by remember { mutableStateOf("Chat") }
+    var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
@@ -791,7 +792,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 )
                 NavigationRailItem(
                     selected = wideDestination == "AI",
-                    onClick = { wideDestination = "AI"; settings = true },
+                    onClick = { wideDestination = "AI"; selectedSettingsPage = "AI & models"; settings = true },
                     icon = { Icon(Icons.Default.Info, contentDescription = "AI setup") },
                     label = { Text("AI setup") }
                 )
@@ -860,7 +861,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
-        var settingsPage by remember { mutableStateOf("Appearance") }
         AlertDialog(
             modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -881,14 +881,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     ) {
                         listOf("Appearance", "AI & models", "Account", "Device", "Updates").forEach { page ->
                             FilterChip(
-                                selected = settingsPage == page,
-                                onClick = { settingsPage = page },
+                                selected = selectedSettingsPage == page,
+                                onClick = { selectedSettingsPage = page },
                                 label = { Text(page, maxLines = 1) }
                             )
                         }
                     }
                     Spacer(Modifier.height(4.dp))
-                    if (settingsPage == "Appearance") {
+                    if (selectedSettingsPage == "Appearance") {
 Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
@@ -923,7 +923,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
@@ -961,7 +961,7 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
@@ -1005,7 +1005,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     if (taskEntries.isNotEmpty()) {
                         
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
@@ -1034,7 +1034,7 @@ Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWe
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Enable only the tools you want the agent to access. These run locally and do not execute shell commands or arbitrary code.", color = palette.muted, fontSize = 10.sp)
                     listOf(
@@ -1063,7 +1063,7 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1086,7 +1086,7 @@ Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (selectedSettingsPage == "AI & models") {
 Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1107,7 +1107,7 @@ Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (settingsPage == "Account") {
+                    if (selectedSettingsPage == "Account") {
 Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text(if (emailVerified) "Email verified for this account." else "Verify your account email with a one-time code before applying for beta access.", color = palette.muted, fontSize = 11.sp)
                                 if (!emailVerified) {
@@ -1118,7 +1118,7 @@ Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = Fo
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (settingsPage == "Account") {
+                    if (selectedSettingsPage == "Account") {
 Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
@@ -1130,7 +1130,7 @@ Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWe
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (settingsPage == "Account") {
+                    if (selectedSettingsPage == "Account") {
 Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("View and manage PayPal subscriptions here. Checkout opens PayPal's secure approval page; CenAI never handles your PayPal password or card details.", color = palette.muted, fontSize = 10.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1248,7 +1248,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (settingsPage == "Account") {
+                    if (selectedSettingsPage == "Account") {
 Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text("Administrator and owner roles can load privacy-minimized aggregate usage analytics. Ordinary accounts receive an access-denied response.", color = palette.muted, fontSize = 10.sp)
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
@@ -1299,7 +1299,7 @@ Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fon
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -1335,7 +1335,7 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
                             Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
@@ -1344,7 +1344,7 @@ Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.
                     }
                     
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1362,7 +1362,7 @@ Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = Font
                     }
                     
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1395,7 +1395,7 @@ Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, 
                     }
                     
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1408,7 +1408,7 @@ Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     }
                     
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1437,7 +1437,7 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                     }
                     
                     }
-                    if (settingsPage == "Device") {
+                    if (selectedSettingsPage == "Device") {
 Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1503,7 +1503,7 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "Updates") {
+                    if (selectedSettingsPage == "Updates") {
 Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Release channel", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
