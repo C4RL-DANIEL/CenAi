@@ -270,3 +270,107 @@ input,textarea,select{background:rgba(246,246,239,.82);border-color:rgba(215,222
 .mfa-security-note>span{flex:0 0 auto;color:#79964e;font-size:15px}
 .mfa-security-note p{margin:0;color:#788375;font-size:10px;line-height:1.65}
 @media(max-width:760px){.mfa-card{padding:23px}.mfa-context{font-size:8px}.mfa-code-input{height:55px!important;font-size:23px!important}}
+
+
+/* CenAI Control redesign — preserves existing tab IDs and action wiring. */
+:root{
+  --bg:#f5f6f4;--panel:#fff;--line:#e3e7e3;--text:#17243a;--muted:#68778a;
+  --blue:#365cc8;--green:#247a5a;--red:#a83d4d;--focus:#9db3f4;
+  --shadow:0 8px 26px rgba(23,36,58,.045);
+}
+body{background:var(--bg);font-size:14px;line-height:1.55}
+.shell{width:min(1440px,calc(100% - 48px))}
+.top{height:68px;border-bottom-color:#dfe5e1}
+.brand{font-size:17px;letter-spacing:-.035em}
+.mark{width:32px;height:32px;border-radius:10px;background:#17243a}
+.secure{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #dce7df;border-radius:999px;background:#f7fbf8;color:#277454;font-size:9px}
+#dashboard{display:grid;grid-template-columns:248px minmax(0,1fr);column-gap:24px;row-gap:14px;align-items:start;padding-bottom:32px}
+#dashboard>.welcome,#dashboard>.notice,#dashboard>.stats,#dashboard>#password-panel{grid-column:1/-1}
+#dashboard>.welcome{padding:30px 0 8px;align-items:flex-end}
+#dashboard>.welcome h1{font-size:clamp(30px,3vw,40px);letter-spacing:-.055em;margin:8px 0}
+#dashboard>.welcome p{margin:4px 0 0;max-width:62ch}
+#dashboard>.notice{margin:0 0 4px}
+#dashboard>.stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+#dashboard>.stats .card{min-height:108px;padding:18px 20px;border-radius:14px;box-shadow:var(--shadow)}
+#dashboard>.stats b{font-size:24px;font-weight:750;letter-spacing:-.045em}
+#password-panel{padding:18px 20px;display:grid;grid-template-columns:minmax(180px,.8fr) minmax(320px,1.2fr);gap:10px 24px;align-items:center}
+#password-panel h2{margin:0 0 4px}
+#password-panel>p{margin:0}
+#password-form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}
+#password-form label{margin:0}
+#password-form .primary{width:auto;white-space:nowrap;padding:12px 16px}
+#password-status{grid-column:1/-1;margin:0}
+#dashboard>.tabs{
+  grid-column:1;grid-row:auto;position:sticky;top:14px;z-index:4;
+  display:flex;flex-direction:column;align-items:stretch;gap:3px;
+  max-height:calc(100vh - 28px);overflow-y:auto;overflow-x:hidden;
+  padding:10px;background:#fff;border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow)
+}
+#dashboard>.tabs:before{content:"WORKSPACE";padding:7px 10px 9px;color:#8792a0;font:700 9px ui-monospace,monospace;letter-spacing:.16em}
+#dashboard>.tabs button{
+  width:100%;text-align:left;white-space:normal;font-size:12px;font-weight:650;
+  padding:10px 12px;border:1px solid transparent;border-radius:9px;color:#647187;
+  background:transparent
+}
+#dashboard>.tabs button:hover{background:#f5f7fb;border-color:#edf0f6}
+#dashboard>.tabs button.active{background:#edf2ff;border-color:#dce5ff;color:#294da9;box-shadow:none}
+#dashboard>.panel{
+  grid-column:2;grid-row:auto;min-width:0;min-height:300px;margin:0 0 20px;
+  padding:24px;border-radius:14px;border-color:var(--line);box-shadow:var(--shadow)
+}
+#dashboard>.panel h2{font-size:20px;letter-spacing:-.035em}
+#dashboard>.panel>p{max-width:78ch;line-height:1.65}
+#dashboard>.panel .rows{margin-top:16px}
+#dashboard .toolbar{gap:8px;flex-wrap:wrap}
+#dashboard input,#dashboard textarea,#dashboard select{
+  border-radius:9px;border-color:#d9e1dd;background:#fbfcfb;padding:11px 12px
+}
+#dashboard input:focus,#dashboard textarea:focus,#dashboard select:focus{
+  outline:3px solid rgba(69,105,212,.16);border-color:#8da4e7
+}
+#dashboard button{border-radius:9px}
+#dashboard .primary{background:#203451;color:#fff}
+#dashboard .primary:hover{background:#2e496d}
+#dashboard .item{padding:15px 2px;border-top-color:#edf0ed}
+#dashboard .item b{font-size:13px}
+#dashboard .pill{font-size:10px;font-weight:650}
+#dashboard .notice{border-radius:10px;line-height:1.5}
+#dashboard .analytics-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+#dashboard .analytics-metric{border-radius:12px}
+#dashboard .billing-grid{border-radius:12px;padding:18px;gap:10px 16px}
+#dashboard .mfa-qr{border-radius:12px}
+#dashboard [hidden]{display:none!important}
+@media(max-width:980px){
+  #dashboard{grid-template-columns:210px minmax(0,1fr);column-gap:16px}
+  #dashboard>.panel{padding:19px}
+  #password-panel{grid-template-columns:1fr}
+  #password-form{grid-template-columns:1fr 1fr}
+  #password-form .primary{grid-column:1/-1;width:100%}
+}
+@media(max-width:720px){
+  .shell{width:min(100% - 28px,620px)}
+  .top{height:62px}
+  #dashboard{display:flex;flex-direction:column;gap:12px}
+  #dashboard>.welcome{width:100%;padding:24px 0 4px;align-items:flex-start}
+  #dashboard>.stats{width:100%;grid-template-columns:1fr;gap:9px}
+  #dashboard>.stats .card{min-height:0;padding:14px 16px}
+  #password-panel{width:100%;display:block;padding:16px}
+  #password-form{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}
+  #password-form .primary{grid-column:auto;width:100%}
+  #dashboard>.tabs{
+    position:sticky;top:0;width:100%;max-height:none;flex-direction:row;
+    overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:7px;gap:4px;
+    border-radius:11px;background:rgba(255,255,255,.97);backdrop-filter:blur(12px)
+  }
+  #dashboard>.tabs:before{display:none}
+  #dashboard>.tabs button{width:auto;flex:0 0 auto;white-space:nowrap;padding:9px 11px}
+  #dashboard>.panel{width:100%;padding:17px;margin:0 0 12px;min-height:180px}
+  #dashboard .analytics-metrics{grid-template-columns:1fr 1fr}
+  #dashboard .billing-grid{grid-template-columns:1fr}
+  #dashboard .billing-grid button{grid-column:auto}
+  #dashboard .item{align-items:flex-start}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
