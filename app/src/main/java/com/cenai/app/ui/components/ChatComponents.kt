@@ -32,6 +32,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cenai.app.CenAiMotion
 import com.cenai.app.ChatMessage
 import com.cenai.app.LocalCenAiPalette
 import com.cenai.app.RichMessageContent
@@ -106,7 +107,7 @@ internal fun MessageBubble(
 
     AnimatedVisibility(
         visible = true,
-        enter = fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 } + scaleIn(
+        enter = fadeIn(tween(CenAiMotion.contentMs)) + slideInVertically(tween(220)) { it / 12 } + scaleIn(
             animationSpec = spring(dampingRatio = 0.92f, stiffness = 500f),
             initialScale = 0.985f
         )
@@ -153,8 +154,8 @@ internal fun MessageBubble(
                 }
                 AnimatedVisibility(
                     visible = actionsVisible || (last && !busy && !user),
-                    enter = fadeIn(tween(160)),
-                    exit = fadeOut(tween(120))
+                    enter = fadeIn(tween(CenAiMotion.controlMs)),
+                    exit = fadeOut(tween(CenAiMotion.tapMs))
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -203,7 +204,7 @@ private fun ToolActivityCard(content: String, onApproveDeviceAction: (String, St
         color = palette.raised,
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, palette.border),
-        modifier = Modifier.fillMaxWidth().animateContentSize(tween(200)).clickable { expanded = !expanded }
+        modifier = Modifier.fillMaxWidth().animateContentSize(tween(CenAiMotion.contentMs)).clickable { expanded = !expanded }
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -220,7 +221,7 @@ private fun ToolActivityCard(content: String, onApproveDeviceAction: (String, St
                 }
                 Text(if (expanded) "Hide" else "Details", color = palette.tertiary, fontSize = 12.sp)
             }
-            AnimatedVisibility(expanded, enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 6 }) {
+            AnimatedVisibility(expanded, enter = fadeIn(tween(160)) + slideInVertically(tween(CenAiMotion.controlMs)) { -it / 6 }) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(details.ifBlank { "No additional details." }, color = palette.muted, fontSize = 13.sp, lineHeight = 19.sp)
                     if (isApproval && actionArgs != null) {
@@ -249,7 +250,7 @@ internal fun ThinkingIndicator() {
         initialValue = 0.35f,
         targetValue = 1f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = tween(700),
+            animation = tween(CenAiMotion.ambientMs),
             repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
         ),
         label = "thinking-pulse"
