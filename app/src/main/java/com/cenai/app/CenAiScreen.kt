@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
@@ -690,7 +691,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             )
                         }
                         Surface(
-                            color = palette.surfaceRaisedOrSurface(),
+                            color = palette.surface,
                             shape = RoundedCornerShape(12.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
                             modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTabletLayout) 24.dp else 12.dp, vertical = 8.dp)
@@ -920,8 +921,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             .onSuccess { result ->
                                                 info = result
                                                 val updated = messages.map { item ->
-                                                    if (item.role == "tool" && item.content.contains("\\nARGS:$rawArgs")) {
-                                                        ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\\nARGS:") + "\\n" + result)
+                                                    if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
+                                                        ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + result)
                                                     } else item
                                                 }
                                                 persist(updated)
@@ -929,7 +930,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             .onFailure { error = it.message ?: "Android action could not be opened." }
                                     },
                                     onCopy = {
-                                        clipboard.setText(AnnotatedString(message.content.replace(Regex("""\\[\\[CENAI_IMAGE\\|[^|]+\\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")))
+                                        clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")))
                                         info = "Copied to clipboard."
                                     },
                                     onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
@@ -942,7 +943,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     },
                                     onEdit = {
                                         editIndex = index
-                                        editText = message.content.replace(Regex("""\\[\\[CENAI_IMAGE\\|[^|]+\\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")
+                                        editText = message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")
                                     },
                                     onRegenerate = { startRequest(messages.take(index)) }
                                 )
