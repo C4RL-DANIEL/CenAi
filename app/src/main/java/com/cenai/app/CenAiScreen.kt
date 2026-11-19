@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -248,6 +249,19 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var historyOpen by remember { mutableStateOf(false) }
     var historyQuery by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var generationHasStarted by remember { mutableStateOf(false) }
+    var generationCompleted by remember { mutableStateOf(false) }
+    LaunchedEffect(busy) {
+        if (busy) {
+            generationHasStarted = true
+            generationCompleted = false
+        } else if (generationHasStarted) {
+            generationHasStarted = false
+            generationCompleted = true
+            delay(1_200)
+            generationCompleted = false
+        }
+    }
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
     var testBusy by remember { mutableStateOf(false) }
@@ -740,15 +754,28 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         Icon(Icons.Default.Mic, "Voice input", tint = palette.muted)
                                     }
                                     Spacer(Modifier.weight(1f))
-                                    AnimatedContent(targetState = busy, label = "send-stop-morph") { sending ->
-                                        if (sending) {
-                                            FilledIconButton(
+                                    AnimatedContent(
+                                        targetState = when {
+                                            busy -> "stop"
+                                            generationCompleted -> "done"
+                                            else -> "send"
+                                        },
+                                        label = "send-stop-complete-morph"
+                                    ) { action ->
+                                        when (action) {
+                                            "stop" -> FilledIconButton(
                                                 onClick = { activeJob?.cancel(); busy = false },
                                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.danger, contentColor = Color.White),
-                                                modifier = Modifier.size(44.dp)
+                                                shape = RoundedCornerShape(10.dp),
+                                                modifier = Modifier.size(44.dp).animateContentSize(spring(dampingRatio = 0.82f, stiffness = 520f))
                                             ) { Icon(Icons.Default.Stop, "Stop response") }
-                                        } else {
-                                            FilledIconButton(
+                                            "done" -> FilledIconButton(
+                                                onClick = { },
+                                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.positive, contentColor = Color.White),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.size(44.dp)
+                                            ) { Icon(Icons.Default.CheckCircle, "Response complete") }
+                                            else -> FilledIconButton(
                                                 enabled = draft.isNotBlank(),
                                                 onClick = {
                                                     val prompt = runCatching { NativeCore.normalizePrompt(draft) }.getOrDefault(draft.trim())
@@ -759,6 +786,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                                     }
                                                 },
                                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.text, contentColor = palette.background),
+                                                shape = CircleShape,
                                                 modifier = Modifier.size(44.dp)
                                             ) { Icon(Icons.Default.ArrowUpward, "Send") }
                                         }
