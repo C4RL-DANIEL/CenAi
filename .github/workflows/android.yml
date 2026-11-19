@@ -71,6 +71,7 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Run unit tests and build debug APK
+        id: debug-build
         run: gradle testDebugUnitTest assembleDebug
       - name: Check release signing readiness without exposing secrets
         if: github.event_name == 'pull_request'
@@ -111,16 +112,19 @@ jobs:
           disable-linux-hw-accel: false
           script: timeout 900s gradle connectedDebugAndroidTest --stacktrace
       - name: Generate debug APK SHA-256
+        if: always() && steps.debug-build.outcome == 'success'
         run: |
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
           test -n "$APK"
           sha256sum "$APK" > "$APK.sha256"
       - uses: actions/upload-artifact@v4
+        if: always() && steps.debug-build.outcome == 'success'
         with:
           name: CenAI-debug-apk
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/debug/*.apk.sha256
+            app/build/reports/androidTests/connected/debug/**
           if-no-files-found: error
           retention-days: 30
       - name: Prepare release signing key
