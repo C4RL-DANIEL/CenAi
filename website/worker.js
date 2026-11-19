@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261118-admin-email-smtp-design-2";
+const STATIC_CACHE_VERSION = "20261119-gmail-mime-line-wrap-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
@@ -82,6 +82,11 @@ function base64(value) {
   return btoa(unescape(encodeURIComponent(value)));
 }
 
+function base64Lines(value) {
+  const encoded = base64(value);
+  return encoded.match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
 async function sendGmailMessage(env, to, subject, text, html) {
   if (!envReady(env, ["EMAIL_USER", "EMAIL_PASS"])) throw new Error("Gmail SMTP credentials are not configured");
   const socket = connect({ hostname: "smtp.gmail.com", port: 465 }, { secureTransport: "on", allowHalfOpen: false });
@@ -90,14 +95,14 @@ async function sendGmailMessage(env, to, subject, text, html) {
   const decoder = new TextDecoder();
   let buffer = "";
   let stage = "connect";
-  const withTimeout = (promise, label) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Gmail SMTP timed out during " + label)), 8000);
+  const withTimeout = (promise, label, timeoutMs = 8000) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Gmail SMTP timed out during " + label)), timeoutMs);
     Promise.resolve(promise).then(
       (value) => { clearTimeout(timer); resolve(value); },
       (error) => { clearTimeout(timer); reject(error); }
     );
   });
-  async function readReply() {
+  async function readReply(timeoutMs = 8000) {
     for (;;) {
       const end = buffer.indexOf("\n");
       if (end >= 0) {
@@ -106,13 +111,13 @@ async function sendGmailMessage(env, to, subject, text, html) {
         if (/^\d{3} /.test(line)) return line;
         continue;
       }
-      const chunk = await withTimeout(reader.read(), stage);
+      const chunk = await withTimeout(reader.read(), stage, timeoutMs);
       if (chunk.done) throw new Error("Gmail SMTP connection closed during " + stage);
       buffer += decoder.decode(chunk.value, { stream: true });
     }
   }
-  async function expect(codes) {
-    const reply = await readReply();
+  async function expect(codes, timeoutMs = 8000) {
+    const reply = await readReply(timeoutMs);
     if (!codes.some((codeValue) => reply.startsWith(String(codeValue)))) throw new Error("Gmail SMTP rejected " + stage + " (" + reply.slice(0, 120) + ")");
     return reply;
   }
@@ -138,25 +143,30 @@ async function sendGmailMessage(env, to, subject, text, html) {
       "To: " + to,
       "Subject: " + subject,
       "MIME-Version: 1.0",
+      "Date: " + new Date().toUTCString(),
       'Content-Type: multipart/alternative; boundary="' + boundary + '"',
       "",
       "--" + boundary,
       'Content-Type: text/plain; charset="UTF-8"',
-      "Content-Transfer-Encoding: 8bit",
+      "Content-Transfer-Encoding: base64",
       "",
-      text,
+      base64Lines(text),
       "--" + boundary,
       'Content-Type: text/html; charset="UTF-8"',
-      "Content-Transfer-Encoding: 8bit",
+      "Content-Transfer-Encoding: base64",
       "",
-      html,
+      base64Lines(html),
       "--" + boundary + "--"
     ].join("\r\n");
     // Dot-stuff message content lines, but keep SMTP's final DATA terminator as one dot.
     const smtpData = message.replace(/(^|\r\n)\./g, "$1..") + "\r\n.\r\n";
+    const maxLineBytes = Math.max(...smtpData.split("\r\n").map((line) => new TextEncoder().encode(line).length));
+    if (maxLineBytes > 998) throw new Error("CenAI email contains an SMTP line longer than the 998-byte protocol limit");
     stage = "message acceptance";
-    await withTimeout(writer.write(new TextEncoder().encode(smtpData)), "message write");
-    await expect([250]);
+    const payload = new TextEncoder().encode(smtpData);
+    console.log("CenAI SMTP message prepared", { bytes: payload.length, maxLineBytes, mime: "base64-wrapped" });
+    await withTimeout(writer.write(payload), "message write", 15000);
+    await expect([250], 20000);
     console.log("CenAI administrator email accepted by Gmail SMTP");
     // Gmail has accepted the message at this point. Do not block delivery confirmation
     // on waiting for the optional QUIT reply.
