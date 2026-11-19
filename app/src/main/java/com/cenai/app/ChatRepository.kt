@@ -113,7 +113,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val payload: JSONObject
         when (p) {
             Provider.OPENAI -> {
-                val input = new JSONArray()
+                val input = JSONArray()
                 msgs.forEach { message ->
                     val parts = message.visionParts()
                     val hasImage = message.role == "user" && parts.any { it.first != "text" }
