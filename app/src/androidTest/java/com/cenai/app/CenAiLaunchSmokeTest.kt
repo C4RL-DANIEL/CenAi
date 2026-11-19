@@ -3,12 +3,9 @@ package com.cenai.app
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -18,6 +15,15 @@ import org.junit.runner.RunWith
 class CenAiLaunchSmokeTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
+
+    private fun selectSettingsPage(page: String) {
+        // The settings content is vertically scrollable and the page selector is horizontally scrollable.
+        // Bring the requested chip into view across both scroll containers before clicking it.
+        val tab = compose.onNodeWithText(page)
+        tab.performScrollTo()
+        tab.assertIsDisplayed()
+        tab.performClick()
+    }
 
     @Test
     fun mainScreenLaunchesAndShowsComposer() {
@@ -29,7 +35,7 @@ class CenAiLaunchSmokeTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("CenAI settings").assertIsDisplayed()
 
-        compose.onNodeWithText("AI & models").performClick()
+        selectSettingsPage("AI & models")
         listOf(
             "PROVIDER",
             "AGENT WORKSPACE",
@@ -40,9 +46,7 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
-        // The settings page selector is horizontally scrollable; reveal the final tabs before selecting Device.
-        compose.onNodeWithTag("settings-page-tabs").performTouchInput { swipeLeft() }
-        compose.onNodeWithText("Device").performClick()
+        selectSettingsPage("Device")
         listOf(
             "VOICE ENGINE",
             "OFFLINE BRAIN · ON-DEVICE AI",
@@ -55,7 +59,7 @@ class CenAiLaunchSmokeTest {
             node.assertIsDisplayed()
         }
 
-        compose.onNodeWithText("Updates").performClick()
+        selectSettingsPage("Updates")
         val softwareUpdate = compose.onNodeWithText("SOFTWARE UPDATE", substring = true)
         softwareUpdate.performScrollTo()
         softwareUpdate.assertIsDisplayed()
