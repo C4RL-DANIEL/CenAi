@@ -593,7 +593,7 @@ async function cleanupExpiredAttempts() {
   const now = new Date().toISOString();
   const { data: attempts, error } = await db.from("billing_checkout_attempts")
     .select("user_id,provider_subscription_id,plan_key,expires_at")
-    .in("status", ["AWAITING_APPROVAL", "APPROVED", "EXPIRED"]).lte("expires_at", now).limit(100);
+    .in("status", ["AWAITING_APPROVAL", "APPROVED"]).lte("expires_at", now).limit(100); // Terminal EXPIRED attempts are never polled again.
   if (error) throw error;
   let cancelled = 0;
   let expired = 0;
@@ -699,7 +699,12 @@ Deno.serve(async (req: Request) => {
         .select("secret_value").eq("name", "paypal_checkout_cleanup").maybeSingle();
       if (secretError) throw secretError;
       if (!storedSecret?.secret_value || !constantTimeEqual(cronSecret, String(storedSecret.secret_value))) return fail(401, "Invalid scheduled cleanup credential");
-      const cleanup = await cleanupExpiredAttempts();
+      let cleanup: Record<string, unknown>;
+      try { cleanup = await cleanupExpiredAttempts(); }
+      catch (cleanupError) {
+        cleanup = { error: cleanupError instanceof Error ? cleanupError.message : "Automatic PayPal checkout cleanup failed." };
+        console.error("Scheduled PayPal checkout cleanup failed", cleanupError instanceof Error ? cleanupError.message : "unknown error");
+      }
       let mfaCleanup: Record<string, unknown>;
       try { mfaCleanup = await cleanupExpiredMfaFactors(); }
       catch (mfaError) {
