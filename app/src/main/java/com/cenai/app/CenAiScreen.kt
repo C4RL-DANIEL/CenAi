@@ -172,7 +172,7 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
 
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
-    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
+    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO").let { if (it == "AURORA" || it == "DEFAULT") "STUDIO" else it }) }
     CenAiTheme(style = selectedStyle) {
         CenAiScreenContent(vault) { style ->
             selectedStyle = style
@@ -623,7 +623,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("CenAI", color = palette.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
                                 AssistChip(
-                                    onClick = { selectedSettingsPage = "AI & models"; selectedSettingsCategory = "Providers"; settings = true },
+                                    onClick = { selectedSettingsPage = "AI & models"; selectedSettingsCategory = "AI & models"; settings = true },
                                     label = { Text(model, maxLines = 1, fontSize = 11.sp) },
                                     colors = AssistChipDefaults.assistChipColors(containerColor = palette.raised, labelColor = palette.muted),
                                     border = null
@@ -1046,7 +1046,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskPrompt by remember { mutableStateOf("") }
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
-        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
+        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO").let { if (it == "AURORA" || it == "DEFAULT") "STUDIO" else it }) }
         AlertDialog(
             modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -1069,6 +1069,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         "Chat" to "Device",
                         "AI & models" to "AI & models",
                         "Providers" to "AI & models",
+                        "Account" to "Account",
                         "Voice" to "Device",
                         "Notifications" to "Device",
                         "Privacy & permissions" to "Device",
@@ -1154,7 +1155,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
-                            listOf("AURORA" to "CenAI Aurora · Glass", "DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
+                            listOf("STUDIO" to "CenAI Monochrome · Studio").forEach { (key, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = {
                                     uiStyle = key
                                     themeExpanded = false
@@ -1164,13 +1165,12 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                             }
                         }
                     }
-                    Text(when (uiStyle) {
-                        "AURORA" -> "A calm, layered workspace with soft aurora lighting, translucent surfaces and crisp teal accents."
-                        "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
-                        "IOS" -> "Translucent glass chrome, reflective edges, layered depth and restrained spring motion."
-                        "FIGMA" -> "A distinct editorial workspace with bold hierarchy, framed panels, vivid accent rails and asymmetric composition."
-                        else -> "The original CenAI dark workspace."
-                    }, color = palette.muted, fontSize = 10.sp)
+                    Text(
+                        "CenAI uses a black-and-white foundation with gray hierarchy. Color is reserved for real status, warnings and errors.",
+                        color = palette.muted,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
                     HorizontalDivider(color = palette.raised)
                     
                     }
