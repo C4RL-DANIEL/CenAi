@@ -792,7 +792,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         Text(chat.title, color = palette.text, maxLines = 1)
                         Text("${chat.messages.size} messages · " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(chat.updatedAt)), color = palette.muted, fontSize = 11.sp)
                         chat.messages.lastOrNull { it.role == "assistant" }?.content?.takeIf { it.isNotBlank() }?.let { preview ->
-                            Text(preview.replace(Regex("""\\s+"""), " ").take(92), color = palette.muted.copy(alpha = 0.82f), fontSize = 10.sp, maxLines = 2)
+                            Text(preview.replace(Regex("""\s+"""), " ").take(92), color = palette.muted.copy(alpha = 0.82f), fontSize = 10.sp, maxLines = 2)
                         }
                     }
                     IconButton(onClick = {
