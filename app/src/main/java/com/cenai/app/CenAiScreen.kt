@@ -887,11 +887,12 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskStatus by remember { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
         AlertDialog(
-            modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
+            modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = { settings = false },
             containerColor = if (palette.glass) palette.surface.copy(alpha = 0.94f) else palette.surface,
             tonalElevation = if (palette.glass) 18.dp else 6.dp,
+            shape = RoundedCornerShape(18.dp),
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
@@ -899,7 +900,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp - 160).coerceAtLeast(320).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                                         Column(
                         Modifier.fillMaxWidth().testTag("settings-page-tabs"),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
