@@ -1021,7 +1021,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             Column(Modifier.fillMaxHeight(0.92f).verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.Medium)
                     Text("${conversations.size} saved chats · Search your past work", color = palette.muted, fontSize = 11.sp)
                 }
                 Spacer(Modifier.weight(1f))
@@ -1140,7 +1140,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             tonalElevation = if (palette.glass) 18.dp else 6.dp,
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
+                    Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Medium)
                     Text("Personalize your workspace, models, agents and device", color = palette.muted, fontSize = 11.sp)
                 }
             },
@@ -1219,14 +1219,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text("AGENT CONTROL CENTER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
-                                Text("Choose what CenAI can do", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                Text("AGENT CONTROL CENTER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.1.sp)
+                                Text("Choose what CenAI can do", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
                                 Text("Configure planning, approved device actions, local tools and scheduled tasks. Sensitive actions still require your approval.", color = palette.muted, fontSize = 11.sp, lineHeight = 16.sp)
                             }
                         }
                     }
                     if (selectedSettingsPage == "Appearance") {
-Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
                             value = when (uiStyle) {
@@ -1260,7 +1260,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     
                     }
                     if (selectedSettingsPage == "AI & models") {
-Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
@@ -1330,8 +1330,8 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                     
                     }
                     if (selectedSettingsPage == "Agents") {
-Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.SemiBold)
+Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.Medium)
                     Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
                     OutlinedTextField(
                         value = backgroundTaskPrompt,
@@ -1374,7 +1374,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         
                     }
                     if (selectedSettingsPage == "Agents") {
-Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
                             val taskName = vault.getSecret("scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
@@ -1403,7 +1403,7 @@ Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWe
                     
                     }
                     if (selectedSettingsPage == "Agents") {
-Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Text("Enable only the tools you want the agent to access. These run locally and do not execute shell commands or arbitrary code.", color = palette.muted, fontSize = 10.sp)
                     listOf(
                         "current_time" to "Current time",
@@ -1432,10 +1432,10 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                     
                     }
                     if (selectedSettingsPage == "AI & models") {
-Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.Medium, fontSize = 13.sp)
                             Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
                             OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID (experimental)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             OutlinedTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -1455,10 +1455,10 @@ Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight
                     
                     }
                     if (selectedSettingsPage == "AI & models") {
-Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("CenAI account", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("CenAI account", color = palette.text, fontWeight = FontWeight.Medium)
                             Text(if (cloudSignedIn) "Signed in as ${cloud.accountEmail()}" else "Sign in to apply for public beta access and sync your tester status.", color = palette.muted, fontSize = 11.sp)
                             OutlinedTextField(value = cloudEmail, onValueChange = { cloudEmail = it }, label = { Text("Email address") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !cloudSignedIn)
                             if (!cloudSignedIn) OutlinedTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
@@ -1476,7 +1476,7 @@ Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10
                                 
                     }
                     if (selectedSettingsPage == "Account") {
-Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                 Text(if (emailVerified) "Email verified for this account." else "Verify your account email with a one-time code before applying for beta access.", color = palette.muted, fontSize = 11.sp)
                                 if (!emailVerified) {
                                     OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.sendEmailOtp() } catch (e: Exception) { cloudStatus = e.message ?: "Could not send verification code." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Send email verification code") }
@@ -1487,7 +1487,7 @@ Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = Fo
                                 
                     }
                     if (selectedSettingsPage == "Account") {
-Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                 OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
@@ -1499,7 +1499,7 @@ Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWe
                                 
                     }
                     if (selectedSettingsPage == "Account") {
-Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                 Text("View and manage PayPal subscriptions here. Checkout opens PayPal's secure approval page; CenAI never handles your PayPal password or card details.", color = palette.muted, fontSize = 10.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(enabled = !paypalBusy, onClick = {
@@ -1565,7 +1565,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                 paypalPlans.forEach { plan ->
                                     Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "AURORA") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                            Text(plan.optString("display_name", "CenAI plan"), color = palette.text, fontWeight = FontWeight.SemiBold)
+                                            Text(plan.optString("display_name", "CenAI plan"), color = palette.text, fontWeight = FontWeight.Medium)
                                             Text("${plan.optString("currency", "PHP")} ${plan.optString("amount")} · every ${plan.optInt("interval_count", 1)} ${plan.optString("interval_unit", "MONTH").lowercase()}", color = palette.text, fontSize = 13.sp)
                                             if (plan.optBoolean("is_test")) Text("Test-labelled plan — verify the PayPal environment and recurring charge before enabling checkout.", color = Color(0xFFB97832), fontSize = 10.sp)
                                             Button(enabled = paypalBillingEnabled && !paypalBusy && emailVerified, onClick = {
@@ -1592,7 +1592,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                 paypalSubscriptions.forEach { subscription ->
                                     Surface(color = palette.raised.copy(alpha = 0.52f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp)) {
-                                            Text(subscription.optString("plan_key") + " · " + subscription.optString("status"), color = palette.text, fontWeight = FontWeight.SemiBold)
+                                            Text(subscription.optString("plan_key") + " · " + subscription.optString("status"), color = palette.text, fontWeight = FontWeight.Medium)
                                             Text("Subscription " + subscription.optString("provider_subscription_id"), color = palette.muted, fontSize = 10.sp)
                                             if (subscription.optString("status") in setOf("ACTIVE", "APPROVAL_PENDING")) {
                                                 TextButton(enabled = !paypalBusy, onClick = {
@@ -1617,7 +1617,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                 
                     }
                     if (selectedSettingsPage == "Account") {
-Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                 Text("Administrator and owner roles can load privacy-minimized aggregate usage analytics. Ordinary accounts receive an access-denied response.", color = palette.muted, fontSize = 10.sp)
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
                                     cloudBusy = true
@@ -1668,7 +1668,7 @@ Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fon
                                 
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Privacy & permissions") {
-Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("Share aggregate usage analytics", color = palette.text, fontSize = 12.sp)
@@ -1704,8 +1704,8 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                             
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
-Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
+Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                            Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.Medium)
                             Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
                             Text("Token count is a local character-based estimate, not provider billing data.", color = palette.muted, fontSize = 10.sp)
                         }
@@ -1713,10 +1713,10 @@ Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.
                     
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Voice") {
-Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text("Speech output · Android Text-to-Speech", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Speech output · Android Text-to-Speech", color = palette.text, fontWeight = FontWeight.Medium)
                             Text(if (speechOutputReady) "Voice engine ready" else "Voice engine initializing or unavailable", color = palette.muted, fontSize = 11.sp)
                             OutlinedTextField(value = speechLanguage, onValueChange = { speechLanguage = it.take(40) }, label = { Text("Output language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Speech speed · ${String.format(Locale.US, "%.1f", speechRate)}×", color = palette.text, fontSize = 12.sp)
@@ -1731,10 +1731,10 @@ Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = Font
                     
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Data & storage") {
-Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Private local language model", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Private local language model", color = palette.text, fontWeight = FontWeight.Medium)
                             Text(if (localModelReady) "Model installed · ${localModelRuntime.modelSizeBytes() / 1_048_576L} MB" else "No local model installed", color = if (localModelReady) palette.accent else palette.muted, fontSize = 11.sp)
                             Text("Import a compatible .litertlm model once. After import, chats can run fully offline on this device using LiteRT-LM CPU inference. Model files stay in private app storage and are not included in the APK.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             OutlinedButton(onClick = { localModelPicker.launch(arrayOf("application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
@@ -1764,11 +1764,11 @@ Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, 
                     
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Data & storage") {
-Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text("Search this device's saved data", color = palette.text, fontWeight = FontWeight.SemiBold)
+                                Text("Search this device's saved data", color = palette.text, fontWeight = FontWeight.Medium)
                                 Text("Retrieves relevant excerpts from saved chats and attached text documents locally, then supplies them as context to your selected AI provider. No separate on-device language model is included.", color = palette.muted, fontSize = 10.sp)
                             }
                             Switch(checked = localKnowledgeEnabled, onCheckedChange = { localKnowledgeEnabled = it })
@@ -1777,10 +1777,10 @@ Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "About & diagnostics") {
-Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Local device diagnostics", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Local device diagnostics", color = palette.text, fontWeight = FontWeight.Medium)
                             Text("RAM available ${guardianSnapshot.availableRamMb} / ${guardianSnapshot.totalRamMb} MB · App heap ${guardianSnapshot.appHeapUsedMb} / ${guardianSnapshot.appHeapMaxMb} MB", color = palette.muted, fontSize = 10.sp)
                             Text("Storage free ${guardianSnapshot.freeStorageMb} / ${guardianSnapshot.totalStorageMb} MB · Battery ${guardianSnapshot.batteryPercent}% ${if (guardianSnapshot.charging) "· Charging" else ""}", color = palette.muted, fontSize = 10.sp)
                             Text("${guardianSnapshot.device} · Android ${guardianSnapshot.androidVersion} · ${guardianSnapshot.network} · Uptime ${guardianSnapshot.uptimeMinutes} min", color = palette.muted, fontSize = 10.sp)
@@ -1806,10 +1806,10 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                     
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "About & diagnostics") {
-Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Local runtime health", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Local runtime health", color = palette.text, fontWeight = FontWeight.Medium)
                             Text("Started ${monitorSnapshot.started} · Successful ${monitorSnapshot.succeeded} · Failed ${monitorSnapshot.failed} · Cancelled ${monitorSnapshot.cancelled}", color = palette.muted, fontSize = 11.sp)
                             Text("Success rate ${monitorSnapshot.successRate}% · Average response ${monitorSnapshot.averageLatencyMs} ms", color = palette.muted, fontSize = 11.sp)
                             Text("Feature activity · App starts ${monitorSnapshot.appStarts} · Voice in/out ${monitorSnapshot.voiceInputs}/${monitorSnapshot.voiceOutputs} · Documents ${monitorSnapshot.documentsAttached} · Update checks ${monitorSnapshot.updateChecks} · Provider tests ${monitorSnapshot.providerTests}", color = palette.muted, fontSize = 10.sp)
@@ -1848,7 +1848,7 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     }
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
-                        Text("CHAT PREFERENCES", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("CHAT PREFERENCES", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
                     OutlinedTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
                         label = { Text("Maximum output tokens") }, singleLine = true)
@@ -1861,7 +1861,7 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
 
                     }
                     if (selectedSettingsPage == "AI & models" && selectedSettingsCategory == "Providers") {
-                        Text("PROVIDER CONNECTION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("PROVIDER CONNECTION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                         Text("Keys are encrypted on this device using Android Keystore. Each provider has its own key.", color = palette.muted, fontSize = 10.sp)
                         if (info.isNotBlank()) Text(info, color = palette.muted, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
@@ -1879,8 +1879,8 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     HorizontalDivider(color = palette.raised)
                     }
                     if (selectedSettingsPage == "Updates" || selectedSettingsCategory == "About & diagnostics") {
-Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text("Release channel", color = palette.text, fontWeight = FontWeight.SemiBold)
+Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Text("Release channel", color = palette.text, fontWeight = FontWeight.Medium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = updateChannel == "stable", onClick = { updateChannel = "stable" }, label = { Text("Stable") })
                         FilterChip(selected = updateChannel == "beta", onClick = { updateChannel = "beta" }, label = { Text("Public beta") })
@@ -1951,7 +1951,7 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(updateStatus)
-                    updateInfo?.let { Text("Version ${it.version}", color = palette.accent, fontWeight = FontWeight.Bold) }
+                    updateInfo?.let { Text("Version ${it.version}", color = palette.accent, fontWeight = FontWeight.Medium) }
                     if (updateBusy && updateProgress > 0) LinearProgressIndicator(progress = updateProgress / 100f, modifier = Modifier.fillMaxWidth())
                     if (!updateInfo?.notes.isNullOrBlank()) Text(updateInfo?.notes.orEmpty().take(800), color = palette.muted, fontSize = 12.sp)
                 }
