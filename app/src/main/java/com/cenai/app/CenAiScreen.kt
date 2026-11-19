@@ -612,7 +612,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             )
                         }
                     }
-                    IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
+                    IconButton(onClick = { settings = true }, modifier = Modifier.testTag("open-settings")) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = if (palette.glass) Color.Transparent else palette.background)
             )
