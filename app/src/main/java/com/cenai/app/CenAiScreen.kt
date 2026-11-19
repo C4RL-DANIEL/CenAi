@@ -1902,7 +1902,6 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
 
                     }
                         }
-                    }
             },
             confirmButton = { TextButton(onClick = {
                 Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
