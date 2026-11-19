@@ -40,6 +40,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -1073,14 +1074,22 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Row(
                                 Modifier.fillMaxWidth()
                                     .background(if (currentId == chat.id) palette.raised else Color.Transparent)
-                                    .clickable {
-                                        activeJob?.cancel()
-                                        busy = false
-                                        currentId = chat.id
-                                        messages = chat.messages.toList()
-                                        historyOpen = false
-                                        wideDestination = "Home"
-                                    }
+                                    .combinedClickable(
+                                        onClick = {
+                                            activeJob?.cancel()
+                                            busy = false
+                                            currentId = chat.id
+                                            messages = chat.messages.toList()
+                                            historyOpen = false
+                                            wideDestination = "Home"
+                                        },
+                                        onLongClick = {
+                                            currentId = chat.id
+                                            messages = chat.messages.toList()
+                                            renameDraft = chat.title
+                                            renameDialogOpen = true
+                                        }
+                                    )
                                     .padding(horizontal = 20.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
