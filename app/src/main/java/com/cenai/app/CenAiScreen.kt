@@ -186,7 +186,7 @@ fun CenAiScreen(vault: SecureKeyStore) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) -> Unit) {
     val palette = LocalCenAiPalette.current
