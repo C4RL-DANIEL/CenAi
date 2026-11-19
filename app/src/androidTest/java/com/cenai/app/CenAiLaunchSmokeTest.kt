@@ -33,7 +33,7 @@ class CenAiLaunchSmokeTest {
 
     @Test
     fun settingsExposeCoreVoiceAiGuardianAgentAndUpdateSystems() {
-        compose.onNodeWithTag("open-settings").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("CenAI settings").assertIsDisplayed()
 
