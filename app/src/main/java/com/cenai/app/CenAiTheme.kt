@@ -42,6 +42,14 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val base = when (style) {
+        "STUDIO" -> CenAiPalette(
+            if (dark) Color(0xFF111A18) else Color(0xFFF5F7F4),
+            if (dark) Color(0xFF1A2521) else Color(0xFFFFFFFF),
+            if (dark) Color(0xFF27352F) else Color(0xFFE8EDE8),
+            if (dark) Color(0xFF8FC6A9) else Color(0xFF2E6B52),
+            if (dark) Color(0xFFF0F4F0) else Color(0xFF17261E),
+            if (dark) Color(0xFFA9B8AF) else Color(0xFF68776E)
+        )
         "MATERIAL" -> CenAiPalette(
             if (dark) Color(0xFF101318) else Color(0xFFF7F7FC),
             if (dark) Color(0xFF191D24) else Color.White,

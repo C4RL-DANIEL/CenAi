@@ -170,7 +170,14 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
 
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
-    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
+    val initialStyle = remember {
+        val savedStyle = vault.get("ui_style", "")
+        if (savedStyle.isBlank() || savedStyle == "AURORA") {
+            vault.put("ui_style", "STUDIO")
+            "STUDIO"
+        } else savedStyle
+    }
+    var selectedStyle by remember { mutableStateOf(initialStyle) }
     CenAiTheme(style = selectedStyle) {
         CenAiScreenContent(vault) { style ->
             selectedStyle = style
@@ -579,18 +586,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (vault.get("ui_style", "AURORA") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "AURORA") == "FIGMA") 1.2.sp else 0.sp)
+                        Text(if (vault.get("ui_style", "STUDIO") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "STUDIO") == "FIGMA") 1.2.sp else 0.sp)
                         Text(provider.label + "  ·  " + model, color = palette.muted, fontSize = 11.sp, maxLines = 1)
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = palette.text) }
                 },
                 actions = {
                     IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
                     IconButton(onClick = { if (messages.isNotEmpty()) saveConversationLauncher.launch("CenAI-conversation.md") }) { Icon(Icons.Default.Save, "Save conversation as Markdown", tint = palette.text) }
                     IconButton(onClick = { if (messages.isNotEmpty()) { val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }; val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }; context.startActivity(Intent.createChooser(send, "Share conversation")) } }) { Icon(Icons.Default.Share, "Share conversation", tint = palette.text) }
-                    IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = if (palette.glass) Color.Transparent else palette.background)
             )
@@ -598,6 +601,22 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         bottomBar = {
             Surface(color = if (palette.glass) palette.surface.copy(alpha = 0.64f) else palette.background, shape = if (palette.glass) RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) else RoundedCornerShape(0.dp), border = if (palette.glass) androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.82f), palette.accent.copy(alpha = 0.18f), Color.White.copy(alpha = 0.24f)))) else null, shadowElevation = if (palette.glass) 18.dp else 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    if (!isTabletLayout) {
+                        NavigationBar(containerColor = palette.surface, tonalElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
+                            NavigationBarItem(selected = wideDestination == "Chat",
+                                onClick = { wideDestination = "Chat"; historyOpen = false; settings = false },
+                                icon = { Icon(Icons.Default.Add, contentDescription = "Chat") }, label = { Text("Chat") })
+                            NavigationBarItem(selected = wideDestination == "History",
+                                onClick = { wideDestination = "History"; settings = false; historyOpen = true },
+                                icon = { Icon(Icons.Default.History, contentDescription = "History") }, label = { Text("History") })
+                            NavigationBarItem(selected = wideDestination == "AI",
+                                onClick = { wideDestination = "AI"; historyOpen = false; selectedSettingsPage = "AI & models"; settings = true },
+                                icon = { Icon(Icons.Default.Info, contentDescription = "AI models") }, label = { Text("Models") })
+                            NavigationBarItem(selected = wideDestination == "Settings",
+                                onClick = { wideDestination = "Settings"; historyOpen = false; settings = true },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") }, label = { Text("Settings") })
+                        }
+                    }
                     AnimatedVisibility(visible = error.isNotBlank()) {
                         Text(error, color = Color(0xFFFF938B), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
                     }
@@ -626,7 +645,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*")) }) {
                                     Icon(Icons.Default.AttachFile, "Attach text, PDF or image", tint = palette.muted)
                                 }
-                                TextButton(onClick = { settings = true }) { Text("Configure", color = palette.accent, fontSize = 12.sp) }
                                 Spacer(Modifier.weight(1f))
                                 AnimatedContent(targetState = busy, label = "send-stop") { sending ->
                                     if (sending) {
@@ -741,7 +759,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     itemsIndexed(messages, key = { index, _ -> "$currentId-$index" }) { index, message ->
                         MessageBubble(
                             message = message, index = index, last = index == messages.lastIndex,
-                            busy = busy, style = vault.get("ui_style", "AURORA"),
+                            busy = busy, style = vault.get("ui_style", "STUDIO"),
                             onApproveDeviceAction = { name, rawArgs ->
                                 runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
                                     .onSuccess { result ->
@@ -780,25 +798,25 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             ) {
                 NavigationRailItem(
                     selected = wideDestination == "Chat",
-                    onClick = { wideDestination = "Chat" },
+                    onClick = { wideDestination = "Chat"; historyOpen = false; settings = false },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Chat") },
                     label = { Text("Chat") }
                 )
                 NavigationRailItem(
                     selected = wideDestination == "History",
-                    onClick = { wideDestination = "History"; historyOpen = true },
+                    onClick = { wideDestination = "History"; settings = false; historyOpen = true },
                     icon = { Icon(Icons.Default.History, contentDescription = "History") },
                     label = { Text("History") }
                 )
                 NavigationRailItem(
                     selected = wideDestination == "AI",
-                    onClick = { wideDestination = "AI"; selectedSettingsPage = "AI & models"; settings = true },
+                    onClick = { wideDestination = "AI"; historyOpen = false; selectedSettingsPage = "AI & models"; settings = true },
                     icon = { Icon(Icons.Default.Info, contentDescription = "AI setup") },
                     label = { Text("AI setup") }
                 )
                 NavigationRailItem(
                     selected = wideDestination == "Settings",
-                    onClick = { wideDestination = "Settings"; settings = true },
+                    onClick = { wideDestination = "Settings"; historyOpen = false; settings = true },
                     icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                     label = { Text("Settings") }
                 )
@@ -866,7 +884,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskPrompt by remember { mutableStateOf("") }
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
-        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
+        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO")) }
+        var catalogModels by remember { mutableStateOf(emptyList<String>()) }
+        var catalogLoading by remember { mutableStateOf(false) }
+        var deepSeekThinking by remember { mutableStateOf(vault.get("deepseek_thinking_enabled", "true").toBoolean()) }
+        var deepSeekEffort by remember { mutableStateOf(vault.get("deepseek_reasoning_effort", "high")) }
         AlertDialog(
             modifier = Modifier.fillMaxWidth(0.96f).widthIn(max = 760.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -920,6 +942,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         OutlinedTextField(
                             value = when (uiStyle) {
+                                "STUDIO" -> "CenAI Studio · Calm"
                                 "MATERIAL" -> "Android · Material 3"
                                 "IOS" -> "iOS · Liquid Glass"
                                 "FIGMA" -> "CenAI Studio · Editorial"
@@ -930,7 +953,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
-                            listOf("AURORA" to "CenAI Aurora · Glass", "DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "IOS" to "iOS 27 · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
+                            listOf("STUDIO" to "CenAI Studio · Calm", "DEFAULT" to "CenAI Default", "MATERIAL" to "Android · Material 3", "AURORA" to "CenAI Aurora · Glass", "IOS" to "iOS · Liquid Glass", "FIGMA" to "CenAI Studio · Editorial").forEach { (key, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = {
                                     uiStyle = key
                                     themeExpanded = false
@@ -941,6 +964,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                         }
                     }
                     Text(when (uiStyle) {
+                        "STUDIO" -> "A quiet, high-contrast workspace with a soft neutral canvas, clear typography and restrained forest accents."
                         "AURORA" -> "A calm, layered workspace with soft aurora lighting, translucent surfaces and crisp teal accents."
                         "MATERIAL" -> "Material You colors follow your wallpaper on Android 12 and newer."
                         "IOS" -> "Translucent glass chrome, reflective edges, layered depth and restrained spring motion."
@@ -968,7 +992,52 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                             }
                         }
                     }
-                    OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") }, singleLine = true)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") },
+                            singleLine = true, modifier = Modifier.weight(1f))
+                        OutlinedButton(enabled = !catalogLoading && provider != Provider.CENAI_CLOUD && providerKeys[provider].orEmpty().isNotBlank(), onClick = {
+                            catalogLoading = true
+                            info = "Loading models from ${provider.label}…"
+                            scope.launch {
+                                try {
+                                    // The catalog adapter currently uses provider API-key authentication.
+                                    // Gemini's experimental OAuth connection remains usable for chat, but its
+                                    // access token is not interchangeable with a Gemini API key.
+                                    val credential = providerKeys[provider].orEmpty()
+                                    catalogModels = withContext(Dispatchers.IO) {
+                                        ProviderModelCatalog().listModels(provider, credential, base)
+                                    }
+                                    info = "Loaded ${catalogModels.size} model IDs from ${provider.label}. Choose one below or keep entering a model ID manually."
+                                } catch (e: Exception) {
+                                    info = e.message ?: "Model discovery failed. You can still enter a model ID manually."
+                                } finally { catalogLoading = false }
+                            }
+                        }) { Text(if (catalogLoading) "Loading…" else "Discover") }
+                    }
+                    if (catalogModels.isNotEmpty()) {
+                        Text("AVAILABLE MODELS · ${catalogModels.size}", color = palette.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            catalogModels.take(40).forEach { modelId ->
+                                FilterChip(selected = model == modelId, onClick = { model = modelId },
+                                    label = { Text(modelId, maxLines = 1) })
+                            }
+                        }
+                    }
+                    if (provider == Provider.DEEPSEEK) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("DeepSeek thinking mode", color = palette.text)
+                                Text("Controls reasoning on supported DeepSeek models. Private reasoning is not shown in chat.", color = palette.muted, fontSize = 10.sp)
+                            }
+                            Switch(checked = deepSeekThinking, onCheckedChange = { deepSeekThinking = it })
+                        }
+                        if (deepSeekThinking) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("low", "high", "max").forEach { effort ->
+                                FilterChip(selected = deepSeekEffort == effort, onClick = { deepSeekEffort = effort },
+                                    label = { Text(effort.replaceFirstChar { it.uppercase() }) })
+                            }
+                        }
+                    }
                     if (provider == Provider.CUSTOM) OutlinedTextField(value = base, onValueChange = { base = it },
                         label = { Text("HTTPS API base URL") }, singleLine = true)
                     Provider.entries.filter { it != Provider.CENAI_CLOUD }.forEach { p ->
@@ -987,6 +1056,46 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                     }
                     HorizontalDivider(color = palette.raised)
                     
+                    }
+                    if (selectedSettingsPage == "Agents") {
+                        Text("TEAM STRUCTURE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                        Surface(color = palette.surface, shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Planner / coordinator", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text("Breaks a complex request into steps before execution.", color = palette.muted, fontSize = 11.sp)
+                                    }
+                                    Text(if (agentPlanning) "ON" else "OFF", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                }
+                                HorizontalDivider(color = palette.raised)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Local tool executor", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text("${toolEnabled.values.count { it }} of ${toolEnabled.size} allow-listed tools enabled.", color = palette.muted, fontSize = 11.sp)
+                                    }
+                                    Text("LOCAL", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                }
+                                HorizontalDivider(color = palette.raised)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Human approval gate", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text("Sensitive Android actions always pause for your approval.", color = palette.muted, fontSize = 11.sp)
+                                    }
+                                    Text("REQUIRED", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                }
+                                HorizontalDivider(color = palette.raised)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Background task runner", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text("One-off WorkManager tasks with visible status and cancellation.", color = palette.muted, fontSize = 11.sp)
+                                    }
+                                    Text("ON-DEMAND", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                }
+                                Text("CenAI currently uses the selected model as coordinator and does not pretend that separate specialist agents are running. Multi-provider comparison is configured in AI & models.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                            }
+                        }
                     }
                     if (selectedSettingsPage == "Agents") {
 Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -1222,7 +1331,7 @@ Text("CENAI PLANS · PAYPAL", color = palette.accent, fontSize = 10.sp, fontWeig
                                 ) { Text(if (paypalBusy) "Checking…" else "Diagnose latest checkout") }
                                 Text(paypalStatus, color = if (paypalBillingEnabled) palette.accent else palette.muted, fontSize = 11.sp)
                                 paypalPlans.forEach { plan ->
-                                    Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "AURORA") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
+                                    Surface(color = palette.raised.copy(alpha = if (vault.get("ui_style", "STUDIO") == "IOS") 0.62f else 1f), shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, palette.muted.copy(alpha = 0.18f)), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                             Text(plan.optString("display_name", "CenAI plan"), color = palette.text, fontWeight = FontWeight.SemiBold)
                                             Text("${plan.optString("currency", "PHP")} ${plan.optString("amount")} · every ${plan.optInt("interval_count", 1)} ${plan.optString("interval_unit", "MONTH").lowercase()}", color = palette.text, fontSize = 13.sp)
@@ -1561,6 +1670,8 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.put("model", model); vault.put("model_${provider.name}", model)
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
                 vault.put("multi_agent", multiAgent.toString())
+                vault.put("deepseek_thinking_enabled", deepSeekThinking.toString())
+                vault.put("deepseek_reasoning_effort", deepSeekEffort)
                 vault.put("agent_planning", agentPlanning.toString())
                 vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("google_cloud_project_id", googleCloudProjectId)
