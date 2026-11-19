@@ -133,7 +133,8 @@ internal fun MessageBubble(
                         Box(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
                             RichMessageContent(
                                 message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached for vision analysis]"),
-                                onCopyCode
+                                onCopyCode,
+                                textColor = palette.background
                             )
                         }
                     }
