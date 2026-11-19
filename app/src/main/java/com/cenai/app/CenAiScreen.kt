@@ -258,7 +258,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         } else if (generationHasStarted) {
             generationHasStarted = false
             generationCompleted = true
-            delay(1_200)
+            delay(CenAiMotion.completionHoldMs.toLong())
             generationCompleted = false
         }
     }
@@ -1026,7 +1026,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
-            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).animateContentSize(tween(200)))
+            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).animateContentSize(tween(CenAiMotion.contentMs)))
             val visibleConversations = conversations.filter { chat ->
                 chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) }
             }
@@ -1155,7 +1155,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         "Providers" to "AI & models",
                         "Account" to "Account",
                         "Voice" to "Device",
-                        "Notifications" to "Device",
+                        "Notifications" to "Agents",
                         "Privacy & permissions" to "Device",
                         "Agents" to "Agents",
                         "Data & storage" to "Device",
@@ -1634,7 +1634,7 @@ Text("ADMINISTRATION & ANALYTICS", color = palette.accent, fontSize = 10.sp, fon
                                 HorizontalDivider(color = palette.raised)
                                 
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Privacy & permissions") {
 Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -1670,7 +1670,7 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
 Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
                             Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
@@ -1679,7 +1679,7 @@ Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.
                     }
                     
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Voice") {
 Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1697,7 +1697,7 @@ Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = Font
                     }
                     
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Data & storage") {
 Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1730,7 +1730,7 @@ Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, 
                     }
                     
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Data & storage") {
 Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1743,7 +1743,7 @@ Text("LOCAL KNOWLEDGE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     }
                     
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "About & diagnostics") {
 Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1772,7 +1772,7 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                     }
                     
                     }
-                    if (selectedSettingsPage == "Device") {
+                    if (selectedSettingsPage == "Device" && selectedSettingsCategory == "About & diagnostics") {
 Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
