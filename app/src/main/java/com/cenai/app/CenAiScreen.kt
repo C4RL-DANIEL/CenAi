@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.VolumeUp
@@ -187,6 +188,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
     var wideDestination by remember { mutableStateOf("Chat") }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
+    var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
     val store = remember { ChatStore(context) }
@@ -588,8 +590,28 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 },
                 actions = {
                     IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
-                    IconButton(onClick = { if (messages.isNotEmpty()) saveConversationLauncher.launch("CenAI-conversation.md") }) { Icon(Icons.Default.Save, "Save conversation as Markdown", tint = palette.text) }
-                    IconButton(onClick = { if (messages.isNotEmpty()) { val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }; val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }; context.startActivity(Intent.createChooser(send, "Share conversation")) } }) { Icon(Icons.Default.Share, "Share conversation", tint = palette.text) }
+                    Box {
+                        IconButton(onClick = { moreActionsExpanded = true }) { Icon(Icons.Default.MoreVert, "More actions", tint = palette.text) }
+                        DropdownMenu(expanded = moreActionsExpanded, onDismissRequest = { moreActionsExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Save conversation as Markdown") },
+                                enabled = messages.isNotEmpty(),
+                                onClick = { moreActionsExpanded = false; saveConversationLauncher.launch("CenAI-conversation.md") },
+                                leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share conversation") },
+                                enabled = messages.isNotEmpty(),
+                                onClick = {
+                                    moreActionsExpanded = false
+                                    val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }
+                                    val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }
+                                    context.startActivity(Intent.createChooser(send, "Share conversation"))
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+                        }
+                    }
                     IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = if (palette.glass) Color.Transparent else palette.background)
