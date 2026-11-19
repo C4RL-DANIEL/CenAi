@@ -185,8 +185,8 @@ fun CenAiScreen(vault: SecureKeyStore) {
 private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) -> Unit) {
     val palette = LocalCenAiPalette.current
     val context = LocalContext.current
-    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
-    var wideDestination by remember { mutableStateOf("Chat") }
+    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 600
+    var wideDestination by remember { mutableStateOf("Home") }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -251,6 +251,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var testBusy by remember { mutableStateOf(false) }
     var conversations by remember { mutableStateOf(store.load()) }
     var currentId by remember { mutableStateOf(conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()) }
+    var renameDialogOpen by remember { mutableStateOf(false) }
+    var renameDraft by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
     var activeJob by remember { mutableStateOf<Job?>(null) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
@@ -567,262 +569,419 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    Box(Modifier.fillMaxSize().background(if (palette.glass) Brush.linearGradient(listOf(palette.background, palette.surface.copy(alpha = 0.96f), palette.raised.copy(alpha = 0.78f))) else SolidColor(palette.background))) {
-        if (palette.glass) {
-            Box(Modifier.offset(x = (-90).dp, y = 90.dp).size(340.dp).blur(76.dp)
-                .background(Brush.radialGradient(listOf(palette.accent.copy(alpha = 0.26f), Color.Transparent)), CircleShape))
-            Box(Modifier.offset(x = 180.dp, y = 390.dp).size(300.dp).blur(82.dp)
-                .background(Brush.radialGradient(listOf(Color(0xFFB8C8E8).copy(alpha = 0.34f), Color.Transparent)), CircleShape))
-        }
-        Scaffold(
-        modifier = Modifier.fillMaxSize().padding(start = if (isTabletLayout) 80.dp else 0.dp),
-        containerColor = if (palette.glass) Color.Transparent else palette.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(if (vault.get("ui_style", "AURORA") == "FIGMA") "CENAI / STUDIO" else "CenAI", fontWeight = FontWeight.Bold, color = palette.text, fontSize = 20.sp, letterSpacing = if (vault.get("ui_style", "AURORA") == "FIGMA") 1.2.sp else 0.sp)
-                        Text(provider.label + "  ·  " + model, color = palette.muted, fontSize = 11.sp, maxLines = 1)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = palette.text) }
-                },
-                actions = {
-                    IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
-                    Box {
-                        IconButton(onClick = { moreActionsExpanded = true }) { Icon(Icons.Default.MoreVert, "More actions", tint = palette.text) }
-                        DropdownMenu(expanded = moreActionsExpanded, onDismissRequest = { moreActionsExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Save conversation as Markdown") },
-                                enabled = messages.isNotEmpty(),
-                                onClick = { moreActionsExpanded = false; saveConversationLauncher.launch("CenAI-conversation.md") },
-                                leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share conversation") },
-                                enabled = messages.isNotEmpty(),
-                                onClick = {
-                                    moreActionsExpanded = false
-                                    val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }
-                                    val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }
-                                    context.startActivity(Intent.createChooser(send, "Share conversation"))
-                                },
-                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                            )
-                        }
-                    }
-                    IconButton(onClick = { settings = true }, modifier = Modifier.testTag("open-settings")) { Icon(Icons.Default.Settings, "Settings", tint = palette.text) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = if (palette.glass) Color.Transparent else palette.background)
-            )
-        },
-        bottomBar = {
-            Surface(color = if (palette.glass) palette.surface.copy(alpha = 0.64f) else palette.background, shape = if (palette.glass) RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) else RoundedCornerShape(0.dp), border = if (palette.glass) androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.82f), palette.accent.copy(alpha = 0.18f), Color.White.copy(alpha = 0.24f)))) else null, shadowElevation = if (palette.glass) 18.dp else 4.dp) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
-                    AnimatedVisibility(visible = error.isNotBlank()) {
-                        Text(error, color = Color(0xFFFF938B), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
-                    }
-                    Surface(color = if (palette.glass) palette.surface.copy(alpha = 0.56f) else palette.surface, shape = RoundedCornerShape(26.dp), border = if (palette.glass) androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), palette.accent.copy(alpha = 0.22f), Color.White.copy(alpha = 0.28f)))) else null, shadowElevation = if (palette.glass) 10.dp else 0.dp, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp)) {
-                            BasicTextField(
-                                value = draft, onValueChange = { draft = it },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp, max = 150.dp).padding(8.dp),
-                                textStyle = TextStyle(color = palette.text, fontSize = 15.sp),
-                                decorationBox = { inner ->
-                                    Box {
-                                        if (draft.isEmpty()) Text("Message CenAI…", color = palette.muted)
-                                        inner()
-                                    }
-                                }
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = {
-                                    val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (speechInputLanguage == "device") Locale.getDefault().toLanguageTag() else speechInputLanguage)
-                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to CenAI")
-                                    }
-                                    runCatching { speechLauncher.launch(speechIntent) }.onFailure { error = "Speech recognition is not available on this device." }
-                                }) { Icon(Icons.Default.Mic, "Voice input", tint = palette.muted) }
-                                IconButton(onClick = { attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*")) }) {
-                                    Icon(Icons.Default.AttachFile, "Attach text, PDF or image", tint = palette.muted)
-                                }
-                                TextButton(onClick = { settings = true }) { Text("Configure", color = palette.accent, fontSize = 12.sp) }
-                                Spacer(Modifier.weight(1f))
-                                AnimatedContent(targetState = busy, label = "send-stop") { sending ->
-                                    if (sending) {
-                                        FilledIconButton(onClick = { activeJob?.cancel(); busy = false },
-                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF4B3030))) {
-                                            Icon(Icons.Default.Stop, "Stop response")
-                                        }
-                                    } else {
-                                        FilledIconButton(
-                                            enabled = draft.isNotBlank(),
-                                            onClick = {
-                                                val prompt = runCatching { NativeCore.normalizePrompt(draft) }.getOrDefault(draft.trim())
-                                                if (prompt.isNotBlank()) {
-                                                    val request = messages + ChatMessage("user", prompt)
-                                                    draft = ""
-                                                    startRequest(request)
-                                                }
-                                            },
-                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.accent, contentColor = palette.background)
-                                        ) { Icon(Icons.Default.ArrowUpward, "Send") }
-                                    }
-                                }
-                            }
-                        }
-                    }
+    val composerFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    var attachmentTrayOpen by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize().background(palette.background)) {
+        Row(Modifier.fillMaxSize()) {
+            if (isTabletLayout) {
+                NavigationRail(
+                    modifier = Modifier.width(72.dp).fillMaxHeight(),
+                    containerColor = palette.surface,
+                    contentColor = palette.text,
+                    windowInsets = WindowInsets(0, 0, 0, 0)
+                ) {
+                    NavigationRailItem(
+                        selected = wideDestination == "Home",
+                        onClick = { wideDestination = "Home"; historyOpen = false; settings = false; newChat() },
+                        icon = { Icon(Icons.Default.Add, contentDescription = "Home") },
+                        label = { Text("Home") },
+                        alwaysShowLabel = true
+                    )
+                    NavigationRailItem(
+                        selected = wideDestination == "History",
+                        onClick = { wideDestination = "History"; settings = false; historyOpen = true },
+                        icon = { Icon(Icons.Default.History, contentDescription = "History") },
+                        label = { Text("History") },
+                        alwaysShowLabel = true
+                    )
+                    NavigationRailItem(
+                        selected = wideDestination == "Agents",
+                        onClick = { wideDestination = "Agents"; historyOpen = false; selectedSettingsPage = "Agents"; settings = true },
+                        icon = { Icon(Icons.Default.Info, contentDescription = "Agents") },
+                        label = { Text("Agents") },
+                        alwaysShowLabel = true
+                    )
+                    NavigationRailItem(
+                        selected = wideDestination == "Settings",
+                        onClick = { wideDestination = "Settings"; historyOpen = false; selectedSettingsPage = "Appearance"; settings = true },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings") },
+                        alwaysShowLabel = true
+                    )
                 }
             }
-        }
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            if (messages.isEmpty()) {
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 24.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Surface(
-                        color = palette.surface,
-                        shape = RoundedCornerShape(28.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, palette.raised),
-                        modifier = Modifier.fillMaxWidth()
+            Scaffold(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                containerColor = palette.background,
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("CenAI", color = palette.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                                AssistChip(
+                                    onClick = { selectedSettingsPage = "AI & models"; settings = true },
+                                    label = { Text(model, maxLines = 1, fontSize = 11.sp) },
+                                    colors = AssistChipDefaults.assistChipColors(containerColor = palette.raised, labelColor = palette.muted),
+                                    border = null
+                                )
+                            }
+                        },
+                        actions = {
+                            Box {
+                                IconButton(onClick = { moreActionsExpanded = true }) {
+                                    Icon(Icons.Default.MoreVert, "Conversation actions", tint = palette.text)
+                                }
+                                DropdownMenu(expanded = moreActionsExpanded, onDismissRequest = { moreActionsExpanded = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Rename conversation") },
+                                        enabled = messages.isNotEmpty(),
+                                        onClick = {
+                                            renameDraft = conversations.firstOrNull { it.id == currentId }?.title ?: messages.firstOrNull { it.role == "user" }?.content?.take(42).orEmpty()
+                                            renameDialogOpen = true
+                                            moreActionsExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Share conversation") },
+                                        enabled = messages.isNotEmpty(),
+                                        onClick = {
+                                            moreActionsExpanded = false
+                                            val body = messages.joinToString("\n\n") { (if (it.role == "user") "You" else "CenAI") + ":\n" + it.content }
+                                            val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, body) }
+                                            context.startActivity(Intent.createChooser(send, "Share conversation"))
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Export as Markdown") },
+                                        enabled = messages.isNotEmpty(),
+                                        onClick = { moreActionsExpanded = false; saveConversationLauncher.launch("CenAI-conversation.md") }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Delete conversation", color = palette.danger) },
+                                        enabled = messages.isNotEmpty(),
+                                        onClick = {
+                                            moreActionsExpanded = false
+                                            conversations = conversations.filterNot { it.id == currentId }.toMutableList()
+                                            store.save(conversations)
+                                            newChat()
+                                        }
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = palette.background,
+                            titleContentColor = palette.text
+                        )
+                    )
+                },
+                bottomBar = {
+                    Column(
+                        Modifier.fillMaxWidth().background(palette.background)
                     ) {
-                        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                Surface(color = palette.accent.copy(alpha = 0.16f), shape = CircleShape, modifier = Modifier.size(34.dp)) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text("C", color = palette.accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                        AnimatedVisibility(visible = error.isNotBlank(), enter = fadeIn(tween(160)), exit = androidx.compose.animation.fadeOut(tween(120))) {
+                            Text(
+                                error,
+                                color = palette.danger,
+                                fontSize = 12.sp,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                        Surface(
+                            color = palette.surfaceRaisedOrSurface(),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, palette.border),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTabletLayout) 24.dp else 12.dp, vertical = 8.dp)
+                        ) {
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                BasicTextField(
+                                    value = draft,
+                                    onValueChange = { draft = it },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp, max = 120.dp).padding(horizontal = 4.dp, vertical = 7.dp)
+                                        .then(Modifier.focusRequester(composerFocusRequester)),
+                                    textStyle = TextStyle(color = palette.text, fontSize = 16.sp, lineHeight = 24.sp),
+                                    decorationBox = { inner ->
+                                        Box {
+                                            if (draft.isEmpty()) Text("Message CenAI…", color = palette.tertiary, fontSize = 16.sp)
+                                            inner()
+                                        }
                                     }
-                                }
-                                Column {
-                                    Text("CENAI WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                                    Text(if (localModelEnabled && localModelReady) "On-device AI is ready" else "Your models. Your workflow.", color = palette.muted, fontSize = 11.sp)
-                                }
-                                Spacer(Modifier.weight(1f))
-                                val configured = !providerKeys[provider].isNullOrBlank() ||
-                                    (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))
-                                val stateLabel = when {
-                                    localModelEnabled && localModelReady -> "OFFLINE"
-                                    configured -> "READY"
-                                    else -> "SETUP"
-                                }
-                                Surface(color = palette.accent.copy(alpha = 0.14f), shape = RoundedCornerShape(30.dp)) {
-                                    Text("● $stateLabel", color = palette.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                                }
-                            }
-                            Text(
-                                "What are we\nworking on today?",
-                                color = palette.text,
-                                fontSize = 34.sp,
-                                lineHeight = 39.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-1.1).sp
-                            )
-                            Text(
-                                "Think through an idea, build something, learn a topic, or bring a file into your conversation.",
-                                color = palette.muted,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp
-                            )
-                            HorizontalDivider(color = palette.raised)
-                            Text("START WITH A TASK", color = palette.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                                    HomeActionCard(Icons.Default.Info, "Explore an idea", "Think it through", Modifier.weight(1f)) { draft = "Help me explore an idea: " }
-                                    HomeActionCard(Icons.Default.Save, "Write something", "Create a first draft", Modifier.weight(1f)) { draft = "Help me write: " }
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                                    HomeActionCard(Icons.Default.History, "Learn a topic", "Clear explanations", Modifier.weight(1f)) { draft = "Explain this topic clearly, with examples: " }
-                                    HomeActionCard(Icons.Default.Settings, "Review code", "Find issues & improve", Modifier.weight(1f)) { draft = "Review this code for bugs, security issues and improvements: " }
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { attachmentTrayOpen = true }, modifier = Modifier.size(40.dp)) {
+                                        Icon(Icons.Default.AttachFile, "Attachments", tint = palette.muted)
+                                    }
+                                    Box {
+                                        DropdownMenu(expanded = attachmentTrayOpen, onDismissRequest = { attachmentTrayOpen = false }) {
+                                            DropdownMenuItem(
+                                                text = { Text("Image") },
+                                                onClick = { attachmentTrayOpen = false; attachmentPicker.launch(arrayOf("image/*")) }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("File or document") },
+                                                onClick = { attachmentTrayOpen = false; attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*")) }
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (speechInputLanguage == "device") Locale.getDefault().toLanguageTag() else speechInputLanguage)
+                                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to CenAI")
+                                        }
+                                        runCatching { speechLauncher.launch(speechIntent) }
+                                            .onFailure { error = "Speech recognition is not available on this device." }
+                                    }, modifier = Modifier.size(40.dp)) {
+                                        Icon(Icons.Default.Mic, "Voice input", tint = palette.muted)
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    AnimatedContent(targetState = busy, label = "send-stop-morph") { sending ->
+                                        if (sending) {
+                                            FilledIconButton(
+                                                onClick = { activeJob?.cancel(); busy = false },
+                                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.danger, contentColor = Color.White),
+                                                modifier = Modifier.size(44.dp)
+                                            ) { Icon(Icons.Default.Stop, "Stop response") }
+                                        } else {
+                                            FilledIconButton(
+                                                enabled = draft.isNotBlank(),
+                                                onClick = {
+                                                    val prompt = runCatching { NativeCore.normalizePrompt(draft) }.getOrDefault(draft.trim())
+                                                    if (prompt.isNotBlank()) {
+                                                        val request = messages + ChatMessage("user", prompt)
+                                                        draft = ""
+                                                        startRequest(request)
+                                                    }
+                                                },
+                                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.text, contentColor = palette.background),
+                                                modifier = Modifier.size(44.dp)
+                                            ) { Icon(Icons.Default.ArrowUpward, "Send") }
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Lock, null, tint = palette.accent, modifier = Modifier.size(14.dp))
-                        Text(
-                            if (localModelEnabled && localModelReady) "Offline model selected · Your prompt stays on this device"
-                            else "You stay in control · Configure providers, privacy and tools in Settings",
-                            color = palette.muted,
-                            fontSize = 10.sp,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                    contentPadding = PaddingValues(top = 16.dp, bottom = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    itemsIndexed(messages, key = { index, _ -> "$currentId-$index" }) { index, message ->
-                        MessageBubble(
-                            message = message, index = index, last = index == messages.lastIndex,
-                            busy = busy, style = vault.get("ui_style", "AURORA"),
-                            onApproveDeviceAction = { name, rawArgs ->
-                                runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
-                                    .onSuccess { result ->
-                                        info = result
-                                        val updated = messages.map { item ->
-                                            if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
-                                                ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + result)
-                                            } else item
-                                        }
-                                        persist(updated)
-                                    }
-                                    .onFailure { error = it.message ?: "Android action could not be opened." }
-                            },
-                            onCopy = { clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]"))); info = "Copied to clipboard." },
-                            onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
-                            onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
-                            onEdit = { editIndex = index; editText = message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]") },
-                            onRegenerate = {
-                                val before = messages.take(index)
-                                startRequest(before)
+                        if (!isTabletLayout) {
+                            NavigationBar(
+                                containerColor = palette.surface,
+                                contentColor = palette.text,
+                                tonalElevation = 0.dp,
+                                windowInsets = WindowInsets.navigationBars
+                            ) {
+                                NavigationBarItem(
+                                    selected = wideDestination == "Home",
+                                    onClick = { wideDestination = "Home"; historyOpen = false; settings = false; newChat() },
+                                    icon = { Icon(Icons.Default.Add, "Home") },
+                                    label = { Text("Home") },
+                                    alwaysShowLabel = true
+                                )
+                                NavigationBarItem(
+                                    selected = wideDestination == "History",
+                                    onClick = { wideDestination = "History"; settings = false; historyOpen = true },
+                                    icon = { Icon(Icons.Default.History, "History") },
+                                    label = { Text("History") },
+                                    alwaysShowLabel = true
+                                )
+                                NavigationBarItem(
+                                    selected = wideDestination == "Agents",
+                                    onClick = { wideDestination = "Agents"; historyOpen = false; selectedSettingsPage = "Agents"; settings = true },
+                                    icon = { Icon(Icons.Default.Info, "Agents") },
+                                    label = { Text("Agents") },
+                                    alwaysShowLabel = true
+                                )
+                                NavigationBarItem(
+                                    selected = wideDestination == "Settings",
+                                    onClick = { wideDestination = "Settings"; historyOpen = false; selectedSettingsPage = "Appearance"; settings = true },
+                                    icon = { Icon(Icons.Default.Settings, "Settings") },
+                                    label = { Text("Settings") },
+                                    alwaysShowLabel = true
+                                )
                             }
-                        )
+                        }
+                    }
+                }
+            ) { padding ->
+                if (messages.isEmpty()) {
+                    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                        Column(
+                            Modifier.fillMaxWidth().widthIn(max = 720.dp).verticalScroll(rememberScrollState())
+                                .padding(horizontal = 24.dp, vertical = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    val hour = java.time.LocalTime.now().hour
+                                    val greeting = when {
+                                        hour < 12 -> "Good morning"
+                                        hour < 18 -> "Good afternoon"
+                                        else -> "Good evening"
+                                    }
+                                    Text(greeting, color = palette.text, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Medium)
+                                    Text("What would you like to work on?", color = palette.muted, fontSize = 14.sp)
+                                }
+                                Surface(
+                                    onClick = { selectedSettingsPage = "Account"; settings = true },
+                                    shape = CircleShape,
+                                    color = palette.raised,
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("C", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    newChat()
+                                    composerFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.text, contentColor = palette.background)
+                            ) {
+                                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("New chat", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Recent", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                if (conversations.isEmpty()) {
+                                    Text("Your conversations will appear here.", color = palette.tertiary, fontSize = 13.sp)
+                                } else {
+                                    conversations.take(3).forEach { chat ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clickable {
+                                                activeJob?.cancel()
+                                                busy = false
+                                                currentId = chat.id
+                                                messages = chat.messages.toList()
+                                                wideDestination = "Home"
+                                            }.padding(vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Text(chat.title, color = palette.text, fontSize = 15.sp, maxLines = 1)
+                                                Text(chat.messages.lastOrNull()?.content.orEmpty().replace(Regex("\\s+"), " ").take(72),
+                                                    color = palette.tertiary, fontSize = 12.sp, maxLines = 1)
+                                            }
+                                            val age = (System.currentTimeMillis() - chat.updatedAt).coerceAtLeast(0L)
+                                            val timeLabel = when {
+                                                age < 60_000L -> "now"
+                                                age < 3_600_000L -> "${age / 60_000L}m"
+                                                age < 86_400_000L -> "${age / 3_600_000L}h"
+                                                else -> "${age / 86_400_000L}d"
+                                            }
+                                            Text(timeLabel, color = palette.tertiary, fontSize = 12.sp)
+                                        }
+                                        HorizontalDivider(color = palette.border)
+                                    }
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Try asking", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Row(
+                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SuggestionChip("Explain a concept") { draft = "Explain a concept with a simple example: "; composerFocusRequester.requestFocus(); keyboardController?.show() }
+                                    SuggestionChip("Help me write") { draft = "Help me write: "; composerFocusRequester.requestFocus(); keyboardController?.show() }
+                                    SuggestionChip("Review my code") { draft = "Review this code: "; composerFocusRequester.requestFocus(); keyboardController?.show() }
+                                    SuggestionChip("Plan a project") { draft = "Help me plan a project: "; composerFocusRequester.requestFocus(); keyboardController?.show() }
+                                }
+                            }
+                            Text(
+                                if (localModelEnabled && localModelReady) "Offline model · ${provider.label} · ${model}"
+                                else "${provider.label} · ${model}",
+                                color = palette.tertiary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).padding(horizontal = 16.dp),
+                            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            itemsIndexed(messages, key = { index, _ -> "$currentId-$index" }) { index, message ->
+                                MessageBubble(
+                                    message = message,
+                                    index = index,
+                                    last = index == messages.lastIndex,
+                                    busy = busy,
+                                    style = vault.get("ui_style", "STUDIO"),
+                                    onApproveDeviceAction = { name, rawArgs ->
+                                        runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
+                                            .onSuccess { result ->
+                                                info = result
+                                                val updated = messages.map { item ->
+                                                    if (item.role == "tool" && item.content.contains("\\nARGS:$rawArgs")) {
+                                                        ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\\nARGS:") + "\\n" + result)
+                                                    } else item
+                                                }
+                                                persist(updated)
+                                            }
+                                            .onFailure { error = it.message ?: "Android action could not be opened." }
+                                    },
+                                    onCopy = {
+                                        clipboard.setText(AnnotatedString(message.content.replace(Regex("""\\[\\[CENAI_IMAGE\\|[^|]+\\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")))
+                                        info = "Copied to clipboard."
+                                    },
+                                    onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
+                                    onSpeak = {
+                                        if (speechOutputReady) {
+                                            appMonitor.recordEvent("voice_output")
+                                            monitorSnapshot = appMonitor.snapshot()
+                                            textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index")
+                                        } else info = "Speech output is not ready yet."
+                                    },
+                                    onEdit = {
+                                        editIndex = index
+                                        editText = message.content.replace(Regex("""\\[\\[CENAI_IMAGE\\|[^|]+\\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")
+                                    },
+                                    onRegenerate = { startRequest(messages.take(index)) }
+                                )
+                            }
+                            if (busy && messages.lastOrNull()?.content.isNullOrBlank()) {
+                                item { ThinkingIndicator() }
+                            }
+                        }
                     }
                 }
             }
         }
-        }
-        if (isTabletLayout) {
-            NavigationRail(
-                modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight(),
-                containerColor = if (palette.glass) palette.surface.copy(alpha = 0.92f) else palette.surface,
-                contentColor = palette.text
-            ) {
-                NavigationRailItem(
-                    selected = wideDestination == "Chat",
-                    onClick = { wideDestination = "Chat" },
-                    icon = { Icon(Icons.Default.Add, contentDescription = "Chat") },
-                    label = { Text("Chat") }
+    }
+
+    if (renameDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { renameDialogOpen = false },
+            title = { Text("Rename conversation") },
+            text = {
+                OutlinedTextField(
+                    value = renameDraft,
+                    onValueChange = { renameDraft = it.take(80) },
+                    singleLine = true,
+                    label = { Text("Conversation title") }
                 )
-                NavigationRailItem(
-                    selected = wideDestination == "History",
-                    onClick = { wideDestination = "History"; historyOpen = true },
-                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("History") }
-                )
-                NavigationRailItem(
-                    selected = wideDestination == "AI",
-                    onClick = { wideDestination = "AI"; selectedSettingsPage = "AI & models"; settings = true },
-                    icon = { Icon(Icons.Default.Info, contentDescription = "AI setup") },
-                    label = { Text("AI setup") }
-                )
-                NavigationRailItem(
-                    selected = wideDestination == "Settings",
-                    onClick = { wideDestination = "Settings"; settings = true },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") }
-                )
-            }
-        }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val clean = renameDraft.trim()
+                    if (clean.isNotEmpty()) {
+                        conversations.firstOrNull { it.id == currentId }?.title = clean
+                        conversations = conversations.toMutableList()
+                        store.save(conversations)
+                    }
+                    renameDialogOpen = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renameDialogOpen = false }) { Text("Cancel") } }
+        )
     }
 
     if (historyOpen) {
