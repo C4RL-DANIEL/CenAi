@@ -2,7 +2,6 @@ package com.cenai.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -32,7 +31,7 @@ class CenAiLaunchSmokeTest {
 
     @Test
     fun settingsExposeCoreVoiceAiGuardianAgentAndUpdateSystems() {
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("CenAI settings").assertIsDisplayed()
 
         selectSettingsPage("AI & models")
