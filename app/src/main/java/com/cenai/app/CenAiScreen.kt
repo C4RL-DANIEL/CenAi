@@ -259,9 +259,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             generationCompleted = false
         } else if (generationHasStarted) {
             generationHasStarted = false
-            generationCompleted = true
-            delay(CenAiMotion.completionHoldMs.toLong())
-            generationCompleted = false
+            generationCompleted = error.isBlank()
+            if (generationCompleted) {
+                delay(CenAiMotion.completionHoldMs.toLong())
+                generationCompleted = false
+            }
         }
     }
     var error by remember { mutableStateOf("") }
