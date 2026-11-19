@@ -914,7 +914,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create_guest_order") {
-      if (!await recurringBillingEnabled()) return fail(503, "Recurring PayPal subscriptions are temporarily paused while activation and renewal are verified. One-time card payments remain available.");
+      // One-time guest card payments are controlled by the global billing flag,
+      // not by the separate recurring-subscription lifecycle flag.
+      if (!await billingEnabled()) return fail(503, "PayPal one-time card checkout is temporarily disabled. Please try again later.");
       const existingMembership = await activeMembershipForUser(user.id);
       if (existingMembership) return fail(409, "You already have an active CenAI membership. Manage or renew it from Account → Membership after your current access expires.");
       const planKey = String(body.planKey || "live_test").trim().toLowerCase();
@@ -1037,7 +1039,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create_subscription") {
-      if (!await billingEnabled()) return fail(503, "Billing is disabled until the PayPal Live integration has passed verification.");
+      if (!await recurringBillingEnabled()) return fail(503, "Recurring PayPal subscriptions are temporarily paused while activation, renewal, and cancellation lifecycle verification is incomplete.");
       const existingMembership = await activeMembershipForUser(user.id);
       if (existingMembership) return fail(409, "You already have an active CenAI membership. Manage or renew it from Account → Membership after your current access expires.");
       const planKey = String(body.planKey || "live_test");
@@ -1101,7 +1103,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === "cancel_open_checkouts" || action === "status") {
       const { data: attempts, error: attemptsError } = await db.from("billing_checkout_attempts")
-        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).in("status", ["AWAITING_APPROVAL", "APPROVED", "EXPIRED"]);
+        .select("provider_subscription_id,plan_key,expires_at").eq("user_id", user.id).in("status", ["AWAITING_APPROVAL", "APPROVED"]); // EXPIRED is terminal; never poll PayPal for old attempts.
       if (attemptsError) throw attemptsError;
       for (const attempt of attempts || []) {
         try { await settleCheckoutAttempt(user.id, attempt, action === "cancel_open_checkouts"); }
