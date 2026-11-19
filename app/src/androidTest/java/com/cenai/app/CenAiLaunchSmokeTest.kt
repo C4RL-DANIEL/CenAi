@@ -64,4 +64,12 @@ class CenAiLaunchSmokeTest {
         softwareUpdate.performScrollTo()
         softwareUpdate.assertIsDisplayed()
     }
+
+    @Test
+    fun conversationHistoryOpensAndStartsANewChat() {
+        compose.onNodeWithContentDescription("Chat history").performClick()
+        compose.onNodeWithText("Your conversations").assertIsDisplayed()
+        compose.onNodeWithText("New chat").performClick()
+        compose.onNodeWithText("Message CenAI…").assertIsDisplayed()
+    }
 }
