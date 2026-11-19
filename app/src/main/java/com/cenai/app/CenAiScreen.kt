@@ -892,7 +892,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             onDismissRequest = { settings = false },
             containerColor = if (palette.glass) palette.surface.copy(alpha = 0.94f) else palette.surface,
             tonalElevation = if (palette.glass) 18.dp else 6.dp,
-            shape = RoundedCornerShape(18.dp),
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
