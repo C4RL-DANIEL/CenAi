@@ -29,6 +29,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -1172,7 +1173,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         selectedSettingsCategory = category
                                         selectedSettingsPage = target
                                     },
-                                    color = if (selectedSettingsCategory == category) palette.raised else Color.Transparent,
+                                    color = animateColorAsState(if (selectedSettingsCategory == category) palette.raised else Color.Transparent, animationSpec = tween(CenAiMotion.controlMs), label = "settings-selection").value,
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
