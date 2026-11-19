@@ -4,6 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,8 +22,14 @@ class CenAiLaunchSmokeTest {
     private fun selectSettingsPage(page: String) {
         // The settings content is vertically scrollable and the page selector is horizontally scrollable.
         // Bring the requested chip into view across both scroll containers before clicking it.
+        val tabs = compose.onNodeWithTag("settings-page-tabs")
+        if (page == "Device" || page == "Updates") {
+            // These tabs sit beyond the initial viewport in a horizontal scroller.
+            // A real horizontal gesture reliably reveals them; performScrollTo only
+            // scrolls the outer vertical settings column.
+            tabs.performTouchInput { swipeLeft() }
+        }
         val tab = compose.onNodeWithText(page)
-        tab.performScrollTo()
         tab.assertIsDisplayed()
         tab.performClick()
     }
