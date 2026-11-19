@@ -76,29 +76,32 @@ internal fun MessageBubble(message: ChatMessage, index: Int, last: Boolean, busy
     val user = message.role == "user"
     val ios = style == "IOS"
     val editorial = style == "FIGMA"
+    val generating = !user && last && busy
     AnimatedVisibility(visible = true, enter = fadeIn(tween(320)) + slideInVertically(tween(320)) { it / 8 } +
         androidx.compose.animation.scaleIn(spring(dampingRatio = 0.82f, stiffness = 380f), initialScale = 0.985f)) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-            if (!ios) Text(if (user) "YOU" else if (editorial) "CENAI / RESPONSE" else "CENAI", color = palette.accent,
+            if (!ios && (message.content.isNotBlank() || generating)) Text(if (user) "YOU" else if (generating) "CENAI / GENERATING" else if (editorial) "CENAI / RESPONSE" else "CENAI", color = palette.accent,
                 fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = if (editorial) 1.sp else 0.sp)
-            Surface(color = when { ios && user -> palette.accent; ios && !user -> palette.surface.copy(alpha = 0.62f);
-                editorial && !user -> palette.surface; user -> palette.raised; else -> palette.surface },
-                shape = when { ios && user -> RoundedCornerShape(22.dp); ios -> RoundedCornerShape(4.dp);
-                    editorial -> RoundedCornerShape(topStart = 5.dp, topEnd = 22.dp, bottomEnd = 22.dp, bottomStart = 22.dp);
-                    user -> RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp); else -> RoundedCornerShape(6.dp, 22.dp, 22.dp, 22.dp) },
-                border = when { ios -> BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.88f), palette.accent.copy(alpha = 0.20f), Color.White.copy(alpha = 0.32f))));
-                    editorial && !user -> BorderStroke(1.dp, palette.raised); else -> null },
-                modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
-                Column(Modifier.fillMaxWidth().padding(if (ios && !user) 4.dp else 15.dp)) {
-                    if (message.content.isBlank()) Text(" ", color = palette.text)
-                    else RichMessageContent(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached for vision analysis]"), onCopyCode)
+            if (generating) Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp), contentAlignment = Alignment.CenterStart) { GenerationAura(Modifier.padding(start = 2.dp)) }
+            if (message.content.isNotBlank()) {
+                Surface(color = when { ios && user -> palette.accent; ios && !user -> palette.surface.copy(alpha = 0.62f);
+                    editorial && !user -> palette.surface; user -> palette.raised; else -> palette.surface },
+                    shape = when { ios && user -> RoundedCornerShape(22.dp); ios -> RoundedCornerShape(4.dp);
+                        editorial -> RoundedCornerShape(topStart = 5.dp, topEnd = 22.dp, bottomEnd = 22.dp, bottomStart = 22.dp);
+                        user -> RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp); else -> RoundedCornerShape(6.dp, 22.dp, 22.dp, 22.dp) },
+                    border = when { ios -> BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.88f), palette.accent.copy(alpha = 0.20f), Color.White.copy(alpha = 0.32f))));
+                        editorial && !user -> BorderStroke(1.dp, palette.raised); else -> null },
+                    modifier = Modifier.fillMaxWidth(if (user) 0.92f else 1f).animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
+                    Column(Modifier.fillMaxWidth().padding(if (ios && !user) 4.dp else 15.dp)) {
+                        RichMessageContent(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached for vision analysis]"), onCopyCode)
+                    }
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
-                if (!user) TextButton(onClick = onSpeak) { Icon(Icons.Default.VolumeUp, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Listen", color = palette.muted, fontSize = 10.sp) }
-                if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
-                if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Copy", color = palette.muted, fontSize = 10.sp) }
+                    if (!user) TextButton(onClick = onSpeak) { Icon(Icons.Default.VolumeUp, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Listen", color = palette.muted, fontSize = 10.sp) }
+                    if (user && !busy) TextButton(onClick = onEdit) { Text("Edit", color = palette.muted, fontSize = 10.sp) }
+                    if (!user && last && !busy) TextButton(onClick = onRegenerate) { Icon(Icons.Default.Refresh, null, Modifier.size(13.dp), tint = palette.muted); Spacer(Modifier.width(4.dp)); Text("Regenerate", color = palette.muted, fontSize = 10.sp) }
+                }
             }
         }
     }

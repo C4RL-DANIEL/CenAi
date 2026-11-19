@@ -787,9 +787,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                         )
                     }
-                    if (busy && messages.lastOrNull()?.content.isNullOrBlank()) {
-                        item { Text("CenAI is thinking…", color = palette.muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp)) }
-                    }
                 }
             }
         }
