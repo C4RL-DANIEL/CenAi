@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -67,10 +68,10 @@ internal fun GenerationAura(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(46.dp),
+            modifier = Modifier.size(76.dp),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(Modifier.size(46.dp)) {
+            Canvas(Modifier.size(76.dp)) {
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val radius = size.minDimension / 2f
                 val angle = phase * (2f * PI.toFloat())
@@ -86,14 +87,14 @@ internal fun GenerationAura(modifier: Modifier = Modifier) {
                 // Diffuse outer glow and two overlapping, moving color fields.
                 drawCircle(
                     color = accent.copy(alpha = 0.12f),
-                    radius = radius * 0.49f * pulse,
+                    radius = radius * 0.62f * pulse,
                     center = center
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(light.copy(alpha = 0.96f), accent.copy(alpha = 0.76f), deep.copy(alpha = 0.12f), Color.Transparent),
                         center = lobeA,
-                        radius = radius * 1.18f
+                        radius = radius * 1.34f
                     ),
                     radius = radius * 0.76f * pulse,
                     center = lobeA
@@ -102,7 +103,7 @@ internal fun GenerationAura(modifier: Modifier = Modifier) {
                     brush = Brush.radialGradient(
                         colors = listOf(accent.copy(alpha = 0.76f), deep.copy(alpha = 0.44f), Color.Transparent),
                         center = lobeB,
-                        radius = radius * 0.98f
+                        radius = radius * 1.14f
                     ),
                     radius = radius * 0.66f * (2f - pulse),
                     center = lobeB
@@ -123,11 +124,11 @@ internal fun GenerationAura(modifier: Modifier = Modifier) {
         }
         Text(
             text = "CenAI is generating",
-            modifier = Modifier.padding(start = 9.dp),
+            modifier = Modifier.padding(start = 12.dp),
             color = palette.muted,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            letterSpacing = 0.15.sp
+            letterSpacing = 0.2.sp
         )
     }
 }
