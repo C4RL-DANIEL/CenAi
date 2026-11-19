@@ -251,6 +251,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var historyOpen by remember { mutableStateOf(false) }
     var historyQuery by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
     var generationHasStarted by remember { mutableStateOf(false) }
     var generationCompleted by remember { mutableStateOf(false) }
     LaunchedEffect(busy) {
@@ -266,7 +267,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             }
         }
     }
-    var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
     var testBusy by remember { mutableStateOf(false) }
     var conversations by remember { mutableStateOf(store.load()) }
