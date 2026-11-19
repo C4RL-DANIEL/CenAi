@@ -773,7 +773,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     if (historyOpen) {
         ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = if (palette.glass) palette.surface.copy(alpha = 0.90f) else palette.surface) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${conversations.size} saved chats · Search your past work", color = palette.muted, fontSize = 11.sp)
+                }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
@@ -787,7 +790,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(chat.title, color = palette.text, maxLines = 1)
-                        Text("${chat.messages.size} messages", color = palette.muted, fontSize = 11.sp)
+                        Text("${chat.messages.size} messages · " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(chat.updatedAt)), color = palette.muted, fontSize = 11.sp)
+                        chat.messages.lastOrNull { it.role == "assistant" }?.content?.takeIf { it.isNotBlank() }?.let { preview ->
+                            Text(preview.replace(Regex("""\\s+"""), " ").take(92), color = palette.muted.copy(alpha = 0.82f), fontSize = 10.sp, maxLines = 2)
+                        }
                     }
                     IconButton(onClick = {
                         conversations = conversations.filterNot { it.id == chat.id }.toMutableList()
@@ -835,7 +841,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Bold)
-                    Text("Providers · Agents · Security · Updates", color = palette.muted, fontSize = 11.sp)
+                    Text("Personalize your workspace, models, agents and device", color = palette.muted, fontSize = 11.sp)
                 }
             },
             text = {
@@ -844,7 +850,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         Modifier.fillMaxWidth().testTag("settings-page-tabs").horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        listOf("Appearance", "AI & models", "Account", "Device", "Updates").forEach { page ->
+                        listOf("Appearance", "AI & models", "Agents", "Account", "Device", "Updates").forEach { page ->
                             FilterChip(
                                 selected = settingsPage == page,
                                 onClick = { settingsPage = page },
@@ -853,6 +859,20 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                     }
                     Spacer(Modifier.height(4.dp))
+                    if (settingsPage == "Agents") {
+                        Surface(
+                            color = palette.accent.copy(alpha = 0.09f),
+                            shape = RoundedCornerShape(18.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, palette.accent.copy(alpha = 0.22f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("AGENT CONTROL CENTER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                                Text("Choose what CenAI can do", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Configure planning, approved device actions, local tools and scheduled tasks. Sensitive actions still require your approval.", color = palette.muted, fontSize = 11.sp, lineHeight = 16.sp)
+                            }
+                        }
+                    }
                     if (settingsPage == "Appearance") {
 Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
@@ -926,7 +946,7 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (settingsPage == "Agents") {
 Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.SemiBold)
                     Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
@@ -970,7 +990,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     if (taskEntries.isNotEmpty()) {
                         
                     }
-                    if (settingsPage == "AI & models") {
+                    if (settingsPage == "Agents") {
 Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
@@ -999,7 +1019,7 @@ Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWe
                     HorizontalDivider(color = palette.raised)
                     
                     }
-                    if (settingsPage == "AI & models") {
+                    if (settingsPage == "Agents") {
 Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("Enable only the tools you want the agent to access. These run locally and do not execute shell commands or arbitrary code.", color = palette.muted, fontSize = 10.sp)
                     listOf(
