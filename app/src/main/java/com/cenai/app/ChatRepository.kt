@@ -129,6 +129,8 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     }
                 }
                 payload = JSONObject().put("model", model).put("input", input).put("stream", true)
+                    // Chat history is replayed from the local vault; do not retain a second server-side copy.
+                    .put("store", false)
                     .put("max_output_tokens", (vault.get("max_tokens", "4096").toIntOrNull() ?: 4096).coerceIn(1, 32768))
                 builder = Request.Builder().url("https://api.openai.com/v1/responses")
                     .header("Authorization", "Bearer $key")
