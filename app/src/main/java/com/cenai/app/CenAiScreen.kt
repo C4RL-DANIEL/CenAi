@@ -38,6 +38,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -173,6 +174,7 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
     var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO").let { if (it == "AURORA" || it == "DEFAULT") "STUDIO" else it }) }
