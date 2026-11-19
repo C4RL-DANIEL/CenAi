@@ -189,6 +189,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     var wideDestination by remember { mutableStateOf("Home") }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
+    var selectedSettingsCategory by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
@@ -599,14 +600,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     )
                     NavigationRailItem(
                         selected = wideDestination == "Agents",
-                        onClick = { wideDestination = "Agents"; historyOpen = false; selectedSettingsPage = "Agents"; settings = true },
+                        onClick = { wideDestination = "Agents"; historyOpen = false; selectedSettingsPage = "Agents"; selectedSettingsCategory = "Agents"; settings = true },
                         icon = { Icon(Icons.Default.Info, contentDescription = "Agents") },
                         label = { Text("Agents") },
                         alwaysShowLabel = true
                     )
                     NavigationRailItem(
                         selected = wideDestination == "Settings",
-                        onClick = { wideDestination = "Settings"; historyOpen = false; selectedSettingsPage = "Appearance"; settings = true },
+                        onClick = { wideDestination = "Settings"; historyOpen = false; selectedSettingsPage = "Appearance"; selectedSettingsCategory = "Appearance"; settings = true },
                         icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                         label = { Text("Settings") },
                         alwaysShowLabel = true
@@ -622,7 +623,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("CenAI", color = palette.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
                                 AssistChip(
-                                    onClick = { selectedSettingsPage = "AI & models"; settings = true },
+                                    onClick = { selectedSettingsPage = "AI & models"; selectedSettingsCategory = "Providers"; settings = true },
                                     label = { Text(model, maxLines = 1, fontSize = 11.sp) },
                                     colors = AssistChipDefaults.assistChipColors(containerColor = palette.raised, labelColor = palette.muted),
                                     border = null
@@ -823,7 +824,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     Text("What would you like to work on?", color = palette.muted, fontSize = 14.sp)
                                 }
                                 Surface(
-                                    onClick = { selectedSettingsPage = "Account"; settings = true },
+                                    onClick = { selectedSettingsPage = "Account"; selectedSettingsCategory = "Account"; settings = true },
                                     shape = CircleShape,
                                     color = palette.raised,
                                     modifier = Modifier.size(44.dp)
@@ -1059,27 +1060,71 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
             },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp - 160).coerceAtLeast(320).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                                        Column(
-                        Modifier.fillMaxWidth().testTag("settings-page-tabs"),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(
-                            listOf("Appearance", "AI & models", "Agents"),
-                            listOf("Account", "Device", "Updates")
-                        ).forEach { pages ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                pages.forEach { page ->
-                                    FilterChip(
-                                        selected = selectedSettingsPage == page,
-                                        onClick = { selectedSettingsPage = page },
-                                        label = { Text(page, maxLines = 1) }
+                Row(
+                    Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp - 160).coerceAtLeast(320).dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    val settingsCategories = listOf(
+                        "Appearance" to "Appearance",
+                        "Chat" to "Device",
+                        "AI & models" to "AI & models",
+                        "Providers" to "AI & models",
+                        "Voice" to "Device",
+                        "Notifications" to "Device",
+                        "Privacy & permissions" to "Device",
+                        "Agents" to "Agents",
+                        "Data & storage" to "Device",
+                        "About & diagnostics" to "Updates"
+                    )
+                    if (isTabletLayout) {
+                        Column(
+                            Modifier.width(232.dp).fillMaxHeight().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            settingsCategories.forEach { (category, target) ->
+                                Surface(
+                                    onClick = {
+                                        selectedSettingsCategory = category
+                                        selectedSettingsPage = target
+                                    },
+                                    color = if (selectedSettingsCategory == category) palette.raised else Color.Transparent,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        category,
+                                        color = if (selectedSettingsCategory == category) palette.text else palette.muted,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (selectedSettingsCategory == category) FontWeight.Medium else FontWeight.Normal,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
                                     )
                                 }
                             }
                         }
+                        VerticalDivider(color = palette.border, modifier = Modifier.fillMaxHeight())
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (!isTabletLayout) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("settings-page-tabs"),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                settingsCategories.forEach { (category, target) ->
+                                    FilterChip(
+                                        selected = selectedSettingsCategory == category,
+                                        onClick = {
+                                            selectedSettingsCategory = category
+                                            selectedSettingsPage = target
+                                        },
+                                        label = { Text(category, maxLines = 1) }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
                     if (selectedSettingsPage == "Agents") {
                         Surface(
                             color = palette.accent.copy(alpha = 0.09f),
@@ -1731,6 +1776,8 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     Text("Current version 0.2.0 · Updates download and install inside CenAI. Android will ask you to approve installation.", color = palette.muted, fontSize = 10.sp)
                 }
 
+                    }
+                        }
                     }
             },
             confirmButton = { TextButton(onClick = {
