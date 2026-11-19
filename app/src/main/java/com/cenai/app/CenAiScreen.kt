@@ -731,18 +731,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     IconButton(onClick = { attachmentTrayOpen = true }, modifier = Modifier.size(40.dp)) {
                                         Icon(Icons.Default.AttachFile, "Attachments", tint = palette.muted)
                                     }
-                                    Box {
-                                        DropdownMenu(expanded = attachmentTrayOpen, onDismissRequest = { attachmentTrayOpen = false }) {
-                                            DropdownMenuItem(
-                                                text = { Text("Image") },
-                                                onClick = { attachmentTrayOpen = false; attachmentPicker.launch(arrayOf("image/*")) }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("File or document") },
-                                                onClick = { attachmentTrayOpen = false; attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*")) }
-                                            )
-                                        }
-                                    }
                                     IconButton(onClick = {
                                         val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -984,6 +972,34 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             }
                         }
                     }
+                }
+            }
+        }
+        if (attachmentTrayOpen) {
+            ModalBottomSheet(
+                onDismissRequest = { attachmentTrayOpen = false },
+                containerColor = palette.surface
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Add to your message", color = palette.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    TextButton(
+                        onClick = {
+                            attachmentTrayOpen = false
+                            attachmentPicker.launch(arrayOf("image/*"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Choose image", color = palette.text) }
+                    TextButton(
+                        onClick = {
+                            attachmentTrayOpen = false
+                            attachmentPicker.launch(arrayOf("text/*", "application/json", "application/pdf", "image/*"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Choose file or document", color = palette.text) }
+                    Spacer(Modifier.height(12.dp))
                 }
             }
         }
