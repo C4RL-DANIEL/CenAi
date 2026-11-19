@@ -987,7 +987,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     if (historyOpen) {
-        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = if (palette.glass) palette.surface.copy(alpha = 0.90f) else palette.surface) {
+        ModalBottomSheet(onDismissRequest = { historyOpen = false }, containerColor = palette.surface) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Your conversations", color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
@@ -997,25 +997,78 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
             OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp))
-            val visibleConversations = conversations.filter { chat -> chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) } }
-            if (visibleConversations.isEmpty()) Text(if (historyQuery.isBlank()) "Your saved chats will appear here." else "No matching conversations.", color = palette.muted, modifier = Modifier.padding(24.dp))
-            visibleConversations.forEach { chat ->
-                Row(Modifier.fillMaxWidth().clickable {
-                    activeJob?.cancel(); busy = false
-                    currentId = chat.id; messages = chat.messages.toList(); historyOpen = false
-                }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(chat.title, color = palette.text, maxLines = 1)
-                        Text("${chat.messages.size} messages · " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(chat.updatedAt)), color = palette.muted, fontSize = 11.sp)
-                        chat.messages.lastOrNull { it.role == "assistant" }?.content?.takeIf { it.isNotBlank() }?.let { preview ->
-                            Text(preview.replace(Regex("""\s+"""), " ").take(92), color = palette.muted.copy(alpha = 0.82f), fontSize = 10.sp, maxLines = 2)
+            val visibleConversations = conversations.filter { chat ->
+                chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) }
+            }
+            if (visibleConversations.isEmpty()) {
+                Text(
+                    if (historyQuery.isBlank()) "Your saved chats will appear here." else "No matching conversations.",
+                    color = palette.tertiary,
+                    modifier = Modifier.padding(24.dp)
+                )
+            } else {
+                val now = System.currentTimeMillis()
+                val groups = listOf(
+                    "Today" to visibleConversations.filter { now - it.updatedAt < 86_400_000L },
+                    "Yesterday" to visibleConversations.filter { now - it.updatedAt in 86_400_000L..172_800_000L },
+                    "Earlier" to visibleConversations.filter { now - it.updatedAt > 172_800_000L }
+                )
+                groups.forEach { (heading, chats) ->
+                    if (chats.isNotEmpty()) {
+                        Text(
+                            heading.uppercase(),
+                            color = palette.tertiary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp)
+                        )
+                        chats.forEach { chat ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(if (currentId == chat.id) palette.raised else Color.Transparent)
+                                    .clickable {
+                                        activeJob?.cancel()
+                                        busy = false
+                                        currentId = chat.id
+                                        messages = chat.messages.toList()
+                                        historyOpen = false
+                                        wideDestination = "Home"
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier.width(2.dp).height(42.dp)
+                                        .background(if (currentId == chat.id) palette.text else Color.Transparent)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(chat.title, color = palette.text, fontSize = 15.sp, maxLines = 1)
+                                    Text(
+                                        chat.messages.lastOrNull { it.role == "assistant" }?.content
+                                            ?.replace(Regex("""\s+"""), " ")?.take(92).orEmpty(),
+                                        color = palette.tertiary,
+                                        fontSize = 12.sp,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                                            .format(java.util.Date(chat.updatedAt)),
+                                        color = palette.tertiary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    conversations = conversations.filterNot { it.id == chat.id }.toMutableList()
+                                    store.save(conversations)
+                                    if (currentId == chat.id) newChat()
+                                }) {
+                                    Icon(Icons.Default.Delete, "Delete conversation", tint = palette.tertiary)
+                                }
+                            }
+                            HorizontalDivider(color = palette.border)
                         }
                     }
-                    IconButton(onClick = {
-                        conversations = conversations.filterNot { it.id == chat.id }.toMutableList()
-                        store.save(conversations)
-                        if (currentId == chat.id) newChat()
-                    }) { Icon(Icons.Default.Delete, "Delete conversation", tint = palette.muted) }
                 }
             }
             Spacer(Modifier.height(24.dp))
