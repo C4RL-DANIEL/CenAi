@@ -78,13 +78,23 @@ class ChatRepository(private val vault: SecureKeyStore) {
                         }
                         val source = res.body?.source() ?: throw IOException("Empty response body.")
                         val answer = StringBuilder()
+                        var streamFailure: String? = null
                         readEvents(source) { data ->
+                            if (provider == Provider.OPENAI) {
+                                val event = runCatching { JSONObject(data) }.getOrNull()
+                                if (event?.optString("type") in setOf("response.failed", "error")) {
+                                    streamFailure = event?.optJSONObject("response")?.optJSONObject("error")?.optString("message")
+                                        ?.ifBlank { null } ?: event?.optJSONObject("error")?.optString("message")
+                                        ?.ifBlank { null } ?: "OpenAI response stream failed."
+                                }
+                            }
                             val delta = parseDelta(provider, data)
                             if (delta.isNotEmpty()) {
                                 answer.append(delta)
                                 if (continuation.isActive) onDelta(delta)
                             }
                         }
+                        if (streamFailure != null) throw IOException(streamFailure!!)
                         if (continuation.isActive) continuation.resume(answer.toString())
                     } catch (e: Exception) {
                         if (continuation.isActive) continuation.resumeWith(Result.failure(e))
@@ -102,6 +112,29 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val builder: Request.Builder
         val payload: JSONObject
         when (p) {
+            Provider.OPENAI -> {
+                val input = JSONArray()
+                msgs.forEach { message ->
+                    val parts = message.visionParts()
+                    val hasImage = message.role == "user" && parts.any { it.first != "text" }
+                    if (hasImage) {
+                        val content = JSONArray()
+                        parts.forEach { (kind, value) ->
+                            if (kind == "text") content.put(JSONObject().put("type", "input_text").put("text", value))
+                            else content.put(JSONObject().put("type", "input_image").put("image_url", "data:$kind;base64,$value").put("detail", "auto"))
+                        }
+                        input.put(JSONObject().put("role", "user").put("content", content))
+                    } else {
+                        input.put(JSONObject().put("role", message.role).put("content", message.content))
+                    }
+                }
+                payload = JSONObject().put("model", model).put("input", input).put("stream", true)
+                    // Chat history is replayed from the local vault; do not retain a second server-side copy.
+                    .put("store", false)
+                    .put("max_output_tokens", (vault.get("max_tokens", "4096").toIntOrNull() ?: 4096).coerceIn(1, 32768))
+                builder = Request.Builder().url("https://api.openai.com/v1/responses")
+                    .header("Authorization", "Bearer $key")
+            }
             Provider.CENAI_CLOUD -> {
                 require(!msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) { "CenAI Cloud currently supports text-only chat. Choose another provider for image attachments." }
                 val list = JSONArray()
@@ -178,8 +211,13 @@ class ChatRepository(private val vault: SecureKeyStore) {
         }
         if (p == Provider.CUSTOM) {
             runCatching { JSONObject(vault.get("custom_params", "{}")) }.getOrNull()?.let { params ->
-                params.keys().forEach { name -> if (name !in setOf("model", "messages", "stream")) payload.put(name, params.get(name)) }
+                params.keys().forEach { name -> if (name !in setOf("model", "messages", "input", "stream")) payload.put(name, params.get(name)) }
             }
+        }
+        if (p == Provider.DEEPSEEK) {
+            val thinkingEnabled = vault.get("deepseek_thinking_enabled", "true").toBoolean()
+            payload.put("thinking", JSONObject().put("type", if (thinkingEnabled) "enabled" else "disabled"))
+            if (thinkingEnabled) payload.put("reasoning_effort", vault.get("deepseek_reasoning_effort", "high"))
         }
         if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
             runCatching { JSONObject(vault.get("custom_headers", "{}")) }.getOrNull()?.let { headers ->
@@ -191,17 +229,15 @@ class ChatRepository(private val vault: SecureKeyStore) {
     }
 
     private fun readEvents(source: BufferedSource, onData: (String) -> Unit) {
-        while (!source.exhausted()) {
-            val line = source.readUtf8Line() ?: break
-            if (!line.startsWith("data:")) continue
-            val data = line.removePrefix("data:").trim()
-            if (data.isNotEmpty() && data != "[DONE]") onData(data)
+        ServerSentEventDecoder.read(source) { event ->
+            if (event.data.isNotBlank() && event.data != "[DONE]") onData(event.data)
         }
     }
 
     private fun parseDelta(provider: Provider, raw: String): String = runCatching {
         val obj = JSONObject(raw)
         when (provider) {
+            Provider.OPENAI -> if (obj.optString("type") == "response.output_text.delta") obj.optString("delta") else ""
             Provider.CLAUDE -> if (obj.optString("type") == "content_block_delta")
                 obj.optJSONObject("delta")?.optString("text").orEmpty() else ""
             Provider.GEMINI -> obj.optJSONArray("candidates")?.optJSONObject(0)
