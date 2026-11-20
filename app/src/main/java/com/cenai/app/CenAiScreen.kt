@@ -407,7 +407,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         "You may use these allow-listed tools when useful: " + runtime.availableTools().joinToString { it.name + " — " + it.description } +
                         ". To call one, output exactly [[CENAI_TOOL_CALL]] followed by a JSON object with name and arguments, then [[/CENAI_TOOL_CALL]]. Example: [[CENAI_TOOL_CALL]]{\"name\":\"current_time\",\"arguments\":{}}[[/CENAI_TOOL_CALL]]. Only call listed tools. Device actions are sensitive and require a separate user approval tap in CenAI before Android opens the requested screen. Never claim a device action ran before approval. Do not claim unsupported shell, arbitrary code or file-write actions were performed. Explain tool results to the user."
                     } else null
-                    val systemMessages = brain.composeSystemMessages(
+                    val systemMessages = brainContext.composeSystemMessages(
                         systemPrompt = systemPrompt,
                         approvedMemory = agentMemory,
                         localKnowledgeContext = localKnowledgeContext,
