@@ -28,17 +28,17 @@ class ChatRepository(private val vault: SecureKeyStore) {
         baseUrl: String,
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit,
-        contextScope: BrainContextScope? = null
+        contextScope: BrainContextScope
     ): String {
         if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
-        val accountScope = contextScope?.let { BrainContextScope(it.userId, "account") }
+        val accountScope = BrainContextScope(contextScope.userId, "account")
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault, accountScope).credential() else "" to false
         val credential = when {
             provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
             oauthCredential.first.isNotBlank() -> oauthCredential
-            else -> (accountScope?.let { vault.apiKey(provider, it) } ?: vault.apiKey(provider)) to false
+            else -> vault.apiKey(provider, accountScope) to false
         }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
@@ -97,9 +97,9 @@ class ChatRepository(private val vault: SecureKeyStore) {
         }
     }
 
-    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean, contextScope: BrainContextScope?): Request {
-        fun maxTokens(fallback: String): Int = (contextScope?.let { vault.getScoped(it, "chat", "max_tokens", fallback) }
-            ?: vault.get("max_tokens", fallback)).toIntOrNull() ?: fallback.toInt()
+    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean, contextScope: BrainContextScope): Request {
+        fun maxTokens(fallback: String): Int =
+            vault.getScoped(contextScope, contextScope.featureId, "max_tokens", fallback).toIntOrNull() ?: fallback.toInt()
         require(model.isNotBlank()) { "Enter a model ID in Settings." }
         val system = msgs.firstOrNull { it.role == "system" }?.content
         val conversation = msgs.filter { it.role != "system" }
