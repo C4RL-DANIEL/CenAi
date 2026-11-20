@@ -87,11 +87,11 @@ class SecureKeyStore(context: Context) {
     }
 
     fun saveApiKey(value: String, provider: Provider, scope: BrainContextScope) {
-        putSecretScoped(scope, "chat", "api_key_${provider.name.lowercase()}", value)
+        putSecretScoped(scope, "account", "api_key_${provider.name.lowercase()}", value)
     }
 
     fun apiKey(provider: Provider, scope: BrainContextScope): String {
-        val scoped = getSecretScoped(scope, "chat", "api_key_${provider.name.lowercase()}")
+        val scoped = getSecretScoped(scope, "account", "api_key_${provider.name.lowercase()}")
         if (scoped.isNotBlank()) return scoped
         // Existing unscoped keys belong only to the signed-out local profile.
         return if (scope.userId.startsWith("local:")) apiKey(provider) else ""
