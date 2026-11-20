@@ -180,10 +180,18 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
     var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA").let { if (it == "DEFAULT") "AURORA" else it }) }
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
     CenAiTheme(style = selectedStyle) {
-        CenAiScreenContent(vault) { style ->
-            selectedStyle = style
-            vault.put("ui_style", style)
+        AnimatedVisibility(
+            visible = entered,
+            enter = fadeIn(tween(CenAiMotion.screenMs)) +
+                slideInVertically(tween(CenAiMotion.screenMs)) { it / 36 }
+        ) {
+            CenAiScreenContent(vault) { style ->
+                selectedStyle = style
+                vault.put("ui_style", style)
+            }
         }
     }
 }
