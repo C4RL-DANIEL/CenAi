@@ -3,7 +3,7 @@ package com.cenai.app
 import android.content.Context
 import java.security.MessageDigest
 import java.util.UUID
-import android.util.Base64
+import java.util.Base64
 import org.json.JSONObject
 
 /**
@@ -24,10 +24,8 @@ class CenAiIdentityStore(context: Context, private val vault: SecureKeyStore) {
             // partition selection; Supabase still validates every server request.
             val token = vault.getSecret("supabase_access_token")
             val payload = token.split(".").getOrNull(1).orEmpty()
-            val normalized = payload.replace('-', '+').replace('_', '/')
-                .padEnd(((payload.length + 3) / 4) * 4, '=')
             accountId = runCatching {
-                JSONObject(String(Base64.decode(normalized, Base64.DEFAULT), Charsets.UTF_8))
+                JSONObject(String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8))
                     .optString("sub")
             }.getOrDefault("")
             if (accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
