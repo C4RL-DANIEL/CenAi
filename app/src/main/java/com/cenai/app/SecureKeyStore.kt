@@ -97,4 +97,56 @@ class SecureKeyStore(context: Context) {
         return if (scope.userId.startsWith("local:")) apiKey(provider) else ""
     }
 
+    /**
+     * One-time, privacy-safe migration of pre-scope preferences. Legacy global
+     * AI settings belong to the signed-out device profile only; they are never
+     * copied into a signed-in account namespace.
+     */
+    fun migrateLegacyLocalContext(scope: BrainContextScope) {
+        require(scope.userId.startsWith("local:") && scope.featureId == "chat") {
+            "Legacy settings may only be migrated into the local chat profile."
+        }
+        if (getScoped(scope, "chat", "legacy_ai_context_migrated_v1") == "true") return
+
+        val chatKeys = mutableSetOf(
+            "provider", "model", "base_url", "multi_agent", "agent_planning",
+            "daily_request_limit", "local_knowledge_enabled", "local_model_enabled",
+            "system_prompt", "custom_headers", "custom_params", "max_tokens",
+            "usage_day", "usage_count", "usage_estimated_tokens",
+            "beta_display_name", "cloud_usage_analytics_consent",
+            "guardian_cloud_consent"
+        )
+        chatKeys += prefs.all.keys.filter {
+            it.startsWith("model_") || it.startsWith("base_url_") || it.startsWith("tool_enabled_")
+        }
+        chatKeys.forEach { name ->
+            val value = prefs.getString(name, null) ?: return@forEach
+            putScoped(scope, "chat", name, value)
+        }
+        val oldMemory = decrypt(prefs.getString("secret_agent_memory", null))
+        if (oldMemory.isNotBlank()) putSecretScoped(scope, "chat", "agent_memory", oldMemory)
+
+        val accountScope = BrainContextScope(scope.userId, "account")
+        listOf("google_oauth_client_id", "google_cloud_project_id", "gemini_oauth_expires_at").forEach { name ->
+            prefs.getString(name, null)?.let { putScoped(accountScope, "account", name, it) }
+        }
+        listOf(
+            "gemini_oauth_access_token", "gemini_oauth_refresh_token",
+            "google_oauth_verifier", "google_oauth_state"
+        ).forEach { name ->
+            val value = decrypt(prefs.getString("secret_$name", null))
+            if (value.isNotBlank()) putSecretScoped(accountScope, "account", name, value)
+        }
+        Provider.entries.forEach { provider ->
+            val legacy = prefs.getString("api_key_${provider.name.lowercase()}", null)
+                ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null
+            val value = decrypt(legacy)
+            if (value.isNotBlank()) putSecretScoped(accountScope, "account", "api_key_${provider.name.lowercase()}", value)
+        }
+        if (prefs.getString("cenai_email_verified", "false") == "true") {
+            putScoped(accountScope, "account", "email_verified", "true")
+        }
+        putScoped(scope, "chat", "legacy_ai_context_migrated_v1", "true")
+    }
+
 }
