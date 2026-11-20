@@ -125,13 +125,17 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     val events: SharedFlow<BrainEvent> = mutableEvents.asSharedFlow()
 
     /** Creates an isolated context boundary for one account and one feature. */
-    fun contextFor(scope: BrainContextScope): ScopedBrainContext =
-        ScopedBrainContext(
+    fun contextFor(scope: BrainContextScope): ScopedBrainContext {
+        if (scope.userId.startsWith("local:") && scope.featureId == "chat") {
+            secureStore.migrateLegacyLocalContext(scope)
+        }
+        return ScopedBrainContext(
             scope = scope,
             vault = secureStore,
             chatStore = ChatStore(appContext, scope),
             knowledgeStore = LocalKnowledgeStore()
         )
+    }
 
     fun createAgentRuntime(enabledTools: Set<String>): AgentRuntime =
         AgentRuntime(enabledTools = enabledTools)
