@@ -71,3 +71,17 @@ object ScopedKeyNames {
         return "${scope.storageNamespace}__${key}"
     }
 }
+
+object BrainContextOwnership {
+    fun owns(scope: BrainContextScope, ownerUserId: String, ownerFeatureId: String): Boolean =
+        ownerUserId == scope.userId && ownerFeatureId == scope.featureId
+
+    fun requireWritable(scope: BrainContextScope, ownerUserId: String, ownerFeatureId: String) {
+        require(ownerUserId.isBlank() || ownerUserId == scope.userId) {
+            "Cannot write another user's context."
+        }
+        require(ownerFeatureId.isBlank() || ownerFeatureId == scope.featureId) {
+            "Cannot write another feature's context."
+        }
+    }
+}
