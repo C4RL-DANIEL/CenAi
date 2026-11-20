@@ -33,11 +33,12 @@ class ChatRepository(private val vault: SecureKeyStore) {
         if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
-        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault, contextScope).credential() else "" to false
+        val accountScope = contextScope?.let { BrainContextScope(it.userId, "account") }
+        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault, accountScope).credential() else "" to false
         val credential = when {
             provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
             oauthCredential.first.isNotBlank() -> oauthCredential
-            else -> (contextScope?.let { vault.apiKey(provider, it) } ?: vault.apiKey(provider)) to false
+            else -> (accountScope?.let { vault.apiKey(provider, it) } ?: vault.apiKey(provider)) to false
         }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
