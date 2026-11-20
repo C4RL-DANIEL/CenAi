@@ -112,9 +112,7 @@ class SecureKeyStore(context: Context) {
             "provider", "model", "base_url", "multi_agent", "agent_planning",
             "daily_request_limit", "local_knowledge_enabled", "local_model_enabled",
             "system_prompt", "custom_headers", "custom_params", "max_tokens",
-            "usage_day", "usage_count", "usage_estimated_tokens",
-            "beta_display_name", "cloud_usage_analytics_consent",
-            "guardian_cloud_consent"
+            "usage_day", "usage_count", "usage_estimated_tokens"
         )
         chatKeys += prefs.all.keys.filter {
             it.startsWith("model_") || it.startsWith("base_url_") || it.startsWith("tool_enabled_")
@@ -127,7 +125,10 @@ class SecureKeyStore(context: Context) {
         if (oldMemory.isNotBlank()) putSecretScoped(scope, "chat", "agent_memory", oldMemory)
 
         val accountScope = BrainContextScope(scope.userId, "account")
-        listOf("google_oauth_client_id", "google_cloud_project_id", "gemini_oauth_expires_at").forEach { name ->
+        listOf(
+            "google_oauth_client_id", "google_cloud_project_id", "gemini_oauth_expires_at",
+            "beta_display_name", "cloud_usage_analytics_consent", "guardian_cloud_consent"
+        ).forEach { name ->
             prefs.getString(name, null)?.let { putScoped(accountScope, "account", name, it) }
         }
         listOf(
