@@ -127,7 +127,8 @@ class SecureKeyStore(context: Context) {
         val accountScope = BrainContextScope(scope.userId, "account")
         listOf(
             "google_oauth_client_id", "google_cloud_project_id", "gemini_oauth_expires_at",
-            "beta_display_name", "cloud_usage_analytics_consent", "guardian_cloud_consent"
+            "beta_display_name", "cloud_usage_analytics_consent", "guardian_cloud_consent",
+            "speech_rate", "speech_pitch", "speech_language", "speech_input_language"
         ).forEach { name ->
             prefs.getString(name, null)?.let { putScoped(accountScope, "account", name, it) }
         }
