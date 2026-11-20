@@ -27,6 +27,16 @@ class ScopedBrainContext internal constructor(
     fun putPrivateMemory(name: String, value: String) =
         vault.putSecretScoped(scope, scope.featureId, name, value)
 
+
+    fun composeSystemMessages(
+        systemPrompt: String,
+        approvedMemory: String,
+        localKnowledgeContext: String,
+        toolGuide: String?
+    ): List<ChatMessage> = BrainContextComposer.compose(
+        systemPrompt, approvedMemory, localKnowledgeContext, toolGuide
+    )
+
     suspend fun retrieveKnowledge(query: String, currentMessages: List<ChatMessage>): String {
         val ownedHistory = chatStore.load().filter {
             it.ownerUserId == scope.userId && it.ownerFeatureId == scope.featureId
