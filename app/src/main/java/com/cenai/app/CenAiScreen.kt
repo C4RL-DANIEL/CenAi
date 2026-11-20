@@ -1015,7 +1015,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             onDismissRequest = { renameDialogOpen = false },
             title = { Text("Rename conversation") },
             text = {
-                OutlinedTextField(
+                CenAiTextField(
                     value = renameDraft,
                     onValueChange = { renameDraft = it.take(80) },
                     singleLine = true,
@@ -1048,7 +1048,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { newChat(); historyOpen = false }) { Text("New chat", color = palette.accent) }
             }
-            OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).animateContentSize(tween(CenAiMotion.contentMs)))
+            CenAiTextField(value = historyQuery, onValueChange = { historyQuery = it }, label = { Text("Search conversations") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).animateContentSize(tween(CenAiMotion.contentMs)))
             val visibleConversations = conversations.filter { chat ->
                 chat.title.contains(historyQuery, true) || chat.messages.any { it.content.contains(historyQuery, true) }
             }
@@ -1257,7 +1257,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     if (selectedSettingsPage == "Appearance") {
 Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
-                        OutlinedTextField(
+                        CenAiTextField(
                             value = when (uiStyle) {
                                 "MATERIAL" -> "Android · Material 3"
                                 "IOS" -> "iOS · Liquid Glass"
@@ -1291,7 +1291,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     if (selectedSettingsPage == "AI & models") {
 Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                        OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
+                        CenAiTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                             modifier = Modifier.menuAnchor().fillMaxWidth())
                         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1306,8 +1306,8 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                             }
                         }
                     }
-                    OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") }, singleLine = true)
-                    if (provider == Provider.CUSTOM) OutlinedTextField(value = base, onValueChange = { base = it },
+                    CenAiTextField(value = model, onValueChange = { model = it }, label = { Text("Model ID") }, singleLine = true)
+                    if (provider == Provider.CUSTOM) CenAiTextField(value = base, onValueChange = { base = it },
                         label = { Text("HTTPS API base URL") }, singleLine = true)
                     Provider.entries.filter { it != Provider.CENAI_CLOUD }.forEach { p ->
                         val hasCredential = !providerKeys[p].isNullOrBlank() ||
@@ -1324,7 +1324,7 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                             }
                             if (p == provider) Text("Active", color = palette.positive, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
-                        OutlinedTextField(
+                        CenAiTextField(
                             value = providerKeys[p].orEmpty(),
                             onValueChange = { value -> providerKeys = providerKeys.toMutableMap().apply { put(p, value) } },
                             label = { Text("${p.label} API key") },
@@ -1346,10 +1346,10 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                     }
                     if (provider == Provider.CENAI_CLOUD) Text(if (cloud.isSignedIn()) "Uses your signed-in CenAI account. Daily and monthly quotas are enforced by the Cloud AI gateway; no external API key is needed." else "Sign in to your CenAI account in the Cloud Account section below to use this model.", color = palette.muted, fontSize = 11.sp)
                     if (provider == Provider.CUSTOM || provider == Provider.CLAUDE)
-                        OutlinedTextField(value = customHeaders, onValueChange = { customHeaders = it },
+                        CenAiTextField(value = customHeaders, onValueChange = { customHeaders = it },
                             label = { Text("Extra headers (JSON)") }, minLines = 2)
                     if (provider == Provider.CUSTOM)
-                        OutlinedTextField(value = customParams, onValueChange = { customParams = it },
+                        CenAiTextField(value = customParams, onValueChange = { customParams = it },
                             label = { Text("Extra request parameters (JSON)") }, minLines = 2)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text("Multi-agent responses", color = palette.text); Text("Ask every configured provider", color = palette.muted, fontSize = 10.sp) }
@@ -1362,7 +1362,7 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
 Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     Text("Scheduled background task", color = palette.text, fontWeight = FontWeight.Medium)
                     Text("Schedule a task to run once in the background. Android may delay execution for battery and network conditions. The task uses the selected provider and its saved credentials.", color = palette.muted, fontSize = 10.sp)
-                    OutlinedTextField(
+                    CenAiTextField(
                         value = backgroundTaskPrompt,
                         onValueChange = { backgroundTaskPrompt = it.take(8_000) },
                         label = { Text("Task instructions") },
@@ -1370,7 +1370,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
+                    CenAiTextField(
                         value = backgroundTaskDelay,
                         onValueChange = { backgroundTaskDelay = it.filter(Char::isDigit).take(5) },
                         label = { Text("Run after minutes (1–43200)") },
@@ -1466,8 +1466,8 @@ Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.Medium, fontSize = 13.sp)
                             Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
-                            OutlinedTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID (experimental)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            CenAiTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID (experimental)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            CenAiTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Google’s official Gemini OAuth quickstart documents a simplified desktop-app testing flow; this in-app PKCE redirect integration is experimental and has not been verified as a production Android OAuth client. For reliable mobile access, use a Gemini API key. Enable the Generative Language API and configure Google OAuth consent/test users if you experiment with this flow. Gemini consumer subscriptions do not automatically include API access. OpenAI and Anthropic support API keys and certain workload-identity options; DeepSeek documents bearer API-key authentication. Consumer ChatGPT, Claude and DeepSeek subscriptions are not third-party API credentials. API keys are encrypted at rest on this device, but direct mobile API calls are not equivalent to keeping secrets on a trusted server.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
@@ -1489,8 +1489,8 @@ Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("CenAI account", color = palette.text, fontWeight = FontWeight.Medium)
                             Text(if (cloudSignedIn) "Signed in as ${cloud.accountEmail()}" else "Sign in to apply for public beta access and sync your tester status.", color = palette.muted, fontSize = 11.sp)
-                            OutlinedTextField(value = cloudEmail, onValueChange = { cloudEmail = it }, label = { Text("Email address") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !cloudSignedIn)
-                            if (!cloudSignedIn) OutlinedTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                            CenAiTextField(value = cloudEmail, onValueChange = { cloudEmail = it }, label = { Text("Email address") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !cloudSignedIn)
+                            if (!cloudSignedIn) CenAiTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!cloudSignedIn) {
                                     Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) cloudPassword = "" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
@@ -1509,7 +1509,7 @@ Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = Fo
                                 Text(if (emailVerified) "Email verified for this account." else "Verify your account email with a one-time code before applying for beta access.", color = palette.muted, fontSize = 11.sp)
                                 if (!emailVerified) {
                                     OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.sendEmailOtp() } catch (e: Exception) { cloudStatus = e.message ?: "Could not send verification code." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Send email verification code") }
-                                    OutlinedTextField(value = otpCode, onValueChange = { otpCode = it.filter(Char::isDigit).take(6) }, label = { Text("Six-digit email code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                    CenAiTextField(value = otpCode, onValueChange = { otpCode = it.filter(Char::isDigit).take(6) }, label = { Text("Six-digit email code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                                     Button(enabled = !cloudBusy && otpCode.length == 6, onClick = { cloudBusy = true; scope.launch { try { cloudStatus = cloud.verifyEmailOtp(otpCode); emailVerified = true; otpCode = "" } catch (e: Exception) { cloudStatus = e.message ?: "Verification failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text("Verify email") }
                                 }
                                 HorizontalDivider(color = palette.raised)
@@ -1517,8 +1517,8 @@ Text("EMAIL SECURITY", color = palette.accent, fontSize = 10.sp, fontWeight = Fo
                     }
                     if (selectedSettingsPage == "Account") {
 Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                OutlinedTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                                CenAiTextField(value = betaDisplayName, onValueChange = { betaDisplayName = it.take(80) }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                CenAiTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
                                 if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
                                 Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
@@ -1747,12 +1747,12 @@ Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = Font
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("Speech output · Android Text-to-Speech", color = palette.text, fontWeight = FontWeight.Medium)
                             Text(if (speechOutputReady) "Voice engine ready" else "Voice engine initializing or unavailable", color = palette.muted, fontSize = 11.sp)
-                            OutlinedTextField(value = speechLanguage, onValueChange = { speechLanguage = it.take(40) }, label = { Text("Output language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            CenAiTextField(value = speechLanguage, onValueChange = { speechLanguage = it.take(40) }, label = { Text("Output language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Speech speed · ${String.format(Locale.US, "%.1f", speechRate)}×", color = palette.text, fontSize = 12.sp)
                             Slider(value = speechRate, onValueChange = { speechRate = it }, valueRange = 0.5f..2f)
                             Text("Voice pitch · ${String.format(Locale.US, "%.1f", speechPitch)}×", color = palette.text, fontSize = 12.sp)
                             Slider(value = speechPitch, onValueChange = { speechPitch = it }, valueRange = 0.5f..2f)
-                            OutlinedTextField(value = speechInputLanguage, onValueChange = { speechInputLanguage = it.take(40) }, label = { Text("Input language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            CenAiTextField(value = speechInputLanguage, onValueChange = { speechInputLanguage = it.take(40) }, label = { Text("Input language tag (device or en-US)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Voice input uses Android speech recognition. Voice output uses the speech engine installed on this device. Set either language to 'device' to follow Android language settings.", color = palette.muted, fontSize = 10.sp)
                             OutlinedButton(enabled = speechOutputReady, onClick = { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak("CenAI voice engine is ready.", TextToSpeech.QUEUE_FLUSH, null, "cenai-voice-test") }, modifier = Modifier.fillMaxWidth()) { Text("Test voice output") }
                         }
@@ -1878,12 +1878,12 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
                         Text("CHAT PREFERENCES", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    OutlinedTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
-                    OutlinedTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
+                    CenAiTextField(value = dailyLimit, onValueChange = { dailyLimit = it.filter(Char::isDigit).take(4) }, label = { Text("Daily message limit (0 = unlimited)") }, singleLine = true)
+                    CenAiTextField(value = maxTokens, onValueChange = { maxTokens = it.filter(Char::isDigit).take(6) },
                         label = { Text("Maximum output tokens") }, singleLine = true)
-                    OutlinedTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
+                    CenAiTextField(value = systemPrompt, onValueChange = { systemPrompt = it },
                         label = { Text("System instructions (optional)") }, minLines = 2)
-                    OutlinedTextField(value = agentMemory, onValueChange = { if (it.length <= 12000) agentMemory = it },
+                    CenAiTextField(value = agentMemory, onValueChange = { if (it.length <= 12000) agentMemory = it },
                         label = { Text("Persistent agent memory (optional)") }, minLines = 3)
                     Text("Only details you enter here are retained. Memory is encrypted on this device and can be edited or cleared at any time.", color = palette.muted, fontSize = 10.sp)
 
@@ -1963,7 +1963,7 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
 
     if (editIndex != null) {
         AlertDialog(onDismissRequest = { editIndex = null }, title = { Text("Edit message") },
-            text = { OutlinedTextField(value = editText, onValueChange = { editText = it }, minLines = 3) },
+            text = { CenAiTextField(value = editText, onValueChange = { editText = it }, minLines = 3) },
             confirmButton = { TextButton(onClick = {
                 val index = editIndex!!
                 val changed = messages.take(index) + ChatMessage("user", editText) 
