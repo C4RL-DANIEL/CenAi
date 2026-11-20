@@ -21,7 +21,8 @@ data class CenAiPalette(
     val border: Color = raised,
     val positive: Color = Color(0xFF269B68),
     val warning: Color = Color(0xFFC58A2B),
-    val danger: Color = Color(0xFFD64B4B)
+    val danger: Color = Color(0xFFD64B4B),
+    val gradient: List<Color> = listOf(Color(0xFF65D6FF), Color(0xFF8B7CFF), Color(0xFFFF78C8))
 )
 
 val LocalCenAiPalette = staticCompositionLocalOf {
@@ -45,6 +46,11 @@ val LocalCenAiPalette = staticCompositionLocalOf {
 @Composable
 fun CenAiTheme(style: String, content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
+    val gradient = when (style.uppercase()) {
+        "EMBER" -> listOf(Color(0xFFFFA45B), Color(0xFFFF5F8F), Color(0xFFB47CFF))
+        "STUDIO" -> listOf(Color(0xFF66C8E8), Color(0xFF7E8BFF), Color(0xFFB58BFF))
+        else -> listOf(Color(0xFF4DE1D2), Color(0xFF6E8BFF), Color(0xFFD27BFF))
+    }
     val palette = if (dark) {
         CenAiPalette(
             background = Color(0xFF090909),
@@ -57,7 +63,8 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             border = Color(0xFF303030),
             positive = Color(0xFF55C995),
             warning = Color(0xFFE7B45A),
-            danger = Color(0xFFFF6B6B)
+            danger = Color(0xFFFF6B6B),
+            gradient = gradient
         )
     } else {
         CenAiPalette(
@@ -71,7 +78,8 @@ fun CenAiTheme(style: String, content: @Composable () -> Unit) {
             border = Color(0xFFE5E5E5),
             positive = Color(0xFF188653),
             warning = Color(0xFFAA741F),
-            danger = Color(0xFFC83D3D)
+            danger = Color(0xFFC83D3D),
+            gradient = gradient
         )
     }
     val scheme = if (dark) {
