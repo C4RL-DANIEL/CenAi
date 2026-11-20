@@ -61,12 +61,19 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     private fun saveSession(data: JSONObject, email: String) {
         vault.putSecret("supabase_access_token", data.optString("access_token"))
         vault.putSecret("supabase_refresh_token", data.optString("refresh_token"))
-        vault.put("supabase_account_email", data.optJSONObject("user")?.optString("email")?.ifBlank { email } ?: email)
+        val user = data.optJSONObject("user")
+        val accountId = user?.optString("id").orEmpty()
+        require(accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+            "The authentication service did not return a valid account identifier."
+        }
+        vault.put("supabase_account_id", accountId)
+        vault.put("supabase_account_email", user.optString("email").ifBlank { email })
     }
 
     fun signOut() {
         vault.putSecret("supabase_access_token", "")
         vault.putSecret("supabase_refresh_token", "")
+        vault.put("supabase_account_id", "")
         vault.put("supabase_account_email", "")
         vault.put("cenai_email_verified", "false")
     }
