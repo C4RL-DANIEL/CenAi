@@ -217,6 +217,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var activeUserScopeId by remember { mutableStateOf(identityStore.activeUserScopeId()) }
     val brainScope = remember(activeUserScopeId) { BrainContextScope(activeUserScopeId, "chat") }
     val providerAccountScope = remember(activeUserScopeId) { BrainContextScope(activeUserScopeId, "account") }
+    val automationScope = remember(activeUserScopeId) { BrainContextScope(activeUserScopeId, "automation") }
     val brainContext = remember(brainScope) { brain.contextFor(brainScope) }
     val store = brainContext.chatStore
     val updater = remember { UpdateManager(context) }
@@ -1470,7 +1471,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             }
                             runCatching {
-                                val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base)
+                                val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base, activeUserScopeId)
                                 backgroundTaskStatus = "Task queued · ID " + id.take(8)
                                 backgroundTaskPrompt = ""
                             }.onFailure { backgroundTaskStatus = it.message ?: "Could not schedule task." }
@@ -1478,7 +1479,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Schedule background task") }
                     if (backgroundTaskStatus.isNotBlank()) Text(backgroundTaskStatus, color = palette.accent, fontSize = 11.sp)
-                    val taskPrefs = context.getSharedPreferences(AgentTaskWorker.PREFS, android.content.Context.MODE_PRIVATE).all
+                    val taskPrefs = context.getSharedPreferences(AgentTaskWorker.preferencesName(automationScope), android.content.Context.MODE_PRIVATE).all
                     val taskEntries = taskPrefs.filterKeys { it.startsWith("status_") }.entries.sortedByDescending { entry ->
                         taskPrefs["completed_" + entry.key.removePrefix("status_")] as? Long ?: (taskPrefs["scheduled_" + entry.key.removePrefix("status_")] as? Long ?: 0L)
                     }.take(5)
@@ -1489,15 +1490,15 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
 Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
-                            val taskName = vault.getSecret("scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
+                            val taskName = vault.getSecretScoped(automationScope, "automation", "scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(taskName, color = palette.text, fontSize = 11.sp)
                                 Text((entry.value as? String).orEmpty(), color = palette.muted, fontSize = 10.sp)
-                                vault.getSecret("scheduled_task_result_$id").takeIf { it.isNotBlank() }?.let { result ->
+                                vault.getSecretScoped(automationScope, "automation", "scheduled_task_result_$id").takeIf { it.isNotBlank() }?.let { result ->
                                     Text("Result: " + result.take(700), color = palette.muted, fontSize = 10.sp)
                                 }
                                 if ((entry.value as? String) == "Scheduled" || (entry.value as? String) == "Running") {
-                                    TextButton(onClick = { AgentTaskWorker.cancel(context, id); backgroundTaskStatus = "Task cancelled." }) { Text("Cancel task", color = Color(0xFFFF938B)) }
+                                    TextButton(onClick = { AgentTaskWorker.cancel(context, id, activeUserScopeId); backgroundTaskStatus = "Task cancelled." }) { Text("Cancel task", color = Color(0xFFFF938B)) }
                                 }
                             }
                         }
