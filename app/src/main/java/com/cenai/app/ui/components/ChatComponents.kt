@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cenai.app.CenAiMotion
+import com.cenai.app.CenAiGradientText
 import com.cenai.app.ChatMessage
 import com.cenai.app.LocalCenAiPalette
 import com.cenai.app.RichMessageContent
@@ -257,7 +258,7 @@ internal fun ThinkingIndicator() {
         label = "thinking-pulse"
     )
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Generating", color = palette.tertiary, fontSize = 12.sp)
+        CenAiGradientText("Generating", fontSize = 12.sp, fontWeight = FontWeight.Medium)
         Text("•••", color = palette.text, fontSize = 16.sp, modifier = Modifier.alpha(alpha.value))
     }
 }
