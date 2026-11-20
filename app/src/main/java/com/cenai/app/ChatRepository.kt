@@ -36,7 +36,13 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val accountScope = BrainContextScope(contextScope.userId, "account")
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault, accountScope).credential() else "" to false
         val credential = when {
-            provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
+            provider == Provider.CENAI_CLOUD -> {
+                val activeAccountId = vault.get("supabase_account_id")
+                require(contextScope.userId == "account:$activeAccountId" && activeAccountId.isNotBlank()) {
+                    "CenAI Cloud requests must run under the currently authenticated account."
+                }
+                vault.getSecret("supabase_access_token") to false
+            }
             oauthCredential.first.isNotBlank() -> oauthCredential
             else -> vault.apiKey(provider, accountScope) to false
         }
