@@ -257,8 +257,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var multiAgent by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "multi_agent", "false").toBoolean()) }
     var toolEnabled by remember(activeUserScopeId) { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.getScoped(brainScope, "chat", "tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "agent_planning", "false").toBoolean()) }
-    var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
-    var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
+    var googleOAuthClientId by remember { mutableStateOf(vault.getScoped(brainScope, "chat", "google_oauth_client_id")) }
+    var googleCloudProjectId by remember { mutableStateOf(vault.getScoped(brainScope, "chat", "google_cloud_project_id")) }
     var dailyLimit by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "system_prompt", "")) }
@@ -374,7 +374,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         val totalEstimate = vault.getScoped(brainScope, "chat", "usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.putScoped(brainScope, "chat", "usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
-        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
+        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecretScoped(brainScope, "chat", "gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
@@ -421,7 +421,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             model = targetModel,
                             baseUrl = targetBase,
                             messages = systemMessages + agentHistory,
-                            useOnDeviceModel = localModelEnabled
+                            useOnDeviceModel = localModelEnabled,
+                            contextScope = brainScope
                         ) { delta ->
                             val current = messages.toMutableList()
                             val last = current.lastIndex
@@ -496,7 +497,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 ChatMessage("system", "You are CenAI's synthesis coordinator. Be precise, transparent about disagreements, and concise."),
                                 ChatMessage("user", synthesisPrompt)
                             ),
-                            useOnDeviceModel = false
+                            useOnDeviceModel = false,
+                            contextScope = brainScope
                         ) { delta ->
                             synthesisText.append(delta)
                             val current = messages.toMutableList()
@@ -1391,7 +1393,7 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                         label = { Text("HTTPS API base URL") }, singleLine = true)
                     Provider.entries.filter { it != Provider.CENAI_CLOUD }.forEach { p ->
                         val hasCredential = !providerKeys[p].isNullOrBlank() ||
-                            (p == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))
+                            (p == Provider.GEMINI && (vault.getSecretScoped(brainScope, "chat", "gemini_oauth_access_token").isNotBlank() || vault.getSecretScoped(brainScope, "chat", "gemini_oauth_refresh_token").isNotBlank()))
                         Row(
                             Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1461,7 +1463,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         enabled = backgroundTaskPrompt.isNotBlank() &&
                             (backgroundTaskDelay.toLongOrNull() ?: 0L) in 1L..43_200L &&
                             (provider == Provider.CUSTOM || !providerKeys[provider].isNullOrBlank() ||
-                                (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))),
+                                (provider == Provider.GEMINI && (vault.getSecretScoped(brainScope, "chat", "gemini_oauth_access_token").isNotBlank() || vault.getSecretScoped(brainScope, "chat", "gemini_oauth_refresh_token").isNotBlank()))),
                         onClick = {
                             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -1545,18 +1547,18 @@ Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Google Gemini account", color = palette.text, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                            Text(if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecret("gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
+                            Text(if (vault.getSecretScoped(brainScope, "chat", "gemini_oauth_access_token").isNotBlank()) "Google account connected" else "Not connected", color = if (vault.getSecretScoped(brainScope, "chat", "gemini_oauth_access_token").isNotBlank()) palette.accent else palette.muted, fontSize = 11.sp)
                             CenAiTextField(value = googleOAuthClientId, onValueChange = { googleOAuthClientId = it.trim() }, label = { Text("Google OAuth Client ID (experimental)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             CenAiTextField(value = googleCloudProjectId, onValueChange = { googleCloudProjectId = it.trim() }, label = { Text("Google Cloud Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Text("Google’s official Gemini OAuth quickstart documents a simplified desktop-app testing flow; this in-app PKCE redirect integration is experimental and has not been verified as a production Android OAuth client. For reliable mobile access, use a Gemini API key. Enable the Generative Language API and configure Google OAuth consent/test users if you experiment with this flow. Gemini consumer subscriptions do not automatically include API access. OpenAI and Anthropic support API keys and certain workload-identity options; DeepSeek documents bearer API-key authentication. Consumer ChatGPT, Claude and DeepSeek subscriptions are not third-party API credentials. API keys are encrypted at rest on this device, but direct mobile API calls are not equivalent to keeping secrets on a trusted server.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
-                                    vault.put("google_oauth_client_id", googleOAuthClientId)
-                                    vault.put("google_cloud_project_id", googleCloudProjectId)
-                                    runCatching { context.startActivity(GoogleGeminiOAuth(vault).authorizationIntent(googleOAuthClientId)) }
+                                    vault.putScoped(brainScope, "chat", "google_oauth_client_id", googleOAuthClientId)
+                                    vault.putScoped(brainScope, "chat", "google_cloud_project_id", googleCloudProjectId)
+                                    runCatching { context.startActivity(GoogleGeminiOAuth(vault, brainScope).authorizationIntent(googleOAuthClientId)) }
                                         .onFailure { info = it.message ?: "Could not start Google sign-in." }
                                 }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
-                                OutlinedButton(onClick = { GoogleGeminiOAuth(vault).disconnect(); info = "Google account disconnected." }) { Text("Disconnect") }
+                                OutlinedButton(onClick = { GoogleGeminiOAuth(vault, brainScope).disconnect(); info = "Google account disconnected." }) { Text("Disconnect") }
                             }
                         }
                     }
@@ -1984,7 +1986,8 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                                     model = model,
                                     baseUrl = base,
                                     messages = listOf(ChatMessage("user", "Reply with OK.")),
-                                    useOnDeviceModel = false
+                                    useOnDeviceModel = false,
+                                    contextScope = brainScope
                                 ) { }
                                 info = "Connection successful: " + result.take(80)
                             } catch (e: Exception) { info = e.message ?: "Connection failed." }
@@ -2026,8 +2029,8 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.putScoped(brainScope, "chat", "base_url", base); vault.putScoped(brainScope, "chat", "base_url_${provider.name}", base)
                 vault.putScoped(brainScope, "chat", "multi_agent", multiAgent.toString())
                 vault.putScoped(brainScope, "chat", "agent_planning", agentPlanning.toString())
-                vault.put("google_oauth_client_id", googleOAuthClientId)
-                vault.put("google_cloud_project_id", googleCloudProjectId)
+                vault.putScoped(brainScope, "chat", "google_oauth_client_id", googleOAuthClientId)
+                vault.putScoped(brainScope, "chat", "google_cloud_project_id", googleCloudProjectId)
                 vault.putScoped(brainScope, "chat", "daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("speech_rate", speechRate.toString())
                 vault.put("speech_pitch", speechPitch.toString())
