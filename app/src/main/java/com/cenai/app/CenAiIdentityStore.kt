@@ -3,6 +3,8 @@ package com.cenai.app
 import android.content.Context
 import java.security.MessageDigest
 import java.util.UUID
+import android.util.Base64
+import org.json.JSONObject
 
 /**
  * Identifies the active CenAI principal without using an email address as an ID.
@@ -15,7 +17,23 @@ class CenAiIdentityStore(context: Context, private val vault: SecureKeyStore) {
     )
 
     fun activeUserScopeId(): String {
-        val accountId = vault.get("supabase_account_id").trim()
+        var accountId = vault.get("supabase_account_id").trim()
+        if (!accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+            // Older installs saved the encrypted Supabase JWT before persisting
+            // the account UUID separately. Recover its subject only for local
+            // partition selection; Supabase still validates every server request.
+            val token = vault.getSecret("supabase_access_token")
+            val payload = token.split(".").getOrNull(1).orEmpty()
+            val normalized = payload.replace('-', '+').replace('_', '/')
+                .padEnd(((payload.length + 3) / 4) * 4, '=')
+            accountId = runCatching {
+                JSONObject(String(Base64.decode(normalized, Base64.DEFAULT), Charsets.UTF_8))
+                    .optString("sub")
+            }.getOrDefault("")
+            if (accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+                vault.put("supabase_account_id", accountId)
+            }
+        }
         if (accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) return "account:$accountId"
         val localId = prefs.getString("local_profile_id", null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString("local_profile_id", it).apply()
