@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -36,19 +37,21 @@ fun CenAiGradientText(
     letterSpacing: androidx.compose.ui.unit.TextUnit = 0.sp
 ) {
     val palette = LocalCenAiPalette.current
+    val context = LocalContext.current
+    val motionEnabled = remember(context) { CenAiMotion.systemMotionEnabled(context) }
     val entrance by animateFloatAsState(
         targetValue = 1f,
-        animationSpec = tween(560, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = tween(if (motionEnabled) 560 else 0, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "gradient-type-entrance"
     )
     val transition = rememberInfiniteTransition(label = "cenai-gradient-type")
     val phase by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
+        targetValue = if (motionEnabled) 1f else 0f,
+        animationSpec = if (motionEnabled) infiniteRepeatable(
             animation = tween(4200, easing = androidx.compose.animation.core.LinearEasing),
             repeatMode = RepeatMode.Reverse
-        ),
+        ) else tween(0),
         label = "gradient-type-phase"
     )
     val colors = palette.gradient
@@ -81,14 +84,16 @@ fun CenAiGradientSurface(
     content: @Composable BoxScope.() -> Unit
 ) {
     val palette = LocalCenAiPalette.current
+    val context = LocalContext.current
+    val motionEnabled = remember(context) { CenAiMotion.systemMotionEnabled(context) }
     val transition = rememberInfiniteTransition(label = "cenai-gradient-surface")
     val phase by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
+        targetValue = if (motionEnabled) 1f else 0f,
+        animationSpec = if (motionEnabled) infiniteRepeatable(
             animation = tween(6500, easing = androidx.compose.animation.core.LinearEasing),
             repeatMode = RepeatMode.Reverse
-        ),
+        ) else tween(0),
         label = "gradient-surface-phase"
     )
     val colors = palette.gradient
