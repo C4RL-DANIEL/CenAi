@@ -1262,12 +1262,12 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         "Appearance" to "Appearance",
                         "Chat" to "Device",
                         "AI & models" to "AI & models",
+                        "Agents" to "Agents",
                         "Providers" to "AI & models",
                         "Account" to "Account",
                         "Voice" to "Device",
                         "Notifications" to "Agents",
                         "Privacy & permissions" to "Device",
-                        "Agents" to "Agents",
                         "Data & storage" to "Device",
                         "About & diagnostics" to "Device"
                     )
