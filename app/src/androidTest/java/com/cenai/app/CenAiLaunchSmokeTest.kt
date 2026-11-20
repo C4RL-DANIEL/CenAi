@@ -39,6 +39,16 @@ class CenAiLaunchSmokeTest {
         compose.waitForIdle()
         compose.onNodeWithText("CenAI settings").assertIsDisplayed()
 
+        selectSettingsPage("Appearance")
+        val styleField = compose.onNodeWithText("Interface style")
+        styleField.performScrollTo()
+        styleField.performClick()
+        compose.onNodeWithText("Ember · Warm spectrum").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Ember · Warm spectrum").assertIsDisplayed()
+        compose.onNodeWithText("Interface style").performClick()
+        compose.onNodeWithText("Aurora · Living gradient").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Aurora · Living gradient").assertIsDisplayed()
+
         selectSettingsPage("AI & models")
         listOf(
             "PROVIDER",
