@@ -259,8 +259,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var multiAgent by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "multi_agent", "false").toBoolean()) }
     var toolEnabled by remember(activeUserScopeId) { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.getScoped(brainScope, "chat", "tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "agent_planning", "false").toBoolean()) }
-    var googleOAuthClientId by remember { mutableStateOf(vault.getScoped(brainScope, "chat", "google_oauth_client_id")) }
-    var googleCloudProjectId by remember { mutableStateOf(vault.getScoped(brainScope, "chat", "google_cloud_project_id")) }
+    var googleOAuthClientId by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "google_oauth_client_id")) }
+    var googleCloudProjectId by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "google_cloud_project_id")) }
     var dailyLimit by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "system_prompt", "")) }
@@ -1217,29 +1217,29 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
 
     if (settings) {
-        var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
-        var cloudPassword by remember { mutableStateOf("") }
+        var cloudEmail by remember(activeUserScopeId) { mutableStateOf(cloud.accountEmail()) }
+        var cloudPassword by remember(activeUserScopeId) { mutableStateOf("") }
         var cloudStatus by remember { mutableStateOf("") }
         var adminAnalytics by remember { mutableStateOf("") }
-        var usageAnalyticsConsent by remember { mutableStateOf(vault.get("cloud_usage_analytics_consent", "false").toBoolean()) }
-        var guardianCloudConsent by remember { mutableStateOf(vault.get("guardian_cloud_consent", "false").toBoolean()) }
+        var usageAnalyticsConsent by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "cloud_usage_analytics_consent", "false").toBoolean()) }
+        var guardianCloudConsent by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "guardian_cloud_consent", "false").toBoolean()) }
         var cloudBusy by remember { mutableStateOf(false) }
         var paypalBusy by remember { mutableStateOf(false) }
         var paypalStatus by remember { mutableStateOf("Load plans to check current PayPal availability.") }
         var paypalBillingEnabled by remember { mutableStateOf(false) }
-        var paypalPlans by remember { mutableStateOf(emptyList<JSONObject>()) }
-        var paypalSubscriptions by remember { mutableStateOf(emptyList<JSONObject>()) }
-        var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
+        var paypalPlans by remember(activeUserScopeId) { mutableStateOf(emptyList<JSONObject>()) }
+        var paypalSubscriptions by remember(activeUserScopeId) { mutableStateOf(emptyList<JSONObject>()) }
+        var cloudSignedIn by remember(activeUserScopeId) { mutableStateOf(cloud.isSignedIn()) }
         var otpCode by remember { mutableStateOf("") }
-        var emailVerified by remember { mutableStateOf(cloud.isEmailVerified()) }
-        var betaDisplayName by remember { mutableStateOf(vault.get("beta_display_name", "")) }
-        var betaMotivation by remember { mutableStateOf("") }
-        var betaApplicationStatus by remember { mutableStateOf("") }
+        var emailVerified by remember(activeUserScopeId) { mutableStateOf(cloud.isEmailVerified()) }
+        var betaDisplayName by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "beta_display_name", "")) }
+        var betaMotivation by remember(activeUserScopeId) { mutableStateOf("") }
+        var betaApplicationStatus by remember(activeUserScopeId) { mutableStateOf("") }
         var expanded by remember { mutableStateOf(false) }
         var themeExpanded by remember { mutableStateOf(false) }
-        var backgroundTaskPrompt by remember { mutableStateOf("") }
-        var backgroundTaskDelay by remember { mutableStateOf("15") }
-        var backgroundTaskStatus by remember { mutableStateOf("") }
+        var backgroundTaskPrompt by remember(activeUserScopeId) { mutableStateOf("") }
+        var backgroundTaskDelay by remember(activeUserScopeId) { mutableStateOf("15") }
+        var backgroundTaskStatus by remember(activeUserScopeId) { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA").let { if (it == "DEFAULT") "AURORA" else it }) }
         AlertDialog(
             modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
@@ -1605,7 +1605,7 @@ Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWe
                                 CenAiTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
                                 if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
-                                Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
+                                Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.putScoped(providerAccountScope, "account", "beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
@@ -1801,8 +1801,8 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                                     scope.launch {
                                         try {
                                             cloud.setTelemetryConsent(usageAnalyticsConsent, guardianCloudConsent)
-                                            vault.put("cloud_usage_analytics_consent", usageAnalyticsConsent.toString())
-                                            vault.put("guardian_cloud_consent", guardianCloudConsent.toString())
+                                            vault.putScoped(providerAccountScope, "account", "cloud_usage_analytics_consent", usageAnalyticsConsent.toString())
+                                            vault.putScoped(providerAccountScope, "account", "guardian_cloud_consent", guardianCloudConsent.toString())
                                             cloudStatus = "Privacy choices saved. Guardian uploads also require the platform owner to enable the Guardian ingestion flag."
                                         } catch (e: Exception) { cloudStatus = e.message ?: "Could not save privacy choices." }
                                         finally { cloudBusy = false }
