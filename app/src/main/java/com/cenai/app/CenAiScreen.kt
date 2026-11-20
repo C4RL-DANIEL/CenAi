@@ -475,14 +475,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     persist(messages + ChatMessage("assistant", synthesisHeader))
                     val synthesisText = StringBuilder()
                     runCatching {
-                        repo.stream(
-                            synthesisProvider,
-                            synthesisModel,
-                            synthesisBase,
-                            listOf(
+                        brain.stream(
+                            provider = synthesisProvider,
+                            model = synthesisModel,
+                            baseUrl = synthesisBase,
+                            messages = listOf(
                                 ChatMessage("system", "You are CenAI's synthesis coordinator. Be precise, transparent about disagreements, and concise."),
                                 ChatMessage("user", synthesisPrompt)
-                            )
+                            ),
+                            useOnDeviceModel = false
                         ) { delta ->
                             synthesisText.append(delta)
                             val current = messages.toMutableList()
@@ -1965,7 +1966,13 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
-                                val result = repo.stream(provider, model, base, listOf(ChatMessage("user", "Reply with OK."))) { }
+                                val result = brain.stream(
+                                    provider = provider,
+                                    model = model,
+                                    baseUrl = base,
+                                    messages = listOf(ChatMessage("user", "Reply with OK.")),
+                                    useOnDeviceModel = false
+                                ) { }
                                 info = "Connection successful: " + result.take(80)
                             } catch (e: Exception) { info = e.message ?: "Connection failed." }
                             finally { testBusy = false }
