@@ -49,10 +49,10 @@ fun CenAiGradientText(
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = if (motionEnabled) 1f else 0f,
-        animationSpec = if (motionEnabled) infiniteRepeatable(
-            animation = tween(4200, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (motionEnabled) 4200 else 0, easing = androidx.compose.animation.core.LinearEasing),
             repeatMode = RepeatMode.Reverse
-        ) else tween(0),
+        ),
         label = "gradient-type-phase"
     )
     val colors = palette.gradient
@@ -91,10 +91,10 @@ fun CenAiGradientSurface(
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = if (motionEnabled) 1f else 0f,
-        animationSpec = if (motionEnabled) infiniteRepeatable(
-            animation = tween(6500, easing = androidx.compose.animation.core.LinearEasing),
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (motionEnabled) 6500 else 0, easing = androidx.compose.animation.core.LinearEasing),
             repeatMode = RepeatMode.Reverse
-        ) else tween(0),
+        ),
         label = "gradient-surface-phase"
     )
     val colors = palette.gradient
