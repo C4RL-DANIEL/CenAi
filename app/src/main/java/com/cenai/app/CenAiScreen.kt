@@ -35,6 +35,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -78,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
@@ -594,8 +596,28 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val composerFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var attachmentTrayOpen by remember { mutableStateOf(false) }
+    var appEntranceStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(40)
+        appEntranceStarted = true
+    }
+    val appEntranceAlpha by animateFloatAsState(
+        targetValue = if (appEntranceStarted) 1f else 0f,
+        animationSpec = tween(CenAiMotion.screenMs),
+        label = "app-entrance-alpha"
+    )
+    val appEntranceOffset by animateFloatAsState(
+        targetValue = if (appEntranceStarted) 0f else 18f,
+        animationSpec = tween(CenAiMotion.screenMs),
+        label = "app-entrance-offset"
+    )
 
-    Box(Modifier.fillMaxSize().background(palette.background)) {
+    Box(
+        Modifier.fillMaxSize().background(palette.background).graphicsLayer {
+            alpha = appEntranceAlpha
+            translationY = appEntranceOffset
+        }
+    ) {
         Row(Modifier.fillMaxSize()) {
             if (isTabletLayout) {
                 NavigationRail(
