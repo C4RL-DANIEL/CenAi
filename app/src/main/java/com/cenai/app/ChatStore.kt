@@ -60,8 +60,12 @@ class ChatStore(
                         ChatMessage(m.optString("role"), m.optString("content"))
                     },
                     updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
-                    ownerUserId = item.optString("ownerUserId", contextScope.userId),
-                    ownerFeatureId = item.optString("ownerFeatureId", contextScope.featureId)
+                    ownerUserId = item.optString("ownerUserId").ifBlank {
+                        if (contextScope.userId.startsWith("local:")) contextScope.userId else ""
+                    },
+                    ownerFeatureId = item.optString("ownerFeatureId").ifBlank {
+                        if (contextScope.userId.startsWith("local:")) contextScope.featureId else ""
+                    }
                 )
             }.filter { BrainContextOwnership.owns(contextScope, it.ownerUserId, it.ownerFeatureId) }
                 .sortedByDescending { it.updatedAt }.toMutableList()
