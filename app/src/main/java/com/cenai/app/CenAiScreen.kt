@@ -865,7 +865,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         hour < 18 -> "Good afternoon"
                                         else -> "Good evening"
                                     }
-                                    Text(greeting, color = palette.text, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Medium)
+                                    CenAiGradientText(greeting, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                                     Text("What would you like to work on?", color = palette.muted, fontSize = 14.sp)
                                 }
                                 Surface(
@@ -879,19 +879,26 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }
                                 }
                             }
-                            Button(
+                            Surface(
                                 onClick = {
                                     newChat()
                                     composerFocusRequester.requestFocus()
                                     keyboardController?.show()
                                 },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = palette.text, contentColor = palette.background)
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                color = Color.Transparent
                             ) {
-                                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("New chat", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                CenAiGradientSurface(Modifier.fillMaxWidth()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("New chat", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("Recent", color = palette.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -1191,7 +1198,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             tonalElevation = if (palette.glass) 18.dp else 6.dp,
             title = {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("CenAI settings", color = palette.text, fontWeight = FontWeight.Medium)
+                    CenAiGradientText("CenAI settings", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Text("Personalize your workspace, models, agents and device", color = palette.muted, fontSize = 11.sp)
                 }
             },
