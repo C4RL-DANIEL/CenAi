@@ -39,9 +39,8 @@ val LocalCenAiPalette = staticCompositionLocalOf {
 }
 
 /**
- * CenAI's visual system is deliberately monochrome: black, white and gray establish
- * hierarchy. Accent colors are reserved for semantic status, never decoration.
- * The style parameter remains accepted so existing preference plumbing is preserved.
+ * CenAI's visual system pairs quiet adaptive surfaces with an animated Aurora spectrum.
+ * Style changes affect gradient identity while existing light/dark system behavior remains intact.
  */
 @Composable
 fun CenAiTheme(style: String, content: @Composable () -> Unit) {
