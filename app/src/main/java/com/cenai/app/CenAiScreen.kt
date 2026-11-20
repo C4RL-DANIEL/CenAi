@@ -225,10 +225,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val guardian = brain.guardian
     val cloud = remember { CenAiCloud(vault) }
     var speechOutputReady by remember { mutableStateOf(false) }
-    var speechRate by remember { mutableFloatStateOf(vault.get("speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
-    var speechPitch by remember { mutableFloatStateOf(vault.get("speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
-    var speechLanguage by remember { mutableStateOf(vault.get("speech_language", "device")) }
-    var speechInputLanguage by remember { mutableStateOf(vault.get("speech_input_language", "device")) }
+    var speechRate by remember(activeUserScopeId) { mutableFloatStateOf(vault.getScoped(providerAccountScope, "account", "speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
+    var speechPitch by remember(activeUserScopeId) { mutableFloatStateOf(vault.getScoped(providerAccountScope, "account", "speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
+    var speechLanguage by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "speech_language", "device")) }
+    var speechInputLanguage by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(providerAccountScope, "account", "speech_input_language", "device")) }
     val textToSpeech = remember { TextToSpeech(context) { status -> speechOutputReady = status == TextToSpeech.SUCCESS } }
     LaunchedEffect(speechOutputReady, speechRate, speechPitch, speechLanguage) {
         if (speechOutputReady) {
@@ -2034,10 +2034,10 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.putScoped(providerAccountScope, "account", "google_oauth_client_id", googleOAuthClientId)
                 vault.putScoped(providerAccountScope, "account", "google_cloud_project_id", googleCloudProjectId)
                 vault.putScoped(brainScope, "chat", "daily_request_limit", dailyLimit.ifBlank { "0" })
-                vault.put("speech_rate", speechRate.toString())
-                vault.put("speech_pitch", speechPitch.toString())
-                vault.put("speech_language", speechLanguage.ifBlank { "device" })
-                vault.put("speech_input_language", speechInputLanguage.ifBlank { "device" })
+                vault.putScoped(providerAccountScope, "account", "speech_rate", speechRate.toString())
+                vault.putScoped(providerAccountScope, "account", "speech_pitch", speechPitch.toString())
+                vault.putScoped(providerAccountScope, "account", "speech_language", speechLanguage.ifBlank { "device" })
+                vault.putScoped(providerAccountScope, "account", "speech_input_language", speechInputLanguage.ifBlank { "device" })
                 vault.putScoped(brainScope, "chat", "local_knowledge_enabled", localKnowledgeEnabled.toString())
                 vault.putScoped(brainScope, "chat", "local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
