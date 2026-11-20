@@ -294,6 +294,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var renameDialogOpen by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
     var messages by remember(activeUserScopeId) { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
+    var activeJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(activeUserScopeId) {
         activeJob?.cancel()
         busy = false
@@ -304,7 +305,6 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         error = ""
         draft = ""
     }
-    var activeJob by remember { mutableStateOf<Job?>(null) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var editText by remember { mutableStateOf("") }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -479,8 +479,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
                 if (multiAgent && successfulTargets.size > 1 && !localModelEnabled) {
                     val synthesisProvider = successfulTargets.first()
-                    val synthesisModel = if (synthesisProvider == provider) model else vault.get("model_${synthesisProvider.name}", synthesisProvider.model)
-                    val synthesisBase = if (synthesisProvider == provider) base else vault.get("base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
+                    val synthesisModel = if (synthesisProvider == provider) model else vault.getScoped(brainScope, "chat", "model_${synthesisProvider.name}", synthesisProvider.model)
+                    val synthesisBase = if (synthesisProvider == provider) base else vault.getScoped(brainScope, "chat", "base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
                     val synthesisPrompt = "USER REQUEST:\n" + queryForKnowledge.take(8_000) +
                         "\n\nCompare these independent AI responses to that request. Produce one clear, accurate, balanced answer. Resolve contradictions where evidence permits, preserve useful disagreements and uncertainty, remove repetition, and do not invent facts.\n\n" +
                         providerAnswers.joinToString("\n\n---\n\n").take(32_000)
@@ -1378,9 +1378,9 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                             Provider.entries.forEach { p ->
                                 DropdownMenuItem(text = { Text(p.label) }, onClick = {
                                     provider = p
-                                    val savedModel = vault.get("model_${p.name}", p.model)
+                                    val savedModel = vault.getScoped(brainScope, "chat", "model_${p.name}", p.model)
                                     model = if (p == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) p.model else savedModel
-                                    base = vault.get("base_url_${p.name}", p.baseUrl)
+                                    base = vault.getScoped(brainScope, "chat", "base_url_${p.name}", p.baseUrl)
                                     expanded = false
                                 })
                             }
@@ -1533,7 +1533,7 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                             Text(label, color = palette.text, modifier = Modifier.weight(1f), fontSize = 13.sp)
                             Switch(checked = toolEnabled[tool] == true, onCheckedChange = { enabled ->
                                 toolEnabled = toolEnabled.toMutableMap().apply { put(tool, enabled) }
-                                vault.put("tool_enabled_" + tool, enabled.toString())
+                                vault.putScoped(brainScope, "chat", "tool_enabled_" + tool, enabled.toString())
                             })
                         }
                     }
@@ -1856,7 +1856,7 @@ Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, 
                                 }
                                 Switch(checked = localModelEnabled, enabled = localModelReady, onCheckedChange = {
                                     localModelEnabled = it
-                                    vault.put("local_model_enabled", it.toString())
+                                    vault.putScoped(brainScope, "chat", "local_model_enabled", it.toString())
                                 })
                             }
                             Text("Recommended model: Qwen3 0.6B INT8 · about 614 MB · Apache 2.0. Download it, then import the .litertlm file above. CPU inference is used for broad device compatibility.", color = palette.muted, fontSize = 10.sp)
