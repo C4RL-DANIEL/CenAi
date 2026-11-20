@@ -63,7 +63,7 @@ class ChatStore(
                     ownerUserId = item.optString("ownerUserId", contextScope.userId),
                     ownerFeatureId = item.optString("ownerFeatureId", contextScope.featureId)
                 )
-            }.filter { it.ownerUserId == contextScope.userId && it.ownerFeatureId == contextScope.featureId }
+            }.filter { BrainContextOwnership.owns(contextScope, it.ownerUserId, it.ownerFeatureId) }
                 .sortedByDescending { it.updatedAt }.toMutableList()
         }.getOrDefault(mutableListOf())
     }
@@ -71,12 +71,7 @@ class ChatStore(
     fun save(items: List<Conversation>) {
         val array = JSONArray()
         items.forEach { conversation ->
-            require(conversation.ownerUserId.isBlank() || conversation.ownerUserId == contextScope.userId) {
-                "Cannot save another user's conversation in this context."
-            }
-            require(conversation.ownerFeatureId.isBlank() || conversation.ownerFeatureId == contextScope.featureId) {
-                "Cannot save another feature's conversation in this context."
-            }
+            BrainContextOwnership.requireWritable(contextScope, conversation.ownerUserId, conversation.ownerFeatureId)
             conversation.ownerUserId = contextScope.userId
             conversation.ownerFeatureId = contextScope.featureId
             val messages = JSONArray()
