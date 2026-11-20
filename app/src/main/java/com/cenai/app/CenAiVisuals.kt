@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -42,19 +43,24 @@ fun CenAiGradientText(
     val motionEnabled = remember(context) { CenAiMotion.systemMotionEnabled(context) }
     val entrance by animateFloatAsState(
         targetValue = 1f,
-        animationSpec = tween(if (motionEnabled) 560 else 0, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = if (motionEnabled) tween(560, easing = androidx.compose.animation.core.FastOutSlowInEasing) else snap(),
         label = "gradient-type-entrance"
     )
-    val transition = rememberInfiniteTransition(label = "cenai-gradient-type")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (motionEnabled) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(if (motionEnabled) 4200 else 0, easing = androidx.compose.animation.core.LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "gradient-type-phase"
-    )
+    val phaseState = if (motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "cenai-gradient-type")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(4200, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "gradient-type-phase"
+        )
+    } else {
+        remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    }
+    val phase by phaseState
     val colors = palette.gradient
     val brush = Brush.linearGradient(
         colors = colors,
@@ -87,16 +93,21 @@ fun CenAiGradientSurface(
     val palette = LocalCenAiPalette.current
     val context = LocalContext.current
     val motionEnabled = remember(context) { CenAiMotion.systemMotionEnabled(context) }
-    val transition = rememberInfiniteTransition(label = "cenai-gradient-surface")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (motionEnabled) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(if (motionEnabled) 6500 else 0, easing = androidx.compose.animation.core.LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "gradient-surface-phase"
-    )
+    val phaseState = if (motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "cenai-gradient-surface")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(6500, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "gradient-surface-phase"
+        )
+    } else {
+        remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    }
+    val phase by phaseState
     val colors = palette.gradient
     val brush = Brush.linearGradient(
         colors = colors,
