@@ -521,7 +521,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
                 val completedLatency = System.currentTimeMillis() - requestStartedAt
                 appMonitor.recordSucceeded(completedLatency)
-                if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                if (cloud.isSignedIn() && vault.getScoped(providerAccountScope, "account", "cloud_usage_analytics_consent", "false").toBoolean()) {
                     runCatching {
                         val outputEstimate = messages.lastOrNull { it.role == "assistant" }?.content?.length?.div(4) ?: 0
                         cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, outputEstimate, completedLatency, "success")
@@ -533,7 +533,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 } else {
                     val failedLatency = System.currentTimeMillis() - requestStartedAt
                     appMonitor.recordFailed(failedLatency, e)
-                    if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                    if (cloud.isSignedIn() && vault.getScoped(providerAccountScope, "account", "cloud_usage_analytics_consent", "false").toBoolean()) {
                         runCatching { cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, 0, failedLatency, "error", e.javaClass.simpleName) }
                     }
                     error = e.message ?: "Request failed."
@@ -1900,7 +1900,7 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                             Text("Last crash: ${if (guardianSnapshot.lastCrashAt == 0L) "None recorded" else guardianSnapshot.lastCrashCategory + " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(guardianSnapshot.lastCrashAt))}", color = palette.muted, fontSize = 10.sp)
                             Text("Background Guardian: $guardianHistoryCount health samples · scheduled every 15 minutes when Android permits", color = palette.muted, fontSize = 10.sp)
                             Text("Diagnostics stay on-device by default. If you explicitly enable Guardian sharing in your CenAI account privacy settings, only these summary fields are sent; no stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
-                            if (cloud.isSignedIn() && vault.get("guardian_cloud_consent", "false").toBoolean()) {
+                            if (cloud.isSignedIn() && vault.getScoped(providerAccountScope, "account", "guardian_cloud_consent", "false").toBoolean()) {
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
                                     cloudBusy = true
                                     scope.launch {
