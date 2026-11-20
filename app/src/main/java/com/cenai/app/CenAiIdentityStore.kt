@@ -27,8 +27,13 @@ class CenAiIdentityStore(context: Context, private val vault: SecureKeyStore) {
 /** A context namespace is always a verified principal plus one feature boundary. */
 data class BrainContextScope(val userId: String, val featureId: String) {
     init {
-        require(userId.startsWith("account:") || userId.startsWith("local:")) {
-            "A CenAI context must belong to an account or local profile."
+        val principalId = when {
+            userId.startsWith("account:") -> userId.removePrefix("account:")
+            userId.startsWith("local:") -> userId.removePrefix("local:")
+            else -> ""
+        }
+        require(principalId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+            "A CenAI context must belong to a valid account or local profile."
         }
         require(userId.length <= 160 && featureId.matches(Regex("[a-z][a-z0-9_-]{0,63}"))) {
             "Invalid CenAI context namespace."
@@ -43,7 +48,7 @@ object ScopedKeyNames {
     fun hash(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .take(16)
-        .joinToString("") { "%02x".format(it) }
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     fun preferenceKey(scope: BrainContextScope, key: String): String {
         require(key.matches(Regex("[A-Za-z0-9_.-]{1,100}"))) { "Invalid scoped key." }
