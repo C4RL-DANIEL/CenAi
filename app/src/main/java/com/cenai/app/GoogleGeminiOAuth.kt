@@ -14,16 +14,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Official Google OAuth authorization-code + PKCE flow for the Gemini Developer API. */
-class GoogleGeminiOAuth(private val vault: SecureKeyStore, private val contextScope: BrainContextScope? = null) {
-    private fun getSecret(name: String) = contextScope?.let { vault.getSecretScoped(it, it.featureId, name) } ?: vault.getSecret(name)
-    private fun putSecret(name: String, value: String) {
-        if (contextScope == null) vault.putSecret(name, value) else vault.putSecretScoped(contextScope, contextScope.featureId, name, value)
-    }
+class GoogleGeminiOAuth(private val vault: SecureKeyStore, private val contextScope: BrainContextScope) {
+    private fun getSecret(name: String) = vault.getSecretScoped(contextScope, contextScope.featureId, name)
+    private fun putSecret(name: String, value: String) =
+        vault.putSecretScoped(contextScope, contextScope.featureId, name, value)
     private fun getPreference(name: String, fallback: String = "") =
-        contextScope?.let { vault.getScoped(it, it.featureId, name, fallback) } ?: vault.get(name, fallback)
-    private fun putPreference(name: String, value: String) {
-        if (contextScope == null) vault.put(name, value) else vault.putScoped(contextScope, contextScope.featureId, name, value)
-    }
+        vault.getScoped(contextScope, contextScope.featureId, name, fallback)
+    private fun putPreference(name: String, value: String) =
+        vault.putScoped(contextScope, contextScope.featureId, name, value)
     companion object {
         const val REDIRECT_URI = "com.cenai.app:/oauth2redirect"
         const val SCOPE = "https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/cloud-platform"
