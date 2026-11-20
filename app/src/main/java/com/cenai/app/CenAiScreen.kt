@@ -778,6 +778,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         Icon(Icons.Default.Mic, "Voice input", tint = palette.muted)
                                     }
                                     Spacer(Modifier.weight(1f))
+                                    val sendInteraction = remember { MutableInteractionSource() }
+                                    val sendPressed by sendInteraction.collectIsPressedAsState()
+                                    val sendScale by animateFloatAsState(
+                                        targetValue = if (sendPressed) 0.92f else 1f,
+                                        animationSpec = tween(CenAiMotion.tapMs),
+                                        label = "composer-send-press"
+                                    )
                                     AnimatedContent(
                                         targetState = when {
                                             busy -> "stop"
@@ -791,13 +798,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                                 onClick = { activeJob?.cancel(); busy = false },
                                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.danger, contentColor = Color.White),
                                                 shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.size(44.dp).animateContentSize(spring(dampingRatio = 0.82f, stiffness = 520f))
+                                                interactionSource = sendInteraction,
+                                                modifier = Modifier.size(44.dp).animateContentSize(spring(dampingRatio = 0.82f, stiffness = 520f)).graphicsLayer {
+                                                    scaleX = sendScale
+                                                    scaleY = sendScale
+                                                }
                                             ) { Icon(Icons.Default.Stop, "Stop response") }
                                             "done" -> FilledIconButton(
                                                 onClick = { },
                                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.positive, contentColor = Color.White),
                                                 shape = RoundedCornerShape(12.dp),
-                                                modifier = Modifier.size(44.dp)
+                                                interactionSource = sendInteraction,
+                                                modifier = Modifier.size(44.dp).graphicsLayer {
+                                                    scaleX = sendScale
+                                                    scaleY = sendScale
+                                                }
                                             ) { Icon(Icons.Default.CheckCircle, "Response complete") }
                                             else -> FilledIconButton(
                                                 enabled = draft.isNotBlank(),
@@ -811,7 +826,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                                 },
                                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = palette.text, contentColor = palette.background),
                                                 shape = CircleShape,
-                                                modifier = Modifier.size(44.dp)
+                                                interactionSource = sendInteraction,
+                                                modifier = Modifier.size(44.dp).graphicsLayer {
+                                                    scaleX = sendScale
+                                                    scaleY = sendScale
+                                                }
                                             ) { Icon(Icons.Default.ArrowUpward, "Send") }
                                         }
                                     }
