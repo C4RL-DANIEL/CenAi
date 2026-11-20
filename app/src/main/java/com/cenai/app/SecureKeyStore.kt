@@ -65,4 +65,36 @@ class SecureKeyStore(context: Context) {
     fun getSecret(name: String): String = decrypt(prefs.getString("secret_" + name, null))
     fun put(name: String, value: String) { prefs.edit().putString(name, value).apply() }
     fun get(name: String, fallback: String = "") = prefs.getString(name, fallback) ?: fallback
+    fun putScoped(scope: BrainContextScope, featureId: String, name: String, value: String) {
+        val key = ScopedKeyNames.preferenceKey(scope.copy(featureId = featureId), name)
+        prefs.edit().putString(key, value).apply()
+    }
+
+    fun getScoped(scope: BrainContextScope, featureId: String, name: String, fallback: String = ""): String {
+        val key = ScopedKeyNames.preferenceKey(scope.copy(featureId = featureId), name)
+        return prefs.getString(key, fallback) ?: fallback
+    }
+
+    fun putSecretScoped(scope: BrainContextScope, featureId: String, name: String, value: String) {
+        val key = ScopedKeyNames.preferenceKey(scope.copy(featureId = featureId), "secret_$name")
+        if (value.isBlank()) prefs.edit().remove(key).apply()
+        else prefs.edit().putString(key, encrypt(value)).apply()
+    }
+
+    fun getSecretScoped(scope: BrainContextScope, featureId: String, name: String): String {
+        val key = ScopedKeyNames.preferenceKey(scope.copy(featureId = featureId), "secret_$name")
+        return decrypt(prefs.getString(key, null))
+    }
+
+    fun saveApiKey(value: String, provider: Provider, scope: BrainContextScope) {
+        putSecretScoped(scope, "chat", "api_key_${provider.name.lowercase()}", value)
+    }
+
+    fun apiKey(provider: Provider, scope: BrainContextScope): String {
+        val scoped = getSecretScoped(scope, "chat", "api_key_${provider.name.lowercase()}")
+        if (scoped.isNotBlank()) return scoped
+        // Existing unscoped keys belong only to the signed-out local profile.
+        return if (scope.userId.startsWith("local:")) apiKey(provider) else ""
+    }
+
 }
