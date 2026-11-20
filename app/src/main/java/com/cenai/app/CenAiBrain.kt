@@ -158,6 +158,7 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
         baseUrl: String,
         messages: List<ChatMessage>,
         useOnDeviceModel: Boolean,
+        contextScope: BrainContextScope,
         onDelta: (String) -> Unit
     ): String {
         mutableEvents.tryEmit(BrainEvent.RequestStarted(provider.name, useOnDeviceModel))
@@ -165,7 +166,7 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
             val answer = if (useOnDeviceModel) {
                 localModelRuntime.stream(messages, onDelta)
             } else {
-                chatRepository.stream(provider, model, baseUrl, messages, onDelta)
+                chatRepository.stream(provider, model, baseUrl, messages, onDelta, contextScope)
             }
             mutableEvents.tryEmit(BrainEvent.RequestCompleted(provider.name, useOnDeviceModel))
             answer
