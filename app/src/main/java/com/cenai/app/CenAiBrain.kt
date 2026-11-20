@@ -151,15 +151,6 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     fun createAgentRuntime(enabledTools: Set<String>): AgentRuntime =
         AgentRuntime(enabledTools = enabledTools)
 
-    fun composeSystemMessages(
-        systemPrompt: String,
-        approvedMemory: String,
-        localKnowledgeContext: String,
-        toolGuide: String?
-    ): List<ChatMessage> = BrainContextComposer.compose(
-        systemPrompt, approvedMemory, localKnowledgeContext, toolGuide
-    )
-
     /** One model entry point for both local inference and configured cloud providers. */
     suspend fun stream(
         provider: Provider,
