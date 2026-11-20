@@ -136,12 +136,6 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     fun createAgentRuntime(enabledTools: Set<String>): AgentRuntime =
         AgentRuntime(enabledTools = enabledTools)
 
-    suspend fun retrieveKnowledge(
-        query: String,
-        conversations: List<Conversation>,
-        currentMessages: List<ChatMessage>
-    ): String = localKnowledge.retrieve(query, conversations, currentMessages)
-
     fun composeSystemMessages(
         systemPrompt: String,
         approvedMemory: String,
