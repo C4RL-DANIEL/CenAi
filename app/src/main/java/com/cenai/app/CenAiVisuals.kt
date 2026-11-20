@@ -1,6 +1,7 @@
 package com.cenai.app
 
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,6 +36,11 @@ fun CenAiGradientText(
     letterSpacing: androidx.compose.ui.unit.TextUnit = 0.sp
 ) {
     val palette = LocalCenAiPalette.current
+    val entrance by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(560, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "gradient-type-entrance"
+    )
     val transition = rememberInfiniteTransition(label = "cenai-gradient-type")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -52,7 +59,12 @@ fun CenAiGradientText(
     )
     Text(
         text = text,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer {
+            alpha = entrance
+            scaleX = 0.975f + 0.025f * entrance
+            scaleY = 0.975f + 0.025f * entrance
+            translationY = (1f - entrance) * 9f
+        },
         style = TextStyle(
             brush = brush,
             fontSize = fontSize,
