@@ -11,7 +11,7 @@ data class Conversation(
     val messages: MutableList<ChatMessage> = mutableListOf(),
     var updatedAt: Long = System.currentTimeMillis(),
     var ownerUserId: String = "",
-    var ownerFeatureId: String = "chat"
+    var ownerFeatureId: String = ""
 )
 
 /**
