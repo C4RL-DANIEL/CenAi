@@ -30,9 +30,12 @@ import java.util.concurrent.TimeUnit
 class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(KEY_ID).orEmpty()
-        val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val userScopeId = inputData.getString(KEY_USER_SCOPE).orEmpty()
+        if (!userScopeId.startsWith("account:") && !userScopeId.startsWith("local:")) return Result.failure()
+        val taskScope = BrainContextScope(userScopeId, "automation")
+        val prefs = applicationContext.getSharedPreferences(preferencesName(taskScope), Context.MODE_PRIVATE)
         val vault = SecureKeyStore(applicationContext)
-        val prompt = vault.getSecret("scheduled_task_prompt_$taskId")
+        val prompt = vault.getSecretScoped(taskScope, "automation", "scheduled_task_prompt_$taskId")
         val provider = Provider.parse(inputData.getString(KEY_PROVIDER))
         val model = inputData.getString(KEY_MODEL).orEmpty().ifBlank { provider.model }
         val base = inputData.getString(KEY_BASE).orEmpty().ifBlank { provider.baseUrl }
@@ -53,7 +56,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             var lastTurn = ""
             var finished = false
             for (step in 0..3) {
-                val turn = repository.stream(provider, model, base, listOf(ChatMessage("system", toolGuide)) + history) { }
+                val turn = repository.stream(provider, model, base, listOf(ChatMessage("system", toolGuide)) + history, { }, taskScope)
                 lastTurn = turn
                 val call = runtime.parseToolCall(turn)
                 if (call == null) {
@@ -74,7 +77,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             if (response.isBlank()) response = "The scheduled agent returned an empty response."
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
-            vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
+            vault.putSecretScoped(taskScope, "automation", "scheduled_task_result_$taskId", response.take(16_000))
             postNotification(taskId, "Completed", response)
             Result.success()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -112,6 +115,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         const val KEY_PROVIDER = "task_provider"
         const val KEY_MODEL = "task_model"
         const val KEY_BASE = "task_base"
+        const val KEY_USER_SCOPE = "user_scope"
+
+        fun preferencesName(scope: BrainContextScope): String = PREFS + "_" + scope.storageNamespace
 
         fun schedule(
             context: Context,
@@ -119,17 +125,20 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             delayMinutes: Long,
             provider: Provider,
             model: String,
-            base: String
+            base: String,
+            userScopeId: String
         ): String {
             require(prompt.isNotBlank()) { "Enter a task before scheduling it." }
             require(prompt.length <= 8_000) { "Scheduled tasks are limited to 8,000 characters." }
             require(delayMinutes in 1..43_200) { "Schedule between 1 minute and 30 days from now." }
+            val taskScope = BrainContextScope(userScopeId, "automation")
             val id = UUID.randomUUID().toString()
             val data = Data.Builder()
                 .putString(KEY_ID, id)
                 .putString(KEY_PROVIDER, provider.name)
                 .putString(KEY_MODEL, model)
                 .putString(KEY_BASE, base)
+                .putString(KEY_USER_SCOPE, userScopeId)
                 .build()
             val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
             val request = OneTimeWorkRequestBuilder<AgentTaskWorker>()
@@ -138,20 +147,21 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
                 .addTag("cenai-agent-task")
                 .build()
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            context.getSharedPreferences(preferencesName(taskScope), Context.MODE_PRIVATE).edit()
                 .putString("status_$id", "Scheduled")
                 .putLong("scheduled_$id", System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes))
                 .apply()
-            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$id", prompt)
+            SecureKeyStore(context.applicationContext).putSecretScoped(taskScope, "automation", "scheduled_task_prompt_$id", prompt)
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 "cenai-agent-$id", ExistingWorkPolicy.KEEP, request
             )
             return id
         }
 
-        fun cancel(context: Context, taskId: String) {
+        fun cancel(context: Context, taskId: String, userScopeId: String) {
+            val taskScope = BrainContextScope(userScopeId, "automation")
             WorkManager.getInstance(context.applicationContext).cancelUniqueWork("cenai-agent-$taskId")
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            context.getSharedPreferences(preferencesName(taskScope), Context.MODE_PRIVATE)
                 .edit().putString("status_$taskId", "Cancelled").apply()
         }
     }
