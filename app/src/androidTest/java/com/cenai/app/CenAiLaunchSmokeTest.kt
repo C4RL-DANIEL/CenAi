@@ -2,11 +2,8 @@ package com.cenai.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,14 +17,11 @@ class CenAiLaunchSmokeTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     private fun selectSettingsPage(page: String) {
-        // The settings content is vertically scrollable and the page selector is horizontally scrollable.
-        // Bring the requested chip into view across both scroll containers before clicking it.
-        val tab = compose.onNodeWithTag("settings-page-tabs").onChildren().filterToOne(hasText(page))
+        val tab = compose.onNodeWithText(page)
         tab.performScrollTo()
         tab.assertIsDisplayed()
         tab.performClick()
     }
-
     @Test
     fun mainScreenLaunchesAndShowsComposer() {
         compose.onNodeWithText("Message CenAI…").assertIsDisplayed()
