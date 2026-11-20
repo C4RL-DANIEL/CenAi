@@ -47,4 +47,30 @@ class CenAiIdentityIsolationTest {
     fun rejectsInvalidFeatureNamespace() {
         BrainContextScope("account:alice_00000001", "../other-user")
     }
+    @Test
+    fun ownershipGuardAllowsOnlyMatchingAccountAndFeature() {
+        val chat = BrainContextScope("account:alice_00000001", "chat")
+        assertTrue(BrainContextOwnership.owns(chat, chat.userId, chat.featureId))
+        assertFalse(BrainContextOwnership.owns(chat, "account:bob__00000002", "chat"))
+        assertFalse(BrainContextOwnership.owns(chat, chat.userId, "documents"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun ownershipGuardRejectsWritesFromAnotherAccount() {
+        BrainContextOwnership.requireWritable(
+            BrainContextScope("account:alice_00000001", "chat"),
+            "account:bob__00000002",
+            "chat"
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun ownershipGuardRejectsWritesFromAnotherFeature() {
+        BrainContextOwnership.requireWritable(
+            BrainContextScope("account:alice_00000001", "chat"),
+            "account:alice_00000001",
+            "documents"
+        )
+    }
+
 }
