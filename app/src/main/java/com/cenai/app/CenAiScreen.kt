@@ -213,7 +213,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val brain = remember { CenAiBrain.get(context, vault) }
-    val store = remember { ChatStore(context) }
+    val identityStore = remember { CenAiIdentityStore(context, vault) }
+    var activeUserScopeId by remember { mutableStateOf(identityStore.activeUserScopeId()) }
+    val brainScope = remember(activeUserScopeId) { BrainContextScope(activeUserScopeId, "chat") }
+    val brainContext = remember(brainScope) { brain.contextFor(brainScope) }
+    val store = brainContext.chatStore
     val updater = remember { UpdateManager(context) }
     val localModelRuntime = brain.localModelRuntime
     val guardian = brain.guardian
@@ -233,36 +237,35 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         }
     }
     DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
-    val localKnowledge = brain.localKnowledge
-    val appMonitor = remember { AppMonitor(context) }
-    var localKnowledgeEnabled by remember { mutableStateOf(vault.get("local_knowledge_enabled", "false").toBoolean()) }
-    var localModelEnabled by remember { mutableStateOf(vault.get("local_model_enabled", "false").toBoolean()) }
+     val appMonitor = remember { AppMonitor(context) }
+    var localKnowledgeEnabled by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "local_knowledge_enabled", "false").toBoolean()) }
+    var localModelEnabled by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "local_model_enabled", "false").toBoolean()) }
     var localModelReady by remember { mutableStateOf(localModelRuntime.isModelInstalled()) }
     var guardianSnapshot by remember { mutableStateOf(guardian.snapshot()) }
     var guardianHistoryCount by remember { mutableIntStateOf(context.getSharedPreferences("cenai_guardian_history", android.content.Context.MODE_PRIVATE).getString("samples", "").orEmpty().lineSequence().count { it.isNotBlank() }) }
     var monitorSnapshot by remember { mutableStateOf(appMonitor.snapshot()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    var provider by remember { mutableStateOf(Provider.parse(vault.get("provider", "OPENAI"))) }
-    var model by remember {
-        val savedProvider = Provider.parse(vault.get("provider", "OPENAI"))
-        val savedModel = vault.get("model", savedProvider.model)
+    var provider by remember(activeUserScopeId) { mutableStateOf(Provider.parse(vault.getScoped(brainScope, "chat", "provider", "OPENAI"))) }
+    var model by remember(activeUserScopeId) {
+        val savedProvider = Provider.parse(vault.getScoped(brainScope, "chat", "provider", "OPENAI"))
+        val savedModel = vault.getScoped(brainScope, "chat", "model", savedProvider.model)
         mutableStateOf(if (savedProvider == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) savedProvider.model else savedModel)
     }
-    var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
-    var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
-    var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
-    var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
-    var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
+    var base by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "base_url", provider.baseUrl)) }
+    var providerKeys by remember(activeUserScopeId) { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it, brainScope) }) }
+    var multiAgent by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "multi_agent", "false").toBoolean()) }
+    var toolEnabled by remember(activeUserScopeId) { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.getScoped(brainScope, "chat", "tool_enabled_" + it, "true").toBoolean() }) }
+    var agentPlanning by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "agent_planning", "false").toBoolean()) }
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
     var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
-    var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
+    var dailyLimit by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
-    var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
-    var agentMemory by remember { mutableStateOf(vault.getSecret("agent_memory")) }
-    var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
-    var customParams by remember { mutableStateOf(vault.get("custom_params", "{}")) }
-    var maxTokens by remember { mutableStateOf(vault.get("max_tokens", "4096")) }
+    var systemPrompt by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "system_prompt", "")) }
+    var agentMemory by remember(activeUserScopeId) { mutableStateOf(vault.getSecretScoped(brainScope, "chat", "agent_memory")) }
+    var customHeaders by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "custom_headers", "{}")) }
+    var customParams by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "custom_params", "{}")) }
+    var maxTokens by remember(activeUserScopeId) { mutableStateOf(vault.getScoped(brainScope, "chat", "max_tokens", "4096")) }
     var draft by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
@@ -286,11 +289,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     }
     var info by remember { mutableStateOf("") }
     var testBusy by remember { mutableStateOf(false) }
-    var conversations by remember { mutableStateOf(store.load()) }
-    var currentId by remember { mutableStateOf(conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()) }
+    var conversations by remember(activeUserScopeId) { mutableStateOf(store.load()) }
+    var currentId by remember(activeUserScopeId) { mutableStateOf(conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()) }
     var renameDialogOpen by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
-    var messages by remember { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
+    var messages by remember(activeUserScopeId) { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
+    LaunchedEffect(activeUserScopeId) {
+        activeJob?.cancel()
+        busy = false
+        conversations = store.load()
+        currentId = conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()
+        messages = conversations.firstOrNull()?.messages?.toList() ?: emptyList()
+        historyQuery = ""
+        error = ""
+        draft = ""
+    }
     var activeJob by remember { mutableStateOf<Job?>(null) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -314,7 +327,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             if (result.isSuccess) {
                 localModelReady = true
                 localModelEnabled = true
-                vault.put("local_model_enabled", "true")
+                vault.putScoped(brainScope, "chat", "local_model_enabled", "true")
                 info = "Offline model imported (${result.getOrThrow() / 1_048_576L} MB)."
             } else info = result.exceptionOrNull()?.message ?: "Model import failed."
             guardianSnapshot = guardian.snapshot()
@@ -346,20 +359,20 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     fun startRequest(requestMessages: List<ChatMessage>) {
         if (busy) return
         val today = java.time.LocalDate.now().toString()
-        if (vault.get("usage_day") != today) {
-            vault.put("usage_day", today)
-            vault.put("usage_count", "0")
+        if (vault.getScoped(brainScope, "chat", "usage_day") != today) {
+            vault.putScoped(brainScope, "chat", "usage_day", today)
+            vault.putScoped(brainScope, "chat", "usage_count", "0")
         }
-        val used = vault.get("usage_count", "0").toIntOrNull() ?: 0
+        val used = vault.getScoped(brainScope, "chat", "usage_count", "0").toIntOrNull() ?: 0
         val limit = dailyLimit.toIntOrNull() ?: 0
         if (limit > 0 && used >= limit) {
             error = "Daily message limit reached. Change it in Settings or try again tomorrow."
             return
         }
-        vault.put("usage_count", (used + 1).toString())
+        vault.putScoped(brainScope, "chat", "usage_count", (used + 1).toString())
         val inputEstimate = requestMessages.sumOf { it.content.length } / 4
-        val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
-        vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
+        val totalEstimate = vault.getScoped(brainScope, "chat", "usage_estimated_tokens", "0").toLongOrNull() ?: 0L
+        vault.putScoped(brainScope, "chat", "usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
         val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
         if (targets.isEmpty()) {
@@ -377,15 +390,15 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         activeJob = scope.launch {
             try {
                 val localKnowledgeContext = if (localKnowledgeEnabled) withContext(Dispatchers.Default) {
-                    brain.retrieveKnowledge(queryForKnowledge, conversations, requestMessages)
+                    brainContext.retrieveKnowledge(queryForKnowledge, requestMessages)
                 } else ""
                 val providerAnswers = mutableListOf<String>()
                 val successfulTargets = mutableListOf<Provider>()
                 for (target in targets) {
                     try {
-                    val storedTargetModel = if (target == provider) model else vault.get("model_${target.name}", target.model)
+                    val storedTargetModel = if (target == provider) model else vault.getScoped(brainScope, "chat", "model_${target.name}", target.model)
                     val targetModel = if (target == Provider.DEEPSEEK && storedTargetModel in setOf("deepseek-chat", "deepseek-reasoner")) target.model else storedTargetModel
-                    val targetBase = if (target == provider) base else vault.get("base_url_${target.name}", target.baseUrl)
+                    val targetBase = if (target == provider) base else vault.getScoped(brainScope, "chat", "base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     val runtime = brain.createAgentRuntime(toolEnabled.filterValues { it }.keys)
                     val toolGuide = if (agentPlanning) {
@@ -1560,11 +1573,11 @@ Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10
                             if (!cloudSignedIn) CenAiTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!cloudSignedIn) {
-                                    Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) cloudPassword = "" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
-                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Signing in…"; scope.launch { try { cloudStatus = cloud.signIn(cloudEmail, cloudPassword).message; cloudSignedIn = true; cloudPassword = ""; val status = cloud.call("status"); betaApplicationStatus = status.optJSONObject("application")?.optString("status") ?: "No application yet" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-in failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Sign in") }
+                                    Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) { activeUserScopeId = identityStore.activeUserScopeId(); cloudPassword = "" } } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
+                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Signing in…"; scope.launch { try { cloudStatus = cloud.signIn(cloudEmail, cloudPassword).message; cloudSignedIn = true; activeUserScopeId = identityStore.activeUserScopeId(); cloudPassword = ""; val status = cloud.call("status"); betaApplicationStatus = status.optJSONObject("application")?.optString("status") ?: "No application yet" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-in failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Sign in") }
                                 } else {
                                     OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloud.call("status").optJSONObject("application")?.let { betaApplicationStatus = it.optString("status") } ?: run { betaApplicationStatus = "No application yet" }; cloudStatus = "Beta status refreshed." } catch (e: Exception) { cloudStatus = e.message ?: "Could not refresh status." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Refresh status") }
-                                    TextButton(onClick = { cloud.signOut(); cloudSignedIn = false; betaApplicationStatus = ""; cloudPassword = ""; cloudStatus = "Signed out of CenAI." }) { Text("Sign out") }
+                                    TextButton(onClick = { cloud.signOut(); cloudSignedIn = false; activeUserScopeId = identityStore.activeUserScopeId(); betaApplicationStatus = ""; cloudPassword = ""; cloudStatus = "Signed out. Your account data remains private and available when you sign back in." }) { Text("Sign out") }
                                 }
                             }
                             if (cloudSignedIn) {
@@ -1801,8 +1814,8 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                     }
                     if (selectedSettingsPage == "Device" && selectedSettingsCategory == "Chat") {
 Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                            Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.Medium)
-                            Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
+                            Text("Today: " + vault.getScoped(brainScope, "chat", "usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.Medium)
+                            Text("Estimated input tokens: " + vault.getScoped(brainScope, "chat", "usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
                             Text("Token count is a local character-based estimate, not provider billing data.", color = palette.muted, fontSize = 10.sp)
                         }
                     }
@@ -1962,7 +1975,7 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                         if (info.isNotBlank()) Text(info, color = palette.muted, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
                         appMonitor.recordEvent("provider_test"); monitorSnapshot = appMonitor.snapshot()
-                        vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
+                        vault.saveApiKey(providerKeys[provider].orEmpty(), provider, brainScope)
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
@@ -2006,25 +2019,25 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         }
             },
             confirmButton = { TextButton(onClick = {
-                Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
+                Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p, brainScope) }
                 onUiStyleChange(uiStyle)
-                vault.put("provider", provider.name)
-                vault.put("model", model); vault.put("model_${provider.name}", model)
-                vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
-                vault.put("multi_agent", multiAgent.toString())
-                vault.put("agent_planning", agentPlanning.toString())
+                vault.putScoped(brainScope, "chat", "provider", provider.name)
+                vault.putScoped(brainScope, "chat", "model", model); vault.putScoped(brainScope, "chat", "model_${provider.name}", model)
+                vault.putScoped(brainScope, "chat", "base_url", base); vault.putScoped(brainScope, "chat", "base_url_${provider.name}", base)
+                vault.putScoped(brainScope, "chat", "multi_agent", multiAgent.toString())
+                vault.putScoped(brainScope, "chat", "agent_planning", agentPlanning.toString())
                 vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("google_cloud_project_id", googleCloudProjectId)
-                vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
+                vault.putScoped(brainScope, "chat", "daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("speech_rate", speechRate.toString())
                 vault.put("speech_pitch", speechPitch.toString())
                 vault.put("speech_language", speechLanguage.ifBlank { "device" })
                 vault.put("speech_input_language", speechInputLanguage.ifBlank { "device" })
-                vault.put("local_knowledge_enabled", localKnowledgeEnabled.toString())
-                vault.put("local_model_enabled", localModelEnabled.toString())
+                vault.putScoped(brainScope, "chat", "local_knowledge_enabled", localKnowledgeEnabled.toString())
+                vault.putScoped(brainScope, "chat", "local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
-                vault.put("max_tokens", maxTokens.ifBlank { "4096" })
+                vault.putScoped(brainScope, "chat", "system_prompt", systemPrompt); vault.putSecretScoped(brainScope, "chat", "agent_memory", agentMemory.trim()); vault.putScoped(brainScope, "chat", "custom_headers", customHeaders); vault.putScoped(brainScope, "chat", "custom_params", customParams)
+                vault.putScoped(brainScope, "chat", "max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
             dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } },
