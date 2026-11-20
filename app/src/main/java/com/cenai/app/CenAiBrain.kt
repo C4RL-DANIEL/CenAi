@@ -113,16 +113,25 @@ object BrainContextComposer {
  */
 class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     private val appContext = context.applicationContext
+    private val secureStore = vault
 
     val chatRepository = ChatRepository(vault)
     val localModelRuntime = LocalModelRuntime(appContext)
-    val localKnowledge = LocalKnowledgeStore()
     val guardian = GuardianMonitor(appContext)
     val deviceActions = DeviceActionManager(appContext)
     val capabilityRegistry = BrainCapabilityRegistry()
 
     private val mutableEvents = MutableSharedFlow<BrainEvent>(extraBufferCapacity = 32)
     val events: SharedFlow<BrainEvent> = mutableEvents.asSharedFlow()
+
+    /** Creates an isolated context boundary for one account and one feature. */
+    fun contextFor(scope: BrainContextScope): ScopedBrainContext =
+        ScopedBrainContext(
+            scope = scope,
+            vault = secureStore,
+            chatStore = ChatStore(appContext, scope),
+            knowledgeStore = LocalKnowledgeStore()
+        )
 
     fun createAgentRuntime(enabledTools: Set<String>): AgentRuntime =
         AgentRuntime(enabledTools = enabledTools)
