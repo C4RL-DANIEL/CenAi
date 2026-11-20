@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         if (uri.scheme != "com.cenai.app" || uri.path != "/oauth2redirect") return
         lifecycleScope.launch {
             val identity = CenAiIdentityStore(applicationContext, vault)
-            val contextScope = BrainContextScope(identity.activeUserScopeId(), "chat")
+            val contextScope = BrainContextScope(identity.activeUserScopeId(), "account")
             val result = GoogleGeminiOAuth(vault, contextScope).completeCallback(uri)
             Toast.makeText(this@MainActivity, if (result.isSuccess) "Google Gemini account connected." else (result.exceptionOrNull()?.message ?: "Google sign-in failed."), Toast.LENGTH_LONG).show()
         }
