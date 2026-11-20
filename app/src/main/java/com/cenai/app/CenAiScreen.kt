@@ -179,7 +179,7 @@ private suspend fun extractScannedPdfText(context: android.content.Context, uri:
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CenAiScreen(vault: SecureKeyStore) {
-    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO").let { if (it == "AURORA" || it == "DEFAULT") "STUDIO" else it }) }
+    var selectedStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA").let { if (it == "DEFAULT") "AURORA" else it }) }
     CenAiTheme(style = selectedStyle) {
         CenAiScreenContent(vault) { style ->
             selectedStyle = style
@@ -664,7 +664,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         modifier = Modifier.height(56.dp),
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("CenAI", color = palette.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                                CenAiGradientText("CenAI", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                                 AssistChip(
                                     onClick = { selectedSettingsPage = "AI & models"; selectedSettingsCategory = "AI & models"; settings = true },
                                     label = { Text(model, maxLines = 1, fontSize = 11.sp) },
@@ -1182,7 +1182,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskPrompt by remember { mutableStateOf("") }
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
-        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "STUDIO").let { if (it == "AURORA" || it == "DEFAULT") "STUDIO" else it }) }
+        var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA").let { if (it == "DEFAULT") "AURORA" else it }) }
         AlertDialog(
             modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -1281,17 +1281,20 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     ExposedDropdownMenuBox(expanded = themeExpanded, onExpandedChange = { themeExpanded = !themeExpanded }) {
                         CenAiTextField(
                             value = when (uiStyle) {
-                                "MATERIAL" -> "Android · Material 3"
-                                "IOS" -> "iOS · Liquid Glass"
-                                "FIGMA" -> "CenAI Studio · Editorial"
-                                else -> "CenAI Default"
+                                "EMBER" -> "Ember · Warm spectrum"
+                                "STUDIO" -> "Studio · Cool editorial"
+                                else -> "Aurora · Living gradient"
                             },
                             onValueChange = {}, readOnly = true, label = { Text("Interface style") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(themeExpanded) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = themeExpanded, onDismissRequest = { themeExpanded = false }) {
-                            listOf("STUDIO" to "CenAI Monochrome · Studio").forEach { (key, label) ->
+                            listOf(
+                                "AURORA" to "Aurora · Living gradient",
+                                "STUDIO" to "Studio · Cool editorial",
+                                "EMBER" to "Ember · Warm spectrum"
+                            ).forEach { (key, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = {
                                     uiStyle = key
                                     themeExpanded = false
@@ -1302,7 +1305,7 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                         }
                     }
                     Text(
-                        "CenAI uses a black-and-white foundation with gray hierarchy. Color is reserved for real status, warnings and errors.",
+                        "Choose a living gradient identity. Motion, typography and surfaces adapt together while your chats and settings stay intact.",
                         color = palette.muted,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
