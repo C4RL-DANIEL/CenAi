@@ -23,7 +23,9 @@ class CenAiLaunchSmokeTest {
             "Updates" -> "About & diagnostics"
             else -> page
         }
-        compose.onNodeWithTag("settings-category-$category").assertIsDisplayed().performClick()
+        val categoryNode = compose.onNodeWithTag("settings-category-$category")
+        categoryNode.performScrollTo()
+        categoryNode.assertIsDisplayed().performClick()
         compose.waitForIdle()
     }
     @Test
