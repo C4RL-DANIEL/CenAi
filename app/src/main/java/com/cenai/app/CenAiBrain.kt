@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filter
 
 enum class BrainCapabilityState { READY, AVAILABLE, NEEDS_SETUP, DISABLED }
 
@@ -23,9 +24,10 @@ data class BrainRuntimeState(
 )
 
 sealed interface BrainEvent {
-    data class RequestStarted(val provider: String, val onDevice: Boolean) : BrainEvent
-    data class RequestCompleted(val provider: String, val onDevice: Boolean) : BrainEvent
-    data class RequestFailed(val provider: String, val onDevice: Boolean, val reason: String) : BrainEvent
+    val scope: BrainContextScope
+    data class RequestStarted(override val scope: BrainContextScope, val provider: String, val onDevice: Boolean) : BrainEvent
+    data class RequestCompleted(override val scope: BrainContextScope, val provider: String, val onDevice: Boolean) : BrainEvent
+    data class RequestFailed(override val scope: BrainContextScope, val provider: String, val onDevice: Boolean, val reason: String) : BrainEvent
 }
 
 /** Single source of truth for which AI capabilities are ready on this installation. */
@@ -114,6 +116,7 @@ object BrainContextComposer {
 class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     private val appContext = context.applicationContext
     private val secureStore = vault
+    private val identityStore = CenAiIdentityStore(appContext, vault)
 
     val chatRepository = ChatRepository(vault)
     val localModelRuntime = LocalModelRuntime(appContext)
@@ -122,10 +125,18 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
     val capabilityRegistry = BrainCapabilityRegistry()
 
     private val mutableEvents = MutableSharedFlow<BrainEvent>(extraBufferCapacity = 32)
-    val events: SharedFlow<BrainEvent> = mutableEvents.asSharedFlow()
+    fun eventsFor(scope: BrainContextScope): kotlinx.coroutines.flow.Flow<BrainEvent> {
+        require(scope.userId == identityStore.activeUserScopeId()) {
+            "Cannot observe events belonging to another CenAI account."
+        }
+        return mutableEvents.asSharedFlow().filter { it.scope == scope }
+    }
 
     /** Creates an isolated context boundary for one account and one feature. */
     fun contextFor(scope: BrainContextScope): ScopedBrainContext {
+        require(scope.userId == identityStore.activeUserScopeId()) {
+            "Cannot open another user's CenAI context."
+        }
         if (scope.userId.startsWith("local:") && scope.featureId == "chat") {
             secureStore.migrateLegacyLocalContext(scope)
         }
@@ -159,19 +170,23 @@ class CenAiBrain private constructor(context: Context, vault: SecureKeyStore) {
         contextScope: BrainContextScope,
         onDelta: (String) -> Unit
     ): String {
-        mutableEvents.tryEmit(BrainEvent.RequestStarted(provider.name, useOnDeviceModel))
+        require(contextScope.userId == identityStore.activeUserScopeId()) {
+            "Cannot run a model request in another user's context."
+        }
+        mutableEvents.tryEmit(BrainEvent.RequestStarted(contextScope, provider.name, useOnDeviceModel))
         return try {
             val answer = if (useOnDeviceModel) {
                 localModelRuntime.stream(messages, onDelta)
             } else {
                 chatRepository.stream(provider, model, baseUrl, messages, onDelta, contextScope)
             }
-            mutableEvents.tryEmit(BrainEvent.RequestCompleted(provider.name, useOnDeviceModel))
+            mutableEvents.tryEmit(BrainEvent.RequestCompleted(contextScope, provider.name, useOnDeviceModel))
             answer
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             mutableEvents.tryEmit(
                 BrainEvent.RequestFailed(
+                    contextScope,
                     provider.name,
                     useOnDeviceModel,
                     error.message ?: error.javaClass.simpleName
