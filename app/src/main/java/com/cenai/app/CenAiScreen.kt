@@ -1233,7 +1233,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     },
                                     color = animateColorAsState(if (selectedSettingsCategory == category) palette.raised else Color.Transparent, animationSpec = tween(CenAiMotion.controlMs), label = "settings-selection").value,
                                     shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth().testTag("settings-category-$category")
                                 ) {
                                     Text(
                                         category,
@@ -1263,7 +1263,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             selectedSettingsCategory = category
                                             selectedSettingsPage = target
                                         },
-                                        label = { Text(category, maxLines = 1) }
+                                        label = { Text(category, maxLines = 1) },
+                                        modifier = Modifier.testTag("settings-category-$category")
                                     )
                                 }
                             }
