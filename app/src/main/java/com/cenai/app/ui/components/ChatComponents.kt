@@ -8,11 +8,14 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -49,9 +53,20 @@ internal fun HomeActionCard(
     onClick: () -> Unit
 ) {
     val palette = LocalCenAiPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.975f else 1f,
+        animationSpec = tween(CenAiMotion.tapMs),
+        label = "home-action-press"
+    )
     Surface(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 72.dp),
+        interactionSource = interaction,
+        modifier = modifier.heightIn(min = 72.dp).graphicsLayer {
+            scaleX = pressScale
+            scaleY = pressScale
+        },
         color = Color.Transparent,
         shape = RoundedCornerShape(10.dp)
     ) {
@@ -73,8 +88,20 @@ internal fun HomeActionCard(
 @Composable
 internal fun SuggestionChip(label: String, onClick: () -> Unit) {
     val palette = LocalCenAiPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = tween(CenAiMotion.tapMs),
+        label = "suggestion-chip-press"
+    )
     Surface(
         onClick = onClick,
+        interactionSource = interaction,
+        modifier = Modifier.graphicsLayer {
+            scaleX = pressScale
+            scaleY = pressScale
+        },
         color = palette.surface,
         shape = RoundedCornerShape(50),
         border = BorderStroke(1.dp, palette.border)
