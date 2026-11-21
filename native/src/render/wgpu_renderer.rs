@@ -256,6 +256,7 @@ pub struct WgpuRenderer {
     automation_scheduler: Option<AutomationScheduler>,
     last_automation_poll: std::time::Instant,
     voice_pipeline: Option<VoicePipeline>,
+    voice_synthesis_task: Option<tokio::task::JoinHandle<()>>,
     #[cfg(target_os = "android")]
     audio_capture: Option<AndroidAudioCapture>,
     #[cfg(target_os = "android")]
@@ -468,6 +469,7 @@ impl WgpuRenderer {
             automation_scheduler,
             last_automation_poll: std::time::Instant::now(),
             voice_pipeline: None,
+            voice_synthesis_task: None,
             #[cfg(target_os = "android")]
             audio_capture: None,
             #[cfg(target_os = "android")]
@@ -591,6 +593,7 @@ impl WgpuRenderer {
         if self.app_state.pending_speech_stop {
             self.app_state.pending_speech_stop = false;
             self.app_state.speech_cancelled = true;
+            if let Some(task) = self.voice_synthesis_task.take() { task.abort(); }
             #[cfg(target_os = "android")]
             if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
             self.app_state.speech_status = "Speech playback stopped.".into();
@@ -598,6 +601,7 @@ impl WgpuRenderer {
         if let Some(text) = self.app_state.pending_speech_text.take() {
             self.app_state.speech_cancelled = false;
             if let Some(api) = self.api.clone() {
+                if let Some(task) = self.voice_synthesis_task.take() { task.abort(); }
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
                 let language = self.app_state.voice_language.clone();
@@ -606,7 +610,7 @@ impl WgpuRenderer {
                     let result = api.synthesize_voice_cloud(&text, &language, "cenai-en-v1").await;
                     let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
                 });
-                self.track_task(task);
+                self.voice_synthesis_task = Some(task);
             } else {
                 self.app_state.speech_status = "Sign in to your CenAI account to use cloud voice.".into();
             }
@@ -898,6 +902,7 @@ impl WgpuRenderer {
 
     fn reset_user_scoped_state(&mut self) {
         for task in self.background_tasks.drain(..) { task.abort(); }
+        if let Some(task) = self.voice_synthesis_task.take() { task.abort(); }
         #[cfg(target_os = "android")]
         if let Some(capture) = self.audio_capture.as_mut() { capture.stop(); }
         if let Some(mut pipeline) = self.voice_pipeline.take() { let _ = pipeline.stop(); }
@@ -2000,6 +2005,7 @@ impl WgpuRenderer {
                     }
                 }
                 ChatEvent::SpeechSynthesized(_, result) => {
+                    self.voice_synthesis_task = None;
                     match result {
                         Ok(wav) if self.app_state.speech_cancelled => {
                             let _ = wav;
