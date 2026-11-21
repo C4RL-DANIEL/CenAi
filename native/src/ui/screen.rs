@@ -431,6 +431,9 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(text(format!("CPU: {}%", snapshot.cpu_usage_percent.map_or_else(|| "sampling".into(), |value| value.to_string())), 10.0, accent()));
                 ui.label(text(format!("RAM: {}% · {:.0}/{:.0} MB", ram_percent, ram_used as f64 / 1024.0, snapshot.ram_total_kb as f64 / 1024.0), 10.0, accent()));
                 ui.label(text(format!("Storage free: {:.1} GB", snapshot.storage_available_bytes as f64 / 1_073_741_824.0), 10.0, accent()));
+                if let Some(battery) = snapshot.battery_percent {
+                    ui.label(text(format!("Battery: {battery}% · {}", snapshot.battery_status.as_deref().unwrap_or("status unavailable")), 10.0, accent()));
+                }
             });
             ui.label(text(format!("Network totals · RX {:.1} MB · TX {:.1} MB", snapshot.network_rx_bytes as f64 / 1_048_576.0, snapshot.network_tx_bytes as f64 / 1_048_576.0), 10.0, egui::Color32::from_rgb(163, 174, 203)));
             ui.label(text("System metrics are sampled locally and are never uploaded as Guardian telemetry.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
