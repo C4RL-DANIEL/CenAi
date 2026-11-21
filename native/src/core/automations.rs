@@ -78,6 +78,43 @@ impl AutomationScheduler {
         store.save_automations(&automations)
     }
 
+    pub fn upsert_and_persist(&mut self, automation: Automation, store: &WorkspaceStore) -> Result<(), String> {
+        let key = Self::key(&automation.owner_scope, &automation.id);
+        let previous = self.automations.get(&key).cloned();
+        self.upsert(automation).map_err(|error| error.to_owned())?;
+        if let Err(error) = self.persist_to_workspace(store) {
+            match previous {
+                Some(previous) => { self.automations.insert(key, previous); }
+                None => { self.automations.remove(&key); }
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn set_enabled_and_persist(&mut self, owner_scope: &str, automation_id: &str, enabled: bool, store: &WorkspaceStore) -> Result<bool, String> {
+        let key = Self::key(owner_scope, automation_id);
+        let Some(previous) = self.automations.get(&key).cloned() else { return Ok(false); };
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        self.automations.get_mut(&key).expect("automation key checked above").enabled = enabled;
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    pub fn remove_and_persist(&mut self, owner_scope: &str, automation_id: &str, store: &WorkspaceStore) -> Result<bool, String> {
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        let key = Self::key(owner_scope, automation_id);
+        let Some(previous) = self.automations.remove(&key) else { return Ok(false); };
+        if let Err(error) = store.delete_automation(automation_id) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
     pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
         let previous = self.automations.clone();
         let due = self.poll_due(now);
