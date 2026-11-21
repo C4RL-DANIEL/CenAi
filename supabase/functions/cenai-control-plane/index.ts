@@ -118,6 +118,7 @@ Deno.serve(async (req: Request) => {
       const identities = Array.isArray(user.identities) ? user.identities : [];
       const isDiscord = user.app_metadata?.provider === "discord" || providers.includes("discord") || identities.some((identity: any) => identity?.provider === "discord");
       if (!isDiscord) return fail(403, "Continue with Discord to redeem this invitation");
+      if (!user.email) return fail(403, "Your Discord account must provide an email address to use CenAI sign-in.");
       const tokenHash = await sha256Hex(inviteToken);
       const { data: redeemed, error: redeemError } = await adminDb.rpc("cenai_redeem_registration_invite", { p_token_hash: tokenHash, p_user_id: user.id });
       if (redeemError) throw redeemError;
