@@ -413,6 +413,29 @@ mod tests {
     }
 
     #[test]
+    fn automation_schedules_persist_only_in_their_owner_workspace() {
+        let root = temp_root();
+        let owner = "550e8400-e29b-41d4-a716-446655440030";
+        let other = "550e8400-e29b-41d4-a716-446655440031";
+        let alice = WorkspaceStore::new(&root, owner).unwrap();
+        let bob = WorkspaceStore::new(&root, other).unwrap();
+        let automation = Automation {
+            id: "daily-report".into(), owner_scope: owner.into(), title: "Daily report".into(),
+            schedule: "0 9 * * *".into(), enabled: true, requires_approval: true,
+            last_scheduled_at: Some(1_800_000_000),
+        };
+        alice.save_automation(automation.clone()).unwrap();
+        assert_eq!(alice.automations().unwrap(), vec![automation]);
+        assert!(bob.automations().unwrap().is_empty());
+        let mut foreign = alice.automations().unwrap().pop().unwrap();
+        foreign.owner_scope = other.into();
+        assert!(alice.save_automation(foreign).is_err());
+        assert!(alice.delete_automation("daily-report").unwrap());
+        assert!(alice.automations().unwrap().is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn conversation_history_round_trips_per_user() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440005").unwrap();
@@ -426,7 +449,6 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
     #[test]
     fn deleting_artifact_removes_metadata_and_prevents_future_reads() {
         let root = temp_root();
@@ -443,6 +465,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
     fn artifact_paths_are_safe_and_content_is_integrity_tagged() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440006").unwrap();
