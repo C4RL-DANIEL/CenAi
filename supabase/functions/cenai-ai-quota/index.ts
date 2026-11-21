@@ -12,6 +12,17 @@ const headers = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers });
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await adminDb.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers });
@@ -22,6 +33,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await authDb.auth.getUser(token);
     if (authError || !user || user.is_anonymous) return reply(401, { error: "Valid signed-in account required" });
     const body = await req.json().catch(() => ({}));
+    if (!await registrationAllowed(user)) return reply(403, { error: "Complete Discord invitation registration before using CenAI.", code: "REGISTRATION_REQUIRED" });
     const action = String(body.action || "");
     if (action === "authorize") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "ai.cloud.enabled").maybeSingle();
