@@ -1175,6 +1175,40 @@ impl WgpuRenderer {
                 self.app_state.personal_memory_status = "Sign in before deleting personal memories.".into();
             }
         }
+        if let Some(attachment_id) = self.app_state.pending_attachment_delete.take() {
+            if let Some(store) = self.attachment_store.as_ref() {
+                match store.delete(&attachment_id) {
+                    Ok(true) => {
+                        self.app_state.attachments.retain(|item| item.id != attachment_id);
+                        self.app_state.attachment_status = "Attachment removed from this account's private storage.".into();
+                    }
+                    Ok(false) => self.app_state.attachment_status = "Attachment was already removed.".into(),
+                    Err(error) => self.app_state.attachment_status = format!("Could not remove attachment: {error}"),
+                }
+            }
+        }
+        if let Some((attachment_id, prompt)) = self.app_state.pending_attachment_analysis.take() {
+            let metadata = self.app_state.attachments.iter().find(|item| item.id == attachment_id).cloned();
+            match (self.api.clone(), self.attachment_store.clone(), metadata) {
+                (Some(api), Some(store), Some(metadata)) => {
+                    let sender = self.response_tx.clone();
+                    let generation = self.account_generation;
+                    let task = self.runtime.spawn(async move {
+                        let result = async {
+                            let load_store = store.clone();
+                            let load_metadata = metadata.clone();
+                            let bytes = tokio::task::spawn_blocking(move || load_store.load(&load_metadata))
+                                .await.map_err(|error| format!("Attachment read task failed: {error}"))??;
+                            api.analyze_attachment_gemini(&prompt, &metadata, &bytes).await
+                        }.await;
+                        let _ = sender.send(ChatEvent::AttachmentAnalyzed(generation, attachment_id, result));
+                    });
+                    self.track_task(task);
+                    self.app_state.attachment_status = "Analyzing attachment with Gemini…".into();
+                }
+                _ => self.app_state.attachment_status = "Sign in and add a Gemini API key before analyzing attachments.".into(),
+            }
+        }
         if let Some((category, content)) = self.app_state.pending_memory_save.take() {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
