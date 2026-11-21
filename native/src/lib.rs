@@ -1,5 +1,9 @@
 //! CenAI's Rust-native application runtime.
+
+pub mod core;
+pub mod ecosystem;
 pub mod render;
+pub mod ui;
 
 /// Stable runtime identity used by diagnostics and capability registration.
 pub const RUNTIME_ID: &str = "cenai.native";
