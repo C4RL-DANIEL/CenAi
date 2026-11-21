@@ -368,6 +368,7 @@ impl WgpuRenderer {
         self.app_state.provider_key_status.clear();
         self.app_state.guardian_consent = false;
         self.app_state.personal_memory_enabled = false;
+        self.app_state.include_memory_for_request = false;
         self.app_state.personal_memory_status.clear();
         self.app_state.pending_memory_enabled = None;
         self.app_state.memory_content_draft.clear();
