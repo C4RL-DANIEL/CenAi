@@ -194,7 +194,11 @@ impl AutomationScheduler {
 
     pub fn snapshot(&self, owner_scope: &str) -> Vec<Automation> {
         if !valid_user_uuid(owner_scope) { return Vec::new(); }
-        self.automations.values().filter(|automation| automation.owner_scope == owner_scope).cloned().collect()
+        let mut items = self.automations.values()
+            .filter(|automation| automation.owner_scope == owner_scope)
+            .cloned().collect::<Vec<_>>();
+        items.sort_by(|left, right| left.id.cmp(&right.id));
+        items
     }
 }
 
