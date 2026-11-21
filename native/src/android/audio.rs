@@ -17,9 +17,9 @@ const REQUEST_CODE: i32 = 7_331;
 /// reference for this attached thread without deleting the AndroidApp-owned global.
 fn activity_local<'local>(env: &mut jni::JNIEnv<'local>, app: &AndroidApp) -> jni::errors::Result<JObject<'local>> {
     let global = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
-    let local = env.new_local_ref(&global)?;
+    let local = env.new_local_ref(&global);
     std::mem::forget(global);
-    Ok(local)
+    local
 }
 
 pub struct AndroidAudioCapture {
