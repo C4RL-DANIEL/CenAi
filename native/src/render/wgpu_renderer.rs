@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -45,6 +45,7 @@ pub struct WgpuRenderer {
     api: Option<CenAiApi>,
     runtime: Handle,
     last_dispatched_message_id: u64,
+    session_id: String,
     response_tx: mpsc::Sender<ChatEvent>,
     response_rx: mpsc::Receiver<ChatEvent>,
     active_streams: HashMap<u64, u64>,
@@ -171,6 +172,11 @@ impl WgpuRenderer {
             app_state.projects = store.projects(false).unwrap_or_default();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
+        let session_id = format!(
+            "session-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
+        );
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
         app_state.guardian_consent = api.as_ref().is_some_and(CenAiApi::guardian_consent);
         let mut guardian = GuardianMonitor::default();
@@ -192,6 +198,7 @@ impl WgpuRenderer {
             api,
             runtime,
             last_dispatched_message_id: 0,
+            session_id,
             response_tx,
             response_rx,
             active_streams: HashMap::new(),
@@ -225,10 +232,25 @@ impl WgpuRenderer {
                 .filter(|message| message.role != MessageRole::System)
                 .map(|message| format!("{}: {}", if message.role == MessageRole::User { "User" } else { "Assistant" }, message.body))
                 .collect::<Vec<_>>().join("\n");
+            let user_id = api.account_id();
+            let session_id = self.session_id.clone();
             let brain = CentralBrain::new(api);
             let sender = self.response_tx.clone();
             self.runtime.spawn(async move {
-                let result = brain.plan(&latest_goal, &context).await;
+                let result = match user_id {
+                    Ok(user_id) => {
+                        let request = ContextRequest::new(user_id.clone(), "conversation", session_id.clone());
+                        let records = [ContextRecord {
+                            owner_user_id: user_id,
+                            feature_id: "conversation".into(),
+                            session_id: Some(session_id),
+                            kind: ContextKind::SessionState,
+                            content: context,
+                        }];
+                        brain.plan(&request, &latest_goal, &records).await
+                    }
+                    Err(error) => Err(error),
+                };
                 let _ = sender.send(ChatEvent::PlanFinished(message_id, result));
             });
             return;
