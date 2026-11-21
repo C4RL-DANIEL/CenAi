@@ -130,6 +130,18 @@ pub struct PersonalMemoryItem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EcosystemAppItem {
+    pub app_id: String,
+    pub publisher_id: String,
+    pub version: String,
+    pub description: String,
+    pub capabilities: Vec<String>,
+    pub requested_scopes: Vec<String>,
+    pub granted_scopes: Vec<String>,
+    pub revoked: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
@@ -201,6 +213,20 @@ pub struct AppState {
     pub mcp_call_arguments_draft: String,
     pub pending_mcp_call: Option<(String, String, String)>,
     pub mcp_call_result: String,
+    pub ecosystem_apps: Vec<EcosystemAppItem>,
+    pub ecosystem_status: String,
+    pub ecosystem_app_id_draft: String,
+    pub ecosystem_publisher_id_draft: String,
+    pub ecosystem_version_draft: String,
+    pub ecosystem_description_draft: String,
+    pub ecosystem_capabilities_draft: String,
+    pub ecosystem_scopes_draft: String,
+    pub ecosystem_selected_app: String,
+    pub ecosystem_grant_scopes_draft: String,
+    pub pending_ecosystem_refresh: bool,
+    pub pending_ecosystem_register: Option<serde_json::Value>,
+    pub pending_ecosystem_grant: Option<(String, Vec<String>)>,
+    pub pending_ecosystem_revoke: Option<String>,
 }
 
 impl Default for AppState {
@@ -276,6 +302,20 @@ impl Default for AppState {
             mcp_call_arguments_draft: "{}".into(),
             pending_mcp_call: None,
             mcp_call_result: String::new(),
+            ecosystem_apps: Vec::new(),
+            ecosystem_status: String::new(),
+            ecosystem_app_id_draft: String::new(),
+            ecosystem_publisher_id_draft: String::new(),
+            ecosystem_version_draft: "1.0.0".into(),
+            ecosystem_description_draft: String::new(),
+            ecosystem_capabilities_draft: String::new(),
+            ecosystem_scopes_draft: String::new(),
+            ecosystem_selected_app: String::new(),
+            ecosystem_grant_scopes_draft: String::new(),
+            pending_ecosystem_refresh: false,
+            pending_ecosystem_register: None,
+            pending_ecosystem_grant: None,
+            pending_ecosystem_revoke: None,
                     }
     }
 }
