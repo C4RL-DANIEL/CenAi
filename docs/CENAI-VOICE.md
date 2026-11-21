@@ -1,108 +1,84 @@
 # CenAI Voice
 
-CenAI Voice is CenAI's branded speech product built on the open-source Qwen3-TTS model family.
+CenAI Voice is CenAI's branded, cloud-hosted speech product. The Android app contains the product experience and authenticated API client; the Qwen3-TTS model, tokenizer, and fixed voice reference remain on CenAI's GPU inference host.
 
 ## Product identity and attribution
 
-- Product name: **CenAI Voice**
-- Upstream model family: Qwen3-TTS
-- Upstream source: https://github.com/QwenLM/Qwen3-TTS
-- Upstream model and tokenizer licence: Apache-2.0. The GGUF conversion/tooling runtime is MIT-licensed. Retain required copyright, licence and NOTICE material when redistributing upstream code or model artifacts.
-- CenAI owns its app experience, voice profile names, pronunciation policy, local model management and integration code. CenAI does not claim authorship of Qwen's model architecture or pretrained weights.
-- Verify the licence and terms of each exact checkpoint and tokenizer artifact before bundling or distributing it. Do not remove upstream attribution.
+- Product: **CenAI Voice**
+- First profile: **CenAI Original · English · en-US** (`cenai-en-v1`)
+- Model foundation: `Qwen/Qwen3-TTS-12Hz-1.7B-Base`
+- Upstream: https://github.com/QwenLM/Qwen3-TTS
+- Model licence: Apache-2.0. Keep the required upstream notices. CenAI owns its app integration, service, profile names, pronunciation policy and evaluation process; CenAI does not claim authorship of Qwen's architecture or pretrained weights.
 
-## Model choice
+The fixed CenAI voice is created from a licensed voice-actor reference recording and its exact transcript. The reference is stored only on the private inference host. It is not bundled in the APK or sent by each Android user. A trained CenAI fine-tuned checkpoint is a later milestone; the current design uses Qwen Base voice-cloning conditioning, not a newly trained model.
 
-Primary fine-tuning source:
+## Cloud architecture
 
-`Qwen/Qwen3-TTS-12Hz-0.6B-Base`
-
-Tokenizer:
-
-`Qwen/Qwen3-TTS-Tokenizer-12Hz`
-
-The 0.6B Base checkpoint is the selected starting point because Qwen documents Base models as supporting voice cloning and single-speaker fine-tuning. The initial CenAI target profile is `cenai_voice_en_v1` (English, `en-US`). The 0.6B CustomVoice checkpoint remains a baseline for quality comparisons; it is not the final CenAI voice identity. The 1.7B VoiceDesign checkpoint is an optional research/reference model and is not the Android default.
-
-Qwen documents support for ten languages: Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish and Italian. English is the first quality gate. Language availability is not a guarantee of equal pronunciation quality; each language must pass its own test set before being labelled production-ready. Filipino/Tagalog is not in the documented ten-language list and must not be advertised as natively supported by this model.
-
-## Offline and Android requirements
-
-The product requirement is offline-only synthesis after model installation:
-
-- no Google TTS, Android system TTS, Gemini TTS, DashScope API, or cloud fallback;
-- no audio or text leaves the device during local synthesis;
-- model packs are downloaded explicitly, verified, stored in app-private storage, and usable after disconnecting the network;
-- users can remove a model pack and see its disk usage;
-- voice playback is cancelled on user request, app lifecycle shutdown, or account/session invalidation.
-
-**Runtime implementation:** CenAI now includes an Android NDK build for the MIT-licensed `qwen3-tts.cpp` GGML runtime and a small CenAI C ABI bridge. Rust loads `libcenai_qwen_bridge.so` and invokes synthesis locally. The APK packages the native runtime; model weights are not bundled.
-
-The explicit model installer downloads two pinned Q8_0 GGUF artifacts from [Serveurperso/Qwen3-TTS-GGUF](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF) at revision `b7ee2e8c7459c3bea99da23e3d178125a7d1713c`: the 0.6B Base talker (about 993 MB) and the shared 12Hz tokenizer (about 291 MB). Both files are SHA-256 checked before installation. The download is a one-time, user-initiated step; once installed, synthesis uses the local model only. No Google TTS, Android system TTS, Gemini TTS, DashScope API, or cloud fallback is permitted.
-
-**Validation status:** source integration is in place, but the Android NDK build, APK packaging, actual model load and real-device synthesis still need successful CI/device verification. Do not claim offline playback is release-ready until those checks pass. Benchmark cold start, peak RAM, real-time factor, audio quality, thermal load and sustained playback on the REDMI Pad 2 Pro class of hardware.
-
-## Voice identity and fine-tuning
-
-The intended CenAI voice is an original, consistent English speaker profile, not a copy of a celebrity or another identifiable person. Use recordings from a voice actor who has explicitly consented to model training and commercial distribution. Keep dataset provenance, consent, transcript and licence records.
-
-Qwen's current fine-tuning guide documents single-speaker fine-tuning for the 12Hz Base family. Its JSONL training records contain `audio`, `text`, and `ref_audio`; the preparation step extracts tokenizer audio codes, then `sft_12hz.py` fine-tunes the selected Base checkpoint.
-
-Example starting workflow (run on a compatible cloud GPU; standard GitHub-hosted runners are not assumed to have GPUs):
-
-```bash
-git clone https://github.com/QwenLM/Qwen3-TTS.git
-cd Qwen3-TTS
-pip install -U qwen-tts
-cd finetuning
-
-python prepare_data.py \
-  --device cuda:0 \
-  --tokenizer_model_path Qwen/Qwen3-TTS-Tokenizer-12Hz \
-  --input_jsonl train_raw.jsonl \
-  --output_jsonl train_with_codes.jsonl
-
-python sft_12hz.py \
-  --init_model_path Qwen/Qwen3-TTS-12Hz-0.6B-Base \
-  --output_model_path output/cenai-voice-en-v1 \
-  --train_jsonl train_with_codes.jsonl \
-  --batch_size 2 \
-  --lr 2e-5 \
-  --num_epochs 3 \
-  --speaker_name cenai_voice_en_v1
+```text
+CenAI Android (Rust)
+  └─ HTTPS + user's Supabase access token
+      └─ CenAI Cloudflare Worker /api/voice/speech
+          ├─ validates the Supabase user session
+          ├─ derives the immutable user UUID
+          └─ authenticated server-to-server request
+              └─ private GPU host /v1/audio/speech
+                  ├─ Qwen3-TTS 1.7B Base + tokenizer
+                  ├─ private CenAI voice reference prompt
+                  └─ PCM16 WAV response → Android playback
 ```
 
-This is a reproducible starting recipe, not a guaranteed optimal training configuration. Tune batch size and learning rate for the actual GPU and dataset. Keep validation/test utterances separate, inspect checkpoints, and never automatically promote a checkpoint just because training completed.
+- No Qwen model weights, voice recordings, or backend service secrets are shipped in the Android app.
+- No Google TTS, Android system TTS, Gemini TTS, DashScope, or silent cloud-provider fallback is used.
+- The user must be signed in. The Worker verifies the JWT with Supabase Auth and sends the resulting user UUID to the private inference host; the app cannot choose or spoof this identity.
+- The Worker-to-GPU credential is a server secret and must never be placed in the app, website JavaScript, or repository.
+- Speech text leaves the device for cloud synthesis. The Worker and inference host must not log speech text or store generated audio. This cloud processing must be clearly disclosed to users.
+- Add Cloudflare rate limiting and per-account usage metering before public release.
 
-## English-first quality gate
+## Languages and quality
 
-Before release, evaluate:
+The Qwen model catalogue documents ten languages: English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish and Italian. English is the first release-quality target. Model language support is not proof of equal quality. Each additional language needs native-speaker pronunciation, intelligibility and naturalness tests. Filipino/Tagalog is not in the documented language list and must not be marketed as natively supported.
 
-1. Word error rate using independent ASR only as a measurement tool (not as a synthesis dependency).
-2. Human intelligibility and naturalness ratings from native English listeners.
+English quality gates:
+1. WER measured with independent ASR as an evaluation tool only.
+2. Native-listener intelligibility and naturalness ratings.
 3. Pronunciation of names, abbreviations, numbers, dates, currencies, units, URLs and technical terms.
-4. Sentence stress, punctuation pauses, long-form consistency and expressive control.
-5. Voice identity consistency across short and long passages.
-6. Cold-start latency, real-time factor, peak memory, thermal behaviour and interrupted playback on supported Android devices.
+4. Stress, punctuation pauses, long-form stability and voice identity consistency.
+5. First-audio latency, total generation time, concurrency and GPU memory.
+6. Network interruption, retry, account-switch and playback-cancellation tests.
 
-Keep the reference text set and scoring scripts versioned. Publish per-language quality status rather than one blanket "multilingual accurate" claim.
+## GPU service deployment
 
-## Rust integration contract
+The FastAPI implementation lives in `voice-server/`. It loads the Qwen model once at startup and caches a voice-clone prompt. A CUDA-capable Linux host and a persistent Hugging Face cache are required.
 
-`native/src/core/qwen_voice.rs` owns stable model metadata, the supported-language catalogue, the voice profile and fail-closed runtime status. The eventual inference backend must implement this contract without changing chat/provider authorization. The model pack must be independently versioned from the APK.
+Required server environment:
+- `CENAI_TTS_API_KEY`: random secret of at least 32 characters.
+- `CENAI_VOICE_REFERENCE_AUDIO`: private path to the licensed WAV reference recording.
+- `CENAI_VOICE_REFERENCE_TEXT`: exact transcript.
+- Optional `CENAI_VOICE_MODEL_ID` (defaults to the 1.7B Base model), `CENAI_TTS_ATTENTION` (defaults to SDPA), and `CENAI_TTS_MAX_CONCURRENCY` (defaults to 1).
 
-## Current implementation status
+Build with `docker build -t cenai-voice:latest voice-server`. Run behind HTTPS ingress and mount the recording read-only. See [voice-server/README.md](../voice-server/README.md) for the deployment command and API contract.
 
-- [x] CenAI Voice product identity and Qwen upstream attribution policy.
-- [x] Select Qwen3-TTS 12Hz 0.6B Base as the fine-tuning source.
-- [x] English-first profile and ten-language metadata.
-- [x] Offline-only/no-fallback contract and validation tests.
-- [x] Fine-tuning workflow documentation.
-- [ ] Acquire/record licensed English voice dataset and signed consent.
-- [ ] Train and evaluate the CenAI English voice checkpoint.
-- [x] Add Android NDK build and CenAI C ABI bridge for the native GGML inference runtime.
-- [x] Add explicit Q8_0 model-pack download with pinned revision and SHA-256 checks.
-- [x] Connect Rust read-aloud to local inference and Android PCM playback.
-- [ ] Pass Rust/Android CI, model-load and synthesis tests.
-- [ ] Add voice-profile recording and consent workflow.
-- [ ] Fine-tune the English Base checkpoint on licensed voice-actor recordings and convert the result to GGUF.
-- [ ] Benchmark offline quality, speed, memory and thermal performance on physical Android hardware.
+Required Cloudflare Worker secrets:
+- `CENAI_TTS_BACKEND_URL`: private GPU service HTTPS origin.
+- `CENAI_TTS_BACKEND_TOKEN`: the same server-only random value as `CENAI_TTS_API_KEY`.
+
+The Worker route intentionally returns HTTP 503 until these secrets are configured. Do not configure a public third-party TTS endpoint as a shortcut.
+
+## Fine-tuning path
+
+After the voice-actor dataset and written consent are secured, use Qwen's documented 12Hz Base single-speaker fine-tuning pipeline on a compatible cloud GPU. Keep train, validation and test recordings separate; preserve dataset provenance and licence records; compare checkpoints using the English quality gates above. Do not automatically promote a checkpoint when training completes. The deployed service should select the validated checkpoint by server-side configuration, independently of the Android APK.
+
+## Implementation status
+
+- [x] English-first CenAI Voice profile and ten-language metadata.
+- [x] Rust client for authenticated cloud WAV synthesis with account-switch checks and a dedicated 240-second timeout.
+- [x] Cloudflare Worker gateway with Supabase JWT validation, immutable user identity forwarding, payload limits and private backend token.
+- [x] GPU FastAPI inference service with model caching, fixed voice-clone prompt, request validation and bounded concurrency.
+- [x] Android read-aloud wired to the cloud gateway; no local model download or Google TTS synthesis path.
+- [x] Removed the Qwen C++/GGML build from the APK workflow to keep the client small.
+- [ ] Provide and approve a licensed English voice-actor reference recording and transcript.
+- [ ] Provision the CUDA GPU host and persistent model cache.
+- [ ] Configure Cloudflare Worker secrets and rate limits.
+- [ ] Run end-to-end inference and audio playback tests on Android.
+- [ ] Fine-tune and evaluate a dedicated CenAI English checkpoint.
+- [ ] Evaluate and enable additional languages individually.
