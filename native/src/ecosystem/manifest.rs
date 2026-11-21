@@ -1,6 +1,15 @@
 //! Versioned first-party app identity and per-user capability authorization contracts.
 use std::collections::{HashMap, HashSet};
 
+fn valid_user_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppManifest {
     pub app_id: String,
@@ -100,7 +109,8 @@ impl CapabilityRegistry {
         grant: &UserCapabilityGrant,
         capability: &str,
     ) -> bool {
-        if user_scope.trim().is_empty()
+        if !valid_user_uuid(user_scope)
+            || !valid_user_uuid(&grant.user_scope)
             || grant.revoked
             || grant.user_scope != user_scope
             || !grant.granted_scopes.contains(capability)
@@ -135,7 +145,7 @@ mod tests {
 
     fn grant() -> UserCapabilityGrant {
         UserCapabilityGrant {
-            user_scope: "user-a".into(),
+            user_scope: "550e8400-e29b-41d4-a716-446655440011".into(),
             app_id: "com.cenai.notes".into(),
             granted_scopes: HashSet::from(["notes.read".into()]),
             revoked: false,
@@ -173,7 +183,7 @@ mod tests {
         let mut app = manifest();
         app.requested_scopes.retain(|scope| scope != "notes.read");
         registry.register(app, 1).unwrap();
-        assert!(!registry.authorize("user-a", &grant(), "notes.read"));
+        assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440011", &grant(), "notes.read"));
     }
 
     #[test]
