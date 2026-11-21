@@ -4,11 +4,11 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::{VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 #[cfg(target_os = "android")]
-use crate::core::voice::AudioChunk;
+use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
