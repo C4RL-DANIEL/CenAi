@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypted_workspace_backup_restores_projects_tasks_automations_and_artifacts() {
+    fn encrypted_workspace_backup_restores_projects_tasks_automations_conversations_and_artifacts() {
         use crate::core::agents::{AgentRole, StepStatus, TaskStep};
         let source_root = temp_root();
         let restored_root = temp_root();
@@ -697,6 +697,10 @@ mod tests {
             created_at_unix_ms: 1, updated_at_unix_ms: 2, archived: false, artifacts: Vec::new(),
         }).unwrap();
         source.save_artifact("backup-project", "backup-artifact", "note.txt", "text/plain", b"secret workspace file").unwrap();
+        source.save_conversation("primary", &[
+            crate::ui::model::Message { id: 1, role: crate::ui::model::MessageRole::User, body: "Remember this private conversation".into(), streaming: false },
+            crate::ui::model::Message { id: 2, role: crate::ui::model::MessageRole::Assistant, body: "It stays in this account backup.".into(), streaming: false },
+        ]).unwrap();
         source.save_task_plan(TaskPlan {
             id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
             steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new() }],
@@ -714,6 +718,7 @@ mod tests {
         assert_eq!(restored.projects(false).unwrap(), source.projects(false).unwrap());
         assert_eq!(restored.task_plans().unwrap(), source.task_plans().unwrap());
         assert_eq!(restored.automations().unwrap(), source.automations().unwrap());
+        assert_eq!(restored.load_conversation("primary").unwrap(), source.load_conversation("primary").unwrap());
         assert_eq!(restored.read_artifact("backup-artifact").unwrap(), b"secret workspace file");
         let _ = fs::remove_dir_all(source_root);
         let _ = fs::remove_dir_all(restored_root);
