@@ -7,6 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use crate::core::agents::TaskPlan;
+use crate::core::automations::Automation;
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -43,10 +44,13 @@ struct WorkspaceIndex {
     projects: Vec<Project>,
     #[serde(default)]
     tasks: Vec<TaskRecord>,
+    #[serde(default)]
+    automations: Vec<Automation>,
 }
 
 pub struct WorkspaceStore {
     user_root: PathBuf,
+    user_identity: String,
     index_path: PathBuf,
 }
 
@@ -60,9 +64,9 @@ impl WorkspaceStore {
         let user_root = root.as_ref().join(scope);
         fs::create_dir_all(user_root.join("artifacts")).map_err(|error| error.to_string())?;
         let index_path = user_root.join("workspace.json");
-        let store = Self { user_root, index_path };
+        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path };
         if !store.index_path.exists() {
-            store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new() })?;
+            store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new(), automations: Vec::new() })?;
         }
         Ok(store)
     }
@@ -125,6 +129,39 @@ impl WorkspaceStore {
         if !path.exists() { return Ok(Vec::new()); }
         let bytes = fs::read(path).map_err(|error| error.to_string())?;
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+    }
+
+    pub fn automations(&self) -> Result<Vec<Automation>, String> {
+        let mut items = self.read_index()?.automations;
+        items.retain(|automation| automation.owner_scope == self.user_identity);
+        items.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(items)
+    }
+
+    pub fn save_automation(&self, automation: Automation) -> Result<(), String> {
+        automation.validate().map_err(|error| format!("Invalid automation: {error}"))?;
+        if automation.owner_scope != self.user_identity {
+            return Err("Automation owner does not match the authenticated workspace account".into());
+        }
+        let mut index = self.read_index()?;
+        match index.automations.iter_mut().find(|item| item.id == automation.id && item.owner_scope == self.user_identity) {
+            Some(existing) => *existing = automation,
+            None => {
+                if index.automations.len() >= 1000 { return Err("Workspace automation limit reached".into()); }
+                index.automations.push(automation);
+            }
+        }
+        self.write_index(&index)
+    }
+
+    pub fn delete_automation(&self, automation_id: &str) -> Result<bool, String> {
+        if !safe_segment(automation_id) { return Err("Automation identifier is invalid".into()); }
+        let mut index = self.read_index()?;
+        let previous = index.automations.len();
+        index.automations.retain(|item| !(item.id == automation_id && item.owner_scope == self.user_identity));
+        let removed = index.automations.len() != previous;
+        if removed { self.write_index(&index)?; }
+        Ok(removed)
     }
 
     pub fn task_plans(&self) -> Result<Vec<TaskRecord>, String> {
