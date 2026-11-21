@@ -17,6 +17,7 @@ use winit::platform::android::activity::AndroidApp;
 use sha2::{Digest, Sha256};
 
 use crate::core::network::SessionVault;
+use crate::core::workspace::WORKSPACE_CIPHER_MAGIC;
 
 fn valid_supabase_user_id(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -25,6 +26,20 @@ fn valid_supabase_user_id(value: &str) -> bool {
         && bytes.iter().enumerate().all(|(index, byte)| {
             [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
         })
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct WorkspaceCipherEnvelope {
+    schema_version: u8,
+    user_identity: String,
+    relative_path: String,
+    bytes_base64: String,
+}
+
+fn valid_workspace_relative_path(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.starts_with('/')
+        && !value.contains('\\\\') && !value.contains('\\n') && !value.contains('\\r')
+        && value.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
 pub struct AndroidSecretVault {
@@ -240,6 +255,38 @@ impl SessionVault for AndroidSecretVault {
     fn refresh_token(&self) -> Result<String, String> { self.get_secret("supabase_refresh_token") }
     fn account_email(&self) -> Result<String, String> { self.get_secret("supabase_account_email") }
     fn account_id(&self) -> Result<String, String> { self.get_secret("supabase_account_id") }
+
+    fn encrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
+        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path) || plaintext.len() > 32 * 1024 * 1024 {
+            return Err("Workspace encryption identity, path, or payload size is invalid".into());
+        }
+        let envelope = WorkspaceCipherEnvelope {
+            schema_version: 1,
+            user_identity: user_identity.to_owned(),
+            relative_path: relative_path.to_owned(),
+            bytes_base64: STANDARD_NO_PAD.encode(plaintext),
+        };
+        let serialized = serde_json::to_string(&envelope).map_err(|error| error.to_string())?;
+        let encrypted = self.encrypt(&serialized)?;
+        let mut output = WORKSPACE_CIPHER_MAGIC.to_vec();
+        output.extend_from_slice(&encrypted);
+        Ok(output)
+    }
+
+    fn decrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path)
+            || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC) || ciphertext.len() > 48 * 1024 * 1024 {
+            return Err("Encrypted workspace identity, path, or envelope is invalid".into());
+        }
+        let serialized = self.decrypt(&ciphertext[WORKSPACE_CIPHER_MAGIC.len()..])?;
+        let envelope: WorkspaceCipherEnvelope = serde_json::from_str(&serialized).map_err(|_| "Encrypted workspace metadata is invalid".to_owned())?;
+        if envelope.schema_version != 1 || envelope.user_identity != user_identity || envelope.relative_path != relative_path {
+            return Err("Encrypted workspace belongs to a different account or storage path".into());
+        }
+        let plaintext = STANDARD_NO_PAD.decode(envelope.bytes_base64).map_err(|_| "Encrypted workspace payload encoding is invalid".to_owned())?;
+        if plaintext.len() > 32 * 1024 * 1024 { return Err("Encrypted workspace payload exceeds the storage limit".into()); }
+        Ok(plaintext)
+    }
 
     fn save_session(&self, access: &str, refresh: &str, user_id: &str, email: &str) -> Result<(), String> {
         if !valid_supabase_user_id(user_id) || access.trim().is_empty() || refresh.trim().is_empty() {
