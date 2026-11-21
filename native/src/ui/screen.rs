@@ -789,7 +789,7 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
         ui.label(text("English is the primary quality target. Other languages are available but need their own quality validation.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.label(text("The app contains no TTS model weights. Requests are authenticated through CenAI Cloud; model credentials stay server-side.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        ui.label(text("The app contains no TTS model weights. Speech text is sent to CenAI's authenticated GPU service for synthesis; model credentials stay server-side.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
         ui.separator();
         ui.label(text("Cloud voice service", 12.0, egui::Color32::WHITE).strong());
         ui.label(text(&state.voice_service_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
