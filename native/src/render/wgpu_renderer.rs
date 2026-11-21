@@ -1177,7 +1177,7 @@ impl WgpuRenderer {
                             let marker = format!("Automation reference: {} @ {}", trigger.automation_id, trigger.scheduled_at);
                             !self.app_state.conversation.messages().any(|message| message.body.contains(&marker))
                         }).collect::<Vec<_>>();
-                        for (trigger, title) in &unseen {
+                        for (trigger, title) in unseen {
                             let scheduled_at = chrono::DateTime::<chrono::Utc>::from_timestamp(trigger.scheduled_at, 0)
                                 .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
                                 .unwrap_or_else(|| "the scheduled time".into());
@@ -1193,18 +1193,24 @@ impl WgpuRenderer {
                         let reminder_saved = store.save_conversation("primary", &messages).is_ok();
                         if reminder_saved {
                             self.last_saved_message_count = messages.len();
+                            let mut acknowledgement_error = None;
                             for trigger in &due {
                                 if let Err(error) = scheduler.acknowledge_and_persist(
                                     &trigger.owner_scope, &trigger.automation_id, trigger.scheduled_at,
                                     store,
                                 ) {
-                                    self.app_state.automation_status = format!("Reminder saved, but its scheduler acknowledgement failed: {error}");
+                                    acknowledgement_error = Some(error);
+                                    break;
                                 }
                             }
-                            self.app_state.automation_status = format!(
-                                "{} scheduled task(s) are ready in Conversation. No action was executed automatically.",
-                                due.len()
-                            );
+                            self.app_state.automation_status = if let Some(error) = acknowledgement_error {
+                                format!("Reminder saved, but scheduler acknowledgement failed and will retry: {error}")
+                            } else {
+                                format!(
+                                    "{} scheduled task(s) are ready in Conversation. No action was executed automatically.",
+                                    due.len()
+                                )
+                            };
                         } else {
                             self.app_state.automation_status = "A scheduled task is due, but its reminder could not be saved. It will retry.".into();
                         }
