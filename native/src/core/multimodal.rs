@@ -322,7 +322,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("cenai-attachments-{}-{unique}", std::process::id()));
         let owner = "550e8400-e29b-41d4-a716-446655440010";
         let other = "550e8400-e29b-41d4-a716-446655440011";
-        let bytes = b"\\x89PNG\\r\\n\\x1a\\nattachment-payload";
+        let bytes = b"\x89PNG\r\n\x1a\nattachment-payload";
         let digest = Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         let metadata = AttachmentMetadata {
             id: "image_1".into(), file_name: "photo.png".into(), mime_type: "image/png".into(),
