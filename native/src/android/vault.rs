@@ -140,61 +140,47 @@ impl AndroidSecretVault {
         env.call_method(&generator, "generateKey", "()Ljavax/crypto/SecretKey;", &[])?.l()
     }
 
-    fn encrypt(&self, value: &str) -> Result<Vec<u8>, String> {
+    fn encrypt_bytes(&self, value: &[u8]) -> Result<Vec<u8>, String> {
         self.with_env(|env| {
             let key = Self::key(env)?;
             let algorithm = env.new_string("AES/GCM/NoPadding")?;
-            let cipher = env.call_static_method(
-                "javax/crypto/Cipher",
-                "getInstance",
-                "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
-                &[JValue::Object(&algorithm)],
-            )?.l()?;
+            let cipher = env.call_static_method("javax/crypto/Cipher", "getInstance", "(Ljava/lang/String;)Ljavax/crypto/Cipher;", &[JValue::Object(&algorithm)])?.l()?;
             env.call_method(&cipher, "init", "(ILjava/security/Key;)V", &[JValue::Int(1), JValue::Object(&key)])?;
-            let plain = env.byte_array_from_slice(value.as_bytes())?;
+            let plain = env.byte_array_from_slice(value)?;
             let plain_object = JObject::from(plain);
             let encrypted = env.call_method(&cipher, "doFinal", "([B)[B", &[JValue::Object(&plain_object)])?.l()?;
             let iv = env.call_method(&cipher, "getIV", "()[B", &[])?.l()?;
-            let iv_bytes = env.convert_byte_array(JByteArray::from(iv))?;
-            let encrypted_bytes = env.convert_byte_array(JByteArray::from(encrypted))?;
-            let mut packed = iv_bytes;
-            packed.extend(encrypted_bytes);
+            let mut packed = env.convert_byte_array(JByteArray::from(iv))?;
+            packed.extend(env.convert_byte_array(JByteArray::from(encrypted))?);
             Ok(packed)
         })
     }
 
-    fn decrypt(&self, packed: &[u8]) -> Result<String, String> {
+    fn encrypt(&self, value: &str) -> Result<Vec<u8>, String> {
+        self.encrypt_bytes(value.as_bytes())
+    }
+
+    fn decrypt_bytes(&self, packed: &[u8]) -> Result<Vec<u8>, String> {
         if packed.len() <= 12 { return Err("Encrypted secret is truncated".into()); }
         self.with_env(|env| {
             let key = Self::key(env)?;
             let algorithm = env.new_string("AES/GCM/NoPadding")?;
-            let cipher = env.call_static_method(
-                "javax/crypto/Cipher",
-                "getInstance",
-                "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
-                &[JValue::Object(&algorithm)],
-            )?.l()?;
+            let cipher = env.call_static_method("javax/crypto/Cipher", "getInstance", "(Ljava/lang/String;)Ljavax/crypto/Cipher;", &[JValue::Object(&algorithm)])?.l()?;
             let iv = env.byte_array_from_slice(&packed[..12])?;
             let iv_object = JObject::from(iv);
-            let parameters = env.new_object(
-                "javax/crypto/spec/GCMParameterSpec",
-                "(I[B)V",
-                &[JValue::Int(128), JValue::Object(&iv_object)],
-            )?;
-            env.call_method(
-                &cipher,
-                "init",
-                "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
-                &[JValue::Int(2), JValue::Object(&key), JValue::Object(&parameters)],
-            )?;
+            let parameters = env.new_object("javax/crypto/spec/GCMParameterSpec", "(I[B)V", &[JValue::Int(128), JValue::Object(&iv_object)])?;
+            env.call_method(&cipher, "init", "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V", &[JValue::Int(2), JValue::Object(&key), JValue::Object(&parameters)])?;
             let ciphertext = env.byte_array_from_slice(&packed[12..])?;
             let ciphertext_object = JObject::from(ciphertext);
             let plain = env.call_method(&cipher, "doFinal", "([B)[B", &[JValue::Object(&ciphertext_object)])?.l()?;
-            let bytes = env.convert_byte_array(JByteArray::from(plain))?;
-            Ok(String::from_utf8_lossy(&bytes).into_owned())
+            env.convert_byte_array(JByteArray::from(plain)).map_err(Into::into)
         })
     }
 
+    fn decrypt(&self, packed: &[u8]) -> Result<String, String> {
+        let bytes = self.decrypt_bytes(packed)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
     fn read_map(&self) -> Result<BTreeMap<String, String>, String> {
         if !self.path.exists() { return Ok(BTreeMap::new()); }
         let bytes = fs::read(&self.path).map_err(|error| error.to_string())?;
