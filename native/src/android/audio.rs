@@ -163,6 +163,13 @@ impl AndroidAudioCapture {
         Ok(true)
     }
 
+    /// Cancels a pending Android permission prompt attempt so the user can retry later.
+    pub fn cancel_permission_request(&mut self) {
+        if self.worker.is_none() {
+            self.permission_requested = false;
+        }
+    }
+
     pub fn try_recv(&self) -> Option<Result<AudioFrame, String>> {
         self.receiver.try_recv().ok()
     }
