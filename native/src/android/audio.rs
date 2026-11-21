@@ -94,6 +94,9 @@ impl AndroidAudioCapture {
 
     /// Returns false while the Android permission prompt is pending.
     pub fn start(&mut self) -> Result<bool, String> {
+        if self.worker.as_ref().is_some_and(|worker| worker.is_finished()) {
+            if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+        }
         if self.worker.is_some() { return Err("Microphone capture is already active".into()); }
         if !self.has_permission()? {
             self.request_permission();
