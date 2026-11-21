@@ -7,6 +7,14 @@ use serde_json::{json, Value};
 
 use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}};
 
+fn valid_supabase_user_id(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36 && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
 pub trait SessionVault: Send + Sync {
     fn access_token(&self) -> Result<String, String>;
     fn refresh_token(&self) -> Result<String, String>;
@@ -65,8 +73,8 @@ impl CenAiApi {
         let refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
         let account_email = data.pointer("/user/email").and_then(Value::as_str).unwrap_or(email).to_owned();
         let user_id = data.pointer("/user/id").and_then(Value::as_str).unwrap_or_default();
-        if access.is_empty() || refresh.is_empty() || user_id.is_empty() {
-            return Err("The identity service returned an incomplete session identity.".into());
+        if access.is_empty() || refresh.is_empty() || !valid_supabase_user_id(user_id) {
+            return Err("The identity service returned an incomplete or invalid account identity.".into());
         }
         self.vault.save_session(access, refresh, user_id, &account_email)?;
         Ok(account_email)
@@ -140,10 +148,12 @@ impl CenAiApi {
         let next_refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
         let email = data.pointer("/user/email").and_then(Value::as_str)
             .map(str::to_owned).unwrap_or(self.vault.account_email()?);
+        let previous_user_id = self.vault.account_id()?;
         let user_id = data.pointer("/user/id").and_then(Value::as_str)
-            .map(str::to_owned).unwrap_or(self.vault.account_id()?);
-        if access.is_empty() || next_refresh.is_empty() || user_id.is_empty() {
-            return Err("The identity service returned an incomplete session identity.".into());
+            .map(str::to_owned).unwrap_or(previous_user_id.clone());
+        if access.is_empty() || next_refresh.is_empty() || !valid_supabase_user_id(&user_id)
+            || (!previous_user_id.is_empty() && previous_user_id != user_id) {
+            return Err("The refreshed session does not match the signed-in account.".into());
         }
         self.vault.save_session(access, next_refresh, &user_id, &email)
     }
@@ -303,5 +313,18 @@ impl CenAiApi {
         if answer.is_empty() { return Err("CenAI Cloud returned an empty response.".into()); }
         on_delta(answer);
         Ok(answer.to_owned())
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::valid_supabase_user_id;
+
+    #[test]
+    fn account_scope_requires_a_supabase_uuid() {
+        assert!(valid_supabase_user_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(!valid_supabase_user_id("user@example.com"));
+        assert!(!valid_supabase_user_id("550e8400-e29b-41d4-a716-44665544000z"));
+        assert!(!valid_supabase_user_id("550e8400e29b41d4a716446655440000"));
     }
 }
