@@ -170,11 +170,11 @@ mod tests {
         let mut registry = CapabilityRegistry::new(vec!["cenai.firstparty".into()]);
         registry.register(manifest(), 1).unwrap();
         let grant = grant();
-        assert!(registry.authorize("user-a", &grant, "notes.read"));
-        assert!(!registry.authorize("user-b", &grant, "notes.read"));
+        assert!(registry.authorize("550e8400-e29b-41d4-a716-446655440011", &grant, "notes.read"));
+        assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440012", &grant, "notes.read"));
         let mut revoked = grant;
         revoked.revoked = true;
-        assert!(!registry.authorize("user-a", &revoked, "notes.read"));
+        assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440011", &revoked, "notes.read"));
     }
 
     #[test]
@@ -201,7 +201,7 @@ mod tests {
             registry.register(takeover, 1),
             Err(ManifestError::AppIdOwnedByAnotherPublisher)
         );
-        assert!(registry.authorize("user-a", &grant(), "notes.read"));
+        assert!(registry.authorize("550e8400-e29b-41d4-a716-446655440011", &grant(), "notes.read"));
     }
 
     #[test]
