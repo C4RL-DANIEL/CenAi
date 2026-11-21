@@ -126,13 +126,13 @@ impl AndroidAudioCapture {
                 *recorder_slot.lock().map_err(|_| "Microphone state lock was poisoned")? = Some(global);
                 env.call_method(&recorder, "startRecording", "()V", &[]).map_err(|error| error.to_string())?;
                 let buffer = env.new_byte_array(buffer_size).map_err(|error| error.to_string())?;
-                let buffer_object = JObject::from(buffer);
+                let buffer_object = buffer.as_ref();
                 while !stop_flag.load(Ordering::Acquire) {
                     let count = match env.call_method(
                         &recorder,
                         "read",
                         "([BII)I",
-                        &[JValue::Object(&buffer_object), JValue::Int(0), JValue::Int(buffer_size)],
+                        &[JValue::Object(buffer_object), JValue::Int(0), JValue::Int(buffer_size)],
                     ) {
                         Ok(value) => value.i().map_err(|error| error.to_string())?,
                         Err(error) => {
@@ -141,8 +141,10 @@ impl AndroidAudioCapture {
                         }
                     };
                     if count > 0 {
-                        let bytes = env.convert_byte_array(JByteArray::from(buffer_object)).map_err(|error| error.to_string())?;
-                        let frame = AudioFrame::from_pcm16_le(SAMPLE_RATE as u32, 1, &bytes[..count as usize])
+                        let mut signed_bytes = vec![0i8; count as usize];
+                        env.get_byte_array_region(&buffer, 0, &mut signed_bytes).map_err(|error| error.to_string())?;
+                        let bytes = signed_bytes.into_iter().map(|byte| byte as u8).collect::<Vec<_>>();
+                        let frame = AudioFrame::from_pcm16_le(SAMPLE_RATE as u32, 1, &bytes)
                             .map_err(str::to_owned)?;
                         if sender.send(Ok(frame)).is_err() { break; }
                     } else if count < 0 {
