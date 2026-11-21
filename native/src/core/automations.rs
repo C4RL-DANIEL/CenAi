@@ -50,6 +50,12 @@ impl Automation {
         if self.schedule.len() > 120 || self.schedule.parse::<Schedule>().is_err() {
             return Err("Automation schedule must be a valid five-field cron expression");
         }
+        if self.last_scheduled_at.is_some_and(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0).is_none())
+            || self.pending_scheduled_at.is_some_and(|timestamp| {
+                Some(timestamp) != self.last_scheduled_at || DateTime::<Utc>::from_timestamp(timestamp, 0).is_none()
+            }) {
+            return Err("Automation schedule cursor is invalid or inconsistent");
+        }
         Ok(())
     }
 
