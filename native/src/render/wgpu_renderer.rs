@@ -796,6 +796,14 @@ impl WgpuRenderer {
         self.app_state.pending_voice_stop = false;
         self.app_state.voice_status.clear();
         self.workspace = None;
+        self.attachment_store = None;
+        self.app_state.attachments.clear();
+        self.app_state.attachment_status.clear();
+        self.app_state.attachment_analysis_result.clear();
+        self.app_state.pending_attachment_picker = false;
+        self.app_state.pending_attachment_analysis = None;
+        self.app_state.pending_attachment_delete = None;
+        self.app_state.pending_backup_file_picker = false;
         self.app_state.conversation.restore_messages(Vec::new());
         self.app_state.projects.clear();
         self.app_state.task_plans.clear();
@@ -1527,6 +1535,9 @@ impl WgpuRenderer {
                                 self.reset_user_scoped_state();
                             }
                             self.active_user_id = account_id.clone();
+                            self.attachment_store = AttachmentStore::new(self.workspace_root.join("cenai-attachments"), &account_id).ok();
+                            self.app_state.attachments = self.attachment_store.as_ref()
+                                .and_then(|store| store.list().ok()).unwrap_or_default();
                             self.app_state.pending_ecosystem_refresh = true;
                             self.app_state.ecosystem_status = "Loading your account's app permissions…".into();
                             self.app_state.account_email = email.clone();
