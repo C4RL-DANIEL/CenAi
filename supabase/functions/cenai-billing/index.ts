@@ -28,6 +28,14 @@ async function currentUser(req:Request){
  if(error||!data.user||data.user.is_anonymous)return null;
  return data.user;
 }
+function tokenAal(req:Request) {
+ const token=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
+ try {
+   const part=token.split(".")[1]||"";
+   const normalized=part.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(part.length/4)*4,"=");
+   return String(JSON.parse(atob(normalized)).aal||"aal1");
+ } catch { return "aal1"; }
+}
 async function verifyStripe(raw:string,header:string,secret:string){
  const parts=Object.fromEntries(header.split(",").map(x=>x.split("=",2)));
  const timestamp=parts.t||"",signature=parts.v1||"";
@@ -93,6 +101,9 @@ Deno.serve(async(req:Request)=>{
    const user=await currentUser(req);
    if(!user)return fail(401,"Sign in required");
    if(!await registrationAllowed(user))return fail(403,"Complete Discord invitation registration before using CenAI.");
+   const {data:hasVerifiedMfa,error:mfaError}=await db.rpc("cenai_user_has_verified_mfa",{p_user_id:user.id});
+   if(mfaError)throw mfaError;
+   if(hasVerifiedMfa===true && tokenAal(req)!=="aal2")return fail(403,"MFA_REQUIRED: Verify your authenticator before starting or changing a subscription.");
    const body=await req.json().catch(()=>({}));
    const plan=String(body.plan||"");
    const price=plan==="supporter"?Deno.env.get("STRIPE_PRICE_SUPPORTER"):plan==="pro"?Deno.env.get("STRIPE_PRICE_PRO"):null;
