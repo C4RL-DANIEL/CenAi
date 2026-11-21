@@ -68,7 +68,7 @@ jobs:
           emulator-boot-timeout: 300000
           script: |
             adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
-            timeout 45s adb shell am start -W -n com.cenai.app.rustdebug/android.app.NativeActivity
+            timeout 45s adb shell am start -W -n com.cenai.app.rustdebug/com.cenai.app.CenAiNativeActivity
             for attempt in $(seq 1 30); do
               if adb shell pidof com.cenai.app.rustdebug >/dev/null 2>&1; then
                 echo "CenAI NativeActivity process is running."
