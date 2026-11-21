@@ -2,6 +2,7 @@ package com.cenai.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -23,8 +24,15 @@ class CenAiLaunchSmokeTest {
             "Updates" -> "About & diagnostics"
             else -> page
         }
-        val categoryNode = compose.onNodeWithTag("settings-category-$category")
-        categoryNode.performScrollTo()
+        val categoryTag = "settings-category-$category"
+
+        // Settings categories are in a horizontal, scrollable chip row on phones.
+        // Scroll the container to the target instead of calling performScrollTo()
+        // on the chip, which only handles vertical scroll parents.
+        compose.onNodeWithTag("settings-page-tabs")
+            .performScrollToNode(hasTestTag(categoryTag))
+
+        val categoryNode = compose.onNodeWithTag(categoryTag)
         categoryNode.assertIsDisplayed().performClick()
         compose.waitForIdle()
     }
