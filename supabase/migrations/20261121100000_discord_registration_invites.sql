@@ -50,11 +50,14 @@ begin
   where token_hash = p_token_hash
   for update;
 
-  if not found or invite_row.revoked_at is not null or invite_row.expires_at <= now() then
+  if not found or invite_row.revoked_at is not null then
     return false;
   end if;
   if invite_row.redeemed_at is not null then
     return invite_row.redeemed_by = p_user_id;
+  end if;
+  if invite_row.expires_at <= now() then
+    return false;
   end if;
 
   update public.registration_invites
