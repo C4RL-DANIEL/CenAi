@@ -13,6 +13,15 @@ const ENCODING_PCM_16BIT: i32 = 2;
 const AUDIO_SOURCE_MIC: i32 = 1;
 const REQUEST_CODE: i32 = 7_331;
 
+/// AndroidApp exposes an unowned JNI global reference. Convert it to a local
+/// reference for this attached thread without deleting the AndroidApp-owned global.
+fn activity_local<'local>(env: &mut jni::JNIEnv<'local>, app: &AndroidApp) -> jni::errors::Result<JObject<'local>> {
+    let global = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+    let local = env.new_local_ref(&global)?;
+    std::mem::forget(global);
+    Ok(local)
+}
+
 pub struct AndroidAudioCapture {
     app: AndroidApp,
     sender: mpsc::SyncSender<Result<AudioFrame, String>>,
@@ -45,7 +54,7 @@ impl AndroidAudioCapture {
 
     pub fn has_permission(&self) -> Result<bool, String> {
         self.with_env(|env| {
-            let activity = unsafe { JObject::from_raw(self.app.activity_as_ptr().cast()) };
+            let activity = activity_local(env, &self.app)?;
             let permission = env.new_string("android.permission.RECORD_AUDIO")?;
             let result = env.call_method(
                 &activity,
@@ -65,7 +74,7 @@ impl AndroidAudioCapture {
             let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android VM for microphone permission"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { return; };
-            let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+            let Ok(activity) = activity_local(&mut env, &app) else { return; };
             let result = (|| -> jni::errors::Result<()> {
                 let permission = env.new_string("android.permission.RECORD_AUDIO")?;
                 let permissions = env.new_object_array(1, "java/lang/String", JObject::null())?;
