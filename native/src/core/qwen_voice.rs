@@ -200,7 +200,7 @@ mod tests {
     fn qwen_language_catalog_contains_all_ten_upstream_languages() {
         assert_eq!(QwenLanguage::ALL.len(), 10);
         assert!(QwenLanguage::ALL.contains(&QwenLanguage::English));
-        assert!(QwenLanguage::ALL.contains(&QwenLanguage::Filipino) == false);
+        assert_eq!(QwenLanguage::English.locale_tag(), "en");
     }
 
     #[test]
