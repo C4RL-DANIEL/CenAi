@@ -1,7 +1,7 @@
 name: Deploy CenAI to Cloudflare
 on:
   push:
-    branches: [main]
+    branches: [main, "rewrite/rust-native-core"]
     paths:
       - "website/**"
       - "supabase/functions/**"
