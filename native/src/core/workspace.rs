@@ -428,6 +428,9 @@ impl WorkspaceStore {
             return Err("Artifact must contain data and fit the 25 MB local workspace limit".into());
         }
         let mut index = self.read_index()?;
+        if index.projects.iter().any(|item| item.id != project_id && item.artifacts.iter().any(|artifact| artifact.id == artifact_id)) {
+            return Err("Artifact identifier is already used by another project".into());
+        }
         let project = index.projects.iter_mut().find(|item| item.id == project_id && !item.archived)
             .ok_or("Project not found or archived")?;
         let relative = PathBuf::from("artifacts").join(format!("{artifact_id}.bin"));
