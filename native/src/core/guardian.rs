@@ -52,6 +52,8 @@ pub struct GuardianSnapshot {
     pub network_rx_bytes: u64,
     pub network_tx_bytes: u64,
     pub storage_available_bytes: u64,
+    pub battery_percent: Option<u8>,
+    pub battery_status: Option<String>,
 }
 
 fn parse_memory_info(content: &str) -> (u64, u64) {
@@ -130,6 +132,10 @@ impl GuardianMonitor {
         });
         let network = std::fs::read_to_string("/proc/net/dev").unwrap_or_default();
         let (network_rx_bytes, network_tx_bytes) = parse_network_counters(&network);
+        let battery_percent = std::fs::read_to_string("/sys/class/power_supply/battery/capacity")
+            .ok().and_then(|value| value.trim().parse::<u8>().ok()).filter(|value| *value <= 100);
+        let battery_status = std::fs::read_to_string("/sys/class/power_supply/battery/status")
+            .ok().map(|value| value.trim().to_owned()).filter(|value| !value.is_empty());
         GuardianSnapshot {
             cpu_usage_percent,
             ram_total_kb,
@@ -137,6 +143,8 @@ impl GuardianMonitor {
             network_rx_bytes,
             network_tx_bytes,
             storage_available_bytes: available_storage_bytes(data_directory),
+            battery_percent,
+            battery_status,
         }
     }
 
