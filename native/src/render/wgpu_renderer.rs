@@ -1127,7 +1127,7 @@ impl WgpuRenderer {
                     match scheduler.upsert_and_persist(automation, store) {
                         Ok(()) => {
                             self.app_state.automations = scheduler.snapshot(&self.active_user_id);
-                            self.app_state.automation_status = "Automation saved. It will notify you when due while CenAI is running; task actions still require your approval.".into();
+                            self.app_state.automation_status = "Automation saved. A reminder will appear in Conversation when due while CenAI is running; task actions still require your approval.".into();
                             self.app_state.automation_id_draft.clear();
                             self.app_state.automation_title_draft.clear();
                         }
