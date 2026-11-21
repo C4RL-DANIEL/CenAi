@@ -228,8 +228,10 @@ impl WgpuRenderer {
             .filter(|message| message.role == MessageRole::User)
             .map(|message| message.body.clone()).last().unwrap_or_default();
         if self.app_state.planning_mode {
-            let context = self.app_state.conversation.messages()
+            let recent_messages = self.app_state.conversation.messages()
                 .filter(|message| message.role != MessageRole::System)
+                .collect::<Vec<_>>();
+            let context = recent_messages.iter().rev().take(8).collect::<Vec<_>>().into_iter().rev()
                 .map(|message| format!("{}: {}", if message.role == MessageRole::User { "User" } else { "Assistant" }, message.body))
                 .collect::<Vec<_>>().join("\n");
             let user_id = api.account_id();
