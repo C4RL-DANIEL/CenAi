@@ -39,6 +39,15 @@ fn java_string(env: &mut JNIEnv<'_>, value: JString<'_>) -> String {
     env.get_string(&value).map(|value| value.into()).unwrap_or_default()
 }
 
+/// AndroidApp owns this JNI global reference. Create a thread-local reference
+/// without allowing JObject's Drop to delete the AndroidApp-owned global.
+fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::errors::Result<JObject<'local>> {
+    let global = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+    let local = env.new_local_ref(&global);
+    std::mem::forget(global);
+    local
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked(
     mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint,
@@ -75,7 +84,7 @@ impl CenAiApplication {
             let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
-            let activity = unsafe { JObject::from_raw(callback_app.activity_as_ptr().cast()) };
+            let Ok(activity) = activity_local(&mut env, &callback_app) else { log::error!("Could not access CenAI activity on JNI thread"); return; };
             if let Err(error) = env.call_method(&activity, method, "()V", &[]) {
                 log::error!("Could not launch Android picker {method}: {error}");
             }
