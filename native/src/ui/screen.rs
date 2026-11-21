@@ -472,6 +472,16 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("CenAI membership", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Manage membership through the secure CenAI billing service.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.horizontal(|ui| {
+            if ui.button("Supporter").clicked() { state.pending_checkout_plan = Some("supporter".into()); state.checkout_status = "Preparing secure checkout…".into(); }
+            if ui.button("Pro").clicked() { state.pending_checkout_plan = Some("pro".into()); state.checkout_status = "Preparing secure checkout…".into(); }
+        });
+        if !state.checkout_status.is_empty() { ui.label(text(&state.checkout_status, 10.0, egui::Color32::from_rgb(119, 220, 183))); }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Privacy & security", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Per-user isolation, encrypted credentials and explicit approvals are part of the runtime design.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
     });
