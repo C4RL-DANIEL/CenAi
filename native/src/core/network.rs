@@ -80,6 +80,15 @@ impl CenAiApi {
         if access.is_empty() || refresh.is_empty() || !valid_supabase_user_id(user_id) {
             return Err("The identity service returned an incomplete or invalid account identity.".into());
         }
+        let registration_response = self.client.post(config::CONTROL_PLANE_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(access)
+            .json(&json!({ "action": "registration_status" }))
+            .send().await.map_err(|error| error.to_string())?;
+        let registration = Self::decode_response(registration_response).await?;
+        if registration.get("registered").and_then(Value::as_bool) != Some(true) {
+            return Err("New CenAI accounts must be registered through an administrator-issued Discord invitation. Open your registration link in the secure website first.".into());
+        }
         self.vault.save_session(access, refresh, user_id, &account_email)?;
         Ok(account_email)
     }
