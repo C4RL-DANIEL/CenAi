@@ -615,7 +615,33 @@ fn parse_gemini_sse_event(line: &str) -> Result<Option<String>, String> {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::valid_supabase_user_id;
+    use super::{parse_anthropic_sse_event, parse_gemini_sse_event, valid_supabase_user_id};
+
+    #[test]
+    fn anthropic_stream_parser_extracts_only_text_deltas() {
+        assert_eq!(
+            parse_anthropic_sse_event(r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}"#).unwrap().as_deref(),
+            Some("hello")
+        );
+        assert_eq!(
+            parse_anthropic_sse_event(r#"data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{}"}}"#).unwrap(),
+            None
+        );
+        assert!(parse_anthropic_sse_event(r#"data: {"type":"error","error":{"message":"overloaded"}}"#).is_err());
+    }
+
+    #[test]
+    fn gemini_stream_parser_extracts_candidate_text_and_errors() {
+        assert_eq!(
+            parse_gemini_sse_event(r#"data: {"candidates":[{"content":{"parts":[{"text":"hello"}]}}]}"#).unwrap().as_deref(),
+            Some("hello")
+        );
+        assert_eq!(
+            parse_gemini_sse_event(r#"data: {"candidates":[{"finishReason":"STOP"}]}"#).unwrap(),
+            None
+        );
+        assert!(parse_gemini_sse_event(r#"data: {"error":{"message":"quota exceeded"}}"#).is_err());
+    }
 
     #[test]
     fn account_scope_requires_a_supabase_uuid() {
