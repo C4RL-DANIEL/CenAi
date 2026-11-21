@@ -409,7 +409,7 @@ impl Default for AppState {
             pending_voice_start: false,
             pending_voice_stop: false,
             voice_status: String::new(),
-            voice_service_status: "Aura-1 cloud voice is awaiting deployment and administrator enablement.".into(),
+            voice_service_status: "Aura-1 cloud voice is deployed but disabled pending an authenticated audio test.".into(),
             pending_voice_service_check: false,
             pending_speech_text: None,
             pending_speech_stop: false,
