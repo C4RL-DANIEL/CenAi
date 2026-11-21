@@ -14,6 +14,7 @@ use jni::{
     JNIEnv, JavaVM,
 };
 use winit::platform::android::activity::AndroidApp;
+use sha2::{Digest, Sha256};
 
 use crate::core::network::SessionVault;
 
@@ -186,16 +187,34 @@ impl AndroidSecretVault {
         fs::rename(temporary, &self.path).map_err(|error| error.to_string())
     }
 
-    pub fn put_secret(&self, name: &str, value: &str) -> Result<(), String> {
-        if name.is_empty() || name.len() > 100 { return Err("Secret name is invalid".into()); }
+    fn put_secrets(&self, entries: &[(&str, &str)]) -> Result<(), String> {
+        if entries.iter().any(|(name, _)| name.is_empty() || name.len() > 120) {
+            return Err("Secret name is invalid".into());
+        }
         let _guard = self.lock.lock().map_err(|_| "Vault lock poisoned")?;
         let mut values = self.read_map()?;
-        if value.is_empty() {
-            values.remove(name);
-        } else {
-            values.insert(name.to_owned(), STANDARD_NO_PAD.encode(self.encrypt(value)?));
+        for (name, value) in entries {
+            if value.is_empty() {
+                values.remove(*name);
+            } else {
+                values.insert((*name).to_owned(), STANDARD_NO_PAD.encode(self.encrypt(value)?));
+            }
         }
         self.write_map(&values)
+    }
+
+    pub fn put_secret(&self, name: &str, value: &str) -> Result<(), String> {
+        self.put_secrets(&[(name, value)])
+    }
+
+    fn scoped_secret_name(&self, namespace: &str, key: &str) -> Result<String, String> {
+        let account_id = self.get_secret("supabase_account_id")?;
+        if account_id.is_empty() {
+            return Err("Sign in to the CenAI account before accessing account-scoped settings.".into());
+        }
+        let digest = Sha256::digest(account_id.as_bytes());
+        let account_scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        Ok(format!("{namespace}_{account_scope}_{key}"))
     }
 
     pub fn get_secret(&self, name: &str) -> Result<String, String> {
@@ -211,45 +230,59 @@ impl SessionVault for AndroidSecretVault {
     fn access_token(&self) -> Result<String, String> { self.get_secret("supabase_access_token") }
     fn refresh_token(&self) -> Result<String, String> { self.get_secret("supabase_refresh_token") }
     fn account_email(&self) -> Result<String, String> { self.get_secret("supabase_account_email") }
+    fn account_id(&self) -> Result<String, String> { self.get_secret("supabase_account_id") }
 
-    fn save_session(&self, access: &str, refresh: &str, email: &str) -> Result<(), String> {
-        self.put_secret("supabase_access_token", access)?;
-        self.put_secret("supabase_refresh_token", refresh)?;
-        self.put_secret("supabase_account_email", email)
+    fn save_session(&self, access: &str, refresh: &str, user_id: &str, email: &str) -> Result<(), String> {
+        if user_id.trim().is_empty() { return Err("A verified account UUID is required.".into()); }
+        self.put_secrets(&[
+            ("supabase_access_token", access),
+            ("supabase_refresh_token", refresh),
+            ("supabase_account_id", user_id),
+            ("supabase_account_email", email),
+        ])
     }
 
     fn clear_session(&self) -> Result<(), String> {
-        self.put_secret("supabase_access_token", "")?;
-        self.put_secret("supabase_refresh_token", "")?;
-        self.put_secret("supabase_account_email", "")
+        self.put_secrets(&[
+            ("supabase_access_token", ""),
+            ("supabase_refresh_token", ""),
+            ("supabase_account_email", ""),
+            ("supabase_account_id", ""),
+        ])
     }
     fn provider_key(&self, provider: &str) -> Result<String, String> {
         if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
         }
-        self.get_secret(&format!("provider_api_key_{provider}"))
+        let name = self.scoped_secret_name("provider_api_key", provider)?;
+        self.get_secret(&name)
     }
 
     fn email_verified(&self) -> Result<bool, String> {
-        Ok(self.get_secret("cenai_email_verified")? == "true")
+        let name = self.scoped_secret_name("cenai", "email_verified")?;
+        Ok(self.get_secret(&name)? == "true")
     }
 
     fn set_email_verified(&self, verified: bool) -> Result<(), String> {
-        self.put_secret("cenai_email_verified", if verified { "true" } else { "false" })
+        let name = self.scoped_secret_name("cenai", "email_verified")?;
+        self.put_secret(&name, if verified { "true" } else { "false" })
     }
 
     fn guardian_consent(&self) -> Result<bool, String> {
-        Ok(self.get_secret("guardian_telemetry_consent")? == "true")
+        let name = self.scoped_secret_name("cenai", "guardian_telemetry_consent")?;
+        Ok(self.get_secret(&name)? == "true")
     }
 
     fn set_guardian_consent(&self, enabled: bool) -> Result<(), String> {
-        self.put_secret("guardian_telemetry_consent", if enabled { "true" } else { "false" })
+        let name = self.scoped_secret_name("cenai", "guardian_telemetry_consent")?;
+        self.put_secret(&name, if enabled { "true" } else { "false" })
     }
 
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
         if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
         }
-        self.put_secret(&format!("provider_api_key_{provider}"), key)
+        let name = self.scoped_secret_name("provider_api_key", provider)?;
+        self.put_secret(&name, key)
     }
 }
