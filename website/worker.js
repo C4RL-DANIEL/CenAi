@@ -297,6 +297,102 @@ function estimateTokens(value) {
   return Math.max(1, Math.ceil(String(value || "").length / 4));
 }
 
+function streamAiChatResponse(upstream, env, token, reservation, model, inputTokens, started) {
+  const base = env.SUPABASE_URL.replace(/\\/$/, "");
+  let reader;
+  let cancelled = false;
+  let finalized = false;
+  let output = "";
+  let buffer = "";
+  const decoder = new TextDecoder();
+
+  function collectText(line) {
+    const data = line.trim().startsWith("data:") ? line.trim().slice(5).trim() : "";
+    if (!data || data === "[DONE]") return;
+    try {
+      const value = JSON.parse(data);
+      const text = value?.choices?.[0]?.delta?.content
+        ?? value?.response
+        ?? value?.generated_text
+        ?? value?.text
+        ?? "";
+      if (typeof text === "string") output += text;
+    } catch {
+      // Ignore non-JSON SSE control events; forward the original event unchanged.
+    }
+  }
+
+  async function record(status, errorCode = "") {
+    if (finalized) return;
+    finalized = true;
+    try {
+      const response = await fetch(base + "/functions/v1/cenai-ai-quota", {
+        method: "POST",
+        headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record",
+          eventId: reservation.eventId,
+          model,
+          inputTokens,
+          outputTokens: estimateTokens(output),
+          latencyMs: Math.max(0, Date.now() - started),
+          status,
+          ...(errorCode ? { errorCode } : {})
+        })
+      });
+      if (!response.ok) console.error("CenAI streamed usage record returned HTTP", response.status);
+    } catch (error) {
+      console.error("CenAI streamed usage record failed", error instanceof Error ? error.message : "unknown error");
+    }
+  }
+
+  const body = new ReadableStream({
+    async start(controller) {
+      reader = upstream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\\r?\\n/);
+          buffer = lines.pop() || "";
+          for (const line of lines) collectText(line);
+          controller.enqueue(value);
+        }
+        buffer += decoder.decode();
+        if (buffer.trim()) collectText(buffer);
+        if (cancelled) return;
+        if (!output) throw new Error("AI provider returned an empty streamed response");
+        await record("success");
+        controller.close();
+      } catch (error) {
+        if (!cancelled) {
+          await record("error", "AI_STREAM_FAILED");
+          controller.error(error);
+        }
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+    },
+    async cancel(reason) {
+      cancelled = true;
+      try { await reader?.cancel(reason); } catch {}
+      await record("cancelled", "CLIENT_CANCELLED");
+    }
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    }
+  });
+}
+__name(streamAiChatResponse, "streamAiChatResponse");
+
 async function aiChat(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
@@ -306,7 +402,6 @@ async function aiChat(request, env) {
   if (!body || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
     return json(400, { error: "Provide between 1 and 50 chat messages." });
   }
-  if (body.stream === true) return json(400, { error: "Streaming is not enabled for this initial Cloud AI release." });
   const messages = [];
   for (const item of body.messages) {
     const role = String(item?.role || "");
@@ -333,6 +428,11 @@ async function aiChat(request, env) {
     reservation = await reserveResponse.json().catch(() => ({}));
     if (!reserveResponse.ok) return json(reserveResponse.status, reservation);
     const started = Date.now();
+    if (body.stream === true) {
+      const upstream = await env.AI.run(reservation.modelId, { messages, max_tokens: maxTokens, temperature, stream: true });
+      if (!upstream || typeof upstream.getReader !== "function") throw new Error("AI runtime did not return a readable stream");
+      return streamAiChatResponse(upstream, env, token, reservation, model, inputTokens, started);
+    }
     const result = await env.AI.run(reservation.modelId, { messages, max_tokens: maxTokens, temperature });
     const latencyMs = Date.now() - started;
     const content = typeof result?.response === "string" ? result.response
