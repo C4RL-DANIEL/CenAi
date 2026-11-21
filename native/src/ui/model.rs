@@ -122,6 +122,16 @@ pub struct AppState {
     pub auth_status: String,
     pub pending_sign_in: Option<(String, String)>,
     pub pending_sign_out: bool,
+    pub mcp_server_id_draft: String,
+    pub mcp_endpoint_draft: String,
+    pub mcp_publisher_draft: String,
+    pub mcp_version_draft: String,
+    pub mcp_license_draft: String,
+    pub mcp_capabilities_draft: String,
+    pub mcp_reviewed: bool,
+    pub mcp_status: String,
+    pub mcp_tools: Vec<crate::core::mcp::McpTool>,
+    pub pending_mcp_connect: Option<crate::core::mcp::McpServerManifest>,
 }
 
 impl Default for AppState {
@@ -159,6 +169,16 @@ impl Default for AppState {
             auth_status: String::new(),
             pending_sign_in: None,
             pending_sign_out: false,
+            mcp_server_id_draft: String::new(),
+            mcp_endpoint_draft: String::new(),
+            mcp_publisher_draft: String::new(),
+            mcp_version_draft: "1.0.0".into(),
+            mcp_license_draft: "MIT".into(),
+            mcp_capabilities_draft: String::new(),
+            mcp_reviewed: false,
+            mcp_status: String::new(),
+            mcp_tools: Vec::new(),
+            pending_mcp_connect: None,
         }
     }
 }
