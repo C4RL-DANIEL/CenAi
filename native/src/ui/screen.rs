@@ -188,6 +188,25 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
         });
     }
 
+    let latest_assistant = state.conversation.messages()
+        .filter(|message| message.role == MessageRole::Assistant && !message.body.trim().is_empty() && !message.streaming)
+        .map(|message| message.body.clone()).last();
+    if let Some(response) = latest_assistant {
+        surface(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read last response aloud")).clicked() {
+                    state.pending_speech_text = Some(response);
+                    state.speech_status = "Preparing speech playback…".into();
+                }
+                if ui.button("Stop speech").clicked() {
+                    state.pending_speech_stop = true;
+                }
+            });
+            if !state.speech_status.is_empty() {
+                ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            }
+        });
+    }
     ui.add_space(10.0);
     surface(ui, |ui| {
         ui.horizontal(|ui| {
