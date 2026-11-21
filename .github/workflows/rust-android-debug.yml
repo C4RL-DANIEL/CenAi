@@ -68,17 +68,33 @@ jobs:
           emulator-boot-timeout: 300000
           script: |
             adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
+            adb logcat -c
             timeout 45s adb shell am start -W -n com.cenai.app.rustdebug/com.cenai.app.CenAiNativeActivity
+            app_pid=""
             for attempt in $(seq 1 30); do
-              if adb shell pidof com.cenai.app.rustdebug >/dev/null 2>&1; then
-                echo "CenAI NativeActivity process is running."
-                exit 0
+              app_pid="$(adb shell pidof com.cenai.app.rustdebug | tr -d '\r' || true)"
+              if [[ -n "$app_pid" ]]; then
+                echo "CenAI NativeActivity process is running (pid $app_pid)."
+                break
               fi
               sleep 1
             done
-            adb logcat -d -t 500
-            echo "CenAI NativeActivity did not remain running." >&2
-            exit 1
+            if [[ -z "$app_pid" ]]; then
+              adb logcat -d -t 800
+              echo "CenAI NativeActivity did not remain running." >&2
+              exit 1
+            fi
+            # A live PID alone can hide an Activity that crashed and was restarted.
+            # Keep the app foregrounded briefly and fail on package-specific Java
+            # exceptions or native fatal signals before accepting the smoke test.
+            sleep 5
+            if adb logcat -d -t 1200 | grep -E 'FATAL EXCEPTION.*com\.cenai\.app\.rustdebug|Process: com\.cenai\.app\.rustdebug|Fatal signal [0-9]+.*cenai_native'; then
+              adb logcat -d -t 1200
+              echo "CenAI NativeActivity emitted a fatal startup error." >&2
+              exit 1
+            fi
+            adb shell dumpsys activity activities | grep -F 'com.cenai.app.rustdebug/com.cenai.app.CenAiNativeActivity' >/dev/null
+            echo "CenAI NativeActivity launch and foreground smoke checks passed."
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
