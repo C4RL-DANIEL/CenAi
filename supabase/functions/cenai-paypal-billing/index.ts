@@ -736,6 +736,13 @@ Deno.serve(async (req: Request) => {
     if (!await registrationAllowed(user)) return fail(403, "Complete Discord invitation registration before using CenAI.");
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "create_subscription");
+    if (["paypal_client_token", "create_customer_refund_request", "create_subscription", "record_sdk_subscription", "cancel_open_checkouts", "cancel"].includes(action)) {
+      const { data: hasVerifiedMfa, error: mfaError } = await db.rpc("cenai_user_has_verified_mfa", { p_user_id: user.id });
+      if (mfaError) throw mfaError;
+      if (hasVerifiedMfa === true && tokenAal(req) !== "aal2") {
+        return fail(403, "MFA_REQUIRED: Verify your authenticator before changing billing or payment settings.");
+      }
+    }
 
     if (action === "paypal_client_token") {
       if (!await billingEnabled()) return fail(503, "Billing is temporarily unavailable.");
