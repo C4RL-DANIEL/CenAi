@@ -2024,11 +2024,16 @@ impl WgpuRenderer {
                 ChatEvent::VoiceServiceChecked(_, result) => {
                     self.app_state.voice_service_status = match result {
                         Ok(status) if status.get("ready").and_then(serde_json::Value::as_bool) == Some(true) => {
-                            let profile = status.get("profile").and_then(serde_json::Value::as_str).unwrap_or("CenAI Original");
-                            let model = status.get("model").and_then(serde_json::Value::as_str).unwrap_or("cloud model");
-                            format!("Ready · {profile} · {model}")
+                            let profile = status.get("profile").and_then(serde_json::Value::as_str).unwrap_or("CenAI English");
+                            let model = status.get("model").and_then(serde_json::Value::as_str).unwrap_or("@cf/deepgram/aura-1");
+                            let quota = status.get("quota");
+                            let used = quota.and_then(|value| value.get("dailyCharactersUsed")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+                            let limit = quota.and_then(|value| value.get("dailyCharacterLimit")).and_then(serde_json::Value::as_u64).unwrap_or(1000);
+                            let global_used = quota.and_then(|value| value.get("globalNeuronsUsed")).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+                            let global_limit = quota.and_then(|value| value.get("globalNeuronLimit")).and_then(serde_json::Value::as_f64).unwrap_or(4000.0);
+                            format!("Ready · {profile} · {model} · {used}/{limit} chars today · {global_used:.0}/{global_limit:.0} shared Neurons")
                         }
-                        Ok(_) => "CenAI Voice GPU service responded but the model is not ready.".into(),
+                        Ok(_) => "CenAI Voice service responded but is not ready.".into(),
                         Err(error) => error,
                     };
                 }
@@ -2040,7 +2045,7 @@ impl WgpuRenderer {
                             self.app_state.speech_status = "Speech generation cancelled.".into();
                         }
                         Ok(wav) => {
-                            self.app_state.voice_service_status = "Connected · CenAI Original English cloud voice.".into();
+                            self.app_state.voice_service_status = "Connected · CenAI English · Aura-1 cloud voice.".into();
                             #[cfg(target_os = "android")]
                             {
                                 if let Some(playback) = self.audio_playback.as_mut() {
