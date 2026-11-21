@@ -28,7 +28,7 @@ The Central Brain is one shared intelligence service, **not one shared memory po
 - Personal memory is included only when the user's memory setting and request-level permission allow it. Model output cannot grant permissions or broaden context.
 - Send only the minimum authorized excerpts needed for the task; never ship a whole account history by default. Deletion must also remove indexed/embedded copies and cached derivatives.
 
-The Rust rewrite adds a context authorization gate with tests for cross-user denial, cross-feature grants, per-session isolation, explicit personal-memory access and malformed foreign records. This gate is a client-side defense-in-depth layer; Cloudflare/Supabase services must enforce the same tenant predicates server-side.
+The Rust rewrite adds a context authorization gate with tests for cross-user denial, cross-feature grants, per-session isolation, explicit personal-memory access and malformed foreign records. It accepts only canonical Supabase UUIDs. This gate is a client-side defense-in-depth layer; Cloudflare/Supabase services must enforce the same tenant predicates server-side. **Important current limitation:** the gate authorizes records supplied to it; it is not yet a durable personal-memory database or retrieval/indexing service. The current planner uses a bounded recent conversation context, not an account-wide memory search.
 
 ## Current architecture
 
@@ -38,11 +38,11 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - `wgpu 24`: GPU rendering and animated ambient shader.
 - `egui 0.31`: Rust-owned custom screen composition, controls, text input and Markdown/code display.
 - `native/src/android/vault.rs`: AES-GCM secrets encrypted with an Android Keystore-managed key; the encrypted records live in the app-private directory.
-- `native/src/core/network.rs`: Supabase auth, refresh, control-plane, billing, telemetry, CenAI Cloud, provider streaming and email OTP.
-- `native/src/core/workspace.rs`: per-account workspace metadata, conversation snapshots and path-safe artifacts.
+- `native/src/core/network.rs`: Supabase auth, serialized session mutation/refresh, account-bound authenticated requests, control-plane, billing, telemetry, CenAI Cloud streaming and provider streaming/email OTP.
+- `native/src/core/workspace.rs`: per-account workspace metadata, conversation snapshots and path-safe artifacts. Data is stored in Android app-private storage and partitioned by a hash of the immutable user UUID; the current workspace files are not separately encrypted with a per-account key.
 - `native/src/core/brain.rs`: Central Brain plan generation; every returned plan is validated before any action.
 - `native/src/core/mcp.rs`: MCP manifest validation and security review; discovery is not permission.
-- `native/src/core/guardian.rs`: bounded, sanitized diagnostics queue; upload is disabled until consent is granted.
+- `native/src/core/guardian.rs`: bounded local diagnostics and a separate consent-gated upload queue; pre-consent events are never uploaded retroactively and revoking consent clears pending uploads.
 - `native/src/ecosystem/manifest.rs`: trusted first-party registration and per-user capability grants.
 
 ## Implemented in this branch
@@ -51,19 +51,19 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Responsive centered content, animated GPU ambient gradient, custom dark surfaces, custom composer and button states.
 - Conversation message model, Markdown headings/lists/code fences, local per-account conversation autosave.
 - Existing-account sign-in against the existing Supabase/CenAI identity system; no open in-app registration. Any account creation must originate from the authorized Discord onboarding path. Email OTP is an existing-account verification step, not a substitute registration path.
-- Supabase token refresh and account-scoped API requests.
-- CenAI Cloud chat endpoint integration for explicitly routed managed requests; local workspace content remains local unless the user sends selected context.
+- Supabase token refresh and account-bound API requests. Session mutations are serialized; a request that resumes after an account switch cannot refresh into or return data for the new account.
+- CenAI Cloud chat endpoint integration for managed requests, including incremental SSE streaming where supported and JSON fallback. The active conversation history is sent with a managed chat request; project artifacts and other workspace files are not automatically attached.
 - OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore. Provider authorization remains separate from CenAI account authentication.
 - Per-account project creation, archived-project state, artifact metadata and local artifact storage.
 - Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
 - MCP HTTPS/protocol/publisher/license/capability checks and explicit approval for sensitive reads and external writes.
-- Guardian diagnostic redaction, deduplication, bounded buffering and consent gating.
+- Guardian diagnostic redaction, deduplication, bounded local buffering and consent gating; pre-consent diagnostics are not retroactively uploaded and opt-out clears the upload queue.
 - Private ecosystem manifest and per-user authorization contract; public docs expose only the approved integration surface while private orchestration stays behind authenticated/encrypted boundaries.
-- Rust workspace formatting, unit-test and Clippy CI; Android arm64 debug APK packaging workflow.
+- Rust workspace formatting, unit-test and Clippy CI; Android arm64/x86_64 debug APK packaging workflow.
 
 ## Still required before release
 
-- Verify latest Rust host tests and Clippy on the current branch head.
+- Re-run Rust host formatting, unit tests and Clippy after the latest Guardian sanitizer hardening commit.
 - Verify Android arm64 cross-compilation, Gradle packaging, APK install and NativeActivity startup.
 - Test the actual Android Keystore path, login/refresh/logout, email OTP and provider requests on device.
 - Add the remaining provider adapters and model catalog, MFA, subscription status/checkout UI, billing lifecycle and entitlement enforcement.
@@ -82,7 +82,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Keep private Ecosystem Engine internals private, but never rely on obscurity: enforce server-side authentication, authorization, signed manifests, scoped capabilities, audit and revocation.
 - Keep user content and workspace data on-device by default; cloud sync, backup, analytics and diagnostics require explicit user intent/consent.
 - Use only the Supabase publishable key in the client; enforce account and capability authorization server-side.
-- Credentials are encrypted with Android Keystore; app-private data remains account-scoped.
+- Provider credentials and session tokens are encrypted with Android Keystore. Workspace data is stored under Android app-private storage and partitioned by account UUID; separate per-account workspace encryption is still outstanding.
 - Do not transmit prompts, conversation text, filenames, file content or credentials in Guardian telemetry.
 - Sensitive reads, external writes, purchases, account changes and destructive operations require explicit approval.
 - Never execute an AI-generated plan just because it parsed successfully.
