@@ -835,7 +835,14 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Settings", 26.0, egui::Color32::WHITE).strong());
     ui.label(text("Make CenAI feel right for you.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
-    ui.add_space(18.0);
+    ui.add_space(12.0);
+    surface(ui, |ui| {
+        ui.label(text("Permissions & responsible use", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("CenAI requests access only when a feature needs it. Microphone access is requested when you start voice input. Files are selected through Android's system picker; CenAI does not request broad storage access.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Network access is used for sign-in, configured AI providers and cloud features. Connected-app permissions are separate, account-specific and revocable. Sensitive or destructive agent actions still require your approval.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("USE AT YOUR OWN RISK: AI output can be incorrect or incomplete. Review responses and verify important information before relying on it. You are responsible for permissions you grant and actions you approve.", 10.0, egui::Color32::from_rgb(240, 190, 132)).strong());
+    });
+    ui.add_space(10.0);
     surface(ui, |ui| {
         ui.label(text("Appearance & accessibility", 16.0, egui::Color32::WHITE).strong());
         ui.checkbox(&mut state.light_mode, "Use light appearance");
