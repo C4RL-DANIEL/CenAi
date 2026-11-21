@@ -5,13 +5,21 @@ on:
     branches:
       - main
       - "rewrite/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "native/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-native.yml"
   workflow_dispatch:
 
 concurrency:
-  # Keep only the newest pending run for this branch while allowing the active
-  # build to finish. A per-commit group otherwise creates an unbounded queue.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # New commits on the same branch supersede stale checks; the newest snapshot
+  # is always allowed to run instead of waiting behind obsolete builds.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -26,8 +34,6 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Format Rust sources
-        run: cargo fmt --all
       - name: Verify formatting
         run: cargo fmt --all -- --check
       - name: Run unit tests
