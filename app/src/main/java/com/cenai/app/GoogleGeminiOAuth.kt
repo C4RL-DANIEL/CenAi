@@ -14,7 +14,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Official Google OAuth authorization-code + PKCE flow for the Gemini Developer API. */
-class GoogleGeminiOAuth(private val vault: SecureKeyStore) {
+class GoogleGeminiOAuth(private val vault: SecureKeyStore, private val contextScope: BrainContextScope) {
+    private fun getSecret(name: String) = vault.getSecretScoped(contextScope, contextScope.featureId, name)
+    private fun putSecret(name: String, value: String) =
+        vault.putSecretScoped(contextScope, contextScope.featureId, name, value)
+    private fun getPreference(name: String, fallback: String = "") =
+        vault.getScoped(contextScope, contextScope.featureId, name, fallback)
+    private fun putPreference(name: String, value: String) =
+        vault.putScoped(contextScope, contextScope.featureId, name, value)
     companion object {
         const val REDIRECT_URI = "com.cenai.app:/oauth2redirect"
         const val SCOPE = "https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/cloud-platform"
@@ -29,8 +36,8 @@ class GoogleGeminiOAuth(private val vault: SecureKeyStore) {
         val stateBytes = ByteArray(24).also(random::nextBytes)
         val state = Base64.encodeToString(stateBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         val challenge = Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        vault.putSecret("google_oauth_verifier", verifier)
-        vault.putSecret("google_oauth_state", state)
+        putSecret("google_oauth_verifier", verifier)
+        putSecret("google_oauth_state", state)
         val uri = Uri.parse("https://accounts.google.com/o/oauth2/v2/auth").buildUpon()
             .appendQueryParameter("client_id", clientId)
             .appendQueryParameter("redirect_uri", REDIRECT_URI)
@@ -48,13 +55,13 @@ class GoogleGeminiOAuth(private val vault: SecureKeyStore) {
     suspend fun completeCallback(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             require(uri.scheme == "com.cenai.app" && uri.path == "/oauth2redirect") { "Unexpected OAuth redirect." }
-            val expectedState = vault.getSecret("google_oauth_state")
+            val expectedState = getSecret("google_oauth_state")
             require(expectedState.isNotBlank() && uri.getQueryParameter("state") == expectedState) { "OAuth state validation failed." }
             val error = uri.getQueryParameter("error")
             require(error.isNullOrBlank()) { "Google authorization failed: " + error }
             val code = uri.getQueryParameter("code") ?: error("Google did not return an authorization code.")
-            val verifier = vault.getSecret("google_oauth_verifier")
-            val clientId = vault.get("google_oauth_client_id")
+            val verifier = getSecret("google_oauth_verifier")
+            val clientId = getPreference("google_oauth_client_id")
             require(clientId.isNotBlank() && verifier.isNotBlank()) { "OAuth setup is incomplete." }
             val body = FormBody.Builder()
                 .add("client_id", clientId)
@@ -68,21 +75,21 @@ class GoogleGeminiOAuth(private val vault: SecureKeyStore) {
                 val raw = response.body?.string().orEmpty()
                 check(response.isSuccessful) { "Google token exchange failed (HTTP " + response.code + "): " + raw.take(300) }
                 val token = JSONObject(raw)
-                vault.putSecret("gemini_oauth_access_token", token.getString("access_token"))
-                token.optString("refresh_token").takeIf { it.isNotBlank() }?.let { vault.putSecret("gemini_oauth_refresh_token", it) }
-                vault.put("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
-                vault.putSecret("google_oauth_verifier", "")
-                vault.putSecret("google_oauth_state", "")
+                putSecret("gemini_oauth_access_token", token.getString("access_token"))
+                token.optString("refresh_token").takeIf { it.isNotBlank() }?.let { putSecret("gemini_oauth_refresh_token", it) }
+                putPreference("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
+                putSecret("google_oauth_verifier", "")
+                putSecret("google_oauth_state", "")
             }
         }
     }
 
     suspend fun credential(): Pair<String, Boolean> = withContext(Dispatchers.IO) {
-        val access = vault.getSecret("gemini_oauth_access_token")
-        val expires = vault.get("gemini_oauth_expires_at", "0").toLongOrNull() ?: 0L
+        val access = getSecret("gemini_oauth_access_token")
+        val expires = getPreference("gemini_oauth_expires_at", "0").toLongOrNull() ?: 0L
         if (access.isNotBlank() && expires > System.currentTimeMillis() + 60_000L) return@withContext access to true
-        val refresh = vault.getSecret("gemini_oauth_refresh_token")
-        val clientId = vault.get("google_oauth_client_id")
+        val refresh = getSecret("gemini_oauth_refresh_token")
+        val clientId = getPreference("google_oauth_client_id")
         if (refresh.isBlank() || clientId.isBlank()) return@withContext "" to false
         val body = FormBody.Builder().add("client_id", clientId).add("refresh_token", refresh).add("grant_type", "refresh_token").build()
         val request = Request.Builder().url("https://oauth2.googleapis.com/token").post(body).build()
@@ -92,16 +99,16 @@ class GoogleGeminiOAuth(private val vault: SecureKeyStore) {
             val token = JSONObject(raw)
             val next = token.optString("access_token")
             if (next.isNotBlank()) {
-                vault.putSecret("gemini_oauth_access_token", next)
-                vault.put("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
+                putSecret("gemini_oauth_access_token", next)
+                putPreference("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
             }
             next to next.isNotBlank()
         }
     }
 
     fun disconnect() {
-        vault.putSecret("gemini_oauth_access_token", "")
-        vault.putSecret("gemini_oauth_refresh_token", "")
-        vault.put("gemini_oauth_expires_at", "0")
+        putSecret("gemini_oauth_access_token", "")
+        putSecret("gemini_oauth_refresh_token", "")
+        putPreference("gemini_oauth_expires_at", "0")
     }
 }

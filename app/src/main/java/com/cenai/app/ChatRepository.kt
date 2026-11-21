@@ -27,21 +27,29 @@ class ChatRepository(private val vault: SecureKeyStore) {
         model: String,
         baseUrl: String,
         messages: List<ChatMessage>,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        contextScope: BrainContextScope
     ): String {
         if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
-        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
+        val accountScope = BrainContextScope(contextScope.userId, "account")
+        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault, accountScope).credential() else "" to false
         val credential = when {
-            provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
+            provider == Provider.CENAI_CLOUD -> {
+                val activeAccountId = vault.get("supabase_account_id")
+                require(contextScope.userId == "account:$activeAccountId" && activeAccountId.isNotBlank()) {
+                    "CenAI Cloud requests must run under the currently authenticated account."
+                }
+                vault.getSecret("supabase_access_token") to false
+            }
             oauthCredential.first.isNotBlank() -> oauthCredential
-            else -> vault.apiKey(provider) to false
+            else -> vault.apiKey(provider, accountScope) to false
         }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
         return suspendCancellableCoroutine { continuation ->
-        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key, credential.second)) }
+        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key, credential.second, contextScope)) }
             .getOrElse {
                 continuation.resumeWith(Result.failure(it))
                 return@suspendCancellableCoroutine
@@ -95,7 +103,9 @@ class ChatRepository(private val vault: SecureKeyStore) {
         }
     }
 
-    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean): Request {
+    private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean, contextScope: BrainContextScope): Request {
+        fun maxTokens(fallback: String): Int =
+            vault.getScoped(contextScope, contextScope.featureId, "max_tokens", fallback).toIntOrNull() ?: fallback.toInt()
         require(model.isNotBlank()) { "Enter a model ID in Settings." }
         val system = msgs.firstOrNull { it.role == "system" }?.content
         val conversation = msgs.filter { it.role != "system" }
@@ -117,7 +127,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     }
                 }
                 payload = JSONObject().put("model", model).put("stream", false)
-                    .put("max_tokens", (vault.get("max_tokens", "1024").toIntOrNull() ?: 1024).coerceIn(1, 1024))
+                    .put("max_tokens", (maxTokens("1024")).coerceIn(1, 1024))
                     .put("messages", list)
                 builder = Request.Builder().url("https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions")
                     .header("Authorization", "Bearer " + key)
@@ -133,7 +143,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     list.put(JSONObject().put("role", message.role).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
                 }
                 payload = JSONObject().put("model", model)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("max_tokens", maxTokens("4096"))
                     .put("stream", true).put("messages", list)
                 if (!system.isNullOrBlank()) payload.put("system", system)
                 builder = Request.Builder().url("https://api.anthropic.com/v1/messages")
@@ -150,7 +160,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     contents.put(JSONObject().put("role", if (message.role == "assistant") "model" else "user").put("parts", parts))
                 }
                 payload = JSONObject().put("contents", contents)
-                    .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens("4096")))
                 if (!system.isNullOrBlank()) payload.put("systemInstruction",
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                 builder = Request.Builder().url(if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse" else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
@@ -170,7 +180,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     list.put(JSONObject().put("role", message.role).put("content", content))
                 }
                 payload = JSONObject().put("model", model).put("stream", true)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("max_tokens", maxTokens("4096"))
                     .put("messages", list)
                 builder = Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $key")

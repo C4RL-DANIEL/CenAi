@@ -24,6 +24,11 @@ class CenAiCloud(private val vault: SecureKeyStore) {
 
     data class AccountResult(val message: String, val signedIn: Boolean)
 
+    private fun accountScope(): BrainContextScope? {
+        val id = vault.get("supabase_account_id")
+        return if (id.matches(Regex("[A-Za-z0-9_-]{8,128}"))) BrainContextScope("account:$id", "account") else null
+    }
+
     private suspend fun post(url: String, body: JSONObject, token: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val builder = Request.Builder().url(url)
             .header("apikey", PUBLISHABLE_KEY)
@@ -61,13 +66,21 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     private fun saveSession(data: JSONObject, email: String) {
         vault.putSecret("supabase_access_token", data.optString("access_token"))
         vault.putSecret("supabase_refresh_token", data.optString("refresh_token"))
-        vault.put("supabase_account_email", data.optJSONObject("user")?.optString("email")?.ifBlank { email } ?: email)
+        val user = data.optJSONObject("user")
+        val accountId = user?.optString("id").orEmpty().ifBlank { vault.get("supabase_account_id") }
+        require(accountId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+            "The authentication service did not return a valid account identifier."
+        }
+        vault.put("supabase_account_id", accountId)
+        vault.put("supabase_account_email", user.optString("email").ifBlank { email })
     }
 
     fun signOut() {
         vault.putSecret("supabase_access_token", "")
         vault.putSecret("supabase_refresh_token", "")
+        vault.put("supabase_account_id", "")
         vault.put("supabase_account_email", "")
+        accountScope()?.let { vault.putScoped(it, "account", "email_verified", "false") }
         vault.put("cenai_email_verified", "false")
     }
 
@@ -167,11 +180,11 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val data = post("https://cenai-website.cenai-app.workers.dev/api/email-otp", JSONObject().put("action", "verify").put("code", code), token)
         if (!data.optBoolean("verified")) throw IOException("Email verification was not confirmed.")
-        vault.put("cenai_email_verified", "true")
+        accountScope()?.let { vault.putScoped(it, "account", "email_verified", "true") }
         return data.optString("message", "Email verified.")
     }
 
-    fun isEmailVerified(): Boolean = vault.get("cenai_email_verified") == "true"
+    fun isEmailVerified(): Boolean = accountScope()?.let { vault.getScoped(it, "account", "email_verified") == "true" } ?: false
 
     fun accountEmail(): String = vault.get("supabase_account_email")
     fun isSignedIn(): Boolean = vault.getSecret("supabase_access_token").isNotBlank()

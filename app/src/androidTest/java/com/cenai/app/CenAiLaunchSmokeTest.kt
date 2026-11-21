@@ -2,11 +2,13 @@ package com.cenai.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -18,14 +20,23 @@ class CenAiLaunchSmokeTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     private fun selectSettingsPage(page: String) {
-        // The settings content is vertically scrollable and the page selector is horizontally scrollable.
-        // Bring the requested chip into view across both scroll containers before clicking it.
-        val tab = compose.onNodeWithText(page)
-        tab.performScrollTo()
-        tab.assertIsDisplayed()
-        tab.performClick()
-    }
+        val category = when (page) {
+            "Device" -> "Chat"
+            "Updates" -> "About & diagnostics"
+            else -> page
+        }
+        val categoryTag = "settings-category-$category"
 
+        // Settings categories are in a horizontal, scrollable chip row on phones.
+        // Scroll the container to the target instead of calling performScrollTo()
+        // on the chip, which only handles vertical scroll parents.
+        compose.onNodeWithTag("settings-page-tabs")
+            .performScrollToNode(hasTestTag(categoryTag))
+
+        val categoryNode = compose.onNodeWithTag(categoryTag)
+        categoryNode.assertIsDisplayed().performClick()
+        compose.waitForIdle()
+    }
     @Test
     fun mainScreenLaunchesAndShowsComposer() {
         compose.onNodeWithText("Message CenAI…").assertIsDisplayed()
@@ -33,9 +44,19 @@ class CenAiLaunchSmokeTest {
 
     @Test
     fun settingsExposeCoreVoiceAiGuardianAgentAndUpdateSystems() {
-        compose.onNodeWithTag("open-settings").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("CenAI settings").assertIsDisplayed()
+
+        selectSettingsPage("Appearance")
+        val styleField = compose.onNodeWithText("Aurora · Living gradient")
+        styleField.performScrollTo()
+        styleField.performClick()
+        compose.onNodeWithText("Ember · Warm spectrum").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Ember · Warm spectrum").assertIsDisplayed()
+        compose.onNodeWithText("Ember · Warm spectrum").performClick()
+        compose.onNodeWithText("Aurora · Living gradient").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Aurora · Living gradient").assertIsDisplayed()
 
         selectSettingsPage("AI & models")
         listOf(
