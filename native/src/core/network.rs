@@ -721,7 +721,13 @@ impl CenAiApi {
             let sample_rate = mime_type.split(';').find_map(|part| {
                 part.trim().strip_prefix("rate=")?.parse::<u32>().ok()
             }).unwrap_or(24_000);
-            return pcm16_mono_to_wav(sample_rate, &audio);
+            let mut pcm = audio;
+            // RFC 2586 audio/L16 is network-byte-order; Android PCM16 WAV is little-endian.
+            if mime_type.starts_with("audio/l16") {
+                if pcm.len() % 2 != 0 { return Err("Gemini returned misaligned L16 audio".into()); }
+                for sample in pcm.chunks_exact_mut(2) { sample.swap(0, 1); }
+            }
+            return pcm16_mono_to_wav(sample_rate, &pcm);
         }
         Err("Gemini returned an unsupported speech audio format".into())
     }
