@@ -1,5 +1,5 @@
-pub mod backup;
 //! Shared permission and task-domain primitives.
+pub mod backup;
 pub mod context;
 pub mod permissions;
 pub mod agents;
