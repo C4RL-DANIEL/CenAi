@@ -184,10 +184,8 @@ impl ApplicationHandler for CenAiApplication {
                                     _ => log::warn!("Ignoring unknown Android file picker request {request_code}"),
                                 }
                             }
-                            AndroidPlatformEvent::DocumentCreated { request_code, uri } => {
-                                if request_code == 8103 {
-                                    renderer.handle_backup_document_created(uri);
-                                }
+                            AndroidPlatformEvent::DocumentCreated { request_code, uri: _ } => {
+                                log::warn!("Ignoring unhandled Android document-save result for request {request_code}");
                             }
                         }
                     }
@@ -196,9 +194,6 @@ impl ApplicationHandler for CenAiApplication {
                     }
                     if renderer.take_backup_picker_request() {
                         Self::invoke_activity_method(self.android_app.clone(), "openBackupPicker");
-                    }
-                    if renderer.take_backup_save_picker_request() {
-                        Self::invoke_activity_method(self.android_app.clone(), "createBackupDocument");
                     }
                     if let Some(url) = renderer.take_open_url() {
                         Self::open_external_url(self.android_app.clone(), url);
