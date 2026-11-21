@@ -22,7 +22,7 @@ fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user
     // Only a small, relevance-ranked subset enters a normal chat request. The server
     // scopes the fetched records to the authenticated account; the owner is checked
     // again by the same context authorization layer used by Central Brain planning.
-    let ranked = rank_personal_memories(goal, &records, 8, 6_000);
+    let ranked = rank_personal_memories(owner_user_id, goal, &records, 8, 6_000);
     let mut context = String::new();
     for record in ranked {
         if !context.is_empty() { context.push('\n'); }
