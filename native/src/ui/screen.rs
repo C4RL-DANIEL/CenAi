@@ -241,9 +241,40 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                     ui.label(text(&project.description, 12.0, egui::Color32::from_rgb(163, 174, 203)));
                 }
                 ui.label(text(format!("{} saved artifacts", project.artifacts.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                for artifact in &project.artifacts {
+                    ui.label(text(format!("▤  {}", artifact.file_name), 11.0, egui::Color32::from_rgb(165, 184, 220)));
+                }
             });
             ui.add_space(8.0);
         }
+    }
+    if !state.projects.is_empty() {
+        ui.add_space(12.0);
+        surface(ui, |ui| {
+            ui.label(text("Create a text artifact", 16.0, egui::Color32::WHITE).strong());
+            egui::ComboBox::from_id_salt("artifact_project")
+                .selected_text(state.projects.iter().find(|project| project.id == state.artifact_project_id)
+                    .map(|project| project.name.as_str()).unwrap_or("Choose project"))
+                .show_ui(ui, |ui| {
+                    for project in &state.projects {
+                        ui.selectable_value(&mut state.artifact_project_id, project.id.clone(), &project.name);
+                    }
+                });
+            ui.add(egui::TextEdit::singleline(&mut state.artifact_name_draft).hint_text("Artifact filename").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::multiline(&mut state.artifact_content_draft).hint_text("Write a note or draft…").desired_width(f32::INFINITY).desired_rows(4));
+            if ui.button("Save artifact").clicked() {
+                state.pending_artifact = Some((
+                    state.artifact_project_id.clone(),
+                    format!("artifact-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
+                    state.artifact_name_draft.trim().to_owned(),
+                    state.artifact_content_draft.clone(),
+                ));
+                state.artifact_status = "Saving artifact…".into();
+            }
+            if !state.artifact_status.is_empty() {
+                ui.label(text(&state.artifact_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            }
+        });
     }
     ui.add_space(10.0);
     surface(ui, |ui| {
