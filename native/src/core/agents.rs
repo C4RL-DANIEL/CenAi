@@ -34,6 +34,17 @@ impl TaskPlan {
         if self.steps.iter().any(|step| step.title.trim().is_empty() || step.depends_on.iter().any(|id| !ids.contains(id) || *id == step.id)) {
             return Err("Task plan contains an invalid step or dependency");
         }
+        let mut completed = std::collections::HashSet::new();
+        loop {
+            let before = completed.len();
+            for step in &self.steps {
+                if step.depends_on.iter().all(|dependency| completed.contains(dependency)) {
+                    completed.insert(step.id);
+                }
+            }
+            if completed.len() == self.steps.len() { break; }
+            if completed.len() == before { return Err("Task plan contains a dependency cycle"); }
+        }
         Ok(())
     }
 
@@ -73,5 +84,17 @@ mod tests {
         plan.stop();
         assert!(plan.ready_steps().is_empty());
         assert_eq!(plan.steps[1].status, StepStatus::Cancelled);
+    }
+
+    #[test]
+    fn dependency_cycles_are_rejected() {
+        let plan = TaskPlan {
+            id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "A".into(), status: StepStatus::Pending, depends_on: vec![2] },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "B".into(), status: StepStatus::Pending, depends_on: vec![1] },
+            ],
+        };
+        assert_eq!(plan.validate(), Err("Task plan contains a dependency cycle"));
     }
 }
