@@ -422,6 +422,19 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         }
         ui.label(text("Only a coarse diagnostic category may be uploaded, and only with your consent plus server-side rollout approval. Prompts, message text, file contents, paths and credentials are never sent.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.label(text("The interface respects this setting when animating transitions.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        if let Some(snapshot) = &state.guardian_snapshot {
+            let ram_used = snapshot.ram_total_kb.saturating_sub(snapshot.ram_available_kb);
+            let ram_percent = if snapshot.ram_total_kb > 0 { ram_used.saturating_mul(100) / snapshot.ram_total_kb } else { 0 };
+            ui.separator();
+            ui.label(text("Local device health", 13.0, egui::Color32::WHITE).strong());
+            ui.horizontal_wrapped(|ui| {
+                ui.label(text(format!("CPU: {}%", snapshot.cpu_usage_percent.map_or_else(|| "sampling".into(), |value| value.to_string())), 10.0, accent()));
+                ui.label(text(format!("RAM: {}% · {:.0}/{:.0} MB", ram_percent, ram_used as f64 / 1024.0, snapshot.ram_total_kb as f64 / 1024.0), 10.0, accent()));
+                ui.label(text(format!("Storage free: {:.1} GB", snapshot.storage_available_bytes as f64 / 1_073_741_824.0), 10.0, accent()));
+            });
+            ui.label(text(format!("Network totals · RX {:.1} MB · TX {:.1} MB", snapshot.network_rx_bytes as f64 / 1_048_576.0, snapshot.network_tx_bytes as f64 / 1_048_576.0), 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text("System metrics are sampled locally and are never uploaded as Guardian telemetry.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
+        }
         ui.separator();
         ui.label(text("Central Brain memory", 15.0, egui::Color32::WHITE).strong());
         let previous_memory_enabled = state.personal_memory_enabled;
