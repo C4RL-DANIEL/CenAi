@@ -18,6 +18,15 @@ use sha2::{Digest, Sha256};
 
 use crate::core::network::SessionVault;
 
+fn valid_supabase_user_id(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
 pub struct AndroidSecretVault {
     app: AndroidApp,
     path: PathBuf,
@@ -233,7 +242,9 @@ impl SessionVault for AndroidSecretVault {
     fn account_id(&self) -> Result<String, String> { self.get_secret("supabase_account_id") }
 
     fn save_session(&self, access: &str, refresh: &str, user_id: &str, email: &str) -> Result<(), String> {
-        if user_id.trim().is_empty() { return Err("A verified account UUID is required.".into()); }
+        if !valid_supabase_user_id(user_id) || access.trim().is_empty() || refresh.trim().is_empty() {
+            return Err("A valid Supabase user UUID and complete authenticated session are required.".into());
+        }
         self.put_secrets(&[
             ("supabase_access_token", access),
             ("supabase_refresh_token", refresh),
@@ -300,5 +311,20 @@ impl SessionVault for AndroidSecretVault {
         }
         let name = self.scoped_secret_name("provider_api_key", provider)?;
         self.put_secret(&name, key)
+    }
+}
+
+
+#[cfg(test)]
+mod identity_tests {
+    use super::valid_supabase_user_id;
+
+    #[test]
+    fn only_canonical_supabase_uuid_identities_are_accepted() {
+        assert!(valid_supabase_user_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(!valid_supabase_user_id(""));
+        assert!(!valid_supabase_user_id("user@example.com"));
+        assert!(!valid_supabase_user_id("550e8400e29b41d4a716446655440000"));
+        assert!(!valid_supabase_user_id("550e8400-e29b-41d4-a716-44665544000z"));
     }
 }
