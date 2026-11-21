@@ -317,7 +317,9 @@ impl WgpuRenderer {
                 "model": "cloudflare-gemma-4-26b-a4b-it",
                 "messages": messages,
                 "max_tokens": 1024,
-                "stream": true,
+                // The currently deployed Cloudflare Worker explicitly rejects stream=true.
+                // Keep the compatible JSON response until the server-side SSE rollout is deployed.
+                "stream": false,
             });
             self.runtime.spawn(async move {
                 let delta_sender = sender.clone();
