@@ -175,8 +175,8 @@ impl WorkspaceStore {
                 let messages = self.load_conversation(id)?;
                 let bytes = serde_json::to_vec(&messages).map_err(|error| error.to_string())?;
                 total_bytes = total_bytes.saturating_add(bytes.len());
-                if total_bytes > 100 * 1024 * 1024 {
-                    return Err("Workspace conversations and artifacts exceed the 100 MB encrypted backup limit".into());
+                if total_bytes > 70 * 1024 * 1024 {
+                    return Err("Workspace conversations and artifacts exceed the 70 MB encrypted backup limit".into());
                 }
                 conversations.push(BackupConversation { id: id.to_owned(), messages });
             }
@@ -186,8 +186,8 @@ impl WorkspaceStore {
             for artifact in &project.artifacts {
                 let bytes = self.read_artifact(&artifact.id)?;
                 total_bytes = total_bytes.saturating_add(bytes.len());
-                if total_bytes > 100 * 1024 * 1024 {
-                    return Err("Workspace artifacts exceed the 100 MB encrypted backup limit".into());
+                if total_bytes > 70 * 1024 * 1024 {
+                    return Err("Workspace artifacts exceed the 70 MB encrypted backup limit".into());
                 }
                 artifacts.push(BackupArtifact { id: artifact.id.clone(), bytes_base64: STANDARD.encode(bytes) });
             }
@@ -202,8 +202,8 @@ impl WorkspaceStore {
             artifacts,
         };
         let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
-        if bytes.len() > 100 * 1024 * 1024 {
-            return Err("Serialized workspace backup exceeds the 100 MB encrypted payload limit".into());
+        if bytes.len() > 70 * 1024 * 1024 {
+            return Err("Serialized workspace backup exceeds the 70 MB encrypted payload limit".into());
         }
         Ok(bytes)
     }
@@ -220,8 +220,8 @@ impl WorkspaceStore {
     }
 
     pub fn import_backup_payload(&self, plaintext: &[u8]) -> Result<(), String> {
-        if plaintext.is_empty() || plaintext.len() > 100 * 1024 * 1024 {
-            return Err("Workspace backup payload is empty or exceeds 100 MB".into());
+        if plaintext.is_empty() || plaintext.len() > 70 * 1024 * 1024 {
+            return Err("Workspace backup payload is empty or exceeds 70 MB".into());
         }
         let payload: WorkspaceBackupPayload = serde_json::from_slice(plaintext).map_err(|error| error.to_string())?;
         if payload.schema_version != 1 || payload.projects.len() > 200 || payload.tasks.len() > 200
@@ -287,7 +287,7 @@ impl WorkspaceStore {
             }
             let bytes = STANDARD.decode(&artifact.bytes_base64).map_err(|_| "Backup artifact encoding is invalid".to_owned())?;
             total_bytes = total_bytes.saturating_add(bytes.len());
-            if total_bytes > 100 * 1024 * 1024 { return Err("Workspace backup artifact data exceeds 100 MB".into()); }
+            if total_bytes > 70 * 1024 * 1024 { return Err("Workspace backup artifact data exceeds 70 MB".into()); }
             files.insert(artifact.id, bytes);
         }
         let mut referenced = std::collections::HashSet::new();
