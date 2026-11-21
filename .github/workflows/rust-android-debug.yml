@@ -27,8 +27,8 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-      - name: Install Android NDK
-        run: sdkmanager "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+        with:
+          packages: "platform-tools, platforms;android-35, build-tools;35.0.0, ndk;27.2.12479018"
       - name: Configure Android NDK
         run: echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Install cargo-ndk
