@@ -1,4 +1,5 @@
 //! Shared permission and task-domain primitives.
+pub mod context;
 pub mod permissions;
 pub mod agents;
 pub mod automations;
