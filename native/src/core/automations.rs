@@ -93,10 +93,11 @@ impl AutomationScheduler {
     }
 
     pub fn set_enabled_and_persist(&mut self, owner_scope: &str, automation_id: &str, enabled: bool, store: &WorkspaceStore) -> Result<bool, String> {
-        let key = Self::key(owner_scope, automation_id);
-        let Some(previous) = self.automations.get(&key).cloned() else { return Ok(false); };
         if !valid_user_uuid(owner_scope) { return Ok(false); }
-        self.automations.get_mut(&key).expect("automation key checked above").enabled = enabled;
+        let key = Self::key(owner_scope, automation_id);
+        let Some(item) = self.automations.get_mut(&key) else { return Ok(false); };
+        let previous = item.clone();
+        item.enabled = enabled;
         if let Err(error) = self.persist_to_workspace(store) {
             self.automations.insert(key, previous);
             return Err(error);
