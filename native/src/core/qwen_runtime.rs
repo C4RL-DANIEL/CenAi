@@ -82,6 +82,7 @@ where
             .map_err(|error| format!("Could not create temporary model file: {error}"))?;
         let mut hasher = Sha256::new();
         let mut downloaded = 0u64;
+        let mut last_reported_percent = -1i32;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|error| format!("Download interrupted for {file_name}: {error}"))?;
             file.write_all(&chunk).await
@@ -89,7 +90,11 @@ where
             hasher.update(&chunk);
             downloaded = downloaded.saturating_add(chunk.len() as u64);
             if total > 0 {
-                on_progress(file_name, (downloaded as f32 / total as f32).clamp(0.0, 1.0));
+                let percent = ((downloaded as f64 / total as f64) * 100.0).floor() as i32;
+                if percent != last_reported_percent {
+                    last_reported_percent = percent;
+                    on_progress(file_name, (percent as f32 / 100.0).clamp(0.0, 1.0));
+                }
             }
         }
         file.flush().await.map_err(|error| format!("Could not flush {file_name}: {error}"))?;
