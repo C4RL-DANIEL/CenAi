@@ -32,10 +32,9 @@ impl CenAiApplication {
         Self { api, runtime, workspace, workspace_root, android_app, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
     }
 
-    fn open_external_url(&self, url: String) {
+    fn open_external_url(app: AndroidApp, url: String) {
         if !url.starts_with("https://checkout.stripe.com/") { log::warn!("Blocked external checkout URL outside the Stripe allowlist"); return; }
-        let app = self.android_app.clone();
-        self.android_app.run_on_java_main_thread(Box::new(move || {
+        app.run_on_java_main_thread(Box::new(move || {
             let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
@@ -114,7 +113,7 @@ impl ApplicationHandler for CenAiApplication {
                         Err(_) => {}
                     }
                     if let Some(url) = renderer.take_open_url() {
-                        self.open_external_url(url);
+                        Self::open_external_url(self.android_app.clone(), url);
                     }
                 }
                 if let Some(window) = &self.window {
@@ -148,7 +147,7 @@ pub fn android_main(app: AndroidApp) {
         Err(error) => { log::error!("Async runtime initialization failed: {error}"); return; }
     };
     let mut builder = EventLoop::builder();
-    builder.with_android_app(app);
+    builder.with_android_app(app.clone());
     let event_loop = builder.build().expect("create Android event loop");
     event_loop
         .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace, workspace_root, app.clone()))
