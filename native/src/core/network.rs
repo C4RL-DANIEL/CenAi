@@ -349,6 +349,14 @@ impl CenAiApi {
         data.get("memory").cloned().ok_or_else(|| "The memory service returned no saved record.".into())
     }
 
+    pub async fn clear_personal_memories(&self) -> Result<(), String> {
+        let data = self.personal_memory_action("memory_clear", json!({})).await?;
+        if data.get("cleared").and_then(Value::as_bool) != Some(true) {
+            return Err("The memory service did not confirm clearing personal memories.".into());
+        }
+        Ok(())
+    }
+
     pub async fn delete_personal_memory(&self, memory_id: &str) -> Result<(), String> {
         if !valid_supabase_user_id(memory_id) {
             return Err("Invalid personal-memory identifier.".into());
