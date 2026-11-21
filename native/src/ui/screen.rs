@@ -788,7 +788,7 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label(text(&state.voice_service_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
         if ui.button("Check cloud voice service").clicked() {
             state.pending_voice_service_check = true;
-            state.voice_service_status = "Checking CenAI Voice GPU service…".into();
+            state.voice_service_status = "Checking CenAI Voice Workers AI service…".into();
         }
         if ui.small_button("View CenAI Voice implementation plan").clicked() {
             state.pending_open_url = Some("https://github.com/C4RL-DANIEL/CenAi/blob/rewrite/rust-native-core/docs/CENAI-VOICE.md".into());
