@@ -105,10 +105,15 @@ struct ShaderUniforms {
     intensity: f32,
 }
 
+struct SignInOutcome {
+    email: String,
+    mfa_factors: Result<Vec<crate::ui::model::MfaFactor>, String>,
+}
+
 enum ChatEvent {
     Delta(u64, u64, String),
     Finished(u64, u64, Result<String, String>),
-    SignedIn(u64, Result<String, String>),
+    SignedIn(u64, Result<SignInOutcome, String>),
     SignedOut(u64, Result<(), String>),
     OtpSent(u64, Result<String, String>),
     OtpVerified(u64, Result<String, String>),
@@ -949,7 +954,14 @@ impl WgpuRenderer {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedIn(generation, api.sign_in(&email, &password).await)); });
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        let email = api.sign_in(&email, &password).await?;
+                        let mfa_factors = api.mfa_factors().await.and_then(mfa_factors_from_response);
+                        Ok(SignInOutcome { email, mfa_factors })
+                    }.await;
+                    let _ = sender.send(ChatEvent::SignedIn(generation, result));
+                });
                 self.track_task(task);
             } else {
                 self.app_state.auth_status = "Account service is unavailable.".into();
