@@ -504,7 +504,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
 
     egui::TopBottomPanel::top("cenai_header")
         .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 236) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 224) }).inner_margin(egui::Margin::symmetric(18, 14)))
-        .show(ctx, |ui| top_bar(ui));
+        .show(ctx, top_bar);
 
     egui::TopBottomPanel::bottom("cenai_navigation")
         .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 242) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 240) }).inner_margin(egui::Margin::symmetric(8, 8)))
