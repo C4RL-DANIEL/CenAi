@@ -458,6 +458,22 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         if !state.personal_memory_status.is_empty() {
             ui.label(text(&state.personal_memory_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
         }
+        if state.personal_memory_enabled && !state.personal_memories.is_empty() {
+            ui.separator();
+            ui.label(text("Saved memories", 13.0, egui::Color32::WHITE).strong());
+            for memory in &state.personal_memories {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(text(memory.category.to_uppercase(), 9.0, accent()).strong());
+                        ui.add(egui::Label::new(text(&memory.content, 10.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                    });
+                    if ui.small_button("Delete").clicked() {
+                        state.pending_memory_delete = Some(memory.id.clone());
+                    }
+                });
+                ui.add_space(4.0);
+            }
+        }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
