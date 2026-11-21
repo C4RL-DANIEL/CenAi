@@ -4,7 +4,6 @@ import asyncio
 import io
 import logging
 import os
-import re
 import secrets
 import threading
 import uuid
