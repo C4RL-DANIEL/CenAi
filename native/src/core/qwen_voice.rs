@@ -164,7 +164,7 @@ impl SynthesisRequest {
         if text.len() > MAX_SYNTHESIS_TEXT_BYTES {
             return Err("Speech text exceeds the CenAI Voice limit");
         }
-        if text.chars().any(|character| character.is_control() && !matches!(character, '\\n' | '\\r' | '\\t')) {
+        if text.chars().any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t')) {
             return Err("Speech text contains unsupported control characters");
         }
         if self.speaker_id.trim().is_empty() || self.speaker_id.len() > 96 {
@@ -222,7 +222,7 @@ mod tests {
         assert!(request.validate().is_err());
         request.text = "x".repeat(MAX_SYNTHESIS_TEXT_BYTES + 1);
         assert!(request.validate().is_err());
-        request.text = "bad\\u{0000}text".into();
+        request.text = "bad\u{0000}text".into();
         assert!(request.validate().is_err());
     }
 
