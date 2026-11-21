@@ -501,11 +501,15 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         egui::ComboBox::from_id_salt("cenai_provider_key")
             .selected_text(match state.provider_key_provider.as_str() {
                 "deepseek" => "DeepSeek",
+                "anthropic" => "Anthropic Claude",
+                "gemini" => "Google Gemini",
                 _ => "OpenAI-compatible",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut state.provider_key_provider, "openai".into(), "OpenAI-compatible");
                 ui.selectable_value(&mut state.provider_key_provider, "deepseek".into(), "DeepSeek");
+                ui.selectable_value(&mut state.provider_key_provider, "anthropic".into(), "Anthropic Claude");
+                ui.selectable_value(&mut state.provider_key_provider, "gemini".into(), "Google Gemini");
             });
         ui.add(egui::TextEdit::singleline(&mut state.provider_key_draft)
             .password(true)
