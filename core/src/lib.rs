@@ -37,6 +37,43 @@ fn is_valid_chat_role(value: &str) -> bool {
     matches!(value, "system" | "user" | "assistant" | "tool")
 }
 
+
+/// Builds a text-only OpenAI-compatible chat payload in Rust.
+fn build_openai_chat_payload(model: &str, max_tokens: i32, messages_json: &str) -> Result<String, String> {
+    use serde_json::{json, Value};
+
+    if model.trim().is_empty() {
+        return Err("Enter a model ID in Settings.".to_owned());
+    }
+    let parsed: Value = serde_json::from_str(messages_json)
+        .map_err(|_| "Conversation messages could not be decoded.".to_owned())?;
+    let messages = parsed.as_array()
+        .ok_or_else(|| "Conversation messages must be a JSON array.".to_owned())?;
+    if messages.is_empty() {
+        return Err("A conversation must contain at least one message.".to_owned());
+    }
+    let mut normalized = Vec::with_capacity(messages.len());
+    for message in messages {
+        let role = message.get("role").and_then(Value::as_str)
+            .ok_or_else(|| "A conversation message is missing its role.".to_owned())?;
+        if !is_valid_chat_role(role) {
+            return Err(format!("Unsupported conversation role: {role}"));
+        }
+        let content = message.get("content").and_then(Value::as_str)
+            .ok_or_else(|| "A conversation message is missing text content.".to_owned())?;
+        normalized.push(json!({
+            "role": role,
+            "content": sanitize_message_content(content)
+        }));
+    }
+    serde_json::to_string(&json!({
+        "model": model,
+        "stream": true,
+        "max_tokens": max_tokens.clamp(1, 131072),
+        "messages": normalized
+    })).map_err(|_| "Could not encode the provider request.".to_owned())
+}
+
 fn estimate_prompt_tokens(value: &str) -> usize {
     let chars = value.chars().count();
     if chars == 0 {
@@ -90,6 +127,33 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_isValidChatRole(
     if is_valid_chat_role(&value) { JNI_TRUE } else { JNI_FALSE }
 }
 
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildOpenAiChatPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    model: JString,
+    max_tokens: jint,
+    messages_json: JString,
+) -> jstring {
+    let Some(model_value) = read_java_string(&mut env, &model) else {
+        return std::ptr::null_mut();
+    };
+    let Some(messages_value) = read_java_string(&mut env, &messages_json) else {
+        return std::ptr::null_mut();
+    };
+    match build_openai_chat_payload(&model_value, max_tokens, &messages_value) {
+        Ok(payload) => match env.new_string(payload) {
+            Ok(value) => value.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(error) => match env.new_string(format!("{{\"error\":{}}}", serde_json::to_string(&error).unwrap_or_else(|_| "\"Request error\"".to_owned()))) {
+            Ok(value) => value.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_cenai_app_NativeCore_estimatePromptTokens(
     mut env: JNIEnv,
@@ -124,7 +188,7 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_isPromptWithinLimit(
 
 #[cfg(test)]
 mod tests {
-    use super::{estimate_prompt_tokens, is_valid_chat_role, normalize_prompt, sanitize_message_content};
+    use super::{build_openai_chat_payload, estimate_prompt_tokens, is_valid_chat_role, normalize_prompt, sanitize_message_content};
 
     #[test]
     fn normalizes_line_endings_and_removes_unsafe_controls() {
@@ -152,6 +216,23 @@ mod tests {
     #[test]
     fn sanitizes_message_content_without_trimming_spaces() {
         assert_eq!(sanitize_message_content("  hello\r\nworld\u{0007}  "), "  hello\nworld  ");
+    }
+
+    #[test]
+    fn builds_valid_openai_payload_and_sanitizes_message_content() {
+        let messages = r#"[{"role":"user","content":"hello\r\nworld"}]"#;
+        let payload = build_openai_chat_payload("gpt-test", 2048, messages).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(parsed["model"], "gpt-test");
+        assert_eq!(parsed["stream"], true);
+        assert_eq!(parsed["max_tokens"], 2048);
+        assert_eq!(parsed["messages"][0]["content"], "hello\nworld");
+    }
+
+    #[test]
+    fn rejects_unsupported_roles_in_provider_payload() {
+        let messages = r#"[{"role":"developer","content":"no"}]"#;
+        assert!(build_openai_chat_payload("gpt-test", 100, messages).is_err());
     }
 
     #[test]
