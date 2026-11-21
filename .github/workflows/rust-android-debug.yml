@@ -10,7 +10,7 @@ concurrency:
   # Keep every commit's build isolated; later commits must not cancel verification
   # of the source snapshot currently being tested.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   actions: write
