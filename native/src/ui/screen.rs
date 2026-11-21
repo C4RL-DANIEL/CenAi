@@ -385,7 +385,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add(egui::TextEdit::singleline(&mut state.automation_id_draft).hint_text("Schedule ID (daily-report)").desired_width(f32::INFINITY));
         ui.add(egui::TextEdit::singleline(&mut state.automation_title_draft).hint_text("What should CenAI prepare?").desired_width(f32::INFINITY));
         ui.add(egui::TextEdit::singleline(&mut state.automation_schedule_draft).hint_text("Cron schedule in UTC (0 9 * * 1-5)").desired_width(f32::INFINITY));
-        ui.checkbox(&mut state.automation_requires_approval, "Require my approval before any action");
+        ui.label(text("Every scheduled task is prepared for review. CenAI never executes a scheduled action without your approval.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
         if ui.button("Save schedule").clicked() {
             if state.automation_id_draft.trim().is_empty() || state.automation_title_draft.trim().is_empty() || state.automation_schedule_draft.trim().is_empty() {
                 state.automation_status = "Enter a schedule ID, task description and five-field UTC cron expression.".into();
