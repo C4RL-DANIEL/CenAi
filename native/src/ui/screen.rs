@@ -845,6 +845,52 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 if ui.button("Verify email").clicked() { state.pending_verify_otp = Some(state.otp_draft.trim().to_owned()); state.otp_status = "Verifying email…".into(); }
                 if !state.otp_status.is_empty() { ui.label(text(&state.otp_status, 10.0, egui::Color32::from_rgb(220, 184, 121))); }
             }
+            ui.separator();
+            ui.label(text("Multi-factor authentication", 14.0, egui::Color32::WHITE).strong());
+            ui.label(text("Protect this CenAI account with a time-based authenticator code. Your authenticator secret is shown only during enrollment.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.horizontal(|ui| {
+                if ui.button("Refresh authenticator status").clicked() {
+                    state.pending_mfa_refresh = true;
+                    state.mfa_status = "Loading authenticator status…".into();
+                }
+                if ui.button("Enroll authenticator").clicked() {
+                    state.pending_mfa_enroll = true;
+                    state.mfa_status = "Creating authenticator setup…".into();
+                }
+            });
+            if !state.mfa_enrollment_secret.is_empty() {
+                ui.label(text("Add this setup key in your authenticator app:", 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.add(egui::TextEdit::singleline(&mut state.mfa_enrollment_secret).desired_width(f32::INFINITY));
+            }
+            if !state.mfa_enrollment_factor_id.is_empty() {
+                ui.label(text("Selected authenticator is ready for verification.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.add(egui::TextEdit::singleline(&mut state.mfa_code_draft).hint_text("Six-digit authenticator code").desired_width(f32::INFINITY));
+                if ui.add_enabled(state.mfa_code_draft.len() == 6 && !state.mfa_code_draft.chars().any(|character| !character.is_ascii_digit()), egui::Button::new("Verify authenticator code")).clicked() {
+                    state.pending_mfa_verify = true;
+                    state.mfa_status = "Verifying authenticator code…".into();
+                }
+            }
+            if !state.mfa_factors.is_empty() {
+                for factor in &state.mfa_factors {
+                    ui.horizontal(|ui| {
+                        ui.label(text(format!("{} · {}", factor.friendly_name, factor.status), 10.0, egui::Color32::from_rgb(190, 201, 224)));
+                        if ui.small_button("Use").clicked() {
+                            state.mfa_enrollment_factor_id = factor.id.clone();
+                            state.mfa_enrollment_secret.clear();
+                            state.mfa_status = "Enter a current code from this authenticator to verify it.".into();
+                        }
+                        if ui.small_button("Remove").clicked() {
+                            state.pending_mfa_unenroll = Some(factor.id.clone());
+                            state.mfa_status = "Removing authenticator…".into();
+                        }
+                    });
+                }
+            } else {
+                ui.label(text("No authenticator factors were returned. Refresh status after signing in.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            }
+            if !state.mfa_status.is_empty() {
+                ui.label(text(&state.mfa_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            }
             if ui.button("Sign out").clicked() {
                 state.pending_sign_out = true;
                 state.auth_status = "Signing out…".into();
