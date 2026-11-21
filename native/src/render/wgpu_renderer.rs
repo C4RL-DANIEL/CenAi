@@ -4,9 +4,11 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
+#[cfg(target_os = "android")]
+use crate::core::voice::AudioChunk;
 use super::RenderBackend;
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
@@ -168,6 +170,7 @@ enum ChatEvent {
     MemoryDeleted(u64, String, Result<(), String>),
     MemoryCleared(u64, Result<(), String>),
     EcosystemUpdated(u64, String, Result<Vec<EcosystemAppItem>, String>),
+    #[cfg(target_os = "android")]
     VoiceTranscribed(u64, Result<String, String>),
     SpeechSynthesized(u64, Result<Vec<u8>, String>),
     BackupUploaded(u64, Result<(), String>),
@@ -201,6 +204,7 @@ impl ChatEvent {
             | Self::MemoryDeleted(generation, ..)
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
+            #[cfg(target_os = "android")]
             | Self::VoiceTranscribed(generation, ..)
             | Self::SpeechSynthesized(generation, ..)
             | Self::BackupUploaded(generation, ..)
@@ -545,6 +549,7 @@ impl WgpuRenderer {
         self.app_state.backup_status = "Decrypting and validating local backup…".into();
     }
 
+    #[cfg(target_os = "android")]
     fn dispatch_voice_chunk(&mut self, chunk: AudioChunk) {
         let wav = match chunk.to_wav_bytes() {
             Ok(wav) => wav,
@@ -1432,7 +1437,7 @@ impl WgpuRenderer {
         }
         if std::mem::take(&mut self.app_state.pending_backup_upload) {
             let passphrase = self.app_state.backup_passphrase_draft.clone();
-            if passphrase.as_bytes().len() < 12 {
+            if passphrase.len() < 12 {
                 self.app_state.backup_status = "Backup passphrase must be at least 12 bytes.".into();
             } else if let (Some(api), Some(workspace)) = (self.api.clone(), self.workspace.clone()) {
                 let sender = self.response_tx.clone();
@@ -1451,7 +1456,7 @@ impl WgpuRenderer {
             }
         }
         if std::mem::take(&mut self.app_state.pending_backup_download) {
-            if self.app_state.backup_passphrase_draft.as_bytes().len() < 12 || !self.app_state.backup_restore_confirmed {
+            if self.app_state.backup_passphrase_draft.len() < 12 || !self.app_state.backup_restore_confirmed {
                 self.app_state.backup_status = "Enter the backup passphrase and confirm the restore operation.".into();
             } else if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
@@ -1957,6 +1962,7 @@ impl WgpuRenderer {
                         Err(error) => self.app_state.attachment_status = format!("Attachment analysis failed: {error}"),
                     }
                 }
+                #[cfg(target_os = "android")]
                 ChatEvent::VoiceTranscribed(_, result) => {
                     match result {
                         Ok(transcript) => {
