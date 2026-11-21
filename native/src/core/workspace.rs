@@ -943,6 +943,14 @@ mod tests {
 mod encrypted_workspace_tests {
     use super::*;
 
+    fn temp_root() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let path = std::env::temp_dir().join(format!("cenai-workspace-encrypted-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     struct TestVault { account: String }
 
     impl SessionVault for TestVault {
