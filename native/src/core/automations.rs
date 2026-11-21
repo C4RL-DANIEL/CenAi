@@ -222,6 +222,22 @@ mod tests {
     }
 
     #[test]
+    fn automation_pause_resume_and_remove_are_persisted() {
+        let root = std::env::temp_dir().join(format!("cenai-automation-controls-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(&root, OWNER).unwrap();
+        let mut scheduler = AutomationScheduler::default();
+        scheduler.upsert_and_persist(automation("daily", OWNER, "0 9 * * *"), &store).unwrap();
+        assert!(scheduler.set_enabled_and_persist(OWNER, "daily", false, &store).unwrap());
+        assert!(!store.automations().unwrap()[0].enabled);
+        assert!(scheduler.set_enabled_and_persist(OWNER, "daily", true, &store).unwrap());
+        assert!(store.automations().unwrap()[0].enabled);
+        assert!(scheduler.remove_and_persist(OWNER, "daily", &store).unwrap());
+        assert!(store.automations().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn automation_scheduler_emits_each_due_occurrence_once_and_respects_pause() {
         let mut scheduler = AutomationScheduler::default();
         let mut item = automation("quarter-hour", OWNER, "*/15 * * * *");
