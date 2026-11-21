@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use super::qwen_voice::{QwenLanguage, SynthesisRequest, PRIMARY_MODEL_ID};
+use super::qwen_voice::{QwenLanguage, SynthesisRequest};
 
 pub const NATIVE_LIBRARY_NAME: &str = "libcenai_qwen_bridge.so";
 pub const PRIMARY_GGUF_MODEL: &str = "qwen-talker-0.6b-base-Q8_0.gguf";
@@ -242,6 +242,14 @@ impl QwenRuntime {
     ) -> Result<(Vec<u8>, i64), String> {
         Err("CenAI Voice native inference is unavailable on this platform.".into())
     }
+
+    pub fn extract_speaker_embedding(
+        &mut self,
+        _reference_wav: &Path,
+        _output_path: &Path,
+    ) -> Result<(), String> {
+        Err("CenAI Voice speaker embedding extraction is available only on Android.".into())
+    }
 }
 
 pub fn validate_synthesis_text(text: &str, language: QwenLanguage) -> Result<SynthesisRequest, &'static str> {
@@ -254,6 +262,7 @@ pub fn validate_synthesis_text(text: &str, language: QwenLanguage) -> Result<Syn
     Ok(request)
 }
 
+#[cfg(target_os = "android")]
 fn language_id(language: QwenLanguage) -> i32 {
     match language {
         QwenLanguage::English => 2050,
