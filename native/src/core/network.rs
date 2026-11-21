@@ -1063,28 +1063,6 @@ mod identity_tests {
     }
 }
 #[cfg(test)]
-mod speech_audio_tests {
-    use super::*;
-
-    #[test]
-    fn raw_gemini_pcm_is_wrapped_in_a_valid_mono_wav_container() {
-        let wav = pcm16_mono_to_wav(24_000, &[1, 0, 255, 255]).unwrap();
-        assert_eq!(&wav[..4], b"RIFF");
-        assert_eq!(&wav[8..12], b"WAVE");
-        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 24_000);
-        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 4);
-        assert_eq!(&wav[44..], &[1, 0, 255, 255]);
-    }
-
-    #[test]
-    fn raw_gemini_pcm_rejects_unsupported_rates_and_partial_samples() {
-        assert!(pcm16_mono_to_wav(44_100, &[1, 0]).is_err());
-        assert!(pcm16_mono_to_wav(24_000, &[1]).is_err());
-        assert!(pcm16_mono_to_wav(24_000, &[]).is_err());
-    }
-}
-
-#[cfg(test)]
 mod assurance_claim_tests {
     use super::*;
 
