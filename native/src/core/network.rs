@@ -722,6 +722,68 @@ impl CenAiApi {
     }
 
     /// Streams Gemini Developer API responses without placing the API key in the URL.
+    /// Analyzes a validated image, PDF, or text attachment through Gemini multimodal input.
+    /// The caller must obtain the bytes through an explicit user attachment action.
+    pub async fn analyze_attachment_gemini(
+        &self,
+        prompt: &str,
+        metadata: &crate::core::multimodal::AttachmentMetadata,
+        bytes: &[u8],
+    ) -> Result<String, String> {
+        if prompt.trim().is_empty() || prompt.len() > 8_000 {
+            return Err("Attachment analysis prompt must contain between 1 and 8,000 characters".into());
+        }
+        metadata.validate_content(bytes).map_err(str::to_owned)?;
+        let api_key = self.vault.provider_key("gemini")?;
+        if api_key.trim().is_empty() {
+            return Err("Add a Google Gemini API key in Settings before analyzing attachments".into());
+        }
+        let mime = metadata.mime_type.to_ascii_lowercase();
+        let content_part = match mime.as_str() {
+            "text/plain" | "text/markdown" | "text/csv" => {
+                if bytes.len() > 2 * 1024 * 1024 {
+                    return Err("Text attachment exceeds the 2 MB inline analysis limit".into());
+                }
+                let text = std::str::from_utf8(bytes).map_err(|_| "Text attachment is not valid UTF-8")?;
+                json!({ "text": format!("Attachment: {}\n\n{}", metadata.file_name, text) })
+            }
+            "image/png" | "image/jpeg" | "image/webp" | "application/pdf" => {
+                if bytes.len() > 20 * 1024 * 1024 {
+                    return Err("Image and PDF attachments must be no larger than 20 MB for inline analysis".into());
+                }
+                json!({ "inline_data": {
+                    "mime_type": mime,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes)
+                } })
+            }
+            _ => return Err("This attachment type is not yet supported by the Gemini inline analyzer".into()),
+        };
+        let payload = json!({
+            "contents": [{
+                "parts": [
+                    { "text": format!("Attachment name: {}\nTask: {}", metadata.file_name, prompt) },
+                    content_part
+                ]
+            }],
+            "generationConfig": { "temperature": 0.2, "maxOutputTokens": 4096 }
+        });
+        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
+            .header("x-goog-api-key", api_key)
+            .json(&payload)
+            .send().await.map_err(|error| format!("Gemini attachment analysis failed: {error}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Gemini attachment analysis returned HTTP {}", status.as_u16()));
+        }
+        let value: Value = response.json().await.map_err(|error| format!("Gemini attachment response was invalid: {error}"))?;
+        let answer = value.pointer("/candidates/0/content/parts").and_then(Value::as_array)
+            .into_iter().flatten().filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>().join("\n").trim().to_owned();
+        if answer.is_empty() { return Err("Gemini returned no attachment analysis".into()); }
+        if answer.len() > MAX_STREAM_RESPONSE_BYTES { return Err("Attachment analysis exceeded the response limit".into()); }
+        Ok(answer)
+    }
+
     /// Generates speech audio from assistant text using the selected Gemini TTS voice.
     pub async fn synthesize_speech_gemini(&self, text: &str) -> Result<Vec<u8>, String> {
         if text.trim().is_empty() || text.len() > 12_000 {
