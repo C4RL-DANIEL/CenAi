@@ -81,6 +81,19 @@ impl CenAiApplication {
         Self { api, runtime, workspace, workspace_root, android_app, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
     }
 
+    fn invoke_activity_method(app: AndroidApp, method: &'static str) {
+        let callback_app = app.clone();
+        app.run_on_java_main_thread(Box::new(move || {
+            let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+            let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
+            let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
+            let activity = unsafe { JObject::from_raw(callback_app.activity_as_ptr().cast()) };
+            if let Err(error) = env.call_method(&activity, method, "()V", &[]) {
+                log::error!("Could not launch Android picker {method}: {error}");
+            }
+        }));
+    }
+
     fn open_external_url(app: AndroidApp, url: String) {
         if !url.starts_with("https://checkout.stripe.com/") { log::warn!("Blocked external checkout URL outside the Stripe allowlist"); return; }
         let callback_app = app.clone();
@@ -161,6 +174,31 @@ impl ApplicationHandler for CenAiApplication {
                         },
                         Err(wgpu::SurfaceError::Timeout) => {}
                         Err(_) => {}
+                    }
+                    while let Some(platform_event) = pop_platform_event() {
+                        match platform_event {
+                            AndroidPlatformEvent::FilePicked { request_code, path, mime_type, display_name, error } => {
+                                match request_code {
+                                    8101 => renderer.handle_attachment_import(path, mime_type, display_name, error),
+                                    8102 => renderer.handle_backup_file_import(path, error),
+                                    _ => log::warn!("Ignoring unknown Android file picker request {request_code}"),
+                                }
+                            }
+                            AndroidPlatformEvent::DocumentCreated { request_code, uri } => {
+                                if request_code == 8103 {
+                                    renderer.handle_backup_document_created(uri);
+                                }
+                            }
+                        }
+                    }
+                    if renderer.take_attachment_picker_request() {
+                        Self::invoke_activity_method(self.android_app.clone(), "openAttachmentPicker");
+                    }
+                    if renderer.take_backup_picker_request() {
+                        Self::invoke_activity_method(self.android_app.clone(), "openBackupPicker");
+                    }
+                    if renderer.take_backup_save_picker_request() {
+                        Self::invoke_activity_method(self.android_app.clone(), "createBackupDocument");
                     }
                     if let Some(url) = renderer.take_open_url() {
                         Self::open_external_url(self.android_app.clone(), url);
