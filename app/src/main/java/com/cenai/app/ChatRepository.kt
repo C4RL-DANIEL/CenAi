@@ -29,7 +29,17 @@ class ChatRepository(private val vault: SecureKeyStore) {
         messages: List<ChatMessage>,
         onDelta: (String) -> Unit
     ): String {
-        if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && messages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
+        // Rust owns canonical message validation and sanitation before provider serialization.
+        val preparedMessages = messages.map { message ->
+            require(NativeCore.isValidChatRole(message.role)) {
+                "Unsupported conversation role: ${message.role}"
+            }
+            ChatMessage(message.role, NativeCore.normalizeMessageContent(message.content))
+        }
+        require(preparedMessages.all { NativeCore.isPromptWithinLimit(it.content, 3_000_000) }) {
+            "A conversation message exceeds CenAI's 3,000,000-character safety limit."
+        }
+        if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && preparedMessages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
@@ -41,7 +51,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
         return suspendCancellableCoroutine { continuation ->
-        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, messages, key, credential.second)) }
+        val call = runCatching { client.newCall(buildRequest(provider, model, baseUrl, preparedMessages, key, credential.second)) }
             .getOrElse {
                 continuation.resumeWith(Result.failure(it))
                 return@suspendCancellableCoroutine
