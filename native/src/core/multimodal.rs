@@ -233,7 +233,7 @@ mod tests {
         assert!(image.validate().is_ok());
         let mut invalid = image;
         invalid.mime_type = "application/octet-stream".into();
-        assert_eq!(invalid.validate(), Err("Attachment MIME type does not match its kind"));
+        assert_eq!(invalid.validate(), Err("Attachment MIME type is not supported for its kind"));
     }
 
     #[test]
@@ -282,8 +282,8 @@ mod tests {
     #[test]
     fn rich_content_rejects_insecure_citations_and_oversized_tables() {
         let citation = RichBlock::Citation { citation: Citation { title: "Source".into(), url: "http://example.com".into(), publisher: None } };
-        assert_eq!(citation.validate(), Err("Citation URL must use HTTPS"));
+        assert_eq!(citation.validate(), Err("Citation metadata is invalid or URL is not HTTPS"));
         let table = RichBlock::Table { headers: vec!["a".into()], rows: vec![vec!["x".into(); 40]] };
-        assert_eq!(table.validate(), Err("Table exceeds supported dimensions"));
+        assert_eq!(table.validate(), Err("Table exceeds supported dimensions or cell limits"));
     }
 }
