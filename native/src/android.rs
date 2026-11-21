@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 mod vault;
 use vault::AndroidSecretVault;
+use crate::core::network::CenAiApi;
 
 use winit::{
     application::ApplicationHandler,
@@ -14,11 +15,18 @@ use winit::{
 
 use crate::render::wgpu_renderer::WgpuRenderer;
 
-#[derive(Default)]
 struct CenAiApplication {
+    api: Option<CenAiApi>,
+    runtime: tokio::runtime::Handle,
     window: Option<Arc<Window>>,
     renderer: Option<WgpuRenderer>,
     last_size: winit::dpi::PhysicalSize<u32>,
+}
+
+impl CenAiApplication {
+    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle) -> Self {
+        Self { api, runtime, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
+    }
 }
 
 impl ApplicationHandler for CenAiApplication {
@@ -31,7 +39,7 @@ impl ApplicationHandler for CenAiApplication {
             .with_transparent(false);
         let window = Arc::new(event_loop.create_window(attributes).expect("create Android window"));
         self.last_size = window.inner_size();
-        match WgpuRenderer::new(window.clone()) {
+        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone()) {
             Ok(renderer) => {
                 log::info!("CenAI renderer initialized: {}", crate::RUNTIME_ID);
                 self.renderer = Some(renderer);
@@ -92,10 +100,19 @@ pub fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
+    let vault = match AndroidSecretVault::new(app.clone()) {
+        Ok(vault) => Arc::new(vault),
+        Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
+    };
+    let api = CenAiApi::new(vault).ok();
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(error) => { log::error!("Async runtime initialization failed: {error}"); return; }
+    };
     let mut builder = EventLoop::builder();
     builder.with_android_app(app);
     let event_loop = builder.build().expect("create Android event loop");
     event_loop
-        .run_app(&mut CenAiApplication::default())
+        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone()))
         .expect("run CenAI Android application");
 }
