@@ -15,7 +15,7 @@ const REQUEST_CODE: i32 = 7_331;
 
 pub struct AndroidAudioCapture {
     app: AndroidApp,
-    sender: mpsc::Sender<Result<AudioFrame, String>>,
+    sender: mpsc::SyncSender<Result<AudioFrame, String>>,
     receiver: mpsc::Receiver<Result<AudioFrame, String>>,
     stop_flag: Arc<AtomicBool>,
     recorder: Arc<Mutex<Option<GlobalRef>>>,
@@ -25,7 +25,7 @@ pub struct AndroidAudioCapture {
 
 impl AndroidAudioCapture {
     pub fn new(app: AndroidApp) -> Self {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::sync_channel(8);
         Self {
             app,
             sender,
@@ -136,7 +136,10 @@ impl AndroidAudioCapture {
                     ) {
                         Ok(value) => value.i().map_err(|error| error.to_string())?,
                         Err(error) => {
-                            if stop_flag.load(Ordering::Acquire) { break; }
+                            if stop_flag.load(Ordering::Acquire) {
+                                let _ = env.exception_clear();
+                                break;
+                            }
                             return Err(error.to_string());
                         }
                     };
@@ -146,7 +149,7 @@ impl AndroidAudioCapture {
                         let bytes = signed_bytes.into_iter().map(|byte| byte as u8).collect::<Vec<_>>();
                         let frame = AudioFrame::from_pcm16_le(SAMPLE_RATE as u32, 1, &bytes)
                             .map_err(str::to_owned)?;
-                        if sender.send(Ok(frame)).is_err() { break; }
+                        if sender.try_send(Ok(frame)).is_err() { /* Drop stale frames rather than growing an unbounded audio queue. */ }
                     } else if count < 0 {
                         return Err(format!("Android microphone read failed with code {count}"));
                     }
@@ -156,7 +159,7 @@ impl AndroidAudioCapture {
                 Ok(())
             })();
             if let Err(error) = result {
-                let _ = sender.send(Err(error));
+                let _ = sender.try_send(Err(error));
             }
             if let Ok(mut slot) = recorder_slot.lock() { *slot = None; }
         }).map_err(|error| error.to_string())?);
@@ -175,6 +178,7 @@ impl AndroidAudioCapture {
     }
 
     pub fn stop(&mut self) {
+        self.permission_requested = false;
         self.stop_flag.store(true, Ordering::Release);
         let recorder = self.recorder.lock().ok().and_then(|slot| slot.as_ref().cloned());
         if let Some(recorder) = recorder {
