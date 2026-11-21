@@ -112,6 +112,10 @@ jobs:
           grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
           grep -q 'cenai_record_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
           grep -q 'voice.cloud.enabled' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_ai_daily_budget' supabase/migrations/20261122110000_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/migrations/20261122110000_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'globalNeuronLimit: 8000' supabase/functions/cenai-ai-quota/index.ts
           node --check website/worker.js
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
