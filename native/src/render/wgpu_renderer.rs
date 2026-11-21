@@ -1290,3 +1290,52 @@ impl RenderBackend for WgpuRenderer {
         "wgpu + egui"
     }
 }
+
+#[cfg(test)]
+mod ecosystem_ui_tests {
+    use super::*;
+
+    #[test]
+    fn ecosystem_catalog_merges_only_the_signed_in_accounts_grants() {
+        let response = serde_json::json!({
+            "apps": [{
+                "app_id": "com.example.notes",
+                "publisher_id": "example.publisher",
+                "version": "1.2.0",
+                "description": "Notes app",
+                "capabilities": ["notes.read", "notes.write"],
+                "requested_scopes": ["notes.read", "notes.write"]
+            }],
+            "grants": [{
+                "app_id": "com.example.notes",
+                "granted_scopes": ["notes.read"],
+                "revoked": false
+            }]
+        });
+        let apps = ecosystem_apps_from_response(response).unwrap();
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].app_id, "com.example.notes");
+        assert_eq!(apps[0].granted_scopes, vec!["notes.read"]);
+        assert!(!apps[0].revoked);
+    }
+
+    #[test]
+    fn ecosystem_catalog_defaults_to_no_access_without_a_grant() {
+        let response = serde_json::json!({
+            "apps": [{
+                "app_id": "com.example.calendar",
+                "publisher_id": "example.publisher",
+                "version": "1.0.0",
+                "description": "",
+                "capabilities": ["calendar.read"],
+                "requested_scopes": ["calendar.read"]
+            }],
+            "grants": []
+        });
+        let apps = ecosystem_apps_from_response(response).unwrap();
+        assert_eq!(apps.len(), 1);
+        assert!(apps[0].granted_scopes.is_empty());
+        assert!(apps[0].revoked);
+    }
+}
+
