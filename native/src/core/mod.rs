@@ -10,3 +10,4 @@ pub mod providers;
 pub mod workspace;
 pub mod brain;
 pub mod sandbox;
+pub mod voice;
