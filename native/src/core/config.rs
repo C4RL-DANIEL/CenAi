@@ -11,3 +11,4 @@ pub const WEBSITE_OTP_URL: &str = "https://cenai-website.cenai-app.workers.dev/a
 pub const REQUEST_TIMEOUT_SECONDS: u64 = 40;
 pub const STREAM_TIMEOUT_SECONDS: u64 = 300;
 pub const ECOSYSTEM_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-ecosystem";
+pub const BACKUP_BUCKET: &str = "cenai-backups";
