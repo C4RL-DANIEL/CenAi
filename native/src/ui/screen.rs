@@ -419,6 +419,42 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         }
         ui.label(text("Only a coarse diagnostic category may be uploaded, and only with your consent plus server-side rollout approval. Prompts, message text, file contents, paths and credentials are never sent.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.label(text("The interface respects this setting when animating transitions.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.separator();
+        ui.label(text("Central Brain memory", 15.0, egui::Color32::WHITE).strong());
+        let previous_memory_enabled = state.personal_memory_enabled;
+        ui.checkbox(&mut state.personal_memory_enabled, "Enable my private personal memory");
+        if previous_memory_enabled != state.personal_memory_enabled {
+            state.pending_memory_enabled = Some(state.personal_memory_enabled);
+        }
+        ui.label(text("Memories are stored under your authenticated account only. The Brain can use them only when you explicitly allow personal memory for a request. Disabling memory prevents retrieval and new saves.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        egui::ComboBox::from_id_salt("cenai_memory_category")
+            .selected_text(match state.memory_category_draft.as_str() {
+                "profile" => "Profile",
+                "project" => "Project",
+                "workflow" => "Workflow",
+                "fact" => "Fact",
+                _ => "Preference",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut state.memory_category_draft, "preference".into(), "Preference");
+                ui.selectable_value(&mut state.memory_category_draft, "profile".into(), "Profile");
+                ui.selectable_value(&mut state.memory_category_draft, "project".into(), "Project");
+                ui.selectable_value(&mut state.memory_category_draft, "workflow".into(), "Workflow");
+                ui.selectable_value(&mut state.memory_category_draft, "fact".into(), "Fact");
+            });
+        ui.add(egui::TextEdit::multiline(&mut state.memory_content_draft)
+            .hint_text("Add a fact or preference to remember (up to 8,000 characters)")
+            .desired_rows(3).desired_width(f32::INFINITY));
+        if ui.add_enabled(state.personal_memory_enabled && !state.memory_content_draft.trim().is_empty(), egui::Button::new("Save private memory")).clicked() {
+            state.pending_memory_save = Some((state.memory_category_draft.clone(), state.memory_content_draft.trim().to_owned()));
+            state.personal_memory_status = "Saving to your private Central Brain memory…".into();
+        }
+        if !state.memory_content_draft.is_empty() && !state.personal_memory_enabled {
+            ui.label(text("Enable personal memory before saving.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
+        }
+        if !state.personal_memory_status.is_empty() {
+            ui.label(text(&state.personal_memory_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
