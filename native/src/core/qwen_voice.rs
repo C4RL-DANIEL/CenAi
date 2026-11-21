@@ -80,7 +80,7 @@ impl VoiceModelVariant {
     pub fn model_id(self) -> &'static str {
         match self {
             Self::Base17B => PRIMARY_MODEL_ID,
-            Self::CustomVoice06B => "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            Self::CustomVoice17B => "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
             Self::VoiceDesign17B => "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
         }
     }
