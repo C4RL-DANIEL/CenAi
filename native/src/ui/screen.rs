@@ -293,7 +293,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                     ui.add(egui::TextEdit::singleline(&mut state.attachment_prompt_draft)
                         .hint_text("What should CenAI extract or explain?")
                         .desired_width(f32::INFINITY));
-                    ui.label(text("File contents are sent to Google Gemini only when you choose Analyze. Images, PDFs and text files are supported.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+                    ui.label(text("File contents are sent to Google Gemini only when you choose Analyze. Images, PDFs, text files and WAV audio are supported.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
                     for attachment in &attachment_items {
                         ui.horizontal(|ui| {
                             ui.label(text(
@@ -303,7 +303,9 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                             ));
                             let supported = attachment.mime_type.starts_with("image/")
                                 || attachment.mime_type == "application/pdf"
-                                || attachment.mime_type.starts_with("text/");
+                                || attachment.mime_type.starts_with("text/")
+                                || (matches!(attachment.mime_type.as_str(), "audio/wav" | "audio/x-wav")
+                                    && attachment.byte_length <= 20 * 1024 * 1024);
                             if ui.add_enabled(supported && !state.account_email.is_empty(), egui::Button::new("Analyze")).clicked() {
                                 state.pending_attachment_analysis = Some((
                                     attachment.id.clone(),
