@@ -57,6 +57,7 @@ enum ChatEvent {
     MemorySaved(u64, Result<serde_json::Value, String>),
     MemoryListLoaded(u64, Result<Vec<crate::ui::model::PersonalMemoryItem>, String>),
     MemoryDeleted(u64, String, Result<(), String>),
+    MemoryCleared(u64, Result<(), String>),
 }
 
 impl ChatEvent {
@@ -76,7 +77,8 @@ impl ChatEvent {
             | Self::MemorySettingUpdated(generation, ..)
             | Self::MemorySaved(generation, ..)
             | Self::MemoryListLoaded(generation, ..)
-            | Self::MemoryDeleted(generation, ..) => *generation,
+            | Self::MemoryDeleted(generation, ..)
+            | Self::MemoryCleared(generation, ..) => *generation,
         }
     }
 }
@@ -425,6 +427,8 @@ impl WgpuRenderer {
         self.app_state.personal_memories.clear();
         self.app_state.pending_memory_save = None;
         self.app_state.pending_memory_delete = None;
+        self.app_state.confirm_memory_clear = false;
+        self.app_state.pending_memory_clear = false;
         self.app_state.light_mode = false;
         self.app_state.reduced_motion = false;
         self.last_saved_preferences = (false, false);
@@ -594,6 +598,19 @@ impl WgpuRenderer {
             } else {
                 self.app_state.personal_memory_enabled = !enabled;
                 self.app_state.personal_memory_status = "Sign in before changing personal-memory settings.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_memory_clear) {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.clear_personal_memories().await;
+                    let _ = sender.send(ChatEvent::MemoryCleared(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.personal_memory_status = "Sign in before clearing personal memories.".into();
             }
         }
         if let Some(memory_id) = self.app_state.pending_memory_delete.take() {
@@ -905,6 +922,15 @@ impl WgpuRenderer {
                             self.app_state.personal_memory_status = format!("{} private memories loaded.", self.app_state.personal_memories.len());
                         }
                         Err(error) => self.app_state.personal_memory_status = format!("Could not load private memories: {error}"),
+                    }
+                }
+                ChatEvent::MemoryCleared(_, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.personal_memories.clear();
+                            self.app_state.personal_memory_status = "All personal memories were deleted from your account.".into();
+                        }
+                        Err(error) => self.app_state.personal_memory_status = format!("Could not clear personal memories: {error}"),
                     }
                 }
                 ChatEvent::MemoryDeleted(_, memory_id, result) => {
