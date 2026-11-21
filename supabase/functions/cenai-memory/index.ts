@@ -104,6 +104,12 @@ Deno.serve(async (req: Request) => {
       return respond(201, { memory: data });
     }
 
+    if (action === "memory_clear") {
+      const { error } = await adminDb.from("user_personal_memories").delete().eq("user_id", user.id);
+      if (error) throw error;
+      return respond(200, { cleared: true });
+    }
+
     if (action === "memory_delete") {
       const memoryId = String(body.memoryId ?? "");
       if (!/^[0-9a-f-]{36}$/i.test(memoryId)) return fail(400, "Invalid memory identifier");
