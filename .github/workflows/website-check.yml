@@ -68,6 +68,11 @@ jobs:
           grep -q 'registration_status' supabase/functions/cenai-control-plane/index.ts
           grep -q 'Complete Discord invitation registration' supabase/functions/cenai-ai-quota/index.ts
           grep -q 'Complete Discord invitation registration' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-public-api/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-telemetry/index.ts
+          grep -q 'link.hash = "invite="' website/admin/admin.js
+          grep -q 'password-form' website/register.js
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");
