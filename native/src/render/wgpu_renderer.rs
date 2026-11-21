@@ -1,9 +1,10 @@
 //! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::ui::{model::AppState, screen};
+use crate::{core::network::CenAiApi, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -28,14 +29,19 @@ pub struct WgpuRenderer {
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
     app_state: AppState,
+    api: Option<CenAiApi>,
+    runtime: Handle,
+    last_dispatched_message_id: u64,
+    response_tx: mpsc::Sender<(u64, Result<String, String>)>,
+    response_rx: mpsc::Receiver<(u64, Result<String, String>)>,
 }
 
 impl WgpuRenderer {
-    pub fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        pollster::block_on(Self::new_async(window))
+    pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle) -> anyhow::Result<Self> {
+        pollster::block_on(Self::new_async(window, api, runtime))
     }
 
-    async fn new_async(window: Arc<Window>) -> anyhow::Result<Self> {
+    async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone())?;
         let adapter = instance
@@ -137,6 +143,7 @@ impl WgpuRenderer {
         );
         let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
 
+        let (response_tx, response_rx) = mpsc::channel();
         Ok(Self {
             surface,
             device,
@@ -151,7 +158,54 @@ impl WgpuRenderer {
             egui_state,
             egui_renderer,
             app_state: AppState::default(),
+            api,
+            runtime,
+            last_dispatched_message_id: 0,
+            response_tx,
+            response_rx,
         })
+    }
+
+    fn dispatch_new_message(&mut self) {
+        let latest = self.app_state.conversation.messages()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| (message.id, message.body.clone()))
+            .last();
+        let Some((message_id, _)) = latest else { return; };
+        if message_id <= self.last_dispatched_message_id { return; }
+        self.last_dispatched_message_id = message_id;
+
+        let Some(api) = self.api.clone() else {
+            let _ = self.response_tx.send((message_id, Err("The account service is not initialized.".into())));
+            return;
+        };
+        let messages: Vec<serde_json::Value> = self.app_state.conversation.messages()
+            .map(|message| serde_json::json!({
+                "role": match message.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::System => "system",
+                },
+                "content": message.body,
+            }))
+            .collect();
+        let payload = serde_json::json!({
+            "model": "cloudflare-gemma-4-26b-a4b-it",
+            "messages": messages,
+            "max_tokens": 1024,
+            "stream": false,
+        });
+        let sender = self.response_tx.clone();
+        self.runtime.spawn(async move {
+            let result = api.cloud_chat(&payload).await.and_then(|data| {
+                data.pointer("/choices/0/message/content")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|answer| !answer.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| "CenAI Cloud returned an empty response.".to_owned())
+            });
+            let _ = sender.send((message_id, result));
+        });
     }
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
@@ -179,6 +233,20 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        self.dispatch_new_message();
+        while let Ok((message_id, result)) = self.response_rx.try_recv() {
+            match result {
+                Ok(answer) => {
+                    let stream_id = self.app_state.conversation.begin_stream();
+                    self.app_state.conversation.append_stream(stream_id, &answer);
+                    self.app_state.conversation.finish_stream(stream_id);
+                }
+                Err(error) => {
+                    self.app_state.conversation.push(MessageRole::Assistant, format!("I could not complete that request: {error}"));
+                }
+            }
+            log::debug!("Completed CenAI request for message {message_id}");
+        }
         self.egui_state.handle_platform_output(window, full_output.platform_output);
         let paint_jobs = self.egui_context.tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
