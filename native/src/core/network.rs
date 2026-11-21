@@ -855,6 +855,7 @@ impl CenAiApi {
                 let text = std::str::from_utf8(bytes).map_err(|_| "Text attachment is not valid UTF-8")?;
                 json!({ "text": format!("Attachment: {}\n\n{}", metadata.file_name, text) })
             }
+            "audio/wav" | "audio/x-wav" => return self.transcribe_audio_gemini(bytes).await,
             "image/png" | "image/jpeg" | "image/webp" | "application/pdf" => {
                 if bytes.len() > 20 * 1024 * 1024 {
                     return Err("Image and PDF attachments must be no larger than 20 MB for inline analysis".into());
