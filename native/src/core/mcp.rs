@@ -297,10 +297,23 @@ impl McpHttpClient {
             .and_then(|value| value.to_str().ok()).map(str::to_owned);
         let content_type = response.headers().get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
-        let raw = response.text().await.map_err(|error| error.to_string())?;
         if !status.is_success() {
-            return Err(format!("MCP HTTP {}: {}", status.as_u16(), raw.chars().take(300).collect::<String>()));
+            return Err(format!("MCP server returned HTTP {}", status.as_u16()));
         }
+        if response.content_length().is_some_and(|length| length > 2 * 1024 * 1024) {
+            return Err("MCP response exceeds the 2 MB response limit".into());
+        }
+        use futures_util::StreamExt;
+        let mut stream = response.bytes_stream();
+        let mut response_bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| error.to_string())?;
+            if response_bytes.len().saturating_add(chunk.len()) > 2 * 1024 * 1024 {
+                return Err("MCP response exceeds the 2 MB response limit".into());
+            }
+            response_bytes.extend_from_slice(&chunk);
+        }
+        let raw = String::from_utf8(response_bytes).map_err(|_| "MCP response is not valid UTF-8")?;
         if notification || raw.trim().is_empty() {
             return Ok((serde_json::Value::Null, session));
         }
