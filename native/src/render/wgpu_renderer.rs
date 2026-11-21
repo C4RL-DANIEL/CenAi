@@ -589,9 +589,12 @@ impl WgpuRenderer {
         }
         if self.app_state.pending_speech_text.take().is_some() {
             self.app_state.speech_cancelled = false;
+            let reason = crate::core::qwen_voice::offline_unavailable_reason(
+                &crate::core::qwen_voice::VoiceEngineStatus::default(),
+            ).unwrap_or("CenAI Voice offline synthesis is unavailable.").to_owned();
             let _ = self.response_tx.send(ChatEvent::SpeechSynthesized(
                 self.account_generation,
-                Err("CenAI Voice is not connected yet; Google TTS is disabled.".into()),
+                Err(reason),
             ));
         }
     }
