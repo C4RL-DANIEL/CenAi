@@ -473,10 +473,12 @@ impl WgpuRenderer {
 
     pub fn handle_attachment_import(&mut self, path: String, mime_type: String, display_name: String, error: String) {
         if !error.is_empty() {
+            let _ = std::fs::remove_file(&path);
             self.app_state.attachment_status = error;
             return;
         }
         let Some(store) = self.attachment_store.clone() else {
+            let _ = std::fs::remove_file(&path);
             self.app_state.attachment_status = "Sign in before adding private attachments.".into();
             return;
         };
@@ -485,8 +487,9 @@ impl WgpuRenderer {
         let attachment_id = format!("att-{}", new_session_id());
         let task = self.runtime.spawn_blocking(move || {
             let result = (|| -> Result<AttachmentMetadata, String> {
-                let bytes = std::fs::read(&path).map_err(|error| format!("Could not read selected attachment: {error}"))?;
+                let bytes_result = std::fs::read(&path);
                 let _ = std::fs::remove_file(&path);
+                let bytes = bytes_result.map_err(|error| format!("Could not read selected attachment: {error}"))?;
                 let mime = normalize_attachment_mime(&mime_type, &display_name);
                 let kind = if mime.starts_with("image/") {
                     AttachmentKind::Image
