@@ -871,19 +871,23 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 }
             }
             if !state.mfa_factors.is_empty() {
+                let mut selected_factor = None;
+                let mut removed_factor = None;
                 for factor in &state.mfa_factors {
                     ui.horizontal(|ui| {
                         ui.label(text(format!("{} · {}", factor.friendly_name, factor.status), 10.0, egui::Color32::from_rgb(190, 201, 224)));
-                        if ui.small_button("Use").clicked() {
-                            state.mfa_enrollment_factor_id = factor.id.clone();
-                            state.mfa_enrollment_secret.clear();
-                            state.mfa_status = "Enter a current code from this authenticator to verify it.".into();
-                        }
-                        if ui.small_button("Remove").clicked() {
-                            state.pending_mfa_unenroll = Some(factor.id.clone());
-                            state.mfa_status = "Removing authenticator…".into();
-                        }
+                        if ui.small_button("Use").clicked() { selected_factor = Some(factor.id.clone()); }
+                        if ui.small_button("Remove").clicked() { removed_factor = Some(factor.id.clone()); }
                     });
+                }
+                if let Some(factor_id) = selected_factor {
+                    state.mfa_enrollment_factor_id = factor_id;
+                    state.mfa_enrollment_secret.clear();
+                    state.mfa_status = "Enter a current code from this authenticator to verify it.".into();
+                }
+                if let Some(factor_id) = removed_factor {
+                    state.pending_mfa_unenroll = Some(factor_id);
+                    state.mfa_status = "Removing authenticator…".into();
                 }
             } else {
                 ui.label(text("No authenticator factors were returned. Refresh status after signing in.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
