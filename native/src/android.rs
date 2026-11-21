@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 mod vault;
 use vault::AndroidSecretVault;
-use crate::core::network::CenAiApi;
+use crate::core::{network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
@@ -18,14 +18,15 @@ use crate::render::wgpu_renderer::WgpuRenderer;
 struct CenAiApplication {
     api: Option<CenAiApi>,
     runtime: tokio::runtime::Handle,
+    workspace: Option<WorkspaceStore>,
     window: Option<Arc<Window>>,
     renderer: Option<WgpuRenderer>,
     last_size: winit::dpi::PhysicalSize<u32>,
 }
 
 impl CenAiApplication {
-    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle) -> Self {
-        Self { api, runtime, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
+    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle, workspace: Option<WorkspaceStore>) -> Self {
+        Self { api, runtime, workspace, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
     }
 }
 
@@ -39,7 +40,7 @@ impl ApplicationHandler for CenAiApplication {
             .with_transparent(false);
         let window = Arc::new(event_loop.create_window(attributes).expect("create Android window"));
         self.last_size = window.inner_size();
-        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone()) {
+        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take()) {
             Ok(renderer) => {
                 log::info!("CenAI renderer initialized: {}", crate::RUNTIME_ID);
                 self.renderer = Some(renderer);
@@ -104,6 +105,12 @@ pub fn android_main(app: AndroidApp) {
         Ok(vault) => Arc::new(vault),
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
+    let email = vault.account_email().unwrap_or_default();
+    let workspace = if email.is_empty() {
+        None
+    } else {
+        app.internal_data_path().and_then(|root| WorkspaceStore::new(root.join("cenai-workspace"), &email).ok())
+    };
     let api = CenAiApi::new(vault).ok();
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
@@ -113,6 +120,6 @@ pub fn android_main(app: AndroidApp) {
     builder.with_android_app(app);
     let event_loop = builder.build().expect("create Android event loop");
     event_loop
-        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone()))
+        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace))
         .expect("run CenAI Android application");
 }
