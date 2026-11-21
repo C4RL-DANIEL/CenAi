@@ -719,7 +719,6 @@ impl WgpuRenderer {
         self.app_state.pending_automation_save = false;
         self.app_state.pending_automation_toggle = None;
         self.app_state.pending_automation_delete = None;
-        self.app_state.pending_automation_run = None;
         self.automation_scheduler = None;
         self.app_state.voice_active = false;
         self.app_state.pending_voice_start = false;
