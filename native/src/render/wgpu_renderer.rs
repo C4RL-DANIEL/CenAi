@@ -346,11 +346,13 @@ impl WgpuRenderer {
         if !key.is_empty() {
             let (endpoint, model) = match provider.as_str() {
                 "deepseek" => ("https://api.deepseek.com", "deepseek-flash"),
+                "anthropic" => ("", "claude-sonnet-5-5"),
+                "gemini" => ("", "gemini-3.8-flash"),
                 _ => ("https://api.openai.com/v1", "gpt-4.1-mini"),
             };
             let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
+            let selected_provider = provider.clone();
             let task = self.runtime.spawn(async move {
-                let delta_sender = sender.clone();
                 let result = async {
                     let mut request = request;
                     if include_personal_memory {
@@ -363,9 +365,17 @@ impl WgpuRenderer {
                             });
                         }
                     }
-                    api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
-                        let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
-                    }).await
+                    match selected_provider.as_str() {
+                        "anthropic" => api.stream_anthropic(&request, &key, move |delta| {
+                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                        }).await,
+                        "gemini" => api.stream_gemini(&request, &key, move |delta| {
+                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                        }).await,
+                        _ => api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
+                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                        }).await,
+                    }
                 }.await;
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
