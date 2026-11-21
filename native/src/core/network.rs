@@ -12,6 +12,31 @@ use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
 
+fn pcm16_mono_to_wav(sample_rate_hz: u32, pcm: &[u8]) -> Result<Vec<u8>, String> {
+    if !matches!(sample_rate_hz, 16_000 | 24_000 | 48_000) || pcm.is_empty() || pcm.len() % 2 != 0 {
+        return Err("Gemini returned unsupported or misaligned PCM audio".into());
+    }
+    if pcm.len() > u32::MAX as usize - 36 {
+        return Err("Gemini speech audio exceeds WAV limits".into());
+    }
+    let data_length = pcm.len() as u32;
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36u32 + data_length).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&sample_rate_hz.to_le_bytes());
+    wav.extend_from_slice(&(sample_rate_hz * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_length.to_le_bytes());
+    wav.extend_from_slice(pcm);
+    Ok(wav)
+}
+
 fn append_stream_delta(answer: &mut String, delta: &str) -> Result<(), String> {
     if answer.len().saturating_add(delta.len()) > MAX_STREAM_RESPONSE_BYTES {
         return Err("AI response exceeded the 2 MiB safety limit.".into());
@@ -676,18 +701,29 @@ impl CenAiApi {
             return Err(format!("Gemini speech synthesis returned HTTP {}", status.as_u16()));
         }
         let value: Value = response.json().await.map_err(|error| format!("Gemini speech response was invalid: {error}"))?;
-        let encoded = value.pointer("/candidates/0/content/parts")
+        let audio_part = value.pointer("/candidates/0/content/parts")
             .and_then(Value::as_array).into_iter().flatten()
-            .find_map(|part| part.pointer("/inlineData/data").and_then(Value::as_str))
+            .find(|part| part.pointer("/inlineData/data").and_then(Value::as_str).is_some())
             .ok_or("Gemini returned no synthesized audio")?;
+        let encoded = audio_part.pointer("/inlineData/data").and_then(Value::as_str)
+            .ok_or("Gemini returned no synthesized audio data")?;
+        let mime_type = audio_part.pointer("/inlineData/mimeType").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
         let audio = base64::engine::general_purpose::STANDARD.decode(encoded)
             .map_err(|_| "Gemini returned malformed speech audio")?;
-        if audio.len() < 44 || audio.len() > 24 * 1024 * 1024
-            || &audio[..4] != b"RIFF" || &audio[8..12] != b"WAVE"
-        {
-            return Err("Gemini speech response was not a supported WAV file".into());
+        if audio.len() > 24 * 1024 * 1024 {
+            return Err("Gemini speech audio exceeded the 24 MB safety limit".into());
         }
-        Ok(audio)
+        if audio.starts_with(b"RIFF") && audio.get(8..12) == Some(b"WAVE") {
+            if audio.len() < 44 { return Err("Gemini returned a truncated WAV file".into()); }
+            return Ok(audio);
+        }
+        if mime_type.starts_with("audio/pcm") || mime_type.starts_with("audio/l16") {
+            let sample_rate = mime_type.split(';').find_map(|part| {
+                part.trim().strip_prefix("rate=")?.parse::<u32>().ok()
+            }).unwrap_or(24_000);
+            return pcm16_mono_to_wav(sample_rate, &audio);
+        }
+        Err("Gemini returned an unsupported speech audio format".into())
     }
 
     /// Transcribes a user-initiated WAV audio clip through Gemini's multimodal endpoint.
@@ -884,3 +920,25 @@ mod identity_tests {
         assert!(!valid_supabase_user_id("550e8400e29b41d4a716446655440000"));
     }
 }
+#[cfg(test)]
+mod speech_audio_tests {
+    use super::*;
+
+    #[test]
+    fn raw_gemini_pcm_is_wrapped_in_a_valid_mono_wav_container() {
+        let wav = pcm16_mono_to_wav(24_000, &[1, 0, 255, 255]).unwrap();
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 24_000);
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 4);
+        assert_eq!(&wav[44..], &[1, 0, 255, 255]);
+    }
+
+    #[test]
+    fn raw_gemini_pcm_rejects_unsupported_rates_and_partial_samples() {
+        assert!(pcm16_mono_to_wav(44_100, &[1, 0]).is_err());
+        assert!(pcm16_mono_to_wav(24_000, &[1]).is_err());
+        assert!(pcm16_mono_to_wav(24_000, &[]).is_err());
+    }
+}
+
