@@ -31,15 +31,6 @@ impl CenAiApi {
         Ok(Self { client, vault })
     }
 
-    async fn post_public(&self, url: &str, body: &Value) -> Result<Value, String> {
-        let response = self.client.post(url)
-            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
-            .header(header::ACCEPT, "application/json")
-            .json(body)
-            .send().await.map_err(|error| error.to_string())?;
-        Self::decode_response(response).await
-    }
-
     async fn refresh_session(&self) -> Result<(), String> {
         let refresh = self.vault.refresh_token()?;
         if refresh.is_empty() { return Err("Your session has expired. Sign in again.".into()); }
