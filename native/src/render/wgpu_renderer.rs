@@ -395,9 +395,9 @@ impl WgpuRenderer {
             && voice_model_directory.join(TOKENIZER_GGUF_MODEL).is_file();
         app_state.voice_model_download_progress = if voice_model_installed { 1.0 } else { 0.0 };
         app_state.voice_model_status = if voice_model_installed {
-            "Offline Qwen model pack files are present.".into()
+            "CenAI Voice offline model pack files are present.".into()
         } else {
-            "Offline Qwen model pack not downloaded.".into()
+            "CenAI Voice offline model pack not downloaded.".into()
         };
         if let Some(service) = &api {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
@@ -588,7 +588,7 @@ impl WgpuRenderer {
         if self.app_state.pending_voice_model_download {
             self.app_state.pending_voice_model_download = false;
             self.app_state.voice_model_download_progress = 0.0;
-            self.app_state.voice_model_status = "Downloading and verifying Qwen3-TTS model files…".into();
+            self.app_state.voice_model_status = "Downloading and verifying CenAI Voice model files…".into();
             let model_directory = self.workspace_root.join("models").join("cenai-voice");
             let sender = self.response_tx.clone();
             let progress_sender = sender.clone();
