@@ -769,6 +769,10 @@ impl WgpuRenderer {
     }
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
+        if matches!(event, WindowEvent::Focused(false)) && self.app_state.voice_active {
+            self.app_state.pending_voice_stop = true;
+            self.app_state.voice_status = "Voice input stopped because CenAI lost focus.".into();
+        }
         self.egui_state.on_window_event(window, event).repaint
     }
 
