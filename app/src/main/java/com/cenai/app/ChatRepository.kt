@@ -169,19 +169,32 @@ class ChatRepository(private val vault: SecureKeyStore) {
             else -> {
                 val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
                 require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
-                val list = JSONArray()
-                msgs.forEach { message ->
-                    val blocks = JSONArray()
-                    message.visionParts().forEach { (kind, value) ->
-                        if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
-                        else blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$kind;base64,$value")))
+                val maxTokens = vault.get("max_tokens", "4096").toIntOrNull() ?: 4096
+                val containsImages = msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }
+                if (!containsImages) {
+                    val rustMessages = JSONArray()
+                    msgs.forEach { message ->
+                        rustMessages.put(JSONObject().put("role", message.role).put("content", message.content))
                     }
-                    val content: Any = if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks
-                    list.put(JSONObject().put("role", message.role).put("content", content))
+                    val encoded = NativeCore.buildOpenAiChatPayload(model, maxTokens, rustMessages.toString())
+                    val error = runCatching { JSONObject(encoded).optString("error") }.getOrDefault("")
+                    require(error.isBlank()) { error }
+                    payload = JSONObject(encoded)
+                } else {
+                    val list = JSONArray()
+                    msgs.forEach { message ->
+                        val blocks = JSONArray()
+                        message.visionParts().forEach { (kind, value) ->
+                            if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
+                            else blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$kind;base64,$value")))
+                        }
+                        val content: Any = if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks
+                        list.put(JSONObject().put("role", message.role).put("content", content))
+                    }
+                    payload = JSONObject().put("model", model).put("stream", true)
+                        .put("max_tokens", maxTokens)
+                        .put("messages", list)
                 }
-                payload = JSONObject().put("model", model).put("stream", true)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
-                    .put("messages", list)
                 builder = Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $key")
             }
