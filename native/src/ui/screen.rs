@@ -277,6 +277,68 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
         ui.horizontal(|ui| {
+            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("＋ Attach file")).clicked() {
+                state.pending_attachment_picker = true;
+                state.attachment_status = "Opening Android document picker…".into();
+            }
+            if !state.attachments.is_empty() {
+                ui.label(text(format!("{} attached", state.attachments.len()), 10.0, accent()));
+            }
+        });
+        let attachment_items = state.attachments.clone();
+        if !attachment_items.is_empty() {
+            egui::CollapsingHeader::new(format!("Attachments · {}", attachment_items.len()))
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut state.attachment_prompt_draft)
+                        .hint_text("What should CenAI extract or explain?")
+                        .desired_width(f32::INFINITY));
+                    ui.label(text("File contents are sent to Google Gemini only when you choose Analyze. Images, PDFs and text files are supported.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+                    for attachment in &attachment_items {
+                        ui.horizontal(|ui| {
+                            ui.label(text(
+                                format!("{} · {:.1} KB", attachment.file_name, attachment.byte_length as f64 / 1024.0),
+                                10.0,
+                                egui::Color32::from_rgb(190, 199, 220),
+                            ));
+                            let supported = attachment.mime_type.starts_with("image/")
+                                || attachment.mime_type == "application/pdf"
+                                || attachment.mime_type.starts_with("text/");
+                            if ui.add_enabled(supported && !state.account_email.is_empty(), egui::Button::new("Analyze")).clicked() {
+                                state.pending_attachment_analysis = Some((
+                                    attachment.id.clone(),
+                                    state.attachment_prompt_draft.clone(),
+                                ));
+                                state.attachment_status = format!("Analyzing {}…", attachment.file_name);
+                                state.attachment_analysis_result.clear();
+                            }
+                            if ui.button("Remove").clicked() {
+                                state.pending_attachment_delete = Some(attachment.id.clone());
+                            }
+                        });
+                    }
+                    if !state.attachment_status.is_empty() {
+                        ui.label(text(&state.attachment_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+                    }
+                    if !state.attachment_analysis_result.is_empty() {
+                        ui.separator();
+                        ui.label(text("Analysis result", 12.0, egui::Color32::WHITE).strong());
+                        egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                            ui.label(text(&state.attachment_analysis_result, 11.0, egui::Color32::from_rgb(190, 199, 220)));
+                        });
+                        if ui.button("Insert analysis into message").clicked() {
+                            if !state.conversation.draft.trim().is_empty() {
+                                state.conversation.draft.push_str("\n\n");
+                            }
+                            state.conversation.draft.push_str(&state.attachment_analysis_result);
+                        }
+                    }
+                });
+        }
+        if !state.attachment_status.is_empty() && state.attachments.is_empty() {
+            ui.label(text(&state.attachment_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+        ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
             ui.add_enabled_ui(state.personal_memory_enabled, |ui| {
                 ui.checkbox(&mut state.include_memory_for_request, "Use my private memory for this message");
