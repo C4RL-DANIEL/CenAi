@@ -94,6 +94,9 @@ impl AutomationScheduler {
 
     pub fn upsert(&mut self, automation: Automation) -> Result<(), &'static str> {
         automation.validate()?;
+        if self.automations.values().any(|existing| existing.owner_scope != automation.owner_scope) {
+            return Err("An automation scheduler cannot mix authenticated account scopes");
+        }
         let key = Self::key(&automation.owner_scope, &automation.id);
         self.automations.insert(key, automation);
         Ok(())
@@ -218,16 +221,18 @@ mod tests {
 
     #[test]
     fn automation_scheduler_isolates_accounts_and_supports_next_run_queries() {
-        let mut scheduler = AutomationScheduler::default();
-        scheduler.upsert(automation("daily", OWNER, "0 9 * * *")).unwrap();
-        scheduler.upsert(automation("daily", OTHER, "0 9 * * *")).unwrap();
+        let mut alice = AutomationScheduler::default();
+        let mut bob = AutomationScheduler::default();
+        alice.upsert(automation("daily", OWNER, "0 9 * * *")).unwrap();
+        bob.upsert(automation("daily", OTHER, "0 9 * * *")).unwrap();
+        assert!(alice.upsert(automation("foreign", OTHER, "0 9 * * *")).is_err());
         let now = DateTime::parse_from_rfc3339("2026-11-21T08:30:00Z").unwrap().with_timezone(&Utc);
-        let next = scheduler.snapshot(OWNER).pop().unwrap().next_run_after(now).unwrap().unwrap();
+        let next = alice.snapshot(OWNER).pop().unwrap().next_run_after(now).unwrap().unwrap();
         assert_eq!(next, DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap());
-        assert_eq!(scheduler.snapshot(OWNER).len(), 1);
-        assert_eq!(scheduler.snapshot(OTHER).len(), 1);
-        assert!(scheduler.remove(OWNER, "daily"));
-        assert_eq!(scheduler.snapshot(OWNER).len(), 0);
-        assert_eq!(scheduler.snapshot(OTHER).len(), 1);
+        assert_eq!(alice.snapshot(OWNER).len(), 1);
+        assert_eq!(bob.snapshot(OTHER).len(), 1);
+        assert!(alice.remove(OWNER, "daily"));
+        assert_eq!(alice.snapshot(OWNER).len(), 0);
+        assert_eq!(bob.snapshot(OTHER).len(), 1);
     }
 }
