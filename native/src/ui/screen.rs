@@ -232,6 +232,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
     ui.add_space(10.0);
+    let mut open_artifact = None;
     if state.projects.is_empty() {
         surface(ui, |ui| {
             ui.label(text("Projects", 17.0, egui::Color32::WHITE).strong());
@@ -246,11 +247,41 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 }
                 ui.label(text(format!("{} saved artifacts", project.artifacts.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
                 for artifact in &project.artifacts {
-                    ui.label(text(format!("▤  {}", artifact.file_name), 11.0, egui::Color32::from_rgb(165, 184, 220)));
+                    ui.horizontal(|ui| {
+                        ui.label(text(format!("▤  {}", artifact.file_name), 11.0, egui::Color32::from_rgb(165, 184, 220)));
+                        if ui.small_button("Open").clicked() {
+                            open_artifact = Some(artifact.id.clone());
+                        }
+                    });
                 }
             });
             ui.add_space(8.0);
         }
+    }
+    if let Some(artifact_id) = open_artifact {
+        state.pending_artifact_open = Some(artifact_id);
+        state.artifact_preview_status = "Opening artifact…".into();
+    }
+    if !state.artifact_preview_name.is_empty() || !state.artifact_preview_status.is_empty() {
+        ui.add_space(10.0);
+        surface(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(text(if state.artifact_preview_name.is_empty() { "Artifact preview" } else { &state.artifact_preview_name }, 15.0, egui::Color32::WHITE).strong());
+                if ui.small_button("Close").clicked() {
+                    state.artifact_preview_name.clear();
+                    state.artifact_preview_content.clear();
+                    state.artifact_preview_status.clear();
+                }
+            });
+            if !state.artifact_preview_status.is_empty() {
+                ui.label(text(&state.artifact_preview_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            }
+            if !state.artifact_preview_content.is_empty() {
+                egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                    ui.add(egui::Label::new(text(&state.artifact_preview_content, 11.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                });
+            }
+        });
     }
     ui.add_space(10.0);
     if state.task_plans.is_empty() {
