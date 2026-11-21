@@ -24,31 +24,6 @@ fn jwt_has_active_aal2(token: &str, now_unix: i64) -> bool {
         && claims.get("exp").and_then(Value::as_i64).is_some_and(|expires| expires > now_unix)
 }
 
-fn pcm16_mono_to_wav(sample_rate_hz: u32, pcm: &[u8]) -> Result<Vec<u8>, String> {
-    if !matches!(sample_rate_hz, 16_000 | 24_000 | 48_000) || pcm.is_empty() || !pcm.len().is_multiple_of(2) {
-        return Err("Gemini returned unsupported or misaligned PCM audio".into());
-    }
-    if pcm.len() > u32::MAX as usize - 36 {
-        return Err("Gemini speech audio exceeds WAV limits".into());
-    }
-    let data_length = pcm.len() as u32;
-    let mut wav = Vec::with_capacity(44 + pcm.len());
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36u32 + data_length).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&sample_rate_hz.to_le_bytes());
-    wav.extend_from_slice(&(sample_rate_hz * 2).to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_length.to_le_bytes());
-    wav.extend_from_slice(pcm);
-    Ok(wav)
-}
-
 fn append_stream_delta(answer: &mut String, delta: &str) -> Result<(), String> {
     if answer.len().saturating_add(delta.len()) > MAX_STREAM_RESPONSE_BYTES {
         return Err("AI response exceeded the 2 MiB safety limit.".into());
