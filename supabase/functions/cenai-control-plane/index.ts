@@ -84,6 +84,22 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       return response(201, { feedback: data });
     }
+    if (action === "registration_status") {
+      const { data: policy, error: policyError } = await adminDb.from("registration_policy")
+        .select("enforced_from").eq("id", 1).maybeSingle();
+      if (policyError) throw policyError;
+      if (!policy?.enforced_from) return fail(503, "Discord registration policy is not configured");
+      const createdAt = Date.parse(String(user.created_at ?? ""));
+      const enforcedFrom = Date.parse(String(policy.enforced_from));
+      const legacyAccount = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+      const discordVerified = user.app_metadata?.cenai_registration_verified === true
+        && user.app_metadata?.cenai_registration_method === "discord";
+      return response(200, {
+        registered: legacyAccount || discordVerified,
+        legacyAccount,
+        registrationMethod: discordVerified ? "discord" : legacyAccount ? "legacy" : null
+      });
+    }
     if (action === "registration_redeem") {
       const inviteToken = String(body.inviteToken ?? "");
       if (!/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) return fail(400, "Invalid registration invitation");
