@@ -78,6 +78,23 @@ impl WorkspaceStore {
         fs::rename(&temporary, path).map_err(|error| error.to_string())
     }
 
+
+    pub fn save_conversation(&self, conversation_id: &str, messages: &[crate::ui::model::Message]) -> Result<(), String> {
+        if !safe_segment(conversation_id) { return Err("Conversation identifier is invalid".into()); }
+        if messages.len() > 5000 { return Err("Conversation exceeds the local history limit".into()); }
+        let bytes = serde_json::to_vec(messages).map_err(|error| error.to_string())?;
+        if bytes.len() > 8 * 1024 * 1024 { return Err("Conversation history exceeds the local storage limit".into()); }
+        self.write_atomic(&self.user_root.join("conversations").join(format!("{conversation_id}.json")), &bytes)
+    }
+
+    pub fn load_conversation(&self, conversation_id: &str) -> Result<Vec<crate::ui::model::Message>, String> {
+        if !safe_segment(conversation_id) { return Err("Conversation identifier is invalid".into()); }
+        let path = self.user_root.join("conversations").join(format!("{conversation_id}.json"));
+        if !path.exists() { return Ok(Vec::new()); }
+        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+    }
+
     pub fn projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
         let mut projects = self.read_index()?.projects;
         if !include_archived { projects.retain(|project| !project.archived); }
