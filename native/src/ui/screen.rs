@@ -378,6 +378,48 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             ui.add_space(8.0);
         }
     }
+    ui.add_space(12.0);
+    surface(ui, |ui| {
+        ui.label(text("Automations", 17.0, egui::Color32::WHITE).strong());
+        ui.label(text("Create account-owned UTC schedules. Due runs are surfaced for review; sensitive actions still require approval.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.automation_id_draft).hint_text("Schedule ID (daily-report)").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.automation_title_draft).hint_text("What should CenAI prepare?").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.automation_schedule_draft).hint_text("Cron schedule in UTC (0 9 * * 1-5)").desired_width(f32::INFINITY));
+        ui.checkbox(&mut state.automation_requires_approval, "Require my approval before any action");
+        if ui.button("Save schedule").clicked() {
+            if state.automation_id_draft.trim().is_empty() || state.automation_title_draft.trim().is_empty() || state.automation_schedule_draft.trim().is_empty() {
+                state.automation_status = "Enter a schedule ID, task description and five-field UTC cron expression.".into();
+            } else {
+                state.pending_automation_save = true;
+                state.automation_status = "Saving automation…".into();
+            }
+        }
+        if !state.automation_status.is_empty() {
+            ui.label(text(&state.automation_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    let automations = state.automations.clone();
+    for automation in automations {
+        surface(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(text(&automation.title, 14.0, egui::Color32::WHITE).strong());
+                ui.label(text(if automation.enabled { "Enabled" } else { "Paused" }, 10.0, if automation.enabled { egui::Color32::from_rgb(119, 220, 183) } else { egui::Color32::from_rgb(220, 184, 121) }));
+            });
+            ui.label(text(format!("{} · UTC · {}", automation.id, automation.schedule), 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            if let Ok(Some(next)) = automation.next_run_after(chrono::Utc::now()) {
+                ui.label(text(format!("Next run: {}", next.format("%Y-%m-%d %H:%M UTC")), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+            }
+            ui.horizontal(|ui| {
+                if ui.button(if automation.enabled { "Pause" } else { "Resume" }).clicked() {
+                    state.pending_automation_toggle = Some((automation.id.clone(), !automation.enabled));
+                }
+                if ui.button("Delete").clicked() {
+                    state.pending_automation_delete = Some(automation.id.clone());
+                }
+            });
+        });
+        ui.add_space(8.0);
+    }
     if !state.projects.is_empty() {
         ui.add_space(12.0);
         surface(ui, |ui| {
