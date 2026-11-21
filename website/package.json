@@ -4,6 +4,6 @@
   "scripts": {
     "build": "node build.mjs",
     "deploy": "npx wrangler@4 deploy",
-    "check": "node --check worker.js && node --check build.mjs"
+    "check": "node --check worker.js && node --check build.mjs && node --check admin/admin.js && node --check register.js"
   }
 }
