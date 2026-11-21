@@ -186,7 +186,12 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                 state.conversation.submit_draft();
             }
         });
-        ui.label(text("Enter to send  ·  Your work stays yours", 9.0, egui::Color32::from_rgb(124, 136, 165)));
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut state.planning_mode, "Plan task first");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(text("Sensitive actions always need approval", 9.0, egui::Color32::from_rgb(124, 136, 165)));
+            });
+        });
     });
 }
 
