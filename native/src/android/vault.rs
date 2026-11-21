@@ -279,7 +279,7 @@ impl SessionVault for AndroidSecretVault {
     }
 
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
-        if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+        if provider.len() > 32 || !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
         }
         let name = self.scoped_secret_name("provider_api_key", provider)?;
