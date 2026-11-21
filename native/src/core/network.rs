@@ -437,8 +437,8 @@ impl CenAiApi {
         if text.is_empty() || text.len() > MAX_TEXT_BYTES {
             return Err("Speech text is empty or exceeds the CenAI Voice limit.".into());
         }
-        if !matches!(language, "English" | "Chinese" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian") {
-            return Err("CenAI Voice does not support the selected language yet.".into());
+        if language != "English" {
+            return Err("CenAI Voice currently supports English synthesis only.".into());
         }
         if voice != "cenai-en-v1" {
             return Err("The requested CenAI Voice profile is unavailable.".into());
