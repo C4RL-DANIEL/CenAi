@@ -4,6 +4,17 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth:{persistSession:false,autoRefreshToken:false} });
 const headers = { "Content-Type":"application/json", "Cache-Control":"no-store", "X-Content-Type-Options":"nosniff", "Access-Control-Allow-Origin":"*", "Access-Control-Allow-Headers":"authorization, apikey, content-type, x-api-key", "Access-Control-Allow-Methods":"GET, OPTIONS" };
 const reply = (status:number, body:unknown) => new Response(JSON.stringify(body), {status,headers});
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await db.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 async function sha256(value:string) {
   const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,"0")).join("");
@@ -21,6 +32,8 @@ Deno.serve(async (req:Request) => {
     const {data:key,error:keyError}=await db.from("api_keys").select("id,owner_user_id,scopes,enabled").eq("key_hash",keyHash).maybeSingle();
     if(keyError) throw keyError;
     if(!key || !key.enabled) return reply(401,{error:"Invalid or revoked API key."});
+    const { data: ownerResult, error: ownerError } = await db.auth.admin.getUserById(key.owner_user_id);
+    if (ownerError || !ownerResult.user || !await registrationAllowed(ownerResult.user)) return reply(403,{error:"This account must complete Discord invitation registration before API access."});
     const {data:quota,error:quotaError}=await db.from("ai_quota_policies").select("daily_request_limit,monthly_token_limit,enabled").eq("owner_user_id",key.owner_user_id).maybeSingle();
     if(quotaError) throw quotaError;
     const policy={daily_request_limit:quota?.daily_request_limit ?? 100,monthly_token_limit:quota?.monthly_token_limit ?? 500000,enabled:quota?.enabled !== false};
