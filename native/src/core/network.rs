@@ -350,6 +350,52 @@ impl CenAiApi {
         self.post_authenticated(config::ECOSYSTEM_URL, &payload).await
     }
 
+    /// Uploads an already encrypted workspace envelope to the caller's private Storage path.
+    pub async fn upload_encrypted_backup(&self, encrypted_backup: Vec<u8>) -> Result<(), String> {
+        const MAX_BACKUP_BYTES: usize = 100 * 1024 * 1024;
+        if encrypted_backup.is_empty() || encrypted_backup.len() > MAX_BACKUP_BYTES {
+            return Err("Encrypted backup is empty or exceeds the 100 MB limit".into());
+        }
+        let user_id = self.account_id()?;
+        if !valid_supabase_user_id(&user_id) { return Err("A verified account is required for backup upload".into()); }
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before uploading a backup".into()); }
+        let url = format!("{}/storage/v1/object/{}/{}/workspace.cenai", config::SUPABASE_URL, config::BACKUP_BUCKET, user_id);
+        let response = self.provider_client.put(url)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .header("content-type", "application/json")
+            .header("x-upsert", "true")
+            .body(encrypted_backup)
+            .send().await.map_err(|error| format!("Encrypted backup upload failed: {error}"))?;
+        if !response.status().is_success() {
+            return Err(format!("Encrypted backup upload returned HTTP {}", response.status().as_u16()));
+        }
+        Ok(())
+    }
+
+    /// Downloads only the current user's private encrypted backup object.
+    pub async fn download_encrypted_backup(&self) -> Result<Vec<u8>, String> {
+        const MAX_BACKUP_BYTES: usize = 100 * 1024 * 1024;
+        let user_id = self.account_id()?;
+        if !valid_supabase_user_id(&user_id) { return Err("A verified account is required for backup download".into()); }
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before downloading a backup".into()); }
+        let url = format!("{}/storage/v1/object/authenticated/{}/{}/workspace.cenai", config::SUPABASE_URL, config::BACKUP_BUCKET, user_id);
+        let response = self.provider_client.get(url)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .send().await.map_err(|error| format!("Encrypted backup download failed: {error}"))?;
+        if !response.status().is_success() {
+            return Err(format!("Encrypted backup download returned HTTP {}", response.status().as_u16()));
+        }
+        let bytes = response.bytes().await.map_err(|error| format!("Encrypted backup download failed: {error}"))?;
+        if bytes.is_empty() || bytes.len() > MAX_BACKUP_BYTES {
+            return Err("Downloaded backup is empty or exceeds the 100 MB limit".into());
+        }
+        Ok(bytes.to_vec())
+    }
+
     pub async fn ecosystem_list(&self) -> Result<Value, String> {
         self.ecosystem_action("list", json!({})).await
     }
