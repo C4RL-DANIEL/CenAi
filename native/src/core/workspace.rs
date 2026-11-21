@@ -6,7 +6,9 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use crate::core::agents::TaskPlan;
+use crate::core::backup::EncryptedBackup;
 use crate::core::automations::Automation;
 use sha2::{Digest, Sha256};
 
@@ -46,6 +48,21 @@ struct WorkspaceIndex {
     tasks: Vec<TaskRecord>,
     #[serde(default)]
     automations: Vec<Automation>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceBackupPayload {
+    pub schema_version: u16,
+    pub projects: Vec<Project>,
+    pub tasks: Vec<TaskRecord>,
+    pub automations: Vec<Automation>,
+    artifacts: Vec<BackupArtifact>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct BackupArtifact {
+    id: String,
+    bytes_base64: String,
 }
 
 pub struct WorkspaceStore {
@@ -129,6 +146,146 @@ impl WorkspaceStore {
         if !path.exists() { return Ok(Vec::new()); }
         let bytes = fs::read(path).map_err(|error| error.to_string())?;
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+    }
+
+    pub fn export_backup_payload(&self) -> Result<Vec<u8>, String> {
+        let index = self.read_index()?;
+        let mut artifacts = Vec::new();
+        let mut total_bytes = 0usize;
+        for project in &index.projects {
+            for artifact in &project.artifacts {
+                let bytes = self.read_artifact(&artifact.id)?;
+                total_bytes = total_bytes.saturating_add(bytes.len());
+                if total_bytes > 100 * 1024 * 1024 {
+                    return Err("Workspace artifacts exceed the 100 MB encrypted backup limit".into());
+                }
+                artifacts.push(BackupArtifact { id: artifact.id.clone(), bytes_base64: STANDARD.encode(bytes) });
+            }
+        }
+        let payload = WorkspaceBackupPayload {
+            schema_version: 1,
+            projects: index.projects,
+            tasks: index.tasks,
+            automations: index.automations.into_iter()
+                .filter(|automation| automation.owner_scope == self.user_identity).collect(),
+            artifacts,
+        };
+        serde_json::to_vec(&payload).map_err(|error| error.to_string())
+    }
+
+    pub fn export_encrypted_backup(&self, passphrase: &str) -> Result<Vec<u8>, String> {
+        let payload = self.export_backup_payload()?;
+        EncryptedBackup::seal(&payload, passphrase)?.to_json()
+    }
+
+    pub fn restore_encrypted_backup(&self, envelope: &[u8], passphrase: &str) -> Result<(), String> {
+        let encrypted = EncryptedBackup::from_json(envelope)?;
+        let plaintext = encrypted.open(passphrase)?;
+        self.import_backup_payload(&plaintext)
+    }
+
+    pub fn import_backup_payload(&self, plaintext: &[u8]) -> Result<(), String> {
+        if plaintext.is_empty() || plaintext.len() > 100 * 1024 * 1024 {
+            return Err("Workspace backup payload is empty or exceeds 100 MB".into());
+        }
+        let payload: WorkspaceBackupPayload = serde_json::from_slice(plaintext).map_err(|error| error.to_string())?;
+        if payload.schema_version != 1 || payload.projects.len() > 200 || payload.tasks.len() > 200
+            || payload.automations.len() > 1000 || payload.artifacts.len() > 2000 {
+            return Err("Workspace backup schema or item limits are invalid".into());
+        }
+        for project in &payload.projects {
+            if !safe_segment(&project.id) || project.name.trim().is_empty()
+                || project.id.len() > 80 || project.name.len() > 160 || project.description.len() > 20_000
+                || project.artifacts.len() > 2000 {
+                return Err("Workspace backup contains invalid project metadata".into());
+            }
+            for artifact in &project.artifacts {
+                if !safe_segment(&artifact.id) || artifact.file_name.trim().is_empty()
+                    || artifact.file_name.len() > 240 || artifact.file_name.contains('/')
+                    || artifact.file_name.contains('\\') || artifact.file_name.chars().any(char::is_control)
+                    || artifact.media_type.trim().is_empty() || artifact.media_type.len() > 120
+                    || artifact.byte_length == 0 || artifact.byte_length > 25 * 1024 * 1024
+                    || artifact.sha256.len() != 64 || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Err("Workspace backup contains invalid artifact metadata".into());
+                }
+            }
+        }
+        for task in &payload.tasks {
+            if task.id != task.plan.id || task.plan.validate_persisted().is_err() {
+                return Err("Workspace backup contains an invalid task plan".into());
+            }
+        }
+        for automation in &payload.automations {
+            automation.validate().map_err(|error| format!("Invalid backup automation: {error}"))?;
+            if automation.owner_scope != self.user_identity {
+                return Err("Backup automation belongs to a different account".into());
+            }
+        }
+
+        let mut files = std::collections::HashMap::new();
+        let mut total_bytes = 0usize;
+        for artifact in payload.artifacts {
+            if !safe_segment(&artifact.id) || files.contains_key(&artifact.id) {
+                return Err("Workspace backup contains a duplicate or invalid artifact file".into());
+            }
+            let bytes = STANDARD.decode(&artifact.bytes_base64).map_err(|_| "Backup artifact encoding is invalid".to_owned())?;
+            total_bytes = total_bytes.saturating_add(bytes.len());
+            if total_bytes > 100 * 1024 * 1024 { return Err("Workspace backup artifact data exceeds 100 MB".into()); }
+            files.insert(artifact.id, bytes);
+        }
+        let mut referenced = std::collections::HashSet::new();
+        for project in &payload.projects {
+            for artifact in &project.artifacts {
+                if !referenced.insert(artifact.id.clone()) { return Err("Backup artifact is referenced more than once".into()); }
+                let bytes = files.get(&artifact.id).ok_or("Backup artifact data is missing")?;
+                if bytes.len() as u64 != artifact.byte_length {
+                    return Err("Backup artifact byte length does not match metadata".into());
+                }
+                let digest = Sha256::digest(bytes);
+                let actual = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+                if !actual.eq_ignore_ascii_case(&artifact.sha256) {
+                    return Err("Backup artifact checksum does not match metadata".into());
+                }
+            }
+        }
+        if referenced.len() != files.len() { return Err("Backup contains unreferenced artifact data".into()); }
+
+        let staging = self.user_root.join(format!("artifacts.restore-{}", std::process::id()));
+        let previous = self.user_root.join(format!("artifacts.previous-{}", std::process::id()));
+        if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
+        fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+        for (id, bytes) in &files {
+            let path = staging.join(format!("{id}.bin"));
+            let mut file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|error| error.to_string())?;
+            file.write_all(bytes).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+        }
+
+        let current = self.user_root.join("artifacts");
+        if previous.exists() { fs::remove_dir_all(&previous).map_err(|error| error.to_string())?; }
+        let had_current = current.exists();
+        if had_current { fs::rename(&current, &previous).map_err(|error| error.to_string())?; }
+        if let Err(error) = fs::rename(&staging, &current) {
+            if had_current { let _ = fs::rename(&previous, &current); }
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error.to_string());
+        }
+
+        let index = WorkspaceIndex {
+            schema_version: 1,
+            projects: payload.projects,
+            tasks: payload.tasks,
+            automations: payload.automations,
+        };
+        if let Err(error) = self.write_index(&index) {
+            let failed = self.user_root.join(format!("artifacts.failed-{}", std::process::id()));
+            let _ = fs::rename(&current, &failed);
+            if had_current { let _ = fs::rename(&previous, &current); }
+            let _ = fs::remove_dir_all(&failed);
+            return Err(error);
+        }
+        if had_current { let _ = fs::remove_dir_all(previous); }
+        Ok(())
     }
 
     pub fn automations(&self) -> Result<Vec<Automation>, String> {
