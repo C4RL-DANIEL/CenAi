@@ -1487,7 +1487,10 @@ impl WgpuRenderer {
                 }
                 ChatEvent::BackupUploaded(_, result) => {
                     self.app_state.backup_status = match result {
-                        Ok(()) => "Encrypted workspace backup uploaded successfully.".into(),
+                        Ok(()) => {
+                            self.app_state.backup_passphrase_draft.clear();
+                            "Encrypted workspace backup uploaded successfully.".into()
+                        },
                         Err(error) => format!("Backup upload failed: {error}"),
                     };
                 }
@@ -1522,7 +1525,11 @@ impl WgpuRenderer {
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default();
+                                if let Ok(messages) = workspace.load_conversation(&self.session_id) {
+                                    self.app_state.conversation.restore_messages(messages);
+                                }
                             }
+                            self.app_state.backup_passphrase_draft.clear();
                             self.app_state.backup_status = "Workspace restored from the encrypted backup.".into();
                         }
                         Err(error) => self.app_state.backup_status = format!("Backup restore failed: {error}"),
