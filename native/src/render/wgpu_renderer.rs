@@ -75,6 +75,7 @@ pub struct WgpuRenderer {
     account_generation: u64,
     response_tx: mpsc::Sender<ChatEvent>,
     response_rx: mpsc::Receiver<ChatEvent>,
+    background_tasks: Vec<tokio::task::JoinHandle<()>>,
     active_streams: HashMap<u64, u64>,
     workspace: Option<WorkspaceStore>,
     last_saved_message_count: usize,
@@ -233,6 +234,7 @@ impl WgpuRenderer {
             account_generation: 0,
             response_tx,
             response_rx,
+            background_tasks: Vec::new(),
             active_streams: HashMap::new(),
             workspace,
             last_saved_message_count,
@@ -272,7 +274,7 @@ impl WgpuRenderer {
             let generation = self.account_generation;
             let brain = CentralBrain::new(api);
             let sender = self.response_tx.clone();
-            self.runtime.spawn(async move {
+            let task = self.runtime.spawn(async move {
                 let result = match user_id {
                     Ok(user_id) => {
                         let request = ContextRequest::new(user_id.clone(), "conversation", session_id.clone());
@@ -289,6 +291,7 @@ impl WgpuRenderer {
                 };
                 let _ = sender.send(ChatEvent::PlanFinished(generation, message_id, result));
             });
+            self.track_task(task);
             return;
         }
         let messages: Vec<ChatMessage> = self.app_state.conversation.messages()
@@ -312,13 +315,14 @@ impl WgpuRenderer {
                 _ => ("https://api.openai.com/v1", "gpt-4.1-mini"),
             };
             let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
-            self.runtime.spawn(async move {
+            let task = self.runtime.spawn(async move {
                 let delta_sender = sender.clone();
                 let result = api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
                     let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                 }).await;
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
+            self.track_task(task);
         } else {
             let payload = serde_json::json!({
                 "model": "cloudflare-gemma-4-26b-a4b-it",
@@ -328,17 +332,24 @@ impl WgpuRenderer {
                 // Keep the compatible JSON response until the server-side SSE rollout is deployed.
                 "stream": false,
             });
-            self.runtime.spawn(async move {
+            let task = self.runtime.spawn(async move {
                 let delta_sender = sender.clone();
                 let result = api.stream_cloud_chat(&payload, move |delta| {
                     let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                 }).await;
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
+            self.track_task(task);
         }
     }
 
+    fn track_task(&mut self, task: tokio::task::JoinHandle<()>) {
+        self.background_tasks.retain(|pending| !pending.is_finished());
+        self.background_tasks.push(task);
+    }
+
     fn reset_user_scoped_state(&mut self) {
+        for task in self.background_tasks.drain(..) { task.abort(); }
         self.workspace = None;
         self.app_state.conversation.restore_messages(Vec::new());
         self.app_state.projects.clear();
@@ -443,14 +454,16 @@ impl WgpuRenderer {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::CheckoutReady(generation, api.billing_checkout(&plan).await)); });
+                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::CheckoutReady(generation, api.billing_checkout(&plan).await)); });
+                self.track_task(task);
             } else { self.app_state.checkout_status = "Sign in before purchasing a membership.".into(); }
         }
         if let Some((email, password)) = self.app_state.pending_sign_in.take() {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedIn(generation, api.sign_in(&email, &password).await)); });
+                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedIn(generation, api.sign_in(&email, &password).await)); });
+                self.track_task(task);
             } else {
                 self.app_state.auth_status = "Account service is unavailable.".into();
             }
@@ -460,7 +473,8 @@ impl WgpuRenderer {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedOut(generation, api.sign_out().await)); });
+                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedOut(generation, api.sign_out().await)); });
+                self.track_task(task);
             }
         }
         if self.app_state.pending_send_otp {
@@ -468,23 +482,26 @@ impl WgpuRenderer {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpSent(generation, api.send_email_otp().await)); });
+                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpSent(generation, api.send_email_otp().await)); });
+                self.track_task(task);
             } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
         }
         if let Some(code) = self.app_state.pending_verify_otp.take() {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpVerified(generation, api.verify_email_otp(&code).await)); });
+                let task = self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpVerified(generation, api.verify_email_otp(&code).await)); });
+                self.track_task(task);
             } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
         }
         if let Some(enabled) = self.app_state.pending_guardian_consent.take() {
             self.guardian.set_telemetry_consent(enabled);
             if let Some(api) = self.api.clone() {
                 let _ = api.set_guardian_consent(enabled);
-                self.runtime.spawn(async move {
+                let task = self.runtime.spawn(async move {
                     let _ = api.telemetry(serde_json::json!({ "action": "consent", "usageAnalytics": false, "guardian": enabled })).await;
                 });
+                self.track_task(task);
             }
         }
         if let Some((server_id, tool_name, raw_arguments)) = self.app_state.pending_mcp_call.take() {
@@ -493,10 +510,11 @@ impl WgpuRenderer {
                     if let Some(client) = self.mcp_clients.get(&server_id).cloned() {
                         let sender = self.response_tx.clone();
                         let generation = self.account_generation;
-                        self.runtime.spawn(async move {
+                        let task = self.runtime.spawn(async move {
                             let result = client.call_tool(&tool_name, arguments, true).await;
                             let _ = sender.send(ChatEvent::McpCallFinished(generation, result));
                         });
+                        self.track_task(task);
                     } else { self.app_state.mcp_status = "MCP server is no longer connected.".into(); }
                 }
                 Err(error) => self.app_state.mcp_status = format!("Tool arguments are not valid JSON: {error}"),
@@ -505,7 +523,7 @@ impl WgpuRenderer {
         if let Some(manifest) = self.app_state.pending_mcp_connect.take() {
             let sender = self.response_tx.clone();
             let generation = self.account_generation;
-            self.runtime.spawn(async move {
+            let task = self.runtime.spawn(async move {
                 let result = async {
                     let client = Arc::new(McpHttpClient::new(manifest.clone(), None)?);
                     let _server_info = client.initialize().await?;
@@ -514,6 +532,7 @@ impl WgpuRenderer {
                 }.await;
                 let _ = sender.send(ChatEvent::McpConnected(generation, result));
             });
+            self.track_task(task);
         }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
