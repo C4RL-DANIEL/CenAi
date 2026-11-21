@@ -690,12 +690,27 @@ impl WgpuRenderer {
                 Err(error) => self.app_state.mcp_status = format!("Tool arguments are not valid JSON: {error}"),
             }
         }
+        if let Some((server_id, token)) = self.app_state.pending_mcp_token_save.take() {
+            self.app_state.mcp_status = match self.api.as_ref() {
+                Some(api) => match api.save_mcp_server_token(&server_id, &token) {
+                    Ok(()) => {
+                        self.app_state.mcp_bearer_token_draft.clear();
+                        "MCP bearer token encrypted and saved for this account.".into()
+                    }
+                    Err(error) => format!("Could not save MCP token: {error}"),
+                },
+                None => "Sign in before saving MCP server credentials.".into(),
+            };
+        }
         if let Some(manifest) = self.app_state.pending_mcp_connect.take() {
             let sender = self.response_tx.clone();
             let generation = self.account_generation;
+            let bearer_token = self.api.as_ref()
+                .and_then(|api| api.mcp_server_token(&manifest.server_id).ok())
+                .filter(|token| !token.is_empty());
             let task = self.runtime.spawn(async move {
                 let result = async {
-                    let client = Arc::new(McpHttpClient::new(manifest.clone(), None).await?);
+                    let client = Arc::new(McpHttpClient::new(manifest.clone(), bearer_token).await?);
                     let _server_info = client.initialize().await?;
                     let tools = client.list_tools().await?;
                     Ok((manifest, client, tools))
