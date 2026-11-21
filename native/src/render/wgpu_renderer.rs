@@ -774,6 +774,16 @@ impl WgpuRenderer {
         self.last_saved_preferences = (false, false);
         self.app_state.account_email.clear();
         self.app_state.email_verified = false;
+        self.app_state.mfa_factors.clear();
+        self.app_state.mfa_status.clear();
+        self.app_state.mfa_enrollment_factor_id.clear();
+        self.app_state.mfa_enrollment_secret.clear();
+        self.app_state.mfa_enrollment_qr.clear();
+        self.app_state.mfa_code_draft.clear();
+        self.app_state.pending_mfa_refresh = false;
+        self.app_state.pending_mfa_enroll = false;
+        self.app_state.pending_mfa_verify = false;
+        self.app_state.pending_mfa_unenroll = None;
         self.app_state.otp_draft.clear();
         self.app_state.otp_status.clear();
         self.app_state.auth_password_draft.clear();
