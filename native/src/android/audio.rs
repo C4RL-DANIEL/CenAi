@@ -255,11 +255,21 @@ pub struct AndroidAudioPlayback {
     stop_flag: Arc<AtomicBool>,
     track: Arc<Mutex<Option<GlobalRef>>>,
     worker: Option<JoinHandle<()>>,
+    error_sender: mpsc::SyncSender<String>,
+    error_receiver: mpsc::Receiver<String>,
 }
 
 impl AndroidAudioPlayback {
     pub fn new(app: AndroidApp) -> Self {
-        Self { app, stop_flag: Arc::new(AtomicBool::new(false)), track: Arc::new(Mutex::new(None)), worker: None }
+        let (error_sender, error_receiver) = mpsc::sync_channel(2);
+        Self {
+            app,
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            track: Arc::new(Mutex::new(None)),
+            worker: None,
+            error_sender,
+            error_receiver,
+        }
     }
 
     pub fn play_wav(&mut self, wav: Vec<u8>) -> Result<(), String> {
@@ -270,6 +280,7 @@ impl AndroidAudioPlayback {
         let app = self.app.clone();
         let stop_flag = self.stop_flag.clone();
         let track_slot = self.track.clone();
+        let error_sender = self.error_sender.clone();
         self.worker = Some(thread::Builder::new().name("cenai-audio-playback".into()).spawn(move || {
             let result = (|| -> Result<(), String> {
                 let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
@@ -315,7 +326,10 @@ impl AndroidAudioPlayback {
                 let _ = env.call_method(&track, "release", "()V", &[]);
                 Ok(())
             })();
-            if let Err(error) = result { log::warn!("CenAI speech playback failed: {error}"); }
+            if let Err(error) = result {
+                log::warn!("CenAI speech playback failed: {error}");
+                let _ = error_sender.try_send(error);
+            }
             if let Ok(mut slot) = track_slot.lock() { *slot = None; }
         }).map_err(|error| error.to_string())?);
         Ok(())
@@ -323,6 +337,10 @@ impl AndroidAudioPlayback {
 
     pub fn is_playing(&self) -> bool {
         self.worker.as_ref().is_some_and(|worker| !worker.is_finished())
+    }
+
+    pub fn try_error(&self) -> Option<String> {
+        self.error_receiver.try_recv().ok()
     }
 
     pub fn stop(&mut self) {
