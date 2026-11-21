@@ -1,15 +1,13 @@
 CenAI Voice — Third-Party Notices
 
-CenAI Voice is the CenAI-branded application integration. It uses the following
-upstream software and model artifacts. CenAI does not claim authorship of the
-Qwen model weights, Qwen architecture, qwen3-tts.cpp, or GGML.
+CenAI Voice is the CenAI-branded cloud application integration. Qwen3-TTS model weights and tokenizer are hosted on the private inference server and are not bundled in the Android APK. CenAI does not claim authorship of Qwen model weights or architecture. Legacy qwen3-tts.cpp/GGML notices below are retained for source-history attribution; that native runtime is not linked into the current app build.
 
 1. Qwen3-TTS model weights and Qwen3-TTS-Tokenizer-12Hz
    Copyright and licensing: Qwen team / Alibaba
    License: Apache License 2.0
    Source: https://github.com/QwenLM/Qwen3-TTS
    GGUF model artifacts: https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF
-   The model files are downloaded by the user and are not bundled into the APK.
+   The model files are downloaded by the private GPU inference server and are not bundled into the APK.
 
 2. qwen3-tts.cpp native inference runtime
    Copyright (c) 2026 Danmoreng
