@@ -51,11 +51,19 @@ struct WorkspaceIndex {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BackupConversation {
+    pub id: String,
+    pub messages: Vec<crate::ui::model::Message>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceBackupPayload {
     pub schema_version: u16,
     pub projects: Vec<Project>,
     pub tasks: Vec<TaskRecord>,
     pub automations: Vec<Automation>,
+    #[serde(default)]
+    pub conversations: Vec<BackupConversation>,
     artifacts: Vec<BackupArtifact>,
 }
 
@@ -151,7 +159,28 @@ impl WorkspaceStore {
     pub fn export_backup_payload(&self) -> Result<Vec<u8>, String> {
         let index = self.read_index()?;
         let mut artifacts = Vec::new();
+        let mut conversations = Vec::new();
         let mut total_bytes = 0usize;
+        let conversation_root = self.user_root.join("conversations");
+        if conversation_root.exists() {
+            for entry in fs::read_dir(&conversation_root).map_err(|error| error.to_string())? {
+                let entry = entry.map_err(|error| error.to_string())?;
+                let path = entry.path();
+                if !path.is_file() || path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                    continue;
+                }
+                let id = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default();
+                if !safe_segment(id) { return Err("Workspace contains an invalid conversation filename".into()); }
+                let messages = self.load_conversation(id)?;
+                let bytes = serde_json::to_vec(&messages).map_err(|error| error.to_string())?;
+                total_bytes = total_bytes.saturating_add(bytes.len());
+                if total_bytes > 100 * 1024 * 1024 {
+                    return Err("Workspace conversations and artifacts exceed the 100 MB encrypted backup limit".into());
+                }
+                conversations.push(BackupConversation { id: id.to_owned(), messages });
+            }
+        }
+        conversations.sort_by(|left, right| left.id.cmp(&right.id));
         for project in &index.projects {
             for artifact in &project.artifacts {
                 let bytes = self.read_artifact(&artifact.id)?;
@@ -168,6 +197,7 @@ impl WorkspaceStore {
             tasks: index.tasks,
             automations: index.automations.into_iter()
                 .filter(|automation| automation.owner_scope == self.user_identity).collect(),
+            conversations,
             artifacts,
         };
         serde_json::to_vec(&payload).map_err(|error| error.to_string())
@@ -190,7 +220,8 @@ impl WorkspaceStore {
         }
         let payload: WorkspaceBackupPayload = serde_json::from_slice(plaintext).map_err(|error| error.to_string())?;
         if payload.schema_version != 1 || payload.projects.len() > 200 || payload.tasks.len() > 200
-            || payload.automations.len() > 1000 || payload.artifacts.len() > 2000 {
+            || payload.automations.len() > 1000 || payload.artifacts.len() > 2000
+            || payload.conversations.len() > 500 {
             return Err("Workspace backup schema or item limits are invalid".into());
         }
         let mut project_ids = std::collections::HashSet::new();
@@ -220,6 +251,19 @@ impl WorkspaceStore {
             }
         }
         let mut automation_ids = std::collections::HashSet::new();
+        let mut conversation_ids = std::collections::HashSet::new();
+        for conversation in &payload.conversations {
+            if !safe_segment(&conversation.id) || !conversation_ids.insert(conversation.id.clone())
+                || conversation.messages.len() > 5000 {
+                return Err("Workspace backup contains an invalid or duplicate conversation".into());
+            }
+            let bytes = serde_json::to_vec(&conversation.messages).map_err(|error| error.to_string())?;
+            if bytes.len() > 8 * 1024 * 1024 || conversation.messages.iter().any(|message| {
+                message.streaming || message.body.len() > 200_000 || message.id == 0
+            }) {
+                return Err("Workspace backup conversation exceeds supported limits".into());
+            }
+        }
         for automation in &payload.automations {
             if !automation_ids.insert(automation.id.clone()) {
                 return Err("Workspace backup contains duplicate automation identifiers".into());
@@ -285,14 +329,40 @@ impl WorkspaceStore {
             tasks: payload.tasks,
             automations: payload.automations,
         };
+        let conversation_root = self.user_root.join("conversations");
+        let conversation_staging = self.user_root.join(format!("conversations.restore-{}", std::process::id()));
+        let conversation_previous = self.user_root.join(format!("conversations.previous-{}", std::process::id()));
+        if conversation_staging.exists() { fs::remove_dir_all(&conversation_staging).map_err(|error| error.to_string())?; }
+        fs::create_dir_all(&conversation_staging).map_err(|error| error.to_string())?;
+        for conversation in &payload.conversations {
+            let bytes = serde_json::to_vec(&conversation.messages).map_err(|error| error.to_string())?;
+            let path = conversation_staging.join(format!("{}.json", conversation.id));
+            let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|error| error.to_string())?;
+            file.write_all(&bytes).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+        }
+        if conversation_previous.exists() { fs::remove_dir_all(&conversation_previous).map_err(|error| error.to_string())?; }
+        let had_conversations = conversation_root.exists();
+        if had_conversations { fs::rename(&conversation_root, &conversation_previous).map_err(|error| error.to_string())?; }
+        if let Err(error) = fs::rename(&conversation_staging, &conversation_root) {
+            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
+            let _ = fs::remove_dir_all(&conversation_staging);
+            return Err(error.to_string());
+        }
+
         if let Err(error) = self.write_index(&index) {
             let failed = self.user_root.join(format!("artifacts.failed-{}", std::process::id()));
             let _ = fs::rename(&current, &failed);
             if had_current { let _ = fs::rename(&previous, &current); }
             let _ = fs::remove_dir_all(&failed);
+            let failed_conversations = self.user_root.join(format!("conversations.failed-{}", std::process::id()));
+            let _ = fs::rename(&conversation_root, &failed_conversations);
+            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
+            let _ = fs::remove_dir_all(&failed_conversations);
             return Err(error);
         }
         if had_current { let _ = fs::remove_dir_all(previous); }
+        if had_conversations { let _ = fs::remove_dir_all(conversation_previous); }
         Ok(())
     }
 
