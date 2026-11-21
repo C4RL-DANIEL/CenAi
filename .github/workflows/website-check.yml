@@ -63,6 +63,11 @@ jobs:
           grep -q 'registration_redeem' supabase/functions/cenai-control-plane/index.ts
           grep -q 'code_challenge_method' website/register.js
           grep -q 'registration_invites' supabase/migrations/20261121100000_discord_registration_invites.sql
+          grep -q 'registration_policy' supabase/migrations/20261121100000_discord_registration_invites.sql
+          grep -q 'registration_status' native/src/core/network.rs
+          grep -q 'registration_status' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-paypal-billing/index.ts
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");
