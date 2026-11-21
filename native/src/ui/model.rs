@@ -1,0 +1,131 @@
+//! UI state model shared by the GPU scene graph and input system.
+use std::collections::VecDeque;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Destination {
+    Conversation,
+    YourWork,
+    Connections,
+    Settings,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageRole {
+    User,
+    Assistant,
+    System,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Message {
+    pub id: u64,
+    pub role: MessageRole,
+    pub body: String,
+    pub streaming: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConversationState {
+    messages: VecDeque<Message>,
+    next_id: u64,
+    pub draft: String,
+    pub sending: bool,
+}
+
+impl Default for ConversationState {
+    fn default() -> Self {
+        Self { messages: VecDeque::new(), next_id: 1, draft: String::new(), sending: false }
+    }
+}
+
+impl ConversationState {
+    pub fn messages(&self) -> impl Iterator<Item = &Message> {
+        self.messages.iter()
+    }
+
+    pub fn push(&mut self, role: MessageRole, body: impl Into<String>) -> u64 {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        self.messages.push_back(Message { id, role, body: body.into(), streaming: false });
+        id
+    }
+
+    pub fn begin_stream(&mut self) -> u64 {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        self.messages.push_back(Message { id, role: MessageRole::Assistant, body: String::new(), streaming: true });
+        id
+    }
+
+    pub fn append_stream(&mut self, id: u64, chunk: &str) -> bool {
+        match self.messages.iter_mut().find(|message| message.id == id && message.streaming) {
+            Some(message) => { message.body.push_str(chunk); true }
+            None => false,
+        }
+    }
+
+    pub fn finish_stream(&mut self, id: u64) -> bool {
+        match self.messages.iter_mut().find(|message| message.id == id && message.streaming) {
+            Some(message) => { message.streaming = false; true }
+            None => false,
+        }
+    }
+
+    pub fn submit_draft(&mut self) -> Option<u64> {
+        let body = self.draft.trim();
+        if body.is_empty() || self.sending { return None; }
+        let owned = body.to_owned();
+        self.draft.clear();
+        Some(self.push(MessageRole::User, owned))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AppState {
+    pub destination: Destination,
+    pub conversation: ConversationState,
+    pub reduced_motion: bool,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self { destination: Destination::Conversation, conversation: ConversationState::default(), reduced_motion: false }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn draft_submission_trims_and_clears() {
+        let mut state = ConversationState::default();
+        state.draft = "  Hello CenAI  ".into();
+        let id = state.submit_draft().expect("non-empty draft submits");
+        let message = state.messages().next().unwrap();
+        assert_eq!(message.id, id);
+        assert_eq!(message.body, "Hello CenAI");
+        assert!(state.draft.is_empty());
+    }
+
+    #[test]
+    fn empty_or_inflight_submission_is_rejected() {
+        let mut state = ConversationState::default();
+        assert_eq!(state.submit_draft(), None);
+        state.draft = "work".into();
+        state.sending = true;
+        assert_eq!(state.submit_draft(), None);
+        assert_eq!(state.draft, "work");
+    }
+
+    #[test]
+    fn stream_chunks_are_appended_only_to_active_stream() {
+        let mut state = ConversationState::default();
+        let id = state.begin_stream();
+        assert!(state.append_stream(id, "Hello "));
+        assert!(state.append_stream(id, "world"));
+        assert!(state.finish_stream(id));
+        assert!(!state.append_stream(id, "!"));
+        assert_eq!(state.messages().next().unwrap().body, "Hello world");
+    }
+}
