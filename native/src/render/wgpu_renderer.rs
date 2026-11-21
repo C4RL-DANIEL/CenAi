@@ -150,6 +150,7 @@ struct ShaderUniforms {
 struct SignInOutcome {
     email: String,
     mfa_factors: Result<Vec<crate::ui::model::MfaFactor>, String>,
+    registration_status: Result<bool, String>,
 }
 
 enum ChatEvent {
@@ -1161,8 +1162,9 @@ impl WgpuRenderer {
                 let task = self.runtime.spawn(async move {
                     let result = async {
                         let email = api.sign_in(&email, &password).await?;
+                        let registration_status = api.registration_status().await;
                         let mfa_factors = api.mfa_factors().await.and_then(mfa_factors_from_response);
-                        Ok(SignInOutcome { email, mfa_factors })
+                        Ok(SignInOutcome { email, mfa_factors, registration_status })
                     }.await;
                     let _ = sender.send(ChatEvent::SignedIn(generation, result));
                 });
@@ -1734,6 +1736,18 @@ impl WgpuRenderer {
                                 self.reset_user_scoped_state();
                                 self.active_user_id.clear();
                                 self.app_state.auth_status = "Sign-in succeeded but the verified account identity is unavailable.".into();
+                                continue;
+                            }
+                            if !matches!(outcome.registration_status, Ok(true)) {
+                                self.reset_user_scoped_state();
+                                self.active_user_id = account_id;
+                                self.app_state.account_email = email;
+                                self.app_state.auth_status = match outcome.registration_status {
+                                    Ok(false) => "Complete Discord invitation registration before using CenAI.".into(),
+                                    Err(error) => format!("Could not verify CenAI registration eligibility; access is blocked until it can be checked: {error}"),
+                                    Ok(true) => unreachable!(),
+                                };
+                                self.app_state.destination = crate::ui::model::Destination::Settings;
                                 continue;
                             }
                             if self.active_user_id != account_id {
