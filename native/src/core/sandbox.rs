@@ -53,6 +53,36 @@ fn contains_credential_material(value: &str) -> bool {
         || (lower.contains("eyj") && value.matches('.').count() >= 2)
 }
 
+fn safe_public_ip(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            !(ip.is_private() || ip.is_loopback() || ip.is_link_local()
+                || ip.is_unspecified() || ip.is_multicast() || ip.is_broadcast()
+                || octets[0] == 0 || octets[0] >= 240
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0)
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || octets[1] == 51))
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113))
+        }
+        std::net::IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            let octets = ip.octets();
+            let mapped = segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
+            let compatible = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
+            if mapped || compatible {
+                return safe_public_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    octets[12], octets[13], octets[14], octets[15]
+                )));
+            }
+            !(ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+                || ip.is_unspecified() || ip.is_multicast()
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+                || (segments[0] & 0xffc0 == 0xfec0))
+        }
+    }
+}
+
 fn safe_public_host(host: &str) -> bool {
     if host.is_empty() || host.len() > 253 || host != host.to_ascii_lowercase()
         || host == "localhost" || host.ends_with(".localhost")
@@ -61,12 +91,7 @@ fn safe_public_host(host: &str) -> bool {
         return false;
     }
     if let Ok(address) = host.parse::<std::net::IpAddr>() {
-        return match address {
-            std::net::IpAddr::V4(ip) => !(ip.is_private() || ip.is_loopback() || ip.is_link_local()
-                || ip.is_unspecified() || ip.is_multicast() || ip.is_broadcast()),
-            std::net::IpAddr::V6(ip) => !(ip.is_loopback() || ip.is_unique_local()
-                || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast()),
-        };
+        return safe_public_ip(address);
     }
     let labels = host.split('.').collect::<Vec<_>>();
     labels.len() >= 2 && labels.iter().all(|label| {
@@ -240,6 +265,11 @@ mod tests {
         job.network_hosts = vec!["localhost".into()];
         let mut unsafe_hosts = hosts.clone();
         unsafe_hosts.insert("localhost".into());
+        assert!(job.validate(&commands, &unsafe_hosts).is_err());
+        let mut job = request();
+        job.network_hosts = vec!["[::ffff:127.0.0.1]".into()];
+        let mut unsafe_hosts = hosts.clone();
+        unsafe_hosts.insert("[::ffff:127.0.0.1]".into());
         assert!(job.validate(&commands, &unsafe_hosts).is_err());
     }
 
