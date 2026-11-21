@@ -6,7 +6,7 @@ This service hosts the Qwen3-TTS model on a CUDA GPU. Android contains only the 
 
 The initial server model is `Qwen/Qwen3-TTS-12Hz-1.7B-Base`. A fixed reference recording and its exact transcript are used to create the reusable `CenAI Original · English` voice-clone prompt at server startup. This makes the voice profile consistent across requests.
 
-**Do not use an unlicensed or non-consensual voice recording.** Record or commission a voice actor, obtain written permission for AI synthesis and distribution, and keep the recording outside the public repository. Recommended starting reference: clean, dry, single-speaker English speech with no music or background voices. The transcript must match the recording exactly. The recording is mounted into the server at `/run/secrets/cenai-voice-reference.wav`; it is never sent from the Android app.
+**Do not use an unlicensed or non-consensual voice recording.** Record or commission a voice actor, obtain written permission for AI synthesis and distribution, and keep the recording outside the public repository. Recommended reference: clean, dry English speech with no music or background voices. The transcript must match the recording exactly. The recording is mounted into the server at `/run/secrets/cenai-voice-reference.wav`; it is never sent from the Android app.
 
 The Qwen model and tokenizer are downloaded by Hugging Face on the server at first startup. Keep the model cache on a persistent volume.
 
