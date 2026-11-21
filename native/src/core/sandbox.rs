@@ -76,7 +76,7 @@ impl SandboxRequest {
         let mut environment_names = HashSet::new();
         for (name, value) in &self.environment {
             let upper = name.to_ascii_uppercase();
-            if !upper.bytes().enumerate().all(|(index, byte)| {
+            if upper.is_empty() || !upper.bytes().enumerate().all(|(index, byte)| {
                 byte.is_ascii_uppercase() || (byte.is_ascii_digit() && index > 0) || byte == b'_'
             }) || upper.len() > 64 || !environment_names.insert(upper.clone()) || value.len() > 4096 || contains_credential_material(value) {
                 return Err("Sandbox environment contains an invalid, duplicate, or sensitive value");
@@ -212,6 +212,9 @@ mod tests {
         assert!(job.validate(&commands, &hosts).is_err());
         let mut job = request();
         job.environment.push(("RUST_LOG".into(), "debug".into()));
+        assert!(job.validate(&commands, &hosts).is_err());
+        let mut job = request();
+        job.environment.push((String::new(), "empty-name".into()));
         assert!(job.validate(&commands, &hosts).is_err());
         let mut job = request();
         job.environment.push(("SERVICE".into(), "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature".into()));
