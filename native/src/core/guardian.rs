@@ -13,12 +13,19 @@ pub struct DiagnosticEvent {
     pub occurred_at_unix_ms: u64,
 }
 
+fn sanitize_label(value: &str, limit: usize) -> String {
+    value.split(|character: char| !character.is_ascii_alphanumeric() && character != '_' && character != '-')
+        .filter(|word| !matches!(word.to_ascii_lowercase().as_str(), "secret" | "token" | "password" | "private" | "credential" | "authorization" | "key"))
+        .collect::<String>()
+        .chars().take(limit).collect()
+}
+
 impl DiagnosticEvent {
     pub fn sanitized(kind: DiagnosticKind, component: &str, code: &str, occurred_at_unix_ms: u64) -> Self {
         Self {
             kind,
-            component: component.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').take(48).collect(),
-            code: code.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').take(64).collect(),
+            component: sanitize_label(component, 48),
+            code: sanitize_label(code, 64),
             occurred_at_unix_ms,
         }
     }
@@ -31,8 +38,8 @@ mod tests {
     #[test]
     fn guardian_sanitizes_diagnostic_labels() {
         let event = DiagnosticEvent::sanitized(DiagnosticKind::ApiFailure, "chat/api?token=secret", "HTTP 401: private", 42);
-        assert_eq!(event.component, "chatapitokensecret");
-        assert_eq!(event.code, "HTTP401private");
+        assert_eq!(event.component, "chatapi");
+        assert_eq!(event.code, "HTTP401");
         let serialized = serde_json::to_string(&event).unwrap();
         assert!(!serialized.contains("secret"));
     }
