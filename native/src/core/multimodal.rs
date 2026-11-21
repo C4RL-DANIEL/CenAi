@@ -219,14 +219,6 @@ impl AttachmentStore {
         Ok(bytes)
     }
 
-    pub fn delete(&self, attachment_id: &str) -> Result<(), String> {
-        let path = self.path_for(attachment_id).map_err(str::to_owned)?;
-        match fs::remove_file(path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.to_string()),
-        }
-    }
 }
 
 fn valid_account_uuid(value: &str) -> bool {
