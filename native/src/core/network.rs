@@ -467,6 +467,150 @@ impl CenAiApi {
         }
         Ok(answer)
     }
+    /// Streams Anthropic Messages API text deltas using the account's locally stored API key.
+    pub async fn stream_anthropic<F>(&self, request: &ChatRequest, api_key: &str, mut on_delta: F) -> Result<String, String>
+    where
+        F: FnMut(&str) + Send,
+    {
+        request.validate()?;
+        if api_key.trim().is_empty() { return Err("Anthropic API key is missing.".into()); }
+        let system = request.messages.iter().filter(|message| message.role == "system")
+            .map(|message| message.content.as_str()).collect::<Vec<_>>().join("\n\n");
+        let mut messages = Vec::new();
+        for message in &request.messages {
+            match message.role.as_str() {
+                "system" => {}
+                "user" | "assistant" => messages.push(json!({ "role": message.role, "content": message.content })),
+                _ => return Err("Anthropic Messages API accepts only user and assistant history messages.".into()),
+            }
+        }
+        if messages.is_empty() { return Err("Anthropic requires at least one user or assistant message.".into()); }
+        let mut payload = json!({
+            "model": request.model,
+            "max_tokens": request.max_tokens,
+            "messages": messages,
+            "stream": true
+        });
+        if !system.is_empty() { payload["system"] = Value::String(system); }
+        let response = self.client.post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header(header::ACCEPT, "text/event-stream")
+            .json(&payload)
+            .send().await.map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Self::decode_response(response).await.map(|_| String::new());
+        }
+        let mut stream = response.bytes_stream();
+        let mut pending = String::new();
+        let mut answer = String::new();
+        while let Some(chunk) = stream.next().await {
+            pending.push_str(&String::from_utf8_lossy(&chunk.map_err(|error| error.to_string())?));
+            while let Some(newline) = pending.find('\n') {
+                let line = pending[..newline].trim_end_matches('\r').to_owned();
+                pending.drain(..=newline);
+                if let Some(delta) = parse_anthropic_sse_event(&line)? {
+                    answer.push_str(&delta);
+                    on_delta(&delta);
+                }
+            }
+        }
+        if !pending.trim().is_empty() {
+            if let Some(delta) = parse_anthropic_sse_event(&pending)? {
+                answer.push_str(&delta);
+                on_delta(&delta);
+            }
+        }
+        if answer.is_empty() { return Err("Anthropic returned no text content.".into()); }
+        Ok(answer)
+    }
+
+    /// Streams Gemini Developer API responses without placing the API key in the URL.
+    pub async fn stream_gemini<F>(&self, request: &ChatRequest, api_key: &str, mut on_delta: F) -> Result<String, String>
+    where
+        F: FnMut(&str) + Send,
+    {
+        request.validate()?;
+        if api_key.trim().is_empty() { return Err("Gemini API key is missing.".into()); }
+        if request.model.is_empty() || !request.model.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') {
+            return Err("Gemini model identifier is invalid.".into());
+        }
+        let mut system_parts = Vec::new();
+        let mut contents = Vec::new();
+        for message in &request.messages {
+            match message.role.as_str() {
+                "system" => system_parts.push(message.content.clone()),
+                "user" => contents.push(json!({ "role": "user", "parts": [{ "text": message.content }] })),
+                "assistant" => contents.push(json!({ "role": "model", "parts": [{ "text": message.content }] })),
+                _ => return Err("Gemini chat history contains an unsupported role.".into()),
+            }
+        }
+        if contents.is_empty() { return Err("Gemini requires at least one user or assistant message.".into()); }
+        let mut payload = json!({
+            "contents": contents,
+            "generationConfig": { "maxOutputTokens": request.max_tokens }
+        });
+        if !system_parts.is_empty() {
+            payload["systemInstruction"] = json!({ "parts": [{ "text": system_parts.join("\n\n") }] });
+        }
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse", request.model);
+        let response = self.client.post(url)
+            .header("x-goog-api-key", api_key)
+            .header(header::ACCEPT, "text/event-stream")
+            .json(&payload)
+            .send().await.map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Self::decode_response(response).await.map(|_| String::new());
+        }
+        let mut stream = response.bytes_stream();
+        let mut pending = String::new();
+        let mut answer = String::new();
+        while let Some(chunk) = stream.next().await {
+            pending.push_str(&String::from_utf8_lossy(&chunk.map_err(|error| error.to_string())?));
+            while let Some(newline) = pending.find('\n') {
+                let line = pending[..newline].trim_end_matches('\r').to_owned();
+                pending.drain(..=newline);
+                if let Some(delta) = parse_gemini_sse_event(&line)? {
+                    answer.push_str(&delta);
+                    on_delta(&delta);
+                }
+            }
+        }
+        if !pending.trim().is_empty() {
+            if let Some(delta) = parse_gemini_sse_event(&pending)? {
+                answer.push_str(&delta);
+                on_delta(&delta);
+            }
+        }
+        if answer.is_empty() { return Err("Gemini returned no text content.".into()); }
+        Ok(answer)
+    }
+
+}
+
+
+fn parse_anthropic_sse_event(line: &str) -> Result<Option<String>, String> {
+    let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { return Ok(None); };
+    if data.is_empty() || data == "[DONE]" { return Ok(None); }
+    let value: Value = serde_json::from_str(data).map_err(|error| format!("Invalid Anthropic SSE event: {error}"))?;
+    if let Some(error) = value.get("error") {
+        return Err(error.get("message").and_then(Value::as_str).unwrap_or("Anthropic stream error").to_owned());
+    }
+    if value.get("type").and_then(Value::as_str) == Some("content_block_delta")
+        && value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta") {
+        return Ok(value.pointer("/delta/text").and_then(Value::as_str).map(str::to_owned));
+    }
+    Ok(None)
+}
+
+fn parse_gemini_sse_event(line: &str) -> Result<Option<String>, String> {
+    let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else { return Ok(None); };
+    if data.is_empty() || data == "[DONE]" { return Ok(None); }
+    let value: Value = serde_json::from_str(data).map_err(|error| format!("Invalid Gemini SSE event: {error}"))?;
+    if let Some(error) = value.get("error") {
+        return Err(error.get("message").and_then(Value::as_str).unwrap_or("Gemini stream error").to_owned());
+    }
+    Ok(value.pointer("/candidates/0/content/parts/0/text").and_then(Value::as_str).map(str::to_owned))
 }
 
 #[cfg(test)]
