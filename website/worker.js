@@ -406,7 +406,10 @@ async function cloudVoiceStatus(request, env) {
     if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
     const user = await identity.json().catch(() => ({}));
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) return json(401, { error: "A verified CenAI account is required for cloud voice." });
-    return json(200, { ready: true, service: "CenAI Voice", provider: "Cloudflare Workers AI", model: "@cf/deepgram/aura-1", profile: "cenai-en-v1", language: "English", quota: { dailyCharacters: 1000, globalDailyNeurons: 4000 } });
+    const quotaResponse = await fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_status" }), signal: AbortSignal.timeout(10000), cache: "no-store" });
+    const quota = await quotaResponse.json().catch(() => ({}));
+    if (!quotaResponse.ok || quota.ok !== true) return json(quotaResponse.status === 401 ? 401 : quotaResponse.status === 403 ? 403 : 503, { error: quota.error || "CenAI Voice quota status is unavailable.", code: quota.code || "VOICE_QUOTA_STATUS_UNAVAILABLE" });
+    return json(200, { ready: true, service: "CenAI Voice", provider: "Cloudflare Workers AI", model: "@cf/deepgram/aura-1", profile: "CenAI English · Aura-1", language: "English", quota: quota.quota });
   } catch (error) {
     console.error("CenAI Voice health check failed", error instanceof Error ? error.message : "unknown error");
     return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
