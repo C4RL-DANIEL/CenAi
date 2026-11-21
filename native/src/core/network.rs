@@ -236,6 +236,96 @@ impl CenAiApi {
         Ok(data.get("message").and_then(Value::as_str).unwrap_or("Email verified.").to_owned())
     }
 
+    /// Lists only the authenticated account's Supabase MFA factors.
+    pub async fn mfa_factors(&self) -> Result<Value, String> {
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before managing multi-factor authentication.".into()); }
+        let response = self.client.get(format!("{}/auth/v1/factors", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .send().await.map_err(|error| format!("MFA factor lookup failed: {error}"))?;
+        Self::decode_response(response).await
+    }
+
+    /// Starts TOTP enrollment. The returned QR/secret must be shown only to the signed-in user.
+    pub async fn mfa_enroll_totp(&self, friendly_name: &str) -> Result<Value, String> {
+        let friendly_name = friendly_name.trim();
+        if friendly_name.is_empty() || friendly_name.len() > 80 || friendly_name.chars().any(char::is_control) {
+            return Err("Enter a valid name for this authenticator.".into());
+        }
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before enrolling an authenticator.".into()); }
+        let response = self.client.post(format!("{}/auth/v1/factors", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .json(&json!({ "factor_type": "totp", "friendly_name": friendly_name }))
+            .send().await.map_err(|error| format!("MFA enrollment failed: {error}"))?;
+        Self::decode_response(response).await
+    }
+
+    /// Creates a short-lived challenge for an already enrolled TOTP factor.
+    pub async fn mfa_challenge(&self, factor_id: &str) -> Result<String, String> {
+        if !valid_supabase_user_id(factor_id) { return Err("Authenticator factor identifier is invalid.".into()); }
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before verifying an authenticator.".into()); }
+        let response = self.client.post(format!("{}/auth/v1/factors/{factor_id}/challenge", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .json(&json!({}))
+            .send().await.map_err(|error| format!("MFA challenge failed: {error}"))?;
+        let data = Self::decode_response(response).await?;
+        let challenge_id = data.get("id").and_then(Value::as_str).unwrap_or_default();
+        if !valid_supabase_user_id(challenge_id) { return Err("MFA service returned an invalid challenge identifier.".into()); }
+        Ok(challenge_id.to_owned())
+    }
+
+    /// Verifies a TOTP challenge and stores the upgraded AAL2 session for the same account.
+    pub async fn mfa_verify_totp(&self, factor_id: &str, challenge_id: &str, code: &str) -> Result<(), String> {
+        if !valid_supabase_user_id(factor_id) || !valid_supabase_user_id(challenge_id) {
+            return Err("Authenticator factor or challenge identifier is invalid.".into());
+        }
+        if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("Enter the six-digit code from your authenticator app.".into());
+        }
+        let _session_guard = self.session_lock.lock().await;
+        let account_id = self.vault.account_id()?;
+        let email = self.vault.account_email()?;
+        let token = self.vault.access_token()?;
+        if token.is_empty() || !valid_supabase_user_id(&account_id) {
+            return Err("Sign in before verifying an authenticator.".into());
+        }
+        let response = self.client.post(format!("{}/auth/v1/factors/{factor_id}/verify", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .json(&json!({ "challenge_id": challenge_id, "code": code }))
+            .send().await.map_err(|error| format!("MFA verification failed: {error}"))?;
+        let data = Self::decode_response(response).await?;
+        let access = data.get("access_token").and_then(Value::as_str).unwrap_or_default();
+        let refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
+        let returned_user = data.pointer("/user/id").and_then(Value::as_str).unwrap_or(&account_id);
+        if access.is_empty() || refresh.is_empty() || returned_user != account_id
+            || self.vault.account_id()? != account_id {
+            return Err("MFA verification did not return a valid upgraded session for the active account.".into());
+        }
+        self.vault.save_session(access, refresh, &account_id, &email)?;
+        Ok(())
+    }
+
+    /// Removes a factor from the current account. Supabase enforces the required assurance level.
+    pub async fn mfa_unenroll(&self, factor_id: &str) -> Result<(), String> {
+        if !valid_supabase_user_id(factor_id) { return Err("Authenticator factor identifier is invalid.".into()); }
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in before removing an authenticator.".into()); }
+        let response = self.client.delete(format!("{}/auth/v1/factors/{factor_id}", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .send().await.map_err(|error| format!("MFA removal failed: {error}"))?;
+        if !response.status().is_success() {
+            return Self::decode_response(response).await.map(|_| ());
+        }
+        Ok(())
+    }
+
     pub async fn sign_out(&self) -> Result<(), String> {
         let _session_guard = self.session_lock.lock().await;
         let token = self.vault.access_token()?;
