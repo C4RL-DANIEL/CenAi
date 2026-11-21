@@ -13,6 +13,13 @@ async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
+function containsCredentialMaterial(value: string) {
+  return /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i.test(value)
+    || /\\bBearer\\s+[A-Za-z0-9._~+/-]{20,}/i.test(value)
+    || /\\b(?:sk-[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9_-]{20,})\\b/.test(value)
+    || /\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b/.test(value)
+    || /\\b(password|passphrase|api[ _-]?key|access[ _-]?token|refresh[ _-]?token)\\s*[:=]/i.test(value);
+}
 function createInviteToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = "";
@@ -111,8 +118,9 @@ Deno.serve(async (req: Request) => {
       const content = String(body.content ?? "").trim();
       const source = String(body.source ?? "user");
       if (!["preference","profile","project","workflow","fact"].includes(category)
-        || !["user","assistant_confirmed","imported"].includes(source)
+        || !["user","imported"].includes(source)
         || content.length < 1 || content.length > 8000) return fail(400, "Invalid memory category, source, or content length");
+      if (containsCredentialMaterial(content)) return fail(400, "Do not save passwords, API keys, access tokens, private keys, or other credentials as personal memory.");
       const { count, error: countError } = await adminDb.from("user_personal_memories").select("id", { count: "exact", head: true }).eq("user_id", user.id);
       if (countError) throw countError;
       if ((count ?? 0) >= 100) return fail(409, "Personal memory is full. Delete an existing memory before saving another.");
