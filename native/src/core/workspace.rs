@@ -201,11 +201,22 @@ impl WorkspaceStore {
         media_type: &str,
         bytes: &[u8],
     ) -> Result<Artifact, String> {
-        if !safe_segment(artifact_id) || file_name.trim().is_empty() || file_name.len() > 240 {
+        if !safe_segment(artifact_id)
+            || file_name.trim().is_empty()
+            || file_name.len() > 240
+            || file_name.contains('/') || file_name.contains('\\')
+            || file_name.chars().any(char::is_control)
+        {
             return Err("Artifact identity or filename is invalid".into());
         }
-        if bytes.len() > 25 * 1024 * 1024 {
-            return Err("Artifact exceeds the 25 MB local workspace limit".into());
+        if media_type.trim().is_empty() || media_type.len() > 120
+            || !media_type.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                || matches!(byte, b'/' | b'.' | b'+' | b'-' | b';' | b'=' | b' '))
+        {
+            return Err("Artifact media type is invalid".into());
+        }
+        if bytes.is_empty() || bytes.len() > 25 * 1024 * 1024 {
+            return Err("Artifact must contain data and fit the 25 MB local workspace limit".into());
         }
         let mut index = self.read_index()?;
         let project = index.projects.iter_mut().find(|item| item.id == project_id && !item.archived)
@@ -371,6 +382,9 @@ mod tests {
         fs::write(store.user_root.join("artifacts").join("artifact_1.bin"), b"tampered").unwrap();
         assert!(store.read_artifact("artifact_1").unwrap_err().contains("integrity"));
         assert!(store.save_artifact("p1", "../escape", "x", "text/plain", b"x").is_err());
+        assert!(store.save_artifact("p1", "bad_name", "../report.txt", "text/plain", b"x").is_err());
+        assert!(store.save_artifact("p1", "bad_mime", "report.txt", "text/plain\\nInjected: yes", b"x").is_err());
+        assert!(store.save_artifact("p1", "empty", "empty.txt", "text/plain", b"").is_err());
         assert!(store.save_artifact("p1", "too_large", "large.bin", "application/octet-stream", &vec![0; 25 * 1024 * 1024 + 1]).is_err());
         let _ = fs::remove_dir_all(root);
     }
