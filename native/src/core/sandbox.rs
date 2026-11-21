@@ -121,9 +121,11 @@ impl SandboxJobSummary {
             let lower = line.to_ascii_lowercase();
             let sensitive_assignment = [
                 "authorization:", "bearer ", "api_key=", "api-key=", "access_token=",
-                "refresh_token=", "password=", "passphrase=", "client_secret=",
-                "service_role=", "private_key=",
-            ].iter().any(|needle| lower.contains(needle));
+                "refresh_token=", "password=", "password:", "passphrase=", "client_secret=",
+                "service_role=", "private_key=", "api_key:", "api-key:", "access_token:",
+                "refresh_token:", "secret:", "sk-", "sb_secret_", "-----begin ",
+            ].iter().any(|needle| lower.contains(needle))
+                || (lower.contains("eyj") && line.matches('.').count() >= 2);
             let safe_line = if sensitive_assignment { "[redacted sensitive output]" } else { line };
             if !output.is_empty() { output.push('\n'); }
             let remaining = max_bytes.saturating_sub(output.len());
