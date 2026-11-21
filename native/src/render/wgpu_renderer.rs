@@ -204,8 +204,6 @@ impl ChatEvent {
             | Self::MemoryDeleted(generation, ..)
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
-            #[cfg(target_os = "android")]
-            | Self::VoiceTranscribed(generation, ..)
             | Self::SpeechSynthesized(generation, ..)
             | Self::BackupUploaded(generation, ..)
             | Self::BackupDownloaded(generation, ..)
@@ -216,6 +214,8 @@ impl ChatEvent {
             | Self::MfaRemoved(generation, ..)
             | Self::AttachmentImported(generation, ..)
             | Self::AttachmentAnalyzed(generation, ..) => *generation,
+            #[cfg(target_os = "android")]
+            Self::VoiceTranscribed(generation, ..) => *generation,
         }
     }
 }
