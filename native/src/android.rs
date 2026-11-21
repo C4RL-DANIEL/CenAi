@@ -49,6 +49,11 @@ impl ApplicationHandler for CenAiApplication {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if let Some(window) = &self.window {
+            if self.renderer.as_mut().is_some_and(|renderer| renderer.handle_window_event(window, &event)) {
+                window.request_redraw();
+            }
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -59,7 +64,8 @@ impl ApplicationHandler for CenAiApplication {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
-                    match renderer.render() {
+                    let window = self.window.as_ref().expect("window is initialized");
+                    match renderer.render(window) {
                         Ok(()) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                             renderer.resize(self.last_size);
