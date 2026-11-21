@@ -32,7 +32,7 @@ jobs:
   android-debug:
     name: Build Rust-native Android APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -66,14 +66,14 @@ jobs:
           # GitHub-hosted Linux runners do not expose KVM. Android Emulator refuses
           # to start with -accel off unless this explicit TCG opt-in is present.
           ANDROID_I_WANT_MY_TCG: "yes"
-        timeout-minutes: 15
+        timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-boot-timeout: 840000
+          emulator-boot-timeout: 1500000
           script: bash .github/scripts/verify-rust-native-activity.sh
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
