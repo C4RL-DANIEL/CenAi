@@ -695,6 +695,9 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
                     state.pending_mfa_refresh = true;
                     state.mfa_status = "Checking your authenticator status…".into();
                 }
+                if ui.button("Sign out").clicked() {
+                    state.pending_sign_out = true;
+                }
             });
             if !state.mfa_status.is_empty() {
                 ui.label(text(&state.mfa_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
