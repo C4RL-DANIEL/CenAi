@@ -1,13 +1,27 @@
 //! User-owned automation definitions with explicit pause and consent state.
+use chrono::{DateTime, Duration, Utc};
+use cron_parser::Schedule;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
     pub id: String,
     pub owner_scope: String,
     pub title: String,
+    /// Standard five-field cron expression evaluated in UTC.
     pub schedule: String,
     pub enabled: bool,
+    pub requires_approval: bool,
+    #[serde(default)]
+    pub last_scheduled_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutomationTrigger {
+    pub automation_id: String,
+    pub owner_scope: String,
+    pub scheduled_at: i64,
     pub requires_approval: bool,
 }
 
@@ -20,77 +34,121 @@ fn valid_user_uuid(value: &str) -> bool {
         })
 }
 
-fn valid_cron_field(field: &str, minimum: u32, maximum: u32) -> bool {
-    if field.is_empty() { return false; }
-    field.split(',').all(|part| {
-        if part.is_empty() { return false; }
-        let mut step_parts = part.split('/');
-        let base = step_parts.next().unwrap_or_default();
-        let step = step_parts.next();
-        if step_parts.next().is_some() { return false; }
-        if let Some(step) = step {
-            if step.parse::<u32>().map_or(true, |value| value == 0 || value > maximum - minimum + 1) {
-                return false;
-            }
-        }
-        if base == "*" { return true; }
-        let mut range = base.split('-');
-        let first = range.next().and_then(|value| value.parse::<u32>().ok());
-        let second = range.next();
-        if range.next().is_some() { return false; }
-        let Some(first) = first else { return false; };
-        if first < minimum || first > maximum { return false; }
-        if let Some(second) = second {
-            let Some(last) = second.parse::<u32>().ok() else { return false; };
-            last >= first && last <= maximum
-        } else {
-            true
-        }
-    })
-}
-
-fn valid_cron_schedule(schedule: &str) -> bool {
-    let fields = schedule.split_whitespace().collect::<Vec<_>>();
-    fields.len() == 5
-        && valid_cron_field(fields[0], 0, 59)
-        && valid_cron_field(fields[1], 0, 23)
-        && valid_cron_field(fields[2], 1, 31)
-        && valid_cron_field(fields[3], 1, 12)
-        && valid_cron_field(fields[4], 0, 7)
-}
-
 impl Automation {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.id.trim().is_empty() || self.id.len() > 128
             || !self.id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-            || !valid_user_uuid(&self.owner_scope) || self.title.trim().is_empty() || self.title.len() > 160 {
+            || !valid_user_uuid(&self.owner_scope) || self.title.trim().is_empty()
+            || self.title.len() > 160 || self.title.chars().any(char::is_control) {
             return Err("Automation requires a safe identity, authenticated owner UUID and title");
         }
-        if self.schedule.len() > 120 || !valid_cron_schedule(&self.schedule) {
+        if self.schedule.len() > 120 || self.schedule.parse::<Schedule>().is_err() {
             return Err("Automation schedule must be a valid five-field cron expression");
         }
         Ok(())
     }
 
+    pub fn next_run_after(&self, after: DateTime<Utc>) -> Result<Option<DateTime<Utc>>, &'static str> {
+        self.validate()?;
+        let schedule = self.schedule.parse::<Schedule>().map_err(|_| "Automation cron schedule is invalid")?;
+        Ok(schedule.next_after(&after))
+    }
+
     pub fn pause(&mut self) { self.enabled = false; }
+    pub fn resume(&mut self) { self.enabled = true; }
+}
+
+#[derive(Default)]
+pub struct AutomationScheduler {
+    automations: HashMap<String, Automation>,
+}
+
+impl AutomationScheduler {
+    fn key(owner_scope: &str, automation_id: &str) -> String {
+        format!("{owner_scope}:{automation_id}")
+    }
+
+    pub fn upsert(&mut self, automation: Automation) -> Result<(), &'static str> {
+        automation.validate()?;
+        let key = Self::key(&automation.owner_scope, &automation.id);
+        self.automations.insert(key, automation);
+        Ok(())
+    }
+
+    pub fn remove(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        self.automations.remove(&Self::key(owner_scope, automation_id)).is_some()
+    }
+
+    pub fn pause(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        self.update_enabled(owner_scope, automation_id, false)
+    }
+
+    pub fn resume(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        self.update_enabled(owner_scope, automation_id, true)
+    }
+
+    fn update_enabled(&mut self, owner_scope: &str, automation_id: &str, enabled: bool) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        let Some(automation) = self.automations.get_mut(&Self::key(owner_scope, automation_id)) else { return false; };
+        automation.enabled = enabled;
+        true
+    }
+
+    /// Returns each due occurrence once. The caller must persist the updated
+    /// automation snapshot before dispatching its trigger to prevent replay.
+    pub fn poll_due(&mut self, now: DateTime<Utc>) -> Vec<AutomationTrigger> {
+        let mut due = Vec::new();
+        for automation in self.automations.values_mut() {
+            if !automation.enabled { continue; }
+            let cursor = automation.last_scheduled_at
+                .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
+                .unwrap_or_else(|| now - Duration::minutes(1));
+            let Ok(Some(next)) = automation.next_run_after(cursor) else { continue; };
+            if next <= now {
+                automation.last_scheduled_at = Some(next.timestamp());
+                due.push(AutomationTrigger {
+                    automation_id: automation.id.clone(),
+                    owner_scope: automation.owner_scope.clone(),
+                    scheduled_at: next.timestamp(),
+                    requires_approval: automation.requires_approval,
+                });
+            }
+        }
+        due.sort_by_key(|trigger| (trigger.scheduled_at, trigger.owner_scope.clone(), trigger.automation_id.clone()));
+        due
+    }
+
+    pub fn snapshot(&self, owner_scope: &str) -> Vec<Automation> {
+        if !valid_user_uuid(owner_scope) { return Vec::new(); }
+        self.automations.values().filter(|automation| automation.owner_scope == owner_scope).cloned().collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn automation_rejects_unscoped_owners_and_invalid_schedules() {
-        let mut automation = Automation {
-            id: "daily-digest".into(),
-            owner_scope: "not-a-user".into(),
-            title: "Daily digest".into(),
-            schedule: "0 9 * * *".into(),
+    const OWNER: &str = "550e8400-e29b-41d4-a716-446655440010";
+    const OTHER: &str = "550e8400-e29b-41d4-a716-446655440011";
+
+    fn automation(id: &str, owner: &str, schedule: &str) -> Automation {
+        Automation {
+            id: id.into(),
+            owner_scope: owner.into(),
+            title: "Scheduled report".into(),
+            schedule: schedule.into(),
             enabled: true,
             requires_approval: true,
-        };
+            last_scheduled_at: None,
+        }
+    }
+
+    #[test]
+    fn automation_rejects_unscoped_owners_and_invalid_schedules() {
+        let mut automation = automation("daily-digest", "not-a-user", "0 9 * * *");
         assert!(automation.validate().is_err());
-        automation.owner_scope = "550e8400-e29b-41d4-a716-446655440010".into();
+        automation.owner_scope = OWNER.into();
         assert!(automation.validate().is_ok());
         automation.schedule = "90 25 * * *".into();
         assert!(automation.validate().is_err());
@@ -99,13 +157,34 @@ mod tests {
     }
 
     #[test]
-    fn automation_is_scoped_and_can_be_paused() {
-        let mut automation = Automation {
-            id: "weekly-report".into(), owner_scope: "550e8400-e29b-41d4-a716-446655440010".into(), title: "Weekly report".into(),
-            schedule: "0 9 * * 1".into(), enabled: true, requires_approval: true,
-        };
-        assert!(automation.validate().is_ok());
-        automation.pause();
-        assert!(!automation.enabled);
+    fn automation_scheduler_emits_each_due_occurrence_once_and_respects_pause() {
+        let mut scheduler = AutomationScheduler::default();
+        let mut item = automation("quarter-hour", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        scheduler.upsert(item).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T09:15:30Z").unwrap().with_timezone(&Utc);
+        let due = scheduler.poll_due(now);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp());
+        assert!(due[0].requires_approval);
+        assert!(scheduler.poll_due(now).is_empty());
+        assert!(scheduler.pause(OWNER, "quarter-hour"));
+        assert!(scheduler.poll_due(now + Duration::minutes(15)).is_empty());
+        assert!(scheduler.resume(OWNER, "quarter-hour"));
+    }
+
+    #[test]
+    fn automation_scheduler_isolates_accounts_and_supports_next_run_queries() {
+        let mut scheduler = AutomationScheduler::default();
+        scheduler.upsert(automation("daily", OWNER, "0 9 * * *")).unwrap();
+        scheduler.upsert(automation("daily", OTHER, "0 9 * * *")).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T08:30:00Z").unwrap().with_timezone(&Utc);
+        let next = scheduler.snapshot(OWNER).pop().unwrap().next_run_after(now).unwrap().unwrap();
+        assert_eq!(next, DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap());
+        assert_eq!(scheduler.snapshot(OWNER).len(), 1);
+        assert_eq!(scheduler.snapshot(OTHER).len(), 1);
+        assert!(scheduler.remove(OWNER, "daily"));
+        assert_eq!(scheduler.snapshot(OWNER).len(), 0);
+        assert_eq!(scheduler.snapshot(OTHER).len(), 1);
     }
 }
