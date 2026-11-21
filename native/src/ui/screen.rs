@@ -783,7 +783,7 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label(text("Offline Android inference is integrated. Google TTS and cloud speech fallback are disabled.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
         ui.separator();
         ui.label(text("Offline model pack · about 1.3 GB", 12.0, egui::Color32::WHITE).strong());
-        if ui.add_enabled(!state.pending_voice_model_download, egui::Button::new(if state.voice_model_download_progress >= 1.0 { "Verify / repair offline voice model" } else { "Download and verify English voice model" })).clicked() {
+        if ui.add_enabled(!state.pending_voice_model_download && !state.voice_model_status.starts_with("Downloading"), egui::Button::new(if state.voice_model_download_progress >= 1.0 { "Verify / repair offline voice model" } else { "Download and verify English voice model" })).clicked() {
             state.pending_voice_model_download = true;
             state.voice_model_status = "Preparing secure model download…".into();
         }
