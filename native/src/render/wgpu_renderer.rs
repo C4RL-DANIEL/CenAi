@@ -1738,7 +1738,7 @@ impl WgpuRenderer {
                                 self.app_state.auth_status = "Sign-in succeeded but the verified account identity is unavailable.".into();
                                 continue;
                             }
-                            if !matches!(outcome.registration_status, Ok(true)) {
+                            if outcome.registration_status.as_ref().ok() != Some(&true) {
                                 self.reset_user_scoped_state();
                                 self.active_user_id = account_id;
                                 self.app_state.account_email = email;
