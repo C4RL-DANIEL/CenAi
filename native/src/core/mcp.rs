@@ -49,8 +49,22 @@ fn is_non_public_ip(address: std::net::IpAddr) -> bool {
                 || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || (octets[1] == 51 && octets[2] == 100)))
                 || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
         }
-        std::net::IpAddr::V6(ip) => ip.is_loopback() || ip.is_unique_local()
-            || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast(),
+        std::net::IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            let octets = ip.octets();
+            let mapped_v4 = segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
+            let compatible_v4 = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
+            if mapped_v4 || compatible_v4 {
+                return is_non_public_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    octets[12], octets[13], octets[14], octets[15]
+                )));
+            }
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+                || ip.is_unspecified() || ip.is_multicast()
+                || (segments[0] == 0x2001 && (segments[1] == 0x0db8 || segments[1] == 0x0002))
+                || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
+                || (segments[0] & 0xffc0 == 0xfec0)
+        },
     }
 }
 
