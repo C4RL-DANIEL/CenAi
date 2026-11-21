@@ -34,6 +34,9 @@ enum ChatEvent {
     McpConnected(u64, Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
     McpCallFinished(u64, Result<serde_json::Value, String>),
     CheckoutReady(u64, Result<String, String>),
+    MemoryStatusLoaded(u64, Result<bool, String>),
+    MemorySettingUpdated(u64, bool, Result<(), String>),
+    MemorySaved(u64, Result<serde_json::Value, String>),
 }
 
 impl ChatEvent {
@@ -48,7 +51,10 @@ impl ChatEvent {
             | Self::PlanFinished(generation, ..)
             | Self::McpConnected(generation, ..)
             | Self::McpCallFinished(generation, ..)
-            | Self::CheckoutReady(generation, ..) => *generation,
+            | Self::CheckoutReady(generation, ..)
+            | Self::MemoryStatusLoaded(generation, ..)
+            | Self::MemorySettingUpdated(generation, ..)
+            | Self::MemorySaved(generation, ..) => *generation,
         }
     }
 }
@@ -358,6 +364,11 @@ impl WgpuRenderer {
         self.app_state.provider_key_draft.clear();
         self.app_state.provider_key_status.clear();
         self.app_state.guardian_consent = false;
+        self.app_state.personal_memory_enabled = false;
+        self.app_state.personal_memory_status.clear();
+        self.app_state.pending_memory_enabled = None;
+        self.app_state.memory_content_draft.clear();
+        self.app_state.pending_memory_save = None;
         self.app_state.light_mode = false;
         self.app_state.reduced_motion = false;
         self.last_saved_preferences = (false, false);
@@ -515,6 +526,33 @@ impl WgpuRenderer {
                 self.track_task(task);
             } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
         }
+        if let Some(enabled) = self.app_state.pending_memory_enabled.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.set_personal_memory_enabled(enabled).await;
+                    let _ = sender.send(ChatEvent::MemorySettingUpdated(generation, enabled, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.personal_memory_enabled = !enabled;
+                self.app_state.personal_memory_status = "Sign in before changing personal-memory settings.".into();
+            }
+        }
+        if let Some((category, content)) = self.app_state.pending_memory_save.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.save_personal_memory(&category, &content, "user").await;
+                    let _ = sender.send(ChatEvent::MemorySaved(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.personal_memory_status = "Sign in before saving personal memories.".into();
+            }
+        }
         if let Some(enabled) = self.app_state.pending_guardian_consent.take() {
             self.guardian.set_telemetry_consent(enabled);
             if let Some(api) = self.api.clone() {
@@ -626,6 +664,18 @@ impl WgpuRenderer {
                             self.active_user_id = account_id.clone();
                             self.app_state.account_email = email.clone();
                             self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
+                            self.app_state.personal_memory_enabled = false;
+                            self.app_state.personal_memory_status = "Loading your private memory preference…".into();
+                            if let Some(service) = self.api.clone() {
+                                let sender = self.response_tx.clone();
+                                let generation = self.account_generation;
+                                let task = self.runtime.spawn(async move {
+                                    let result = service.control_plane("memory_status", serde_json::json!({})).await
+                                        .map(|data| data.get("enabled").and_then(serde_json::Value::as_bool).unwrap_or(false));
+                                    let _ = sender.send(ChatEvent::MemoryStatusLoaded(generation, result));
+                                });
+                                self.track_task(task);
+                            }
                             self.app_state.guardian_consent = self.api.as_ref().is_some_and(CenAiApi::guardian_consent);
                             if let Some(service) = &self.api {
                                 self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
@@ -689,6 +739,47 @@ impl WgpuRenderer {
                         Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
+                }
+                ChatEvent::MemoryStatusLoaded(_, result) => {
+                    match result {
+                        Ok(enabled) => {
+                            self.app_state.personal_memory_enabled = enabled;
+                            self.app_state.personal_memory_status = if enabled {
+                                "Private personal memory is enabled for this account.".into()
+                            } else {
+                                "Personal memory is off. Your saved records are not retrieved.".into()
+                            };
+                        }
+                        Err(error) => {
+                            self.app_state.personal_memory_enabled = false;
+                            self.app_state.personal_memory_status = format!("Could not load memory settings: {error}");
+                        }
+                    }
+                }
+                ChatEvent::MemorySettingUpdated(_, enabled, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.personal_memory_enabled = enabled;
+                            self.app_state.personal_memory_status = if enabled {
+                                "Private personal memory enabled.".into()
+                            } else {
+                                "Personal memory disabled. Existing records are retained but not retrieved.".into()
+                            };
+                        }
+                        Err(error) => {
+                            self.app_state.personal_memory_enabled = !enabled;
+                            self.app_state.personal_memory_status = format!("Could not update memory setting: {error}");
+                        }
+                    }
+                }
+                ChatEvent::MemorySaved(_, result) => {
+                    match result {
+                        Ok(_) => {
+                            self.app_state.memory_content_draft.clear();
+                            self.app_state.personal_memory_status = "Memory saved to your private account.".into();
+                        }
+                        Err(error) => self.app_state.personal_memory_status = format!("Could not save memory: {error}"),
+                    }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
                     match result {
