@@ -2,8 +2,8 @@
 //!
 //! Qwen supplies the pretrained cloud speech model. CenAI owns the product identity,
 //! voice profile, pronunciation policy, model lifecycle, and Android integration.
-//! The native inference adapter is deliberately reported unavailable until a
-//! supported on-device backend has passed its compatibility and device tests.
+//! The Android app uses an authenticated cloud inference gateway. Model weights,
+//! reference audio and service credentials remain on the GPU server.
 
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,8 @@ pub const PRODUCT_NAME: &str = "CenAI Voice";
 pub const UPSTREAM_PROJECT: &str = "Qwen3-TTS";
 pub const UPSTREAM_LICENSE: &str = "Apache-2.0";
 pub const TOKENIZER_MODEL_ID: &str = "Qwen/Qwen3-TTS-Tokenizer-12Hz";
-pub const PRIMARY_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-0.6B-Base";
-pub const DEFAULT_SPEAKER_ID: &str = "cenai_voice_en_v1";
+pub const PRIMARY_MODEL_ID: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base";
+pub const DEFAULT_SPEAKER_ID: &str = "cenai-en-v1";
 pub const DEFAULT_LOCALE: &str = "en-US";
 pub const MAX_SYNTHESIS_TEXT_BYTES: usize = 32_000;
 
@@ -71,34 +71,31 @@ impl QwenLanguage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum VoiceModelVariant {
-    Base06B,
-    CustomVoice06B,
+    Base17B,
+    CustomVoice17B,
     VoiceDesign17B,
 }
 
 impl VoiceModelVariant {
     pub fn model_id(self) -> &'static str {
         match self {
-            Self::Base06B => PRIMARY_MODEL_ID,
-            Self::CustomVoice06B => "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+            Self::Base17B => PRIMARY_MODEL_ID,
+            Self::CustomVoice06B => "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
             Self::VoiceDesign17B => "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
         }
     }
 
     pub fn supports_fine_tuning(self) -> bool {
-        matches!(self, Self::Base06B)
+        matches!(self, Self::Base17B)
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RuntimeState {
-    ModelNotInstalled,
     CloudReady,
     CloudUnavailable,
-    NativeRuntimeNotIntegrated,
     Ready,
-    IncompatibleDevice,
     Failed,
 }
 
@@ -119,7 +116,7 @@ impl Default for VoiceProfile {
             display_name: "CenAI Voice · English".into(),
             language: QwenLanguage::English,
             locale: DEFAULT_LOCALE.into(),
-            model_variant: VoiceModelVariant::Base06B,
+            model_variant: VoiceModelVariant::Base17B,
             speaker_id: DEFAULT_SPEAKER_ID.into(),
         }
     }
@@ -129,7 +126,7 @@ impl Default for VoiceProfile {
 pub struct VoiceEngineStatus {
     pub runtime: RuntimeState,
     pub model_id: &'static str,
-    pub offline_only: bool,
+    pub cloud_only: bool,
     pub fallback_enabled: bool,
 }
 
@@ -138,15 +135,15 @@ impl Default for VoiceEngineStatus {
         Self {
             runtime: RuntimeState::CloudUnavailable,
             model_id: PRIMARY_MODEL_ID,
-            offline_only: false,
+            cloud_only: true,
             fallback_enabled: false,
         }
     }
 }
 
 impl VoiceEngineStatus {
-    pub fn can_synthesize_offline(&self) -> bool {
-        self.runtime == RuntimeState::Ready && self.offline_only
+    pub fn can_synthesize_cloud(&self) -> bool {
+        self.runtime == RuntimeState::CloudReady && self.cloud_only
     }
 }
 
@@ -177,8 +174,8 @@ impl SynthesisRequest {
 }
 
 /// Offline synthesis is not used by the app; cloud synthesis is authenticated separately.
-pub fn offline_unavailable_reason(status: &VoiceEngineStatus) -> Option<&'static str> {
-    if status.can_synthesize_offline() {
+pub fn cloud_unavailable_reason(status: &VoiceEngineStatus) -> Option<&'static str> {
+    if status.can_synthesize_cloud() {
         None
     } else {
         Some("CenAI Voice cloud inference is not provisioned. No Google TTS fallback is permitted.")
@@ -194,8 +191,8 @@ mod tests {
         let profile = VoiceProfile::default();
         assert_eq!(profile.language, QwenLanguage::English);
         assert_eq!(profile.locale, "en-US");
-        assert_eq!(profile.speaker_id, "cenai_voice_en_v1");
-        assert_eq!(profile.model_variant, VoiceModelVariant::Base06B);
+        assert_eq!(profile.speaker_id, "cenai-en-v1");
+        assert_eq!(profile.model_variant, VoiceModelVariant::Base17B);
     }
 
     #[test]
@@ -206,8 +203,8 @@ mod tests {
     }
 
     #[test]
-    fn base_model_is_the_fine_tuning_source_not_the_preset_voice_model() {
-        assert!(VoiceModelVariant::Base06B.supports_fine_tuning());
+    fn cloud_base_model_is_the_fine_tuning_source_not_the_preset_voice_model() {
+        assert!(VoiceModelVariant::Base17B.supports_fine_tuning());
         assert!(!VoiceModelVariant::CustomVoice06B.supports_fine_tuning());
         assert_eq!(VoiceModelVariant::Base06B.model_id(), PRIMARY_MODEL_ID);
     }
@@ -231,9 +228,9 @@ mod tests {
     #[test]
     fn cloud_voice_is_the_configured_runtime_and_google_fallback_stays_disabled() {
         let status = VoiceEngineStatus::default();
-        assert!(!status.can_synthesize_offline());
+        assert!(!status.can_synthesize_cloud());
         assert!(!status.fallback_enabled);
         assert_eq!(status.runtime, RuntimeState::CloudUnavailable);
-        assert!(offline_unavailable_reason(&status).is_some());
+        assert!(cloud_unavailable_reason(&status).is_some());
     }
 }
