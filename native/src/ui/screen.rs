@@ -460,7 +460,24 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         }
         if state.personal_memory_enabled && !state.personal_memories.is_empty() {
             ui.separator();
-            ui.label(text("Saved memories", 13.0, egui::Color32::WHITE).strong());
+            ui.horizontal(|ui| {
+                ui.label(text("Saved memories", 13.0, egui::Color32::WHITE).strong());
+                if ui.small_button("Clear all").clicked() {
+                    state.confirm_memory_clear = true;
+                }
+            });
+            if state.confirm_memory_clear {
+                ui.label(text("Permanently delete every saved memory for this account?", 10.0, egui::Color32::from_rgb(235, 166, 145)));
+                ui.horizontal(|ui| {
+                    if ui.button("Delete all memories").clicked() {
+                        state.pending_memory_clear = true;
+                        state.confirm_memory_clear = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        state.confirm_memory_clear = false;
+                    }
+                });
+            }
             let mut delete_memory = None;
             for memory in &state.personal_memories {
                 ui.horizontal(|ui| {
