@@ -722,6 +722,7 @@ Deno.serve(async (req: Request) => {
 
     const user = await currentUser(req);
     if (!user) return fail(401, "Sign in required");
+    if (!await registrationAllowed(user)) return fail(403, "Complete Discord invitation registration before using CenAI.");
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "create_subscription");
 
