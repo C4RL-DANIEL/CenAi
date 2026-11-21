@@ -337,10 +337,12 @@ mod tests {
         };
         let store = AttachmentStore::new(&root, owner).unwrap();
         store.save(&metadata, bytes).unwrap();
+        assert_eq!(store.list().unwrap(), vec![metadata.clone()]);
         assert_eq!(store.load(&metadata).unwrap(), bytes);
         let other_store = AttachmentStore::new(&root, other).unwrap();
         assert!(other_store.load(&metadata).is_err());
-        store.delete(&metadata.id).unwrap();
+        assert!(store.delete(&metadata.id).unwrap());
+        assert!(store.list().unwrap().is_empty());
         assert!(store.load(&metadata).is_err());
         let _ = fs::remove_dir_all(root);
     }
