@@ -94,6 +94,7 @@
       const authorize = new URL(config.supabaseUrl.replace(/\/$/, "") + "/auth/v1/authorize");
       authorize.searchParams.set("provider", "discord");
       authorize.searchParams.set("scopes", "identify email");
+      authorize.searchParams.set("scopes", "identify email");
       authorize.searchParams.set("redirect_to", location.origin + "/register/complete");
       authorize.searchParams.set("code_challenge", challenge);
       authorize.searchParams.set("code_challenge_method", "s256");
