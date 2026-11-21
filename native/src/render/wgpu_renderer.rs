@@ -1,5 +1,5 @@
 //! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
-use std::{collections::HashMap, sync::{mpsc, Arc}};
+use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc}};
 use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
@@ -18,6 +18,8 @@ struct ShaderUniforms {
 enum ChatEvent {
     Delta(u64, String),
     Finished(u64, Result<String, String>),
+    SignedIn(Result<String, String>),
+    SignedOut(Result<(), String>),
 }
 
 pub struct WgpuRenderer {
@@ -42,14 +44,15 @@ pub struct WgpuRenderer {
     active_streams: HashMap<u64, u64>,
     workspace: Option<WorkspaceStore>,
     last_saved_message_count: usize,
+    workspace_root: PathBuf,
 }
 
 impl WgpuRenderer {
-    pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>) -> anyhow::Result<Self> {
-        pollster::block_on(Self::new_async(window, api, runtime, workspace))
+    pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
+        pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))
     }
 
-    async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>) -> anyhow::Result<Self> {
+    async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone())?;
         let adapter = instance
@@ -160,6 +163,7 @@ impl WgpuRenderer {
             app_state.projects = store.projects(false).unwrap_or_default();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
+        app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
         Ok(Self {
             surface,
             device,
@@ -182,6 +186,7 @@ impl WgpuRenderer {
             active_streams: HashMap::new(),
             workspace,
             last_saved_message_count,
+            workspace_root,
         })
     }
 
@@ -270,6 +275,21 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        if let Some((email, password)) = self.app_state.pending_sign_in.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedIn(api.sign_in(&email, &password).await)); });
+            } else {
+                self.app_state.auth_status = "Account service is unavailable.".into();
+            }
+        }
+        if self.app_state.pending_sign_out {
+            self.app_state.pending_sign_out = false;
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedOut(api.sign_out().await)); });
+            }
+        }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
                 Some(api) => match api.save_provider_key(&provider, &key) {
@@ -309,6 +329,37 @@ impl WgpuRenderer {
                         }
                     };
                     self.app_state.conversation.append_stream(stream_id, &delta);
+                }
+                ChatEvent::SignedIn(result) => {
+                    match result {
+                        Ok(email) => {
+                            self.app_state.account_email = email.clone();
+                            self.app_state.auth_status = "Signed in successfully.".into();
+                            match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &email) {
+                                Ok(store) => {
+                                    if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
+                                    self.app_state.projects = store.projects(false).unwrap_or_default();
+                                    self.last_saved_message_count = self.app_state.conversation.messages().count();
+                                    self.workspace = Some(store);
+                                }
+                                Err(error) => self.app_state.auth_status = format!("Signed in, but workspace could not open: {error}"),
+                            }
+                        }
+                        Err(error) => self.app_state.auth_status = format!("Sign-in failed: {error}"),
+                    }
+                }
+                ChatEvent::SignedOut(result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.account_email.clear();
+                            self.app_state.auth_status = "Signed out.".into();
+                            self.workspace = None;
+                            self.app_state.projects.clear();
+                            self.app_state.conversation.restore_messages(Vec::new());
+                            self.last_saved_message_count = 0;
+                        }
+                        Err(error) => self.app_state.auth_status = format!("Sign-out failed: {error}"),
+                    }
                 }
                 ChatEvent::Finished(message_id, result) => {
                     match result {
