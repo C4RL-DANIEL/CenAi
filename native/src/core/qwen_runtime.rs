@@ -24,10 +24,6 @@ pub async fn download_model_pack<F>(directory: std::path::PathBuf, on_progress: 
 where
     F: Fn(&str, f32) + Send + Sync + 'static,
 {
-    use futures_util::StreamExt;
-    use sha2::{Digest, Sha256};
-    use tokio::io::AsyncWriteExt;
-
     tokio::fs::create_dir_all(&directory).await
         .map_err(|error| format!("Could not create CenAI Voice model directory: {error}"))?;
     let client = reqwest::Client::builder()
