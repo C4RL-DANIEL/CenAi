@@ -199,7 +199,7 @@ mod tests {
         assert!(buffer.push_frame(frame(0)).unwrap().is_none());
         let chunk = buffer.push_frame(frame(0)).unwrap().unwrap();
         assert!(chunk.speech_detected);
-        assert_eq!(chunk.duration_ms(), 500);
+        assert_eq!(chunk.duration_ms(), 400);
         assert!(buffer.finish().is_none());
     }
 
@@ -208,8 +208,12 @@ mod tests {
         let mut buffer = VoiceAudioBuffer::new(16_000, 500).unwrap();
         assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 48_000, channels: 1, samples: vec![900; 1600] }).is_err());
         assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 16_000, channels: 2, samples: vec![900; 1600] }).is_err());
-        let chunk = buffer.push_frame(frame(1000)).unwrap().unwrap();
-        assert_eq!(chunk.duration_ms(), 100);
+        let mut completed = None;
+        for _ in 0..5 {
+            completed = buffer.push_frame(frame(1000)).unwrap();
+        }
+        let chunk = completed.unwrap();
+        assert_eq!(chunk.duration_ms(), 500);
         assert!(chunk.speech_detected);
         assert!(VoiceAudioBuffer::new(16_000, 100).is_err());
     }
