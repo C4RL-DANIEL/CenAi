@@ -1,3 +1,4 @@
+-- Registration eligibility is checked by the authenticated control-plane call before quota access.
 -- Shared atomic Neuron reservations across every CenAI Workers AI feature.
 -- The app reserves at most 8,000 Neurons per UTC day and leaves 2,000 for safety/other account activity.
 create table if not exists public.cenai_ai_daily_budget (
