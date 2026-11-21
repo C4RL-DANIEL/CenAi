@@ -19,14 +19,15 @@ struct CenAiApplication {
     api: Option<CenAiApi>,
     runtime: tokio::runtime::Handle,
     workspace: Option<WorkspaceStore>,
+    workspace_root: std::path::PathBuf,
     window: Option<Arc<Window>>,
     renderer: Option<WgpuRenderer>,
     last_size: winit::dpi::PhysicalSize<u32>,
 }
 
 impl CenAiApplication {
-    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle, workspace: Option<WorkspaceStore>) -> Self {
-        Self { api, runtime, workspace, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
+    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle, workspace: Option<WorkspaceStore>, workspace_root: std::path::PathBuf) -> Self {
+        Self { api, runtime, workspace, workspace_root, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
     }
 }
 
@@ -40,7 +41,7 @@ impl ApplicationHandler for CenAiApplication {
             .with_transparent(false);
         let window = Arc::new(event_loop.create_window(attributes).expect("create Android window"));
         self.last_size = window.inner_size();
-        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take()) {
+        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take(), self.workspace_root.clone()) {
             Ok(renderer) => {
                 log::info!("CenAI renderer initialized: {}", crate::RUNTIME_ID);
                 self.renderer = Some(renderer);
@@ -106,6 +107,7 @@ pub fn android_main(app: AndroidApp) {
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
     let email = vault.account_email().unwrap_or_default();
+    let workspace_root = app.internal_data_path().unwrap_or_default();
     let workspace = if email.is_empty() {
         None
     } else {
@@ -120,6 +122,6 @@ pub fn android_main(app: AndroidApp) {
     builder.with_android_app(app);
     let event_loop = builder.build().expect("create Android event loop");
     event_loop
-        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace))
+        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace, workspace_root))
         .expect("run CenAI Android application");
 }
