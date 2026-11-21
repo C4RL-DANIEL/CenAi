@@ -589,8 +589,10 @@ impl WgpuRenderer {
         }
         if self.app_state.pending_speech_text.take().is_some() {
             self.app_state.speech_cancelled = false;
-            self.app_state.speech_status =
-                "CenAI Voice is being integrated. Google speech synthesis is disabled.".into();
+            let _ = self.response_tx.send(ChatEvent::SpeechSynthesized(
+                self.account_generation,
+                Err("CenAI Voice is not connected yet; Google TTS is disabled.".into()),
+            ));
         }
     }
 
