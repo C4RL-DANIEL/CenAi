@@ -103,7 +103,10 @@ async def healthz():
 
 
 @app.get("/readyz")
-async def readyz():
+async def readyz(authorization: str = Header(default="")):
+    expected = "Bearer " + getattr(app.state, "api_key", "")
+    if not secrets.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="Invalid service credentials.")
     if not getattr(app.state, "ready", False):
         raise HTTPException(status_code=503, detail="Voice model is not ready")
     return {"service": "cenai-voice", "status": "ready", "profile": VOICE_ID, "model": MODEL_ID}
