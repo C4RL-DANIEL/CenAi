@@ -884,6 +884,8 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             ui.separator();
             ui.label(text("Multi-factor authentication", 14.0, egui::Color32::WHITE).strong());
             ui.label(text("Protect this CenAI account with a time-based authenticator code. Your authenticator secret is shown only during enrollment.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.add(egui::TextEdit::singleline(&mut state.mfa_friendly_name_draft)
+                .hint_text("Authenticator device name").desired_width(f32::INFINITY));
             ui.horizontal(|ui| {
                 if ui.button("Refresh authenticator status").clicked() {
                     state.pending_mfa_refresh = true;
@@ -896,7 +898,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             });
             if !state.mfa_enrollment_secret.is_empty() {
                 ui.label(text("Add this setup key in your authenticator app:", 10.0, egui::Color32::from_rgb(220, 184, 121)));
-                ui.add(egui::TextEdit::singleline(&mut state.mfa_enrollment_secret).desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(&mut state.mfa_enrollment_secret).interactive(false).desired_width(f32::INFINITY));
             }
             if !state.mfa_enrollment_factor_id.is_empty() {
                 ui.label(text("Selected authenticator is ready for verification.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
