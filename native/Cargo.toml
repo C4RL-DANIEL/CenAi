@@ -8,8 +8,12 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+anyhow.workspace = true
 bytemuck.workspace = true
 log.workspace = true
 pollster.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger.workspace = true
