@@ -132,6 +132,10 @@ pub struct AppState {
     pub mcp_status: String,
     pub mcp_tools: Vec<crate::core::mcp::McpTool>,
     pub pending_mcp_connect: Option<crate::core::mcp::McpServerManifest>,
+    pub mcp_pending_approval: Option<String>,
+    pub mcp_call_arguments_draft: String,
+    pub pending_mcp_call: Option<(String, String, String)>,
+    pub mcp_call_result: String,
 }
 
 impl Default for AppState {
@@ -179,6 +183,10 @@ impl Default for AppState {
             mcp_status: String::new(),
             mcp_tools: Vec::new(),
             pending_mcp_connect: None,
+            mcp_pending_approval: None,
+            mcp_call_arguments_draft: "{}".into(),
+            pending_mcp_call: None,
+            mcp_call_result: String::new(),
             mcp_server_id_draft: String::new(),
             mcp_endpoint_draft: String::new(),
             mcp_publisher_draft: String::new(),
