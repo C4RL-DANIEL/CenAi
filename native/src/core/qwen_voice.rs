@@ -179,7 +179,7 @@ pub fn offline_unavailable_reason(status: &VoiceEngineStatus) -> Option<&'static
     if status.can_synthesize_offline() {
         None
     } else {
-        Some("CenAI Voice's offline Qwen model pack is not installed yet. No cloud or Google TTS fallback is permitted.")
+        Some("CenAI Voice's offline model pack is not installed yet. No cloud or Google TTS fallback is permitted.")
     }
 }
 
