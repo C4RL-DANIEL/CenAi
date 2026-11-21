@@ -31,8 +31,8 @@ impl AudioFrame {
             return Err("Unsupported voice sample rate");
         }
         if self.channels != 1 { return Err("Voice capture must be mono PCM"); }
-        if self.samples.is_empty() || self.samples.len() > self.sample_rate_hz as usize {
-            return Err("Audio frame must contain between 1 ms and 1 second of samples");
+        if self.samples.is_empty() || self.samples.len() > self.sample_rate_hz as usize * 4 {
+            return Err("Audio frame must contain between 1 ms and 4 seconds of samples");
         }
         Ok(())
     }
