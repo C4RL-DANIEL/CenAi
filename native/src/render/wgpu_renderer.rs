@@ -372,6 +372,7 @@ impl WgpuRenderer {
                 self.app_state.pending_voice_stop = false;
                 self.app_state.pending_voice_start = false;
                 let remaining_frames = if let Some(capture) = self.audio_capture.as_mut() {
+                    capture.cancel_permission_request();
                     capture.stop();
                     let mut frames = Vec::new();
                     while let Some(frame) = capture.try_recv() { frames.push(frame); }
