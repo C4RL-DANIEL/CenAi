@@ -1025,7 +1025,8 @@ mod encrypted_workspace_tests {
         let items = encrypted.list().unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(encrypted.load(&items[0]).unwrap(), bytes);
-        let stored = fs::read(encrypted.root.join(account).join("attachments/attachment-private-1.bin")).unwrap();
+        let stored_path = encrypted.save(&metadata, bytes).unwrap();
+        let stored = fs::read(stored_path).unwrap();
         assert!(stored.starts_with(WORKSPACE_CIPHER_MAGIC));
         assert!(!stored.windows(b"private attachment".len()).any(|window| window == b"private attachment"));
     }
