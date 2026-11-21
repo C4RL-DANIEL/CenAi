@@ -312,22 +312,67 @@ impl WorkspaceStore {
         let suffix = format!("{}-{sequence}", std::process::id());
         let staging = self.user_root.join(format!("artifacts.restore-{suffix}"));
         let previous = self.user_root.join(format!("artifacts.previous-{suffix}"));
-        if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
-        fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-        for (id, bytes) in &files {
-            let path = staging.join(format!("{id}.bin"));
-            let mut file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|error| error.to_string())?;
-            file.write_all(bytes).map_err(|error| error.to_string())?;
-            file.sync_all().map_err(|error| error.to_string())?;
+        let current = self.user_root.join("artifacts");
+        let conversation_root = self.user_root.join("conversations");
+        let conversation_staging = self.user_root.join(format!("conversations.restore-{suffix}"));
+        let conversation_previous = self.user_root.join(format!("conversations.previous-{suffix}"));
+        for directory in [&staging, &conversation_staging] {
+            if directory.exists() { fs::remove_dir_all(directory).map_err(|error| error.to_string())?; }
+            fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+        }
+        let stage_result = (|| -> Result<(), String> {
+            for (id, bytes) in &files {
+                let path = staging.join(format!("{id}.bin"));
+                let mut file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|error| error.to_string())?;
+                file.write_all(bytes).map_err(|error| error.to_string())?;
+                file.sync_all().map_err(|error| error.to_string())?;
+            }
+            for conversation in &payload.conversations {
+                let bytes = serde_json::to_vec(&conversation.messages).map_err(|error| error.to_string())?;
+                let path = conversation_staging.join(format!("{}.json", conversation.id));
+                let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|error| error.to_string())?;
+                file.write_all(&bytes).map_err(|error| error.to_string())?;
+                file.sync_all().map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = stage_result {
+            let _ = fs::remove_dir_all(&staging);
+            let _ = fs::remove_dir_all(&conversation_staging);
+            return Err(error);
         }
 
-        let current = self.user_root.join("artifacts");
         if previous.exists() { fs::remove_dir_all(&previous).map_err(|error| error.to_string())?; }
+        if conversation_previous.exists() { fs::remove_dir_all(&conversation_previous).map_err(|error| error.to_string())?; }
         let had_current = current.exists();
-        if had_current { fs::rename(&current, &previous).map_err(|error| error.to_string())?; }
+        let had_conversations = conversation_root.exists();
+        if had_current {
+            if let Err(error) = fs::rename(&current, &previous) {
+                let _ = fs::remove_dir_all(&staging);
+                let _ = fs::remove_dir_all(&conversation_staging);
+                return Err(error.to_string());
+            }
+        }
+        if had_conversations {
+            if let Err(error) = fs::rename(&conversation_root, &conversation_previous) {
+                if had_current { let _ = fs::rename(&previous, &current); }
+                let _ = fs::remove_dir_all(&staging);
+                let _ = fs::remove_dir_all(&conversation_staging);
+                return Err(error.to_string());
+            }
+        }
         if let Err(error) = fs::rename(&staging, &current) {
             if had_current { let _ = fs::rename(&previous, &current); }
+            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
             let _ = fs::remove_dir_all(&staging);
+            let _ = fs::remove_dir_all(&conversation_staging);
+            return Err(error.to_string());
+        }
+        if let Err(error) = fs::rename(&conversation_staging, &conversation_root) {
+            let _ = fs::remove_dir_all(&current);
+            if had_current { let _ = fs::rename(&previous, &current); }
+            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
+            let _ = fs::remove_dir_all(&conversation_staging);
             return Err(error.to_string());
         }
 
@@ -337,36 +382,11 @@ impl WorkspaceStore {
             tasks: payload.tasks,
             automations: payload.automations,
         };
-        let conversation_root = self.user_root.join("conversations");
-        let conversation_staging = self.user_root.join(format!("conversations.restore-{}", std::process::id()));
-        let conversation_previous = self.user_root.join(format!("conversations.previous-{}", std::process::id()));
-        if conversation_staging.exists() { fs::remove_dir_all(&conversation_staging).map_err(|error| error.to_string())?; }
-        fs::create_dir_all(&conversation_staging).map_err(|error| error.to_string())?;
-        for conversation in &payload.conversations {
-            let bytes = serde_json::to_vec(&conversation.messages).map_err(|error| error.to_string())?;
-            let path = conversation_staging.join(format!("{}.json", conversation.id));
-            let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|error| error.to_string())?;
-            file.write_all(&bytes).map_err(|error| error.to_string())?;
-            file.sync_all().map_err(|error| error.to_string())?;
-        }
-        if conversation_previous.exists() { fs::remove_dir_all(&conversation_previous).map_err(|error| error.to_string())?; }
-        let had_conversations = conversation_root.exists();
-        if had_conversations { fs::rename(&conversation_root, &conversation_previous).map_err(|error| error.to_string())?; }
-        if let Err(error) = fs::rename(&conversation_staging, &conversation_root) {
-            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
-            let _ = fs::remove_dir_all(&conversation_staging);
-            return Err(error.to_string());
-        }
-
         if let Err(error) = self.write_index(&index) {
-            let failed = self.user_root.join(format!("artifacts.failed-{}", std::process::id()));
-            let _ = fs::rename(&current, &failed);
+            let _ = fs::remove_dir_all(&current);
+            let _ = fs::remove_dir_all(&conversation_root);
             if had_current { let _ = fs::rename(&previous, &current); }
-            let _ = fs::remove_dir_all(&failed);
-            let failed_conversations = self.user_root.join(format!("conversations.failed-{}", std::process::id()));
-            let _ = fs::rename(&conversation_root, &failed_conversations);
             if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
-            let _ = fs::remove_dir_all(&failed_conversations);
             return Err(error);
         }
         if had_current { let _ = fs::remove_dir_all(previous); }
