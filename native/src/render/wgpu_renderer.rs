@@ -923,6 +923,7 @@ impl WgpuRenderer {
         if let Some(mut pipeline) = self.voice_pipeline.take() { let _ = pipeline.stop(); }
         #[cfg(target_os = "android")]
         if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
+        self.app_state.pending_voice_service_check = false;
         self.app_state.pending_speech_text = None;
         self.app_state.pending_speech_stop = false;
         self.app_state.speech_cancelled = false;
