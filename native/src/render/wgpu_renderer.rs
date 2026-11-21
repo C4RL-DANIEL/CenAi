@@ -203,6 +203,7 @@ impl WgpuRenderer {
                 app_state.conversation.restore_messages(messages);
             }
             app_state.projects = store.projects(false).unwrap_or_default();
+            app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().map(|record| record.plan).collect();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
@@ -353,6 +354,7 @@ impl WgpuRenderer {
         self.workspace = None;
         self.app_state.conversation.restore_messages(Vec::new());
         self.app_state.projects.clear();
+        self.app_state.task_plans.clear();
         self.app_state.provider_key_draft.clear();
         self.app_state.provider_key_status.clear();
         self.app_state.guardian_consent = false;
@@ -617,6 +619,7 @@ impl WgpuRenderer {
                                 Ok(store) => {
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
+                                    self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().map(|record| record.plan).collect();
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
                                     self.workspace = Some(store);
                                 }
@@ -644,6 +647,17 @@ impl WgpuRenderer {
                     self.app_state.conversation.sending = false;
                     match result {
                         Ok(plan) => {
+                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            match self.workspace.as_ref().ok_or("The account workspace is not open".to_owned())
+                                .and_then(|store| store.save_task_plan(plan.clone(), now)) {
+                                Ok(_) => {
+                                    self.app_state.task_plans.retain(|existing| existing.id != plan.id);
+                                    self.app_state.task_plans.insert(0, plan.clone());
+                                }
+                                Err(error) => {
+                                    self.app_state.conversation.push(MessageRole::Assistant, format!("The plan was created but could not be saved to Your Work: {error}"));
+                                }
+                            }
                             let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
                             for step in &plan.steps {
                                 summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
