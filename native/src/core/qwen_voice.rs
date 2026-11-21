@@ -1,6 +1,6 @@
-//! CenAI Voice model contract and Qwen3-TTS integration boundary.
+//! CenAI Voice cloud profile contract and supported-language catalogue.
 //!
-//! Qwen supplies the pretrained speech model. CenAI owns the product identity,
+//! Qwen supplies the pretrained cloud speech model. CenAI owns the product identity,
 //! voice profile, pronunciation policy, model lifecycle, and Android integration.
 //! The native inference adapter is deliberately reported unavailable until a
 //! supported on-device backend has passed its compatibility and device tests.
@@ -94,6 +94,8 @@ impl VoiceModelVariant {
 #[serde(rename_all = "kebab-case")]
 pub enum RuntimeState {
     ModelNotInstalled,
+    CloudReady,
+    CloudUnavailable,
     NativeRuntimeNotIntegrated,
     Ready,
     IncompatibleDevice,
@@ -134,9 +136,9 @@ pub struct VoiceEngineStatus {
 impl Default for VoiceEngineStatus {
     fn default() -> Self {
         Self {
-            runtime: RuntimeState::ModelNotInstalled,
+            runtime: RuntimeState::CloudUnavailable,
             model_id: PRIMARY_MODEL_ID,
-            offline_only: true,
+            offline_only: false,
             fallback_enabled: false,
         }
     }
@@ -174,12 +176,12 @@ impl SynthesisRequest {
     }
 }
 
-/// The app must fail closed until a real local model backend is installed.
+/// Offline synthesis is not used by the app; cloud synthesis is authenticated separately.
 pub fn offline_unavailable_reason(status: &VoiceEngineStatus) -> Option<&'static str> {
     if status.can_synthesize_offline() {
         None
     } else {
-        Some("CenAI Voice's offline model pack is not installed yet. No cloud or Google TTS fallback is permitted.")
+        Some("CenAI Voice cloud inference is not provisioned. No Google TTS fallback is permitted.")
     }
 }
 
@@ -227,10 +229,11 @@ mod tests {
     }
 
     #[test]
-    fn runtime_requires_a_verified_model_pack_and_never_falls_back_to_cloud() {
+    fn cloud_voice_is_the_configured_runtime_and_google_fallback_stays_disabled() {
         let status = VoiceEngineStatus::default();
         assert!(!status.can_synthesize_offline());
         assert!(!status.fallback_enabled);
+        assert_eq!(status.runtime, RuntimeState::CloudUnavailable);
         assert!(offline_unavailable_reason(&status).is_some());
     }
 }
