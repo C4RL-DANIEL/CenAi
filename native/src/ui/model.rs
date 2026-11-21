@@ -142,7 +142,6 @@ pub struct EcosystemAppItem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MfaFactor {
     pub id: String,
     pub friendly_name: String,
