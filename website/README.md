@@ -15,7 +15,7 @@ CenAI public website and restricted administrator portal. The deployment is a si
 
 - `/`: public homepage.
 - `/admin`: restricted administrator control center.
-- `/beta`: beta application and feedback.
+- `/beta`: beta application and feedback.\n- `/register`: invitation-only Discord registration and app password setup.
 - `/api/admin` and `/api/beta`: authenticated Supabase control-plane proxy.
 - `/api/admin-config`: public Supabase URL and publishable key.
 - `/api/site-pages`: published CMS pages only.
