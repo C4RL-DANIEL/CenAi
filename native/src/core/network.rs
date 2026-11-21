@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use reqwest::{header, Client, StatusCode};
+use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 
 use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}};
@@ -374,6 +375,24 @@ impl CenAiApi {
             return Err("The memory service did not confirm deletion.".into());
         }
         Ok(())
+    }
+
+    fn mcp_token_slot(server_id: &str) -> Result<String, String> {
+        if server_id.trim().is_empty() || server_id.len() > 128 {
+            return Err("MCP server identifier is invalid.".into());
+        }
+        let digest = Sha256::digest(server_id.as_bytes());
+        let suffix = digest[..12].iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        Ok(format!("mcp_{suffix}"))
+    }
+
+    pub fn mcp_server_token(&self, server_id: &str) -> Result<String, String> {
+        self.vault.provider_key(&Self::mcp_token_slot(server_id)?)
+    }
+
+    pub fn save_mcp_server_token(&self, server_id: &str, token: &str) -> Result<(), String> {
+        if token.len() > 4096 { return Err("MCP bearer token exceeds the supported limit.".into()); }
+        self.vault.save_provider_key(&Self::mcp_token_slot(server_id)?, token)
     }
 
     pub fn provider_key(&self, provider: &str) -> Result<String, String> {
