@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261119-gmail-mime-line-wrap-1";
+const STATIC_CACHE_VERSION = "20261121-discord-registration-invites-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
@@ -9,7 +9,7 @@ const STATIC_FILES = new Set([
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
   "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
   "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
-  "/admin/index.html", "/admin/admin.css", "/admin/admin.js", "/account.html", "/account.js"
+  "/admin/index.html", "/admin/admin.css", "/admin/admin.js", "/register.html", "/register.js", "/account.html", "/account.js"
 ]);
 
 const corsHeaders = {
@@ -618,7 +618,7 @@ function rewritePath(url) {
     "/beta": "/beta.html",
     "/beta/": "/beta.html",
     "/admin": "/admin/index.html",
-    "/admin/": "/admin/index.html",
+    "/admin/": "/admin/index.html",\n    "/register": "/register.html",\n    "/register/": "/register.html",\n    "/register/complete": "/register.html",
     "/reset-password": "/reset-password.html",
     "/reset-password/": "/reset-password.html",
     "/account": "/account.html",
