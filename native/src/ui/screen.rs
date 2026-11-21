@@ -206,7 +206,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.speech_status.is_empty() {
                 ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
-            ui.label(text("CenAI Voice uses a cloud-hosted multilingual speech model. Your account is authenticated; speech audio returns to the app for local playback.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+            ui.label(text("CenAI Voice sends your text to Cloudflare for English speech synthesis. Your account quota is checked before each request; audio is returned for local playback.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
     }
     ui.add_space(10.0);
