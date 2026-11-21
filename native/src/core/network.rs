@@ -15,6 +15,8 @@ pub trait SessionVault: Send + Sync {
     fn clear_session(&self) -> Result<(), String>;
     fn provider_key(&self, provider: &str) -> Result<String, String>;
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String>;
+    fn email_verified(&self) -> Result<bool, String>;
+    fn set_email_verified(&self, verified: bool) -> Result<(), String>;
 }
 
 #[derive(Clone)]
@@ -58,6 +60,40 @@ impl CenAiApi {
         }
         self.vault.save_session(access, refresh, &account_email)?;
         Ok(account_email)
+    }
+
+    pub fn email_verified(&self) -> bool {
+        self.vault.email_verified().unwrap_or(false)
+    }
+
+    pub async fn send_email_otp(&self) -> Result<String, String> {
+        let token = self.vault.access_token()?;
+        if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
+        let response = self.client.post(config::WEBSITE_OTP_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .json(&json!({ "action": "send" }))
+            .send().await.map_err(|error| error.to_string())?;
+        let data = Self::decode_response(response).await?;
+        Ok(data.get("message").and_then(Value::as_str).unwrap_or("Verification code sent.").to_owned())
+    }
+
+    pub async fn verify_email_otp(&self, code: &str) -> Result<String, String> {
+        if code.len() != 6 || !code.chars().all(|character| character.is_ascii_digit()) {
+            return Err("Enter the six-digit verification code.".into());
+        }
+        let token = self.vault.access_token()?;
+        let response = self.client.post(config::WEBSITE_OTP_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .json(&json!({ "action": "verify", "code": code }))
+            .send().await.map_err(|error| error.to_string())?;
+        let data = Self::decode_response(response).await?;
+        if data.get("verified").and_then(Value::as_bool) != Some(true) {
+            return Err("Email verification was not confirmed.".into());
+        }
+        self.vault.set_email_verified(true)?;
+        Ok(data.get("message").and_then(Value::as_str).unwrap_or("Email verified.").to_owned())
     }
 
     pub async fn sign_out(&self) -> Result<(), String> {
