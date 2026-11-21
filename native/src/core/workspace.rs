@@ -201,6 +201,20 @@ mod tests {
     }
 
     #[test]
+    fn conversation_history_round_trips_per_user() {
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "history-user").unwrap();
+        let messages = vec![
+            crate::ui::model::Message { id: 1, role: crate::ui::model::MessageRole::User, body: "hello".into(), streaming: false },
+            crate::ui::model::Message { id: 2, role: crate::ui::model::MessageRole::Assistant, body: "world".into(), streaming: false },
+        ];
+        store.save_conversation("primary", &messages).unwrap();
+        assert_eq!(store.load_conversation("primary").unwrap(), messages);
+        assert!(store.load_conversation("../outside").is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn artifact_paths_are_safe_and_content_is_integrity_tagged() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "test-user").unwrap();
