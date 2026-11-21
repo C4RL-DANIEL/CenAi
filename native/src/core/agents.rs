@@ -61,6 +61,24 @@ impl TaskPlan {
         Ok(())
     }
 
+    /// Validates a persisted execution snapshot while allowing runtime statuses.
+    pub fn validate_persisted(&self) -> Result<(), &'static str> {
+        let mut structure = self.clone();
+        structure.stopped = false;
+        for step in &mut structure.steps { step.status = StepStatus::Pending; }
+        structure.validate()?;
+        if self.stopped && self.steps.iter().any(|step| matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval)) {
+            return Err("Stopped task plans cannot contain active steps");
+        }
+        for step in &self.steps {
+            if step.status != StepStatus::Pending
+                && !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)) {
+                return Err("A task step cannot advance before all dependencies complete");
+            }
+        }
+        Ok(())
+    }
+
     pub fn begin_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
