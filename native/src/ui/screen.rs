@@ -440,7 +440,7 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
                     description: "Declared capability; inspect remote tool schema before use".into(),
                     requires_sensitive_read: true,
                     requires_external_write: true,
-                    requested_scopes: Vec::new(),
+                    requested_scopes: vec![name.to_owned()],
                 }).collect::<Vec<_>>();
             if !state.mcp_reviewed {
                 state.mcp_status = "Review the publisher and requested capabilities first.".into();
