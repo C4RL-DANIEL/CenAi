@@ -90,6 +90,13 @@ impl ConversationState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonalMemoryItem {
+    pub id: String,
+    pub category: String,
+    pub content: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
@@ -102,7 +109,9 @@ pub struct AppState {
     pub pending_memory_enabled: Option<bool>,
     pub memory_category_draft: String,
     pub memory_content_draft: String,
+    pub personal_memories: Vec<PersonalMemoryItem>,
     pub pending_memory_save: Option<(String, String)>,
+    pub pending_memory_delete: Option<String>,
     pub planning_mode: bool,
     pub include_memory_for_request: bool,
     pub provider_key_provider: String,
@@ -164,7 +173,9 @@ impl Default for AppState {
             pending_memory_enabled: None,
             memory_category_draft: "preference".into(),
             memory_content_draft: String::new(),
+            personal_memories: Vec::new(),
             pending_memory_save: None,
+            pending_memory_delete: None,
             planning_mode: false,
             include_memory_for_request: false,
             provider_key_provider: "openai".into(),
