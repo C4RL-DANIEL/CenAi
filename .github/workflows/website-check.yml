@@ -103,6 +103,13 @@ jobs:
           for script in website/*.js website/api/*.js website/api/v1/*.js website/admin/*.js; do node --check "$script"; done
           grep -q 'cenai-ai-quota' website/worker.js
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
+          grep -q '@cf/deepgram/aura-1' website/worker.js
+          grep -q 'voice_authorize' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'voice_status' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_record_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
+          grep -q 'voice.cloud.enabled' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
+          node --check website/worker.js
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
           grep -q 'cenai-website.cenai-app.workers.dev/reset-password' website/reset-password.js
