@@ -102,6 +102,12 @@ pub struct AppState {
     pub project_description_draft: String,
     pub project_status: String,
     pub pending_project_create: Option<(String, String)>,
+    pub account_email: String,
+    pub auth_email_draft: String,
+    pub auth_password_draft: String,
+    pub auth_status: String,
+    pub pending_sign_in: Option<(String, String)>,
+    pub pending_sign_out: bool,
 }
 
 impl Default for AppState {
