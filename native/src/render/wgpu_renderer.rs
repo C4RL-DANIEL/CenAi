@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::audio::AndroidAudioCapture;
+use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 use super::RenderBackend;
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
@@ -104,6 +104,7 @@ enum ChatEvent {
     MemoryCleared(u64, Result<(), String>),
     EcosystemUpdated(u64, String, Result<Vec<EcosystemAppItem>, String>),
     VoiceTranscribed(u64, Result<String, String>),
+    SpeechSynthesized(u64, Result<Vec<u8>, String>),
 }
 
 impl ChatEvent {
@@ -126,7 +127,8 @@ impl ChatEvent {
             | Self::MemoryDeleted(generation, ..)
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
-            | Self::VoiceTranscribed(generation, ..) => *generation,
+            | Self::VoiceTranscribed(generation, ..)
+            | Self::SpeechSynthesized(generation, ..) => *generation,
         }
     }
 }
@@ -165,6 +167,8 @@ pub struct WgpuRenderer {
     voice_pipeline: Option<VoicePipeline>,
     #[cfg(target_os = "android")]
     audio_capture: Option<AndroidAudioCapture>,
+    #[cfg(target_os = "android")]
+    audio_playback: Option<AndroidAudioPlayback>,
 }
 
 impl WgpuRenderer {
@@ -182,7 +186,8 @@ impl WgpuRenderer {
         android_app: winit::platform::android::activity::AndroidApp,
     ) -> anyhow::Result<Self> {
         let mut renderer = pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))?;
-        renderer.audio_capture = Some(AndroidAudioCapture::new(android_app));
+        renderer.audio_capture = Some(AndroidAudioCapture::new(android_app.clone()));
+        renderer.audio_playback = Some(AndroidAudioPlayback::new(android_app));
         Ok(renderer)
     }
 
@@ -343,6 +348,8 @@ impl WgpuRenderer {
             voice_pipeline: None,
             #[cfg(target_os = "android")]
             audio_capture: None,
+            #[cfg(target_os = "android")]
+            audio_playback: None,
         })
     }
 
@@ -363,6 +370,29 @@ impl WgpuRenderer {
             let _ = sender.send(ChatEvent::VoiceTranscribed(generation, result));
         });
         self.track_task(task);
+    }
+
+    fn process_speech_output(&mut self) {
+        if self.app_state.pending_speech_stop {
+            self.app_state.pending_speech_stop = false;
+            #[cfg(target_os = "android")]
+            if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
+            self.app_state.speech_status = "Speech playback stopped.".into();
+        }
+        if let Some(text) = self.app_state.pending_speech_text.take() {
+            let Some(api) = self.api.clone() else {
+                self.app_state.speech_status = "Sign in and configure a Gemini API key before speech playback.".into();
+                return;
+            };
+            let sender = self.response_tx.clone();
+            let generation = self.account_generation;
+            self.app_state.speech_status = "Generating speech…".into();
+            let task = self.runtime.spawn(async move {
+                let result = api.synthesize_speech_gemini(&text).await;
+                let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
+            });
+            self.track_task(task);
+        }
     }
 
     fn process_voice_input(&mut self) {
@@ -649,6 +679,11 @@ impl WgpuRenderer {
         #[cfg(target_os = "android")]
         if let Some(capture) = self.audio_capture.as_mut() { capture.stop(); }
         if let Some(mut pipeline) = self.voice_pipeline.take() { let _ = pipeline.stop(); }
+        #[cfg(target_os = "android")]
+        if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
+        self.app_state.pending_speech_text = None;
+        self.app_state.pending_speech_stop = false;
+        self.app_state.speech_status.clear();
         self.app_state.voice_active = false;
         self.app_state.pending_voice_start = false;
         self.app_state.pending_voice_stop = false;
@@ -770,9 +805,14 @@ impl WgpuRenderer {
     }
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
-        if matches!(event, WindowEvent::Focused(false)) && self.app_state.voice_active {
-            self.app_state.pending_voice_stop = true;
-            self.app_state.voice_status = "Voice input stopped because CenAI lost focus.".into();
+        if matches!(event, WindowEvent::Focused(false)) {
+            if self.app_state.voice_active {
+                self.app_state.pending_voice_stop = true;
+                self.app_state.voice_status = "Voice input stopped because CenAI lost focus.".into();
+            }
+            if !self.app_state.speech_status.is_empty() {
+                self.app_state.pending_speech_stop = true;
+            }
         }
         self.egui_state.on_window_event(window, event).repaint
     }
@@ -1117,6 +1157,7 @@ impl WgpuRenderer {
             }
         }
         self.process_voice_input();
+        self.process_speech_output();
         self.dispatch_new_message();
         while let Ok(event) = self.response_rx.try_recv() {
             if event.account_generation() != self.account_generation {
@@ -1363,6 +1404,26 @@ impl WgpuRenderer {
                             self.app_state.voice_status = "Transcription ready. Review it in the message box before sending.".into();
                         }
                         Err(error) => self.app_state.voice_status = format!("Voice transcription failed: {error}"),
+                    }
+                }
+                ChatEvent::SpeechSynthesized(_, result) => {
+                    match result {
+                        Ok(wav) => {
+                            #[cfg(target_os = "android")]
+                            {
+                                if let Some(playback) = self.audio_playback.as_mut() {
+                                    match playback.play_wav(wav) {
+                                        Ok(()) => self.app_state.speech_status = "Speaking…".into(),
+                                        Err(error) => self.app_state.speech_status = format!("Could not play speech: {error}"),
+                                    }
+                                } else {
+                                    self.app_state.speech_status = "Android audio output is unavailable.".into();
+                                }
+                            }
+                            #[cfg(not(target_os = "android"))]
+                            { let _ = wav; self.app_state.speech_status = "Speech playback is available in the Android app.".into(); }
+                        }
+                        Err(error) => self.app_state.speech_status = format!("Speech synthesis failed: {error}"),
                     }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
