@@ -133,6 +133,7 @@ impl WgpuRenderer {
             window.as_ref(),
             Some(window.scale_factor() as f32),
             window.theme(),
+            None,
         );
         let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
 
@@ -220,7 +221,7 @@ impl WgpuRenderer {
             &screen_descriptor,
         );
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("CenAI interface"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
