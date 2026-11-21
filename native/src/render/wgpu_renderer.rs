@@ -414,7 +414,7 @@ impl WgpuRenderer {
         let attachment_store = if active_user_id.is_empty() {
             None
         } else {
-            AttachmentStore::new(workspace_root.join("cenai-attachments"), &active_user_id).ok()
+            api.as_ref().and_then(|service| service.attachment_store(workspace_root.join("cenai-attachments")).ok())
         };
         if let Some(store) = attachment_store.as_ref() {
             app_state.attachments = store.list().unwrap_or_default();
@@ -1754,7 +1754,7 @@ impl WgpuRenderer {
                                 self.reset_user_scoped_state();
                             }
                             self.active_user_id = account_id.clone();
-                            self.attachment_store = AttachmentStore::new(self.workspace_root.join("cenai-attachments"), &account_id).ok();
+                            self.attachment_store = self.api.as_ref().and_then(|service| service.attachment_store(self.workspace_root.join("cenai-attachments")).ok());
                             self.app_state.attachments = self.attachment_store.as_ref()
                                 .and_then(|store| store.list().ok()).unwrap_or_default();
                             self.app_state.pending_ecosystem_refresh = true;
