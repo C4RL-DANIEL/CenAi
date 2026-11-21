@@ -288,7 +288,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     });
 }
 
-fn connections(ui: &mut egui::Ui) {
+fn connections(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Connections", 26.0, egui::Color32::WHITE).strong());
     ui.label(text("Bring your models, tools and services together.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
@@ -341,7 +341,9 @@ fn connections(ui: &mut egui::Ui) {
                     ui.label(text(description, 11.0, egui::Color32::from_rgb(163, 174, 203)));
                 }
                 ui.label(text(tool.input_schema.to_string(), 10.0, egui::Color32::from_rgb(170, 190, 225)));
-                ui.label(text("Execution remains disabled until per-action approval is implemented.", 9.0, egui::Color32::from_rgb(220, 184, 121)));
+                if ui.button("Review and approve this tool").clicked() {
+                    state.mcp_pending_approval = Some(tool.name.clone());
+                }
             });
         }
     });
@@ -360,6 +362,30 @@ fn connections(ui: &mut egui::Ui) {
             });
         });
         ui.add_space(8.0);
+    }
+    if !state.mcp_call_result.is_empty() {
+        surface(ui, |ui| {
+            ui.label(text("Last tool result", 13.0, egui::Color32::WHITE).strong());
+            ui.label(text(&state.mcp_call_result, 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        });
+    }
+    if let Some(tool_name) = state.mcp_pending_approval.clone() {
+        let mut open = true;
+        egui::Window::new("Approve MCP action").collapsible(false).resizable(true).open(&mut open).show(ui.ctx(), |ui| {
+            ui.label(text("This sends the following request to an external MCP server.", 12.0, egui::Color32::WHITE));
+            ui.label(text(format!("Server: {}", state.mcp_server_id_draft), 11.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(format!("Tool: {tool_name}"), 12.0, egui::Color32::WHITE).strong());
+            ui.add(egui::TextEdit::multiline(&mut state.mcp_call_arguments_draft).desired_rows(5).desired_width(360.0));
+            ui.horizontal(|ui| {
+                if ui.button("Approve once and run").clicked() {
+                    state.pending_mcp_call = Some((state.mcp_server_id_draft.clone(), tool_name.clone(), state.mcp_call_arguments_draft.clone()));
+                    state.mcp_pending_approval = None;
+                    state.mcp_status = "Running the approved MCP action…".into();
+                }
+                if ui.button("Cancel").clicked() { state.mcp_pending_approval = None; }
+            });
+        });
+        if !open { state.mcp_pending_approval = None; }
     }
 }
 
@@ -488,7 +514,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
                             match state.destination {
                                 Destination::Conversation => conversation(ui, state),
                                 Destination::YourWork => work(ui, state),
-                                Destination::Connections => connections(ui),
+                                Destination::Connections => connections(ui, state),
                                 Destination::Settings => settings(ui, state),
                             }
                         });
