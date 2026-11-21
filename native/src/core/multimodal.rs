@@ -83,7 +83,7 @@ impl AttachmentMetadata {
             | "application/vnd.openxmlformats-officedocument.presentationml.presentation" =>
                 bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
             "audio/wav" | "audio/x-wav" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE",
-            "audio/mpeg" => bytes.starts_with(b"ID3") || bytes.first().is_some_and(|byte| **byte == 0xff)
+            "audio/mpeg" => bytes.starts_with(b"ID3") || bytes.first().is_some_and(|byte| *byte == 0xff)
                 && bytes.get(1).is_some_and(|byte| byte & 0xe0 == 0xe0),
             "audio/aac" => bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] & 0xf6 == 0xf0,
             "audio/ogg" => bytes.starts_with(b"OggS"),
