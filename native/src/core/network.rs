@@ -302,7 +302,8 @@ impl CenAiApi {
         let data = Self::decode_response(response).await?;
         let access = data.get("access_token").and_then(Value::as_str).unwrap_or_default();
         let refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
-        let returned_user = data.pointer("/user/id").and_then(Value::as_str).unwrap_or(&account_id);
+        let returned_user = data.pointer("/user/id").and_then(Value::as_str)
+            .ok_or("MFA verification response did not identify its authenticated user")?;
         if access.is_empty() || refresh.is_empty() || returned_user != account_id
             || self.vault.account_id()? != account_id {
             return Err("MFA verification did not return a valid upgraded session for the active account.".into());
