@@ -11,3 +11,4 @@ pub mod workspace;
 pub mod brain;
 pub mod sandbox;
 pub mod voice;
+pub mod multimodal;
