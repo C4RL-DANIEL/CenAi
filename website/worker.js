@@ -395,41 +395,18 @@ __name(streamAiChatResponse, "streamAiChatResponse");
 
 async function cloudVoiceStatus(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
-  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
-    return json(503, { error: "CenAI Voice cloud inference is not provisioned yet." });
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") {
+    return json(503, { error: "CenAI Voice Workers AI binding is not available." });
   }
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before checking cloud voice." });
   try {
-    const base = env.SUPABASE_URL.replace(/\/$/, "");
-    const identity = await fetch(base + "/auth/v1/user", {
-      method: "GET",
-      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
-      cache: "no-store"
-    });
+    const base = env.SUPABASE_URL.replace(/\\/$/, "");
+    const identity = await fetch(base + "/auth/v1/user", { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
     if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
     const user = await identity.json().catch(() => ({}));
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) {
-      return json(401, { error: "A verified CenAI account is required for cloud voice." });
-    }
-    let backend;
-    try { backend = new URL(env.CENAI_TTS_BACKEND_URL); } catch { return json(503, { error: "CenAI Voice backend URL is invalid." }); }
-    if (backend.protocol !== "https:" || backend.username || backend.password) {
-      return json(503, { error: "CenAI Voice backend must use a trusted HTTPS origin." });
-    }
-    const upstream = await fetch(backend.origin + "/readyz", {
-      headers: { Authorization: "Bearer " + env.CENAI_TTS_BACKEND_TOKEN },
-      signal: AbortSignal.timeout(10000),
-      cache: "no-store"
-    });
-    if (!upstream.ok) return json(503, { error: "CenAI Voice GPU model is not ready." });
-    const status = await upstream.json().catch(() => ({}));
-    return json(200, {
-      ready: status.status === "ready",
-      profile: status.profile || "cenai-en-v1",
-      model: status.model || "Qwen3-TTS",
-      service: "CenAI Voice"
-    });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    return json(200, { ready: true, service: "CenAI Voice", provider: "Cloudflare Workers AI", model: "@cf/deepgram/aura-1", profile: "cenai-en-v1", language: "English", quota: { dailyCharacters: 1000, globalDailyNeurons: 4000 } });
   } catch (error) {
     console.error("CenAI Voice health check failed", error instanceof Error ? error.message : "unknown error");
     return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
@@ -437,74 +414,59 @@ async function cloudVoiceStatus(request, env) {
 }
 __name(cloudVoiceStatus, "cloudVoiceStatus");
 
-async function cloudVoiceSpeech(request, env) {
+async function cloudVoiceSpeech(request, env, ctx) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
-  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
-    return json(503, { error: "CenAI Voice cloud inference is not provisioned yet." });
-  }
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") return json(503, { error: "CenAI Voice Workers AI binding is not available." });
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
-  if (declaredLength > 65536) return json(413, { error: "Voice request exceeds the 64 KB limit." });
+  if (declaredLength > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
   const rawBody = await request.text();
-  if (rawBody.length > 65536) return json(413, { error: "Voice request exceeds the 64 KB limit." });
-  let body = null;
+  if (rawBody.length > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
+  let body;
   try { body = JSON.parse(rawBody); } catch { return json(400, { error: "Voice request must be valid JSON." }); }
   const input = typeof body?.input === "string" ? body.input.trim() : "";
   const language = typeof body?.language === "string" ? body.language : "English";
   const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
-  const supported = new Set(["English", "Chinese", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"]);
-  if (!input || input.length > 8000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(input)) {
-    return json(400, { error: "Speech text must contain 1–8,000 supported characters." });
-  }
-  if (!supported.has(language)) return json(400, { error: "The requested speech language is not supported." });
+  if (!input || input.length > 1000 || /[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/.test(input)) return json(400, { error: "Speech text must contain 1–1,000 supported characters." });
+  if (language !== "English") return json(400, { error: "CenAI Aura-1 currently supports English only." });
   if (voice !== "cenai-en-v1") return json(400, { error: "The requested CenAI Voice profile is not available." });
+  const base = env.SUPABASE_URL.replace(/\\/$/, "");
   try {
-    const base = env.SUPABASE_URL.replace(/\/$/, "");
-    const identity = await fetch(base + "/auth/v1/user", {
-      method: "GET",
-      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
-      cache: "no-store"
-    });
+    const identity = await fetch(base + "/auth/v1/user", { method: "GET", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
     if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
     const user = await identity.json().catch(() => ({}));
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) {
-      return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    const quotaResponse = await fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_authorize", characters: input.length }), signal: AbortSignal.timeout(10000), cache: "no-store" });
+    const quota = await quotaResponse.json().catch(() => ({}));
+    if (!quotaResponse.ok || quota.ok !== true || !Number.isSafeInteger(Number(quota.eventId))) return json(quotaResponse.status === 429 ? 429 : quotaResponse.status === 403 ? 403 : quotaResponse.status === 503 ? 503 : 429, { error: quota.error || "CenAI Voice quota could not be reserved.", code: quota.code || "VOICE_QUOTA_BLOCKED", quota: quota.quota });
+    const eventId = Number(quota.eventId);
+    const record = (status) => fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_record", eventId, status }), signal: AbortSignal.timeout(10000), cache: "no-store" }).then(async (r) => { if (!r.ok) console.error("CenAI Voice usage record returned HTTP", r.status); }).catch((error) => console.error("CenAI Voice usage record failed", error instanceof Error ? error.message : "unknown error"));
+    let audio;
+    try {
+      audio = await env.AI.run("@cf/deepgram/aura-1", { text: input, speaker: "angus", encoding: "linear16", container: "wav" }, { returnRawResponse: true });
+    } catch (error) {
+      ctx.waitUntil(record("error"));
+      console.error("CenAI Aura-1 inference failed", error instanceof Error ? error.message : "unknown error");
+      return json(503, { error: "CenAI Voice synthesis is temporarily unavailable." });
     }
-    let backend;
-    try { backend = new URL(env.CENAI_TTS_BACKEND_URL); } catch { return json(503, { error: "CenAI Voice backend URL is invalid." }); }
-    if (backend.protocol !== "https:" || backend.username || backend.password) {
-      return json(503, { error: "CenAI Voice backend must use a trusted HTTPS origin." });
+    if (!(audio instanceof Response) || !audio.ok) {
+      ctx.waitUntil(record("error"));
+      return json(503, { error: "CenAI Aura-1 returned an invalid audio response." });
     }
-    const upstreamUrl = backend.origin + "/v1/audio/speech";
-    const upstream = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + env.CENAI_TTS_BACKEND_TOKEN,
-        "Content-Type": "application/json",
-        Accept: "audio/wav",
-        "X-CenAI-User-ID": user.id
-      },
-      body: JSON.stringify({ input, language, voice, response_format: "wav" }),
-      signal: AbortSignal.timeout(180000)
-    });
-    if (!upstream.ok) {
-      const detail = await upstream.json().catch(() => ({}));
-      console.error("CenAI Voice inference returned HTTP", upstream.status);
-      return json(upstream.status >= 500 ? 503 : upstream.status, {
-        error: typeof detail.error === "string" ? detail.error.slice(0, 240) : "CenAI Voice inference failed."
-      });
+    const contentType = (audio.headers.get("Content-Type") || "").toLowerCase();
+    const contentLength = Number(audio.headers.get("Content-Length") || 0);
+    if ((!contentType.startsWith("audio/wav") && !contentType.startsWith("audio/x-wav")) || (contentLength && contentLength > 33554432)) {
+      ctx.waitUntil(record("error"));
+      return json(502, { error: "CenAI Aura-1 returned an unsupported or oversized audio format." });
     }
-    const contentType = upstream.headers.get("Content-Type") || "";
-    const contentLength = Number(upstream.headers.get("Content-Length") || 0);
-    if (!contentType.toLowerCase().startsWith("audio/wav") || (contentLength && contentLength > 33554432)) {
-      return json(502, { error: "CenAI Voice backend returned an invalid audio response." });
-    }
+    ctx.waitUntil(record("success"));
     const headers = new Headers(corsHeaders);
     headers.set("Content-Type", "audio/wav");
     headers.set("Cache-Control", "no-store, no-transform");
     headers.set("X-CenAI-Voice-Profile", voice);
-    return new Response(upstream.body, { status: 200, headers });
+    headers.set("X-CenAI-Voice-Model", "@cf/deepgram/aura-1");
+    return new Response(audio.body, { status: 200, headers });
   } catch (error) {
     console.error("CenAI Voice gateway failed", error instanceof Error ? error.message : "unknown error");
     return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
@@ -776,7 +738,7 @@ export default {
       }
       if (url.pathname === "/api/beta-notification") return betaNotification(request, env);
       if (url.pathname === "/api/voice/status") return cloudVoiceStatus(request, env);
-      if (url.pathname === "/api/voice/speech") return cloudVoiceSpeech(request, env);
+      if (url.pathname === "/api/voice/speech") return cloudVoiceSpeech(request, env, ctx);
       if (url.pathname === "/api/ai/chat/completions") return aiChat(request, env);
       if (url.pathname === "/api/email-otp") return emailOtp(request, env);
       if (url.pathname === "/api/webhooks/paypal") return proxyFunction(request, env, "cenai-paypal-billing");
