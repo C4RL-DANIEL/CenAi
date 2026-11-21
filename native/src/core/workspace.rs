@@ -241,6 +241,27 @@ impl WorkspaceStore {
         Ok(artifact)
     }
 
+    pub fn delete_artifact(&self, artifact_id: &str) -> Result<bool, String> {
+        if !safe_segment(artifact_id) { return Err("Artifact identifier is invalid".into()); }
+        let mut index = self.read_index()?;
+        let mut found = false;
+        for project in &mut index.projects {
+            let before = project.artifacts.len();
+            project.artifacts.retain(|artifact| artifact.id != artifact_id);
+            found |= project.artifacts.len() != before;
+        }
+        if !found { return Ok(false); }
+        // Remove the index reference first. A failed cleanup can leave only an
+        // unreachable orphan, never a visible artifact that points to missing data.
+        self.write_index(&index)?;
+        let path = self.user_root.join("artifacts").join(format!("{artifact_id}.bin"));
+        match fs::remove_file(path) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(format!("Artifact was removed from the index but its file cleanup failed: {error}")),
+        }
+    }
+
     pub fn read_artifact(&self, artifact_id: &str) -> Result<Vec<u8>, String> {
         if !safe_segment(artifact_id) { return Err("Artifact identifier is invalid".into()); }
         let index = self.read_index()?;
@@ -369,6 +390,22 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn deleting_artifact_removes_metadata_and_prevents_future_reads() {
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440021").unwrap();
+        store.save_project(Project {
+            id: "project-delete".into(), name: "Delete test".into(), description: String::new(),
+            created_at_unix_ms: 1, updated_at_unix_ms: 1, archived: false, artifacts: Vec::new(),
+        }).unwrap();
+        store.save_artifact("project-delete", "artifact-delete", "note.txt", "text/plain", b"private note").unwrap();
+        assert_eq!(store.read_artifact("artifact-delete").unwrap(), b"private note");
+        assert!(store.delete_artifact("artifact-delete").unwrap());
+        assert!(store.read_artifact("artifact-delete").is_err());
+        assert!(!store.delete_artifact("artifact-delete").unwrap());
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn artifact_paths_are_safe_and_content_is_integrity_tagged() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440006").unwrap();
