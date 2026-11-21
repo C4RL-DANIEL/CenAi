@@ -106,7 +106,7 @@ impl VoiceAudioBuffer {
         Ok(Self {
             sample_rate_hz,
             max_samples: sample_rate_hz as usize * max_chunk_ms as usize / 1000,
-            silence_samples_to_flush: sample_rate_hz as usize * 300 / 1000,
+            silence_samples_to_flush: sample_rate_hz as usize * 250 / 1000,
             silence_samples: 0,
             speech_active: false,
             samples: Vec::new(),
