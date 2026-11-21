@@ -398,10 +398,10 @@ async function cloudVoiceStatus(request, env) {
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") {
     return json(503, { error: "CenAI Voice Workers AI binding is not available." });
   }
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before checking cloud voice." });
   try {
-    const base = env.SUPABASE_URL.replace(/\\/$/, "");
+    const base = env.SUPABASE_URL.replace(/\/$/, "");
     const identity = await fetch(base + "/auth/v1/user", { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
     if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
     const user = await identity.json().catch(() => ({}));
@@ -417,7 +417,7 @@ __name(cloudVoiceStatus, "cloudVoiceStatus");
 async function cloudVoiceSpeech(request, env, ctx) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") return json(503, { error: "CenAI Voice Workers AI binding is not available." });
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
@@ -428,10 +428,10 @@ async function cloudVoiceSpeech(request, env, ctx) {
   const input = typeof body?.input === "string" ? body.input.trim() : "";
   const language = typeof body?.language === "string" ? body.language : "English";
   const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
-  if (!input || input.length > 1000 || /[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/.test(input)) return json(400, { error: "Speech text must contain 1–1,000 supported characters." });
+  if (!input || input.length > 1000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(input)) return json(400, { error: "Speech text must contain 1–1,000 supported characters." });
   if (language !== "English") return json(400, { error: "CenAI Aura-1 currently supports English only." });
   if (voice !== "cenai-en-v1") return json(400, { error: "The requested CenAI Voice profile is not available." });
-  const base = env.SUPABASE_URL.replace(/\\/$/, "");
+  const base = env.SUPABASE_URL.replace(/\/$/, "");
   try {
     const identity = await fetch(base + "/auth/v1/user", { method: "GET", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
     if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
