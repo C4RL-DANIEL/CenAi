@@ -142,6 +142,13 @@ pub struct EcosystemAppItem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MfaFactor {
+    pub id: String,
+    pub friendly_name: String,
+    pub status: String,
+}
+
 pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
@@ -187,6 +194,16 @@ pub struct AppState {
     pub artifact_preview_status: String,
     pub account_email: String,
     pub email_verified: bool,
+    pub mfa_factors: Vec<MfaFactor>,
+    pub mfa_status: String,
+    pub mfa_enrollment_factor_id: String,
+    pub mfa_enrollment_secret: String,
+    pub mfa_enrollment_qr: String,
+    pub mfa_code_draft: String,
+    pub pending_mfa_refresh: bool,
+    pub pending_mfa_enroll: bool,
+    pub pending_mfa_verify: bool,
+    pub pending_mfa_unenroll: Option<String>,
     pub otp_draft: String,
     pub otp_status: String,
     pub pending_send_otp: bool,
@@ -299,6 +316,16 @@ impl Default for AppState {
             artifact_preview_status: String::new(),
             account_email: String::new(),
             email_verified: false,
+            mfa_factors: Vec::new(),
+            mfa_status: String::new(),
+            mfa_enrollment_factor_id: String::new(),
+            mfa_enrollment_secret: String::new(),
+            mfa_enrollment_qr: String::new(),
+            mfa_code_draft: String::new(),
+            pending_mfa_refresh: false,
+            pending_mfa_enroll: false,
+            pending_mfa_verify: false,
+            pending_mfa_unenroll: None,
             otp_draft: String::new(),
             otp_status: String::new(),
             pending_send_otp: false,
