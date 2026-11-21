@@ -304,6 +304,8 @@ mod tests {
         let mut buffer = VoiceAudioBuffer::new(16_000, 500).unwrap();
         assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 48_000, channels: 1, samples: vec![900; 1600] }).is_err());
         assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 16_000, channels: 2, samples: vec![900; 1600] }).is_err());
+        assert!(AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 32_000] }.validate().is_ok());
+        assert!(AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 64_001] }.validate().is_err());
         let mut completed = None;
         for _ in 0..5 {
             completed = buffer.push_frame(frame(1000)).unwrap();
