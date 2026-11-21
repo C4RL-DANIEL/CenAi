@@ -646,8 +646,10 @@ impl WgpuRenderer {
                 ChatEvent::PlanFinished(_, message_id, result) => {
                     self.app_state.conversation.sending = false;
                     match result {
-                        Ok(plan) => {
+                        Ok(mut plan) => {
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            // Model-generated IDs are not guaranteed unique across planning requests.
+                            plan.id = format!("task-{now}-{message_id}");
                             match self.workspace.as_ref().ok_or("The account workspace is not open".to_owned())
                                 .and_then(|store| store.save_task_plan(plan.clone(), now)) {
                                 Ok(_) => {
