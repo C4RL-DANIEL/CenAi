@@ -112,6 +112,7 @@ pub trait SessionVault: Send + Sync {
 pub struct CenAiApi {
     client: Client,
     provider_client: Client,
+    voice_client: Client,
     vault: Arc<dyn SessionVault>,
     session_lock: Arc<tokio::sync::Mutex<()>>,
 }
@@ -123,6 +124,12 @@ impl CenAiApi {
             .timeout(std::time::Duration::from_secs(config::REQUEST_TIMEOUT_SECONDS))
             .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
             .build()?;
+        let voice_client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(240))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent(concat!("CenAI-Voice/", env!("CARGO_PKG_VERSION")))
+            .build()?;
         // Never forward provider credentials through redirects to another origin.
         let provider_client = Client::builder()
             .connect_timeout(std::time::Duration::from_secs(20))
@@ -130,7 +137,7 @@ impl CenAiApi {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        Ok(Self { client, provider_client, vault, session_lock: Arc::new(tokio::sync::Mutex::new(())) })
+        Ok(Self { client, provider_client, voice_client, vault, session_lock: Arc::new(tokio::sync::Mutex::new(())) })
     }
 
     pub fn session_email(&self) -> Result<String, String> {
@@ -439,7 +446,7 @@ impl CenAiApi {
         if token.is_empty() || !valid_supabase_user_id(&account_id) {
             return Err("Sign in to your CenAI account before using cloud voice.".into());
         }
-        let send = |token: &str| self.client.post(config::CLOUD_VOICE_URL)
+        let send = |token: &str| self.voice_client.post(config::CLOUD_VOICE_URL)
             .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
             .bearer_auth(token)
             .header(header::ACCEPT, "audio/wav")
