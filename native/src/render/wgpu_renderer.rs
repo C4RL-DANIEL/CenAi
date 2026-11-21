@@ -1158,20 +1158,45 @@ impl WgpuRenderer {
             if let (Some(scheduler), Some(store)) = (self.automation_scheduler.as_mut(), self.workspace.as_ref()) {
                 match scheduler.poll_due_and_persist(chrono::Utc::now(), store) {
                     Ok(due) if !due.is_empty() => {
-                        let due_titles = due.iter().filter_map(|trigger| {
+                        let entries = due.iter().filter_map(|trigger| {
                             self.app_state.automations.iter().find(|item| item.id == trigger.automation_id)
-                                .map(|automation| automation.title.clone())
+                                .map(|automation| (trigger.clone(), automation.title.clone()))
                         }).collect::<Vec<_>>();
-                        if !due_titles.is_empty() {
-                            let prompt = due_titles.iter().map(|title| format!("- {title}")).collect::<Vec<_>>().join("\n");
-                            let scheduled_prompt = format!("Please prepare these scheduled tasks for my review:\n{prompt}");
-                            if self.app_state.conversation.draft.trim().is_empty() {
-                                self.app_state.conversation.draft = scheduled_prompt;
-                            } else {
-                                self.app_state.conversation.draft.push_str("\n\n");
-                                self.app_state.conversation.draft.push_str(&scheduled_prompt);
+                        let unseen = entries.iter().filter(|(trigger, _)| {
+                            let marker = format!("Automation reference: {} @ {}", trigger.automation_id, trigger.scheduled_at);
+                            !self.app_state.conversation.messages().any(|message| message.body.contains(&marker))
+                        }).collect::<Vec<_>>();
+                        for (trigger, title) in &unseen {
+                            let scheduled_at = chrono::DateTime::<chrono::Utc>::from_timestamp(trigger.scheduled_at, 0)
+                                .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
+                                .unwrap_or_else(|| "the scheduled time".into());
+                            self.app_state.conversation.push(
+                                MessageRole::Assistant,
+                                format!(
+                                    "## Scheduled task ready for review\\n\\n**Task:** {title}\\n\\n**Scheduled for:** {scheduled_at}\\n\\nThis is a reminder only. No action has been executed. Tell CenAI what you want prepared, review the proposed plan, and explicitly approve any action.\\n\\nAutomation reference: {} @ {}",
+                                    trigger.automation_id, trigger.scheduled_at
+                                ),
+                            );
+                        }
+                        let messages = self.app_state.conversation.messages().cloned().collect::<Vec<_>>();
+                        let reminder_saved = self.workspace.as_ref()
+                            .is_some_and(|workspace| workspace.save_conversation("primary", &messages).is_ok());
+                        if reminder_saved {
+                            self.last_saved_message_count = messages.len();
+                            for trigger in &due {
+                                if let Err(error) = scheduler.acknowledge_and_persist(
+                                    &trigger.owner_scope, &trigger.automation_id, trigger.scheduled_at,
+                                    self.workspace.as_ref().expect("workspace checked before acknowledgement"),
+                                ) {
+                                    self.app_state.automation_status = format!("Reminder saved, but its scheduler acknowledgement failed: {error}");
+                                }
                             }
-                            self.app_state.automation_status = format!("{} scheduled task(s) are due. Review the prepared list in Conversation; no action is executed automatically.", due_titles.len());
+                            self.app_state.automation_status = format!(
+                                "{} scheduled task(s) are ready in Conversation. No action was executed automatically.",
+                                due.len()
+                            );
+                        } else {
+                            self.app_state.automation_status = "A scheduled task is due, but its reminder could not be saved. It will retry.".into();
                         }
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
                     }
