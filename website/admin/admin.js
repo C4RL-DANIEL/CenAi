@@ -452,9 +452,10 @@
         label: $("invite-label").value.trim(),
         expiresInHours: Number($("invite-expiry").value)
       });
-      const link = new URL("/register?invite=" + encodeURIComponent(result.token), window.location.origin).toString();
-      $("invite-url").href = link;
-      $("invite-url").textContent = link;
+      const link = new URL("/register", window.location.origin);
+      link.hash = "invite=" + encodeURIComponent(result.token);
+      $("invite-url").href = link.toString();
+      $("invite-url").textContent = link.toString();
       $("invite-created").hidden = false;
       $("invite-label").value = "";
       status("A unique single-use Discord registration link was generated. Copy it now; the server stores only its hash.");
