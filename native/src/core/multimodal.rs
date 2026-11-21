@@ -1,6 +1,7 @@
 //! Validated multimodal metadata and rich response blocks.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::{fs, io::Write, path::{Path, PathBuf}};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,6 +81,80 @@ impl AttachmentMetadata {
         if !valid_signature { return Err("Attachment content does not match its declared MIME type"); }
         Ok(())
     }
+}
+
+/// Account-scoped, atomic storage for validated attachment bytes.
+pub struct AttachmentStore {
+    root: PathBuf,
+    user_id: String,
+}
+
+impl AttachmentStore {
+    pub fn new(root: impl AsRef<Path>, user_id: &str) -> Result<Self, &'static str> {
+        if !valid_account_uuid(user_id) { return Err("Attachment storage requires a canonical account UUID"); }
+        Ok(Self { root: root.as_ref().to_path_buf(), user_id: user_id.to_owned() })
+    }
+
+    fn path_for(&self, attachment_id: &str) -> Result<PathBuf, &'static str> {
+        if attachment_id.is_empty() || attachment_id.len() > 80
+            || !attachment_id.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_') {
+            return Err("Attachment identifier is invalid");
+        }
+        Ok(self.root.join(&self.user_id).join("attachments").join(format!("{attachment_id}.bin")))
+    }
+
+    pub fn save(&self, metadata: &AttachmentMetadata, bytes: &[u8]) -> Result<PathBuf, String> {
+        metadata.validate_content(bytes).map_err(str::to_owned)?;
+        let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
+        let parent = path.parent().ok_or("Attachment storage path is invalid")?;
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
+        }
+        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+            .map_err(|error| error.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
+        }
+        file.write_all(bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        drop(file);
+        fs::rename(&temporary, &path).map_err(|error| {
+            let _ = fs::remove_file(&temporary);
+            error.to_string()
+        })?;
+        Ok(path)
+    }
+
+    pub fn load(&self, metadata: &AttachmentMetadata) -> Result<Vec<u8>, String> {
+        let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
+        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        metadata.validate_content(&bytes).map_err(str::to_owned)?;
+        Ok(bytes)
+    }
+
+    pub fn delete(&self, attachment_id: &str) -> Result<(), String> {
+        let path = self.path_for(attachment_id).map_err(str::to_owned)?;
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+fn valid_account_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
