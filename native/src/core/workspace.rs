@@ -3,6 +3,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Component, Path, PathBuf},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use serde::{Deserialize, Serialize};
@@ -78,6 +79,9 @@ pub struct WorkspaceStore {
     user_root: PathBuf,
     user_identity: String,
     index_path: PathBuf,
+    // Clones of a workspace share this lock so read-modify-write index updates
+    // cannot silently overwrite one another when UI and background tasks race.
+    index_lock: Arc<Mutex<()>>,
 }
 
 impl WorkspaceStore {
@@ -90,11 +94,15 @@ impl WorkspaceStore {
         let user_root = root.as_ref().join(scope);
         fs::create_dir_all(user_root.join("artifacts")).map_err(|error| error.to_string())?;
         let index_path = user_root.join("workspace.json");
-        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path };
+        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path, index_lock: Arc::new(Mutex::new(())) };
         if !store.index_path.exists() {
             store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new(), automations: Vec::new() })?;
         }
         Ok(store)
+    }
+
+    fn lock_index(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.index_lock.lock().map_err(|_| "Workspace index lock was poisoned".to_owned())
     }
 
     fn read_index(&self) -> Result<WorkspaceIndex, String> {
@@ -220,6 +228,7 @@ impl WorkspaceStore {
     }
 
     pub fn import_backup_payload(&self, plaintext: &[u8]) -> Result<(), String> {
+        let _guard = self.lock_index()?;
         if plaintext.is_empty() || plaintext.len() > 70 * 1024 * 1024 {
             return Err("Workspace backup payload is empty or exceeds 70 MB".into());
         }
@@ -407,6 +416,7 @@ impl WorkspaceStore {
     }
 
     pub fn save_automations(&self, automations: &[Automation]) -> Result<(), String> {
+        let _guard = self.lock_index()?;
         if automations.len() > 1000 { return Err("Workspace automation limit reached".into()); }
         let mut index = self.read_index()?;
         for automation in automations {
@@ -426,6 +436,7 @@ impl WorkspaceStore {
     }
 
     pub fn delete_automation(&self, automation_id: &str) -> Result<bool, String> {
+        let _guard = self.lock_index()?;
         if !safe_segment(automation_id) { return Err("Automation identifier is invalid".into()); }
         let mut index = self.read_index()?;
         let previous = index.automations.len();
@@ -442,6 +453,7 @@ impl WorkspaceStore {
     }
 
     pub fn save_task_plan(&self, plan: TaskPlan, now_unix_ms: u64) -> Result<TaskRecord, String> {
+        let _guard = self.lock_index()?;
         plan.validate_persisted().map_err(|error| format!("Invalid task plan: {error}"))?;
         let mut index = self.read_index()?;
         let record = match index.tasks.iter_mut().find(|task| task.id == plan.id) {
@@ -477,6 +489,7 @@ impl WorkspaceStore {
     }
 
     pub fn save_project(&self, project: Project) -> Result<(), String> {
+        let _guard = self.lock_index()?;
         if !safe_segment(&project.id) || project.name.trim().is_empty() {
             return Err("Project identifier and name are required".into());
         }
@@ -492,6 +505,7 @@ impl WorkspaceStore {
     }
 
     pub fn archive_project(&self, project_id: &str, archived: bool) -> Result<bool, String> {
+        let _guard = self.lock_index()?;
         let mut index = self.read_index()?;
         let Some(project) = index.projects.iter_mut().find(|item| item.id == project_id) else {
             return Ok(false);
@@ -509,6 +523,7 @@ impl WorkspaceStore {
         media_type: &str,
         bytes: &[u8],
     ) -> Result<Artifact, String> {
+        let _guard = self.lock_index()?;
         if !safe_segment(artifact_id)
             || file_name.trim().is_empty()
             || file_name.len() > 240
@@ -553,6 +568,7 @@ impl WorkspaceStore {
     }
 
     pub fn delete_artifact(&self, artifact_id: &str) -> Result<bool, String> {
+        let _guard = self.lock_index()?;
         if !safe_segment(artifact_id) { return Err("Artifact identifier is invalid".into()); }
         let mut index = self.read_index()?;
         let mut found = false;
@@ -614,6 +630,53 @@ mod tests {
             static NEXT: AtomicU64 = AtomicU64::new(1);
             std::env::temp_dir().join(format!("cenai-workspace-test-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
         }
+    }
+
+ 
+    #[test]
+    fn concurrent_index_updates_do_not_lose_projects_or_task_plans() {
+        use crate::core::agents::{AgentRole, StepStatus, TaskStep};
+        let root = temp_root();
+        let _ = fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(&root, USER_A).unwrap();
+        let project_store = store.clone();
+        let task_store = store.clone();
+
+        let projects = std::thread::spawn(move || {
+            for index in 0..24 {
+                project_store.save_project(Project {
+                    id: format!("project-{index}"),
+                    name: format!("Project {index}"),
+                    description: String::new(),
+                    created_at_unix_ms: index,
+                    updated_at_unix_ms: index,
+                    archived: false,
+                    artifacts: Vec::new(),
+                }).unwrap();
+            }
+        });
+        let tasks = std::thread::spawn(move || {
+            for index in 0..24 {
+                let id = format!("task-{index}");
+                task_store.save_task_plan(TaskPlan {
+                    id: id.clone(),
+                    goal: format!("Task {index}"),
+                    steps: vec![TaskStep {
+                        id: 1,
+                        role: AgentRole::Developer,
+                        title: "Verify concurrent persistence".into(),
+                        status: StepStatus::Pending,
+                        depends_on: Vec::new(),
+                    }],
+                    stopped: false,
+                }, index).unwrap();
+            }
+        });
+        projects.join().unwrap();
+        tasks.join().unwrap();
+        assert_eq!(store.projects(true).unwrap().len(), 24);
+        assert_eq!(store.task_plans().unwrap().len(), 24);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
