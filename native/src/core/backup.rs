@@ -104,7 +104,7 @@ impl EncryptedBackup {
 
 fn validate_passphrase(passphrase: &str) -> Result<(), String> {
     if passphrase.len() < 12 || passphrase.len() > 1024 || passphrase.chars().any(char::is_control) {
-        return Err("Backup passphrase must be 12–1024 characters and contain no control characters".into());
+        return Err("Backup passphrase must be 12–1024 UTF-8 bytes and contain no control characters".into());
     }
     Ok(())
 }
