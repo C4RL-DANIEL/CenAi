@@ -103,6 +103,7 @@ enum ChatEvent {
     MemoryDeleted(u64, String, Result<(), String>),
     MemoryCleared(u64, Result<(), String>),
     EcosystemUpdated(u64, String, Result<Vec<EcosystemAppItem>, String>),
+    VoiceTranscribed(u64, Result<String, String>),
 }
 
 impl ChatEvent {
@@ -124,7 +125,8 @@ impl ChatEvent {
             | Self::MemoryListLoaded(generation, ..)
             | Self::MemoryDeleted(generation, ..)
             | Self::MemoryCleared(generation, ..)
-            | Self::EcosystemUpdated(generation, ..) => *generation,
+            | Self::EcosystemUpdated(generation, ..)
+            | Self::VoiceTranscribed(generation, ..) => *generation,
         }
     }
 }
@@ -342,6 +344,139 @@ impl WgpuRenderer {
             #[cfg(target_os = "android")]
             audio_capture: None,
         })
+    }
+
+    fn dispatch_voice_chunk(&mut self, chunk: AudioChunk) {
+        let wav = match chunk.to_wav_bytes() {
+            Ok(wav) => wav,
+            Err(error) => { self.app_state.voice_status = format!("Voice audio is invalid: {error}"); return; }
+        };
+        let Some(api) = self.api.clone() else {
+            self.app_state.voice_status = "Sign in before using cloud voice transcription.".into();
+            return;
+        };
+        let sender = self.response_tx.clone();
+        let generation = self.account_generation;
+        self.app_state.voice_status = "Transcribing your recording…".into();
+        let task = self.runtime.spawn(async move {
+            let result = api.transcribe_audio_gemini(&wav).await;
+            let _ = sender.send(ChatEvent::VoiceTranscribed(generation, result));
+        });
+        self.track_task(task);
+    }
+
+    fn process_voice_input(&mut self) {
+        #[cfg(target_os = "android")]
+        {
+            if self.app_state.pending_voice_stop {
+                self.app_state.pending_voice_stop = false;
+                self.app_state.pending_voice_start = false;
+                if let Some(capture) = self.audio_capture.as_mut() {
+                    capture.stop();
+                    while let Some(frame) = capture.try_recv() {
+                        match frame {
+                            Ok(frame) => {
+                                if let Some(pipeline) = self.voice_pipeline.as_mut() {
+                                    match pipeline.ingest_frame(frame) {
+                                        Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                                        Ok(None) => {},
+                                        Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
+                                    }
+                                }
+                            }
+                            Err(error) => self.app_state.voice_status = format!("Microphone error: {error}"),
+                        }
+                    }
+                }
+                if let Some(mut pipeline) = self.voice_pipeline.take() {
+                    match pipeline.finish_capture() {
+                        Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                        Ok(None) => self.app_state.voice_status = "No speech was detected in that recording.".into(),
+                        Err(error) => self.app_state.voice_status = format!("Could not finish voice capture: {error}"),
+                    }
+                    let _ = pipeline.stop();
+                }
+                self.app_state.voice_active = false;
+                if self.app_state.voice_status.is_empty() || self.app_state.voice_status == "Finishing your recording…" {
+                    self.app_state.voice_status = "Voice input stopped.".into();
+                }
+                return;
+            }
+
+            if self.app_state.pending_voice_start {
+                let start_result = self.audio_capture.as_mut()
+                    .ok_or_else(|| "Android microphone adapter is unavailable".to_owned())
+                    .and_then(|capture| capture.start());
+                match start_result {
+                    Ok(false) => {
+                        self.app_state.voice_status = "Waiting for Android microphone permission. You can cancel this request.".into();
+                        return;
+                    }
+                    Ok(true) => {
+                        match VoicePipeline::new(VoiceMode::PushToTalk, 16_000, 15_000) {
+                            Ok(mut pipeline) => {
+                                let started = pipeline.start()
+                                    .and_then(|_| pipeline.permission_result(true))
+                                    .and_then(|_| pipeline.provider_connected());
+                                if started.is_ok() {
+                                    self.voice_pipeline = Some(pipeline);
+                                    self.app_state.pending_voice_start = false;
+                                    self.app_state.voice_active = true;
+                                    self.app_state.voice_status = "Listening… speak, then tap Stop & transcribe.".into();
+                                } else {
+                                    if let Some(capture) = self.audio_capture.as_mut() { capture.stop(); }
+                                    self.app_state.pending_voice_start = false;
+                                    self.app_state.voice_status = "Could not start the voice session.".into();
+                                    return;
+                                }
+                            }
+                            Err(error) => {
+                                if let Some(capture) = self.audio_capture.as_mut() { capture.stop(); }
+                                self.app_state.pending_voice_start = false;
+                                self.app_state.voice_status = format!("Voice setup failed: {error}");
+                                return;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        self.app_state.pending_voice_start = false;
+                        self.app_state.voice_status = format!("Microphone unavailable: {error}");
+                        return;
+                    }
+                }
+            }
+
+            let frames = if let Some(capture) = self.audio_capture.as_ref() {
+                let mut frames = Vec::new();
+                while let Some(frame) = capture.try_recv() { frames.push(frame); }
+                frames
+            } else { Vec::new() };
+            for frame in frames {
+                match frame {
+                    Ok(frame) => {
+                        if let Some(pipeline) = self.voice_pipeline.as_mut() {
+                            match pipeline.ingest_frame(frame) {
+                                Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                                Ok(None) => {},
+                                Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        self.app_state.voice_active = false;
+                        self.app_state.voice_status = format!("Microphone capture stopped: {error}");
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            if self.app_state.pending_voice_start {
+                self.app_state.pending_voice_start = false;
+                self.app_state.voice_status = "Voice capture is available in the Android app.".into();
+            }
+            self.app_state.pending_voice_stop = false;
+        }
     }
 
     fn dispatch_new_message(&mut self) {
@@ -962,6 +1097,7 @@ impl WgpuRenderer {
                 self.app_state.project_status = "Sign in to save projects to your account workspace.".into();
             }
         }
+        self.process_voice_input();
         self.dispatch_new_message();
         while let Ok(event) = self.response_rx.try_recv() {
             if event.account_generation() != self.account_generation {
@@ -1196,6 +1332,18 @@ impl WgpuRenderer {
                             self.app_state.ecosystem_status = message;
                         }
                         Err(error) => self.app_state.ecosystem_status = format!("Ecosystem Engine: {error}"),
+                    }
+                }
+                ChatEvent::VoiceTranscribed(_, result) => {
+                    match result {
+                        Ok(transcript) => {
+                            if !self.app_state.conversation.draft.trim().is_empty() {
+                                self.app_state.conversation.draft.push(' ');
+                            }
+                            self.app_state.conversation.draft.push_str(&transcript);
+                            self.app_state.voice_status = "Transcription ready. Review it in the message box before sending.".into();
+                        }
+                        Err(error) => self.app_state.voice_status = format!("Voice transcription failed: {error}"),
                     }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
