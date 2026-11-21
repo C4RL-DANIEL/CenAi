@@ -5,6 +5,10 @@ create table if not exists public.ecosystem_trusted_publishers (
   enabled boolean not null default false,
   created_at timestamptz not null default now()
 );
+insert into public.ecosystem_trusted_publishers (publisher_id, owner_user_id, enabled)
+values ('cenai.firstparty', null, true)
+on conflict (publisher_id) do update set enabled = true;
+
 create table if not exists public.ecosystem_apps (
   app_id text primary key check (app_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$'),
   publisher_id text not null references public.ecosystem_trusted_publishers(publisher_id),
