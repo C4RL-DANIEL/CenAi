@@ -38,7 +38,7 @@ struct WorkspaceCipherEnvelope {
 
 fn valid_workspace_relative_path(value: &str) -> bool {
     !value.is_empty() && value.len() <= 256 && !value.starts_with('/')
-        && !value.contains('\\\\') && !value.contains('\\n') && !value.contains('\\r')
+        && !value.contains('\\') && !value.contains('\n') && !value.contains('\r')
         && value.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
