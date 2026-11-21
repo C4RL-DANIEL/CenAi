@@ -21,7 +21,7 @@ on:
 concurrency:
   # Keep the newest source snapshot moving through build and emulator checks.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ permissions:
 jobs:
   android-debug:
     name: Build Rust-native Android APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-boot-timeout: 300000
+          emulator-boot-timeout: 480000
           script: |
             adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
             adb logcat -c
