@@ -120,11 +120,14 @@
   }
   async function init() {
     const params = new URLSearchParams(location.search);
+    const fragmentParams = new URLSearchParams(location.hash.replace(/^#/, ""));
     const oauthCode = params.get("code");
-    const oauthError = params.get("error_description") || params.get("error");
-    invite = params.get("invite") || sessionStorage.getItem(INVITE_KEY) || "";
+    const oauthError = params.get("error_description") || params.get("error") || fragmentParams.get("error_description") || fragmentParams.get("error");
+    invite = params.get("invite") || fragmentParams.get("invite") || sessionStorage.getItem(INVITE_KEY) || "";
     if (invite) sessionStorage.setItem(INVITE_KEY, invite);
-    cleanUrl(true);
+    fragmentParams.delete("invite");
+    const remainingHash = fragmentParams.toString();
+    history.replaceState({}, document.title, location.pathname + (remainingHash ? "#" + remainingHash : ""));
     try {
       await loadConfig();
       if (!invite || !/^[A-Za-z0-9_-]{40,64}$/.test(invite)) {
