@@ -137,7 +137,7 @@ impl McpServerManifest {
                 || cap.requested_scopes.iter().any(|scope| scope.trim().is_empty()
                     || scope.len() > 128
                     || !scope.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte)))
-        }) {
+        ) {
             return Err("Server must declare bounded capabilities and valid non-empty scopes");
         }
         let names: HashSet<&str> = self.capabilities.iter().map(|cap| cap.name.as_str()).collect();
