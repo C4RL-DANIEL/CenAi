@@ -3,6 +3,12 @@
 This is the consolidated product plan. Items are not considered shipped until implemented, tested, and documented.
 
 ## Confirmed product decisions
+- **Pure-Rust Android rewrite:** all replacement UI, rendering, state and feature logic are Rust-owned; NativeActivity is only a lifecycle host. The Kotlin app is a separate rollback/reference and is not a hybrid UI layer.
+- **Local-first ownership:** chats, prompts, files, projects, personal memory, settings and provider credentials stay on-device by default. Cloud sync, backup, analytics and diagnostics are separate opt-in flows with minimum necessary data.
+- **Identity is not provider authorization:** CenAI account login is separate from OpenAI/Anthropic/Gemini/DeepSeek API access. Account creation is restricted to authorized Discord onboarding; the app signs in existing eligible accounts. Provider APIs require their own official key/OAuth or a server-verified CenAI entitlement. No cookie/session extraction.
+- **Private Ecosystem Engine:** publish only the small, approved integration surface (roughly 10%); keep proprietary orchestration/internal implementation (roughly 90%) private. This is not security by obscurity: use server-side authorization, encryption, scoped per-user capabilities, signed manifests, audit and revocation.
+- **Managed AI vs. data ownership:** Cloudflare/CenAI managed routing and BYOK are separate routes. Selecting a managed model does not authorize blanket workspace upload or analytics.
+
 - Send.ai: managed control plane.
 - Guardian: advanced, resource-conscious diagnostics.
 - Voice: hybrid offline and optional online voices.
