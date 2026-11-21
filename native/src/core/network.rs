@@ -17,6 +17,8 @@ pub trait SessionVault: Send + Sync {
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String>;
     fn email_verified(&self) -> Result<bool, String>;
     fn set_email_verified(&self, verified: bool) -> Result<(), String>;
+    fn guardian_consent(&self) -> Result<bool, String>;
+    fn set_guardian_consent(&self, enabled: bool) -> Result<(), String>;
 }
 
 #[derive(Clone)]
@@ -60,6 +62,14 @@ impl CenAiApi {
         }
         self.vault.save_session(access, refresh, &account_email)?;
         Ok(account_email)
+    }
+
+    pub fn guardian_consent(&self) -> bool {
+        self.vault.guardian_consent().unwrap_or(false)
+    }
+
+    pub fn set_guardian_consent(&self, enabled: bool) -> Result<(), String> {
+        self.vault.set_guardian_consent(enabled)
     }
 
     pub fn email_verified(&self) -> bool {
