@@ -117,6 +117,7 @@ impl ContextRecord {
 /// Memory text is treated as untrusted data; this function only ranks content and
 /// never grants access to records owned by another account.
 pub fn rank_personal_memories<'a>(
+    user_id: &str,
     goal: &str,
     records: &'a [ContextRecord],
     max_items: usize,
@@ -131,7 +132,7 @@ pub fn rank_personal_memories<'a>(
 
     let goal_terms = terms(goal);
     let mut ranked = records.iter().enumerate()
-        .filter(|(_, record)| record.kind == ContextKind::PersonalMemory)
+        .filter(|(_, record)| record.owner_user_id == user_id && record.kind == ContextKind::PersonalMemory)
         .map(|(index, record)| {
             let memory_terms = terms(&record.content);
             let overlap = goal_terms.intersection(&memory_terms).count();
@@ -248,10 +249,23 @@ mod tests {
             record(owner, "memory", None, ContextKind::PersonalMemory, "Uses a tablet for Android development"),
             record(owner, "research", None, ContextKind::FeatureData, "Feature data is not personal memory"),
         ];
-        let ranked = rank_personal_memories("Continue the CenAI Android Rust project", &records, 2, 100);
+        let ranked = rank_personal_memories(owner, "Continue the CenAI Android Rust project", &records, 2, 100);
         assert_eq!(ranked.len(), 2);
         assert_eq!(ranked[0].content, "CenAI Android Rust renderer project");
         assert!(ranked.iter().all(|record| record.kind == ContextKind::PersonalMemory));
+    }
+
+    #[test]
+    fn personal_memory_ranking_never_returns_another_users_records() {
+        let records = vec![
+            record("550e8400-e29b-41d4-a716-446655440000", "memory", None, ContextKind::PersonalMemory, "Owner's private note"),
+            record("650e8400-e29b-41d4-a716-446655440000", "memory", None, ContextKind::PersonalMemory, "Other user's private note"),
+        ];
+        let selected = rank_personal_memories(
+            "550e8400-e29b-41d4-a716-446655440000", "private note", &records, 10, 1000,
+        );
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].content, "Owner's private note");
     }
 
     #[test]
@@ -260,8 +274,8 @@ mod tests {
             "550e8400-e29b-41d4-a716-446655440000",
             "memory", None, ContextKind::PersonalMemory, "Private preference",
         )];
-        assert!(rank_personal_memories("preference", &records, 0, 100).is_empty());
-        assert!(rank_personal_memories("preference", &records, 5, 0).is_empty());
+        assert!(rank_personal_memories("550e8400-e29b-41d4-a716-446655440000", "preference", &records, 0, 100).is_empty());
+        assert!(rank_personal_memories("550e8400-e29b-41d4-a716-446655440000", "preference", &records, 5, 0).is_empty());
     }
 
     #[test]
