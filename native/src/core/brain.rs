@@ -43,10 +43,15 @@ impl CentralBrain {
         let authorized = collect_authorized_context(request, &scoped_records).map_err(str::to_owned)?;
         let mut context = String::new();
         for item in authorized {
+            if !context.is_empty() {
+                if context.len() + 2 > 12_000 { break; }
+                context.push_str("\n\n");
+            }
+            for character in item.chars() {
+                if context.len() + character.len_utf8() > 12_000 { break; }
+                context.push(character);
+            }
             if context.len() >= 12_000 { break; }
-            if !context.is_empty() { context.push_str("\n\n"); }
-            let remaining = 12_000usize.saturating_sub(context.len());
-            context.extend(item.chars().take(remaining));
         }
         let system = r#"You are CenAI Central Brain's task planner. Return only one valid JSON object matching this schema:
 {"id":"task-1","goal":"short goal","stopped":false,"steps":[{"id":1,"role":"planner|researcher|developer|tester|security_reviewer|quality_reviewer","title":"short action","status":"pending","depends_on":[]}]}
