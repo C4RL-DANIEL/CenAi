@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Preserve each commit's validation result; newer commits must not cancel an active build.
+  # Keep every commit's build isolated; later commits must not cancel verification
+  # of the source snapshot currently being tested.
   group: ${{ github.workflow }}-${{ github.sha }}-${{ github.event_name }}
   cancel-in-progress: false
 
