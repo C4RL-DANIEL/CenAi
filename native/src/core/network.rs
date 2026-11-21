@@ -283,36 +283,75 @@ impl CenAiApi {
     }
 
     pub async fn cloud_chat(&self, payload: &Value) -> Result<Value, String> {
-        let token = self.vault.access_token()?;
-        if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
-        let response = self.client.post(config::CLOUD_CHAT_URL)
-            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
-            .bearer_auth(token)
-            .header(header::ACCEPT, "application/json")
-            .json(payload)
-            .send().await.map_err(|error| error.to_string())?;
-        Self::decode_response(response).await
+        self.post_authenticated(config::CLOUD_CHAT_URL, payload).await
     }
 
+    /// Streams the managed CenAI Cloud response, refreshing the Supabase session once on 401.
+    /// Accepts both OpenAI-compatible SSE and the existing non-streaming JSON response shape.
     pub async fn stream_cloud_chat<F>(&self, payload: &Value, mut on_delta: F) -> Result<String, String>
     where
         F: FnMut(&str) + Send,
     {
-        let token = self.vault.access_token()?;
+        let mut token = self.vault.access_token()?;
         if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
-        let response = self.client.post(config::CLOUD_CHAT_URL)
-            .bearer_auth(token)
+        let mut response = self.client.post(config::CLOUD_CHAT_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(&token)
+            .header(header::ACCEPT, "text/event-stream, application/json")
             .timeout(std::time::Duration::from_secs(config::STREAM_TIMEOUT_SECONDS))
             .json(payload)
             .send().await.map_err(|error| error.to_string())?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            self.refresh_session().await?;
+            token = self.vault.access_token()?;
+            response = self.client.post(config::CLOUD_CHAT_URL)
+                .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+                .bearer_auth(&token)
+                .header(header::ACCEPT, "text/event-stream, application/json")
+                .timeout(std::time::Duration::from_secs(config::STREAM_TIMEOUT_SECONDS))
+                .json(payload)
+                .send().await.map_err(|error| error.to_string())?;
+        }
         if !response.status().is_success() {
             return Self::decode_response(response).await.map(|_| String::new());
         }
-        let data: Value = response.json().await.map_err(|error| error.to_string())?;
-        let answer = data.pointer("/choices/0/message/content").and_then(Value::as_str).unwrap_or_default();
-        if answer.is_empty() { return Err("CenAI Cloud returned an empty response.".into()); }
-        on_delta(answer);
-        Ok(answer.to_owned())
+
+        let content_type = response.headers().get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
+        if !content_type.contains("text/event-stream") {
+            let data: Value = response.json().await.map_err(|error| error.to_string())?;
+            let answer = data.pointer("/choices/0/message/content").and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or("CenAI Cloud returned an empty response.")?.to_owned();
+            on_delta(&answer);
+            return Ok(answer);
+        }
+
+        let mut stream = response.bytes_stream();
+        let mut pending = String::new();
+        let mut answer = String::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| error.to_string())?;
+            pending.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(newline) = pending.find('\n') {
+                let line = pending[..newline].trim_end_matches('\r').to_owned();
+                pending.drain(..=newline);
+                if let Some(delta) = parse_openai_sse_event(&line) {
+                    answer.push_str(&delta);
+                    on_delta(&delta);
+                }
+            }
+        }
+        if !pending.trim().is_empty() {
+            if let Some(delta) = parse_openai_sse_event(&pending) {
+                answer.push_str(&delta);
+                on_delta(&delta);
+            }
+        }
+        if answer.is_empty() {
+            return Err("CenAI Cloud returned an empty or unsupported streaming response.".into());
+        }
+        Ok(answer)
     }
 }
 
