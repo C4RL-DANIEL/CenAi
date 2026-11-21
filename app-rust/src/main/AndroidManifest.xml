@@ -7,11 +7,11 @@
     <application
         android:allowBackup="false"
         android:label="CenAI"
-        android:hasCode="false"
+        android:hasCode="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name="com.cenai.app.CenAiNativeActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode"
             android:exported="true"
             android:label="CenAI"
