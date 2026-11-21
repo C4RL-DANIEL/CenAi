@@ -238,6 +238,14 @@ impl SessionVault for AndroidSecretVault {
         self.put_secret("cenai_email_verified", if verified { "true" } else { "false" })
     }
 
+    fn guardian_consent(&self) -> Result<bool, String> {
+        Ok(self.get_secret("guardian_telemetry_consent")? == "true")
+    }
+
+    fn set_guardian_consent(&self, enabled: bool) -> Result<(), String> {
+        self.put_secret("guardian_telemetry_consent", if enabled { "true" } else { "false" })
+    }
+
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
         if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
