@@ -57,7 +57,7 @@ The Worker validates the Supabase access token, derives the immutable user UUID 
 }
 ```
 
-The response is PCM16 WAV. Supported Qwen language labels: English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish and Italian. English is the first release-quality target; other languages need separate evaluation before being marketed as equally accurate.
+The authenticated `GET /readyz` endpoint returns model/profile readiness to the Cloudflare Worker only; do not expose it without the server bearer token. The response is PCM16 WAV. Supported Qwen language labels: English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish and Italian. English is the first release-quality target; other languages need separate evaluation before being marketed as equally accurate.
 
 ## Important deployment status
 
