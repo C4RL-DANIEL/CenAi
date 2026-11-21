@@ -99,8 +99,10 @@ mod tests {
 
     #[test]
     fn draft_submission_trims_and_clears() {
-        let mut state = ConversationState::default();
-        state.draft = "  Hello CenAI  ".into();
+        let mut state = ConversationState {
+            draft: "  Hello CenAI  ".into(),
+            ..ConversationState::default()
+        };
         let id = state.submit_draft().expect("non-empty draft submits");
         let message = state.messages().next().unwrap();
         assert_eq!(message.id, id);
