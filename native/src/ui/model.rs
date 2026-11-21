@@ -409,7 +409,7 @@ impl Default for AppState {
             pending_voice_stop: false,
             voice_status: String::new(),
             pending_voice_model_download: false,
-            voice_model_status: "Offline Qwen model not downloaded.".into(),
+            voice_model_status: "CenAI Voice offline model not downloaded.".into(),
             voice_model_download_progress: 0.0,
             pending_speech_text: None,
             pending_speech_stop: false,
