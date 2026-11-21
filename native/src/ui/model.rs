@@ -193,17 +193,7 @@ impl Default for AppState {
             mcp_call_arguments_draft: "{}".into(),
             pending_mcp_call: None,
             mcp_call_result: String::new(),
-            mcp_server_id_draft: String::new(),
-            mcp_endpoint_draft: String::new(),
-            mcp_publisher_draft: String::new(),
-            mcp_version_draft: "1.0.0".into(),
-            mcp_license_draft: "MIT".into(),
-            mcp_capabilities_draft: String::new(),
-            mcp_reviewed: false,
-            mcp_status: String::new(),
-            mcp_tools: Vec::new(),
-            pending_mcp_connect: None,
-        }
+                    }
     }
 }
 
