@@ -200,7 +200,11 @@ impl WorkspaceStore {
             conversations,
             artifacts,
         };
-        serde_json::to_vec(&payload).map_err(|error| error.to_string())
+        let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+        if bytes.len() > 100 * 1024 * 1024 {
+            return Err("Serialized workspace backup exceeds the 100 MB encrypted payload limit".into());
+        }
+        Ok(bytes)
     }
 
     pub fn export_encrypted_backup(&self, passphrase: &str) -> Result<Vec<u8>, String> {
