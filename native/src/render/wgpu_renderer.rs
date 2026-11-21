@@ -1827,7 +1827,20 @@ impl WgpuRenderer {
                     match result {
                         Ok(factors) => {
                             self.app_state.mfa_factors = factors;
-                            self.app_state.mfa_status = "Authenticator status refreshed.".into();
+                            if self.app_state.mfa_login_required {
+                                if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
+                                    if self.app_state.mfa_enrollment_factor_id.is_empty() {
+                                        self.app_state.mfa_enrollment_factor_id = factor.id.clone();
+                                    }
+                                    self.app_state.mfa_status = "Enter a current authenticator code to continue.".into();
+                                } else {
+                                    self.app_state.mfa_login_required = false;
+                                    self.app_state.destination = crate::ui::model::Destination::Conversation;
+                                    self.app_state.mfa_status = "No verified authenticator is required for this account.".into();
+                                }
+                            } else {
+                                self.app_state.mfa_status = "Authenticator status refreshed.".into();
+                            }
                         }
                         Err(error) => self.app_state.mfa_status = format!("Could not load authenticator status: {error}"),
                     }
@@ -1849,6 +1862,8 @@ impl WgpuRenderer {
                         Ok(()) => {
                             self.app_state.mfa_enrollment_secret.clear();
                             self.app_state.mfa_enrollment_qr.clear();
+                            self.app_state.mfa_login_required = false;
+                            self.app_state.destination = crate::ui::model::Destination::Conversation;
                             self.app_state.mfa_status = "Authenticator verified. Multi-factor authentication is active.".into();
                             self.app_state.pending_mfa_refresh = true;
                         }
