@@ -102,6 +102,22 @@
       note(error.message, "error");
     }
   }
+  async function resumePasswordSetup() {
+    const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (!saved?.access_token) return false;
+    const response = await fetch(config.supabaseUrl.replace(/\/$/, "") + "/auth/v1/user", {
+      headers: { apikey: config.publishableKey, Authorization: "Bearer " + saved.access_token },
+      cache: "no-store"
+    });
+    if (!response.ok) return false;
+    const user = await response.json().catch(() => ({}));
+    if (user.app_metadata?.cenai_registration_verified !== true || user.app_metadata?.cenai_registration_method !== "discord") return false;
+    $("discord").classList.add("hidden");
+    $("password-panel").classList.remove("hidden");
+    $("intro").textContent = "Your Discord invitation has already been redeemed. Finish setting your CenAI app password.";
+    note("Your invitation is already verified. You can safely finish or retry password setup.", "success");
+    return true;
+  }
   async function init() {
     const params = new URLSearchParams(location.search);
     const oauthCode = params.get("code");
@@ -112,6 +128,7 @@
     try {
       await loadConfig();
       if (!invite || !/^[A-Za-z0-9_-]{40,64}$/.test(invite)) {
+        if (await resumePasswordSetup()) return;
         $("discord").disabled = true;
         note("This invitation link is missing or malformed. Ask the CenAI owner to generate a new link.", "error");
         return;
