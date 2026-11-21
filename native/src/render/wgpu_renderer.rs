@@ -439,9 +439,10 @@ impl WgpuRenderer {
                 Ok(arguments) => {
                     if let Some(client) = self.mcp_clients.get(&server_id).cloned() {
                         let sender = self.response_tx.clone();
+                        let generation = self.account_generation;
                         self.runtime.spawn(async move {
                             let result = client.call_tool(&tool_name, arguments, true).await;
-                            let _ = sender.send(ChatEvent::McpCallFinished(result));
+                            let _ = sender.send(ChatEvent::McpCallFinished(generation, result));
                         });
                     } else { self.app_state.mcp_status = "MCP server is no longer connected.".into(); }
                 }
