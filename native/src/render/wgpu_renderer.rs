@@ -689,7 +689,7 @@ impl WgpuRenderer {
             let generation = self.account_generation;
             let task = self.runtime.spawn(async move {
                 let result = async {
-                    let client = Arc::new(McpHttpClient::new(manifest.clone(), None)?);
+                    let client = Arc::new(McpHttpClient::new(manifest.clone(), None).await?);
                     let _server_info = client.initialize().await?;
                     let tools = client.list_tools().await?;
                     Ok((manifest, client, tools))
