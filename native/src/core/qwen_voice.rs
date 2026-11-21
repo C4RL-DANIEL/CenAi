@@ -114,7 +114,7 @@ impl Default for VoiceProfile {
     fn default() -> Self {
         Self {
             id: "cenai-voice-english-v1".into(),
-            display_name: "CenAI Original · English".into(),
+            display_name: "CenAI Voice · English".into(),
             language: QwenLanguage::English,
             locale: DEFAULT_LOCALE.into(),
             model_variant: VoiceModelVariant::Base06B,
