@@ -214,7 +214,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
 fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Your Work", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Projects, saved artifacts and reviewed task plans in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text("Projects, saved artifacts and task plans in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Create a project", 17.0, egui::Color32::WHITE).strong());
