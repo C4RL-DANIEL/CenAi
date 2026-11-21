@@ -205,8 +205,8 @@ mod tests {
     #[test]
     fn cloud_base_model_is_the_fine_tuning_source_not_the_preset_voice_model() {
         assert!(VoiceModelVariant::Base17B.supports_fine_tuning());
-        assert!(!VoiceModelVariant::CustomVoice06B.supports_fine_tuning());
-        assert_eq!(VoiceModelVariant::Base06B.model_id(), PRIMARY_MODEL_ID);
+        assert!(!VoiceModelVariant::CustomVoice17B.supports_fine_tuning());
+        assert_eq!(VoiceModelVariant::Base17B.model_id(), PRIMARY_MODEL_ID);
     }
 
     #[test]
