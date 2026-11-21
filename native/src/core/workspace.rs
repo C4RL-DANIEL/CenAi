@@ -1008,6 +1008,29 @@ mod encrypted_workspace_tests {
     }
 
     #[test]
+    fn encrypted_attachment_store_migrates_and_round_trips_binary_files() {
+        use crate::core::multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore};
+        let root = temp_root();
+        let account = "550e8400-e29b-41d4-a716-446655440000";
+        let bytes = b"\x89PNG\r\n\x1a\nprivate attachment";
+        let metadata = AttachmentMetadata {
+            id: "attachment-private-1".into(), file_name: "private.png".into(), mime_type: "image/png".into(),
+            kind: AttachmentKind::Image, byte_length: bytes.len() as u64, sha256: format!("{:x}", Sha256::digest(bytes)),
+        };
+        let plain = AttachmentStore::new(&root, account).unwrap();
+        plain.save(&metadata, bytes).unwrap();
+        drop(plain);
+        let vault: Arc<dyn SessionVault> = Arc::new(TestVault { account: account.into() });
+        let encrypted = AttachmentStore::new_encrypted(&root, account, vault).unwrap();
+        let items = encrypted.list().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(encrypted.load(&items[0]).unwrap(), bytes);
+        let stored = fs::read(encrypted.root.join(account).join("attachments/attachment-private-1.bin")).unwrap();
+        assert!(stored.starts_with(WORKSPACE_CIPHER_MAGIC));
+        assert!(!stored.windows(b"private attachment".len()).any(|window| window == b"private attachment"));
+    }
+
+    #[test]
     fn encrypted_workspace_rejects_account_or_path_swaps() {
         let account = "550e8400-e29b-41d4-a716-446655440000";
         let vault = TestVault { account: account.into() };
