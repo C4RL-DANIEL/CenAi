@@ -238,7 +238,7 @@ impl SessionVault for AndroidSecretVault {
         if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path) || plaintext.len() > 110 * 1024 * 1024 {
             return Err("Account-file encryption identity, path, or payload size is invalid".into());
         }
-        let mut envelope = format!("CENAI-ACCOUNT-FILE-V1\\n{user_identity}\\n{relative_path}\\n").into_bytes();
+        let mut envelope = format!("CENAI-ACCOUNT-FILE-V1\n{user_identity}\n{relative_path}\n").into_bytes();
         envelope.extend_from_slice(plaintext);
         let encrypted = self.encrypt_bytes(&envelope)?;
         let mut output = WORKSPACE_CIPHER_MAGIC.to_vec();
@@ -252,7 +252,7 @@ impl SessionVault for AndroidSecretVault {
             return Err("Encrypted account-file identity, path, or envelope is invalid".into());
         }
         let envelope = self.decrypt_bytes(&ciphertext[WORKSPACE_CIPHER_MAGIC.len()..])?;
-        let prefix = format!("CENAI-ACCOUNT-FILE-V1\\n{user_identity}\\n{relative_path}\\n");
+        let prefix = format!("CENAI-ACCOUNT-FILE-V1\n{user_identity}\n{relative_path}\n");
         if !envelope.starts_with(prefix.as_bytes()) {
             return Err("Encrypted file belongs to a different account or storage path".into());
         }
