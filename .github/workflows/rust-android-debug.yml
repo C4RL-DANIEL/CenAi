@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,x86_64-linux-android
           components: rustfmt, clippy
       - uses: actions/setup-java@v4
         with:
@@ -40,12 +40,33 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Build Rust Android library
-        run: cargo ndk -t arm64-v8a -o app-rust/src/main/jniLibs build --release -p cenai-native
+        run: cargo ndk -t arm64-v8a -t x86_64 -o app-rust/src/main/jniLibs build --release -p cenai-native
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
       - name: Build debug APK
         run: gradle --no-daemon :app-rust:assembleDebug
+      - name: Verify NativeActivity on API 35 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-boot-timeout: 900000
+          script: |
+            adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
+            adb shell am start -n com.cenai.app.rustdebug/android.app.NativeActivity
+            for attempt in $(seq 1 30); do
+              if adb shell pidof com.cenai.app.rustdebug >/dev/null 2>&1; then
+                echo "CenAI NativeActivity process is running."
+                exit 0
+              fi
+              sleep 1
+            done
+            adb logcat -d -t 500
+            echo "CenAI NativeActivity did not remain running." >&2
+            exit 1
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
