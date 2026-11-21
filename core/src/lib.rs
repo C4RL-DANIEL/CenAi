@@ -22,6 +22,21 @@ fn normalize_prompt(value: &str) -> String {
 
 /// A deliberately conservative, language-agnostic estimate for UI hints only.
 /// This is not a provider tokenizer and must never be used for billing or hard limits.
+/// Sanitizes message bodies without trimming meaningful leading/trailing whitespace.
+fn sanitize_message_content(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|ch| !ch.is_control() || *ch == '\n' || *ch == '\t')
+        .collect()
+}
+
+/// Only the roles understood by CenAI's conversation and provider adapters are accepted.
+fn is_valid_chat_role(value: &str) -> bool {
+    matches!(value, "system" | "user" | "assistant" | "tool")
+}
+
 fn estimate_prompt_tokens(value: &str) -> usize {
     let chars = value.chars().count();
     if chars == 0 {
@@ -46,6 +61,33 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_normalizePrompt(
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_normalizeMessageContent(
+    mut env: JNIEnv,
+    _class: JClass,
+    input: JString,
+) -> jstring {
+    let Some(value) = read_java_string(&mut env, &input) else {
+        return std::ptr::null_mut();
+    };
+    match env.new_string(sanitize_message_content(&value)) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_isValidChatRole(
+    mut env: JNIEnv,
+    _class: JClass,
+    role: JString,
+) -> jboolean {
+    let Some(value) = read_java_string(&mut env, &role) else {
+        return JNI_FALSE;
+    };
+    if is_valid_chat_role(&value) { JNI_TRUE } else { JNI_FALSE }
 }
 
 #[no_mangle]
@@ -82,7 +124,7 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_isPromptWithinLimit(
 
 #[cfg(test)]
 mod tests {
-    use super::{estimate_prompt_tokens, normalize_prompt};
+    use super::{estimate_prompt_tokens, is_valid_chat_role, normalize_prompt, sanitize_message_content};
 
     #[test]
     fn normalizes_line_endings_and_removes_unsafe_controls() {
@@ -95,6 +137,21 @@ mod tests {
         assert_eq!(estimate_prompt_tokens(""), 0);
         assert_eq!(estimate_prompt_tokens("hello"), 2);
         assert_eq!(estimate_prompt_tokens("12345678"), 2);
+    }
+
+    #[test]
+    fn validates_only_supported_conversation_roles() {
+        assert!(is_valid_chat_role("system"));
+        assert!(is_valid_chat_role("user"));
+        assert!(is_valid_chat_role("assistant"));
+        assert!(is_valid_chat_role("tool"));
+        assert!(!is_valid_chat_role("developer"));
+        assert!(!is_valid_chat_role("USER"));
+    }
+
+    #[test]
+    fn sanitizes_message_content_without_trimming_spaces() {
+        assert_eq!(sanitize_message_content("  hello\r\nworld\u{0007}  "), "  hello\nworld  ");
     }
 
     #[test]
