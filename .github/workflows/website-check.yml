@@ -6,11 +6,6 @@ on:
       - "website/**"
       - "supabase/**"
       - ".github/workflows/website-check.yml"
-  pull_request:
-    paths:
-      - "website/**"
-      - "supabase/**"
-      - ".github/workflows/website-check.yml"
   workflow_dispatch:
 
 permissions:
