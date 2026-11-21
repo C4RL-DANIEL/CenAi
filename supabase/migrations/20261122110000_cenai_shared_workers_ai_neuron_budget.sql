@@ -34,7 +34,7 @@ begin
   select coalesce(sum(characters),0)::integer into v_user_used from public.cenai_voice_usage_events
     where owner_user_id=p_user_id and created_at>=v_day_start;
   select coalesce(sum(neurons),0)::numeric into v_voice_used from public.cenai_voice_usage_events where created_at>=v_day_start;
-  select coalesce(reserved_neurons,0)::numeric into v_global_used from public.cenai_ai_daily_budget where day_utc=v_day;
+  select coalesce(max(reserved_neurons),0)::numeric into v_global_used from public.cenai_ai_daily_budget where day_utc=v_day;
   v_cost := round(p_characters * 1.36364, 2);
   if v_user_used + p_characters > p_user_daily_character_limit then
     return query select false,null::bigint,'user_daily_character_limit',v_user_used,v_global_used; return;
@@ -47,9 +47,9 @@ begin
   end if;
   insert into public.cenai_voice_usage_events(owner_user_id,characters,neurons,status)
     values(p_user_id,p_characters,v_cost,'reserved') returning id into v_event_id;
-  insert into public.cenai_ai_daily_budget(day_utc,reserved_neurons,updated_at)
+  insert into public.cenai_ai_daily_budget as budget(day_utc,reserved_neurons,updated_at)
     values(v_day,v_cost,now())
-    on conflict(day_utc) do update set reserved_neurons=public.cenai_ai_daily_budget.reserved_neurons+excluded.reserved_neurons,updated_at=now();
+    on conflict(day_utc) do update set reserved_neurons=budget.reserved_neurons+excluded.reserved_neurons,updated_at=now();
   return query select true,v_event_id,null::text,v_user_used+p_characters,v_global_used+v_cost;
 end
 $function$;
@@ -73,7 +73,7 @@ begin
   if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service role required'; end if;
   if p_user_id is null or p_model_id is null or p_model_slug is null then return query select false,null::bigint,'invalid_request',0,0::bigint,0::numeric; return; end if;
   if p_input_tokens < 0 or p_input_tokens > 20000 or p_max_output_tokens < 1 or p_max_output_tokens > 2048
-     or p_estimated_neurons <= 0 or p_estimated_neurons > 4000 or p_global_daily_neuron_limit < 100 or p_global_daily_neuron_limit > 10000 then
+     or p_estimated_neurons is null or p_estimated_neurons <= 0 or p_estimated_neurons > 4000 or p_global_daily_neuron_limit < 100 or p_global_daily_neuron_limit > 10000 then
     return query select false,null::bigint,'invalid_token_budget',0,0::bigint,0::numeric; return;
   end if;
   perform pg_catalog.pg_advisory_xact_lock(76192401);
