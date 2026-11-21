@@ -40,6 +40,13 @@ impl ChatRequest {
     }
 }
 
+pub fn parse_openai_sse_event(line: &str) -> Option<String> {
+    let data = line.trim().strip_prefix("data:")?.trim();
+    if data.is_empty() || data == "[DONE]" { return None; }
+    let value: serde_json::Value = serde_json::from_str(data).ok()?;
+    value.pointer("/choices/0/delta/content")?.as_str().map(str::to_owned)
+}
+
 pub fn validate_provider_endpoint(endpoint: &str) -> Result<(), &'static str> {
     let trimmed = endpoint.trim();
     if !trimmed.starts_with("https://") { return Err("Provider endpoints must use HTTPS"); }
@@ -71,5 +78,11 @@ mod tests {
     fn custom_provider_endpoint_requires_tls() {
         assert!(validate_provider_endpoint("https://api.example.com/v1").is_ok());
         assert!(validate_provider_endpoint("http://api.example.com").is_err());
+    }
+
+    #[test]
+    fn openai_sse_parser_extracts_text_deltas() {
+        assert_eq!(parse_openai_sse_event(r#"data: {"choices":[{"delta":{"content":"hello"}}]}"#).as_deref(), Some("hello"));
+        assert_eq!(parse_openai_sse_event("data: [DONE]"), None);
     }
 }
