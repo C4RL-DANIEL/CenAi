@@ -1,7 +1,7 @@
 name: Website checks
 on:
   push:
-    branches: [ main, "feat/**", cloudflare-migration ]
+    branches: [ main, "feat/**", "rewrite/**", cloudflare-migration ]
     paths:
       - "website/**"
       - "supabase/**"
