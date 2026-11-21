@@ -16,6 +16,9 @@ pub struct Automation {
     pub requires_approval: bool,
     #[serde(default)]
     pub last_scheduled_at: Option<i64>,
+    /// A due occurrence remains pending until its review reminder is durably saved.
+    #[serde(default)]
+    pub pending_scheduled_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,6 +120,27 @@ impl AutomationScheduler {
         Ok(true)
     }
 
+    /// Clears a due occurrence only after its reminder is durably recorded for the user.
+    pub fn acknowledge_and_persist(
+        &mut self,
+        owner_scope: &str,
+        automation_id: &str,
+        scheduled_at: i64,
+        store: &WorkspaceStore,
+    ) -> Result<bool, String> {
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        let key = Self::key(owner_scope, automation_id);
+        let Some(item) = self.automations.get_mut(&key) else { return Ok(false); };
+        if item.pending_scheduled_at != Some(scheduled_at) { return Ok(false); }
+        let previous = item.clone();
+        item.pending_scheduled_at = None;
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
     pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
         let previous = self.automations.clone();
         let due = self.poll_due(now);
@@ -168,6 +192,15 @@ impl AutomationScheduler {
         let mut due = Vec::new();
         for automation in self.automations.values_mut() {
             if !automation.enabled { continue; }
+            if let Some(pending_at) = automation.pending_scheduled_at {
+                due.push(AutomationTrigger {
+                    automation_id: automation.id.clone(),
+                    owner_scope: automation.owner_scope.clone(),
+                    scheduled_at: pending_at,
+                    requires_approval: automation.requires_approval,
+                });
+                continue;
+            }
             let cursor = automation.last_scheduled_at
                 .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
                 .unwrap_or_else(|| now - Duration::minutes(1));
@@ -180,6 +213,7 @@ impl AutomationScheduler {
             }
             if let Some(next) = latest_due {
                 automation.last_scheduled_at = Some(next.timestamp());
+                automation.pending_scheduled_at = Some(next.timestamp());
                 due.push(AutomationTrigger {
                     automation_id: automation.id.clone(),
                     owner_scope: automation.owner_scope.clone(),
@@ -218,6 +252,7 @@ mod tests {
             enabled: true,
             requires_approval: true,
             last_scheduled_at: None,
+            pending_scheduled_at: None,
         }
     }
 
