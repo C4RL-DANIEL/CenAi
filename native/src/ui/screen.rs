@@ -190,6 +190,37 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        egui::ComboBox::from_id_salt("cenai_provider_key")
+            .selected_text(match state.provider_key_provider.as_str() {
+                "deepseek" => "DeepSeek",
+                _ => "OpenAI-compatible",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut state.provider_key_provider, "openai".into(), "OpenAI-compatible");
+                ui.selectable_value(&mut state.provider_key_provider, "deepseek".into(), "DeepSeek");
+            });
+        ui.add(egui::TextEdit::singleline(&mut state.provider_key_draft)
+            .password(true)
+            .hint_text("Paste provider API key")
+            .desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            if ui.button("Save key securely").clicked() {
+                state.pending_provider_key = Some((state.provider_key_provider.clone(), state.provider_key_draft.clone()));
+                state.provider_key_status = "Saving to Android Keystore…".into();
+            }
+            if ui.button("Remove key").clicked() {
+                state.pending_provider_key = Some((state.provider_key_provider.clone(), String::new()));
+                state.provider_key_status = "Removing stored key…".into();
+            }
+        });
+        if !state.provider_key_status.is_empty() {
+            ui.label(text(&state.provider_key_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Privacy & security", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Per-user isolation, encrypted credentials and explicit approvals are part of the runtime design.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
     });
