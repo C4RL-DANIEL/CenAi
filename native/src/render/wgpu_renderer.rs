@@ -2053,3 +2053,30 @@ mod ecosystem_ui_tests {
     }
 }
 
+
+#[cfg(test)]
+mod mfa_response_tests {
+    use super::*;
+
+    #[test]
+    fn parses_only_totp_factors_from_the_authenticated_account_response() {
+        let response = serde_json::json!({
+            "all": [
+                {"id":"550e8400-e29b-41d4-a716-446655440010","factor_type":"totp","friendly_name":"Tablet","status":"verified"},
+                {"id":"550e8400-e29b-41d4-a716-446655440011","factor_type":"phone","friendly_name":"Phone","status":"verified"}
+            ],
+            "totp": []
+        });
+        let factors = mfa_factors_from_response(response).unwrap();
+        assert_eq!(factors.len(), 1);
+        assert_eq!(factors[0].friendly_name, "Tablet");
+        assert_eq!(factors[0].status, "verified");
+    }
+
+    #[test]
+    fn rejects_malformed_mfa_factor_responses() {
+        assert!(mfa_factors_from_response(serde_json::json!({"all": null, "totp": []})).is_err());
+        assert!(mfa_factors_from_response(serde_json::json!({"unexpected": []})).is_err());
+    }
+}
+
