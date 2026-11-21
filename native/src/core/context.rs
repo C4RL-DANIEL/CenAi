@@ -33,7 +33,7 @@ impl ContextRequest {
     }
 
     /// Called only after the application has recorded the user's explicit approval/settings.
-    pub(crate) fn apply_user_approved_grants(&mut self, cross_feature: bool, personal_memory: bool) {
+    pub fn apply_user_approved_grants(&mut self, cross_feature: bool, personal_memory: bool) {
         self.grants.allow_cross_feature = cross_feature;
         self.grants.include_personal_memory = personal_memory;
     }
@@ -162,6 +162,15 @@ mod tests {
         let mut enabled = request();
         enabled.apply_user_approved_grants(false, true);
         assert_eq!(collect_authorized_context(&enabled, &records).unwrap(), vec!["Saved preference"]);
+    }
+
+    #[test]
+    fn malformed_foreign_records_cannot_block_or_influence_another_user() {
+        let records = vec![
+            record("user-b", "", None, ContextKind::SessionState, "Foreign malformed content"),
+            record("user-a", "research", None, ContextKind::FeatureData, "Visible note"),
+        ];
+        assert_eq!(collect_authorized_context(&request(), &records).unwrap(), vec!["Visible note"]);
     }
 
     #[test]
