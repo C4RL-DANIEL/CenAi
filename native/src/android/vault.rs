@@ -230,6 +230,14 @@ impl SessionVault for AndroidSecretVault {
         self.get_secret(&format!("provider_api_key_{provider}"))
     }
 
+    fn email_verified(&self) -> Result<bool, String> {
+        Ok(self.get_secret("cenai_email_verified")? == "true")
+    }
+
+    fn set_email_verified(&self, verified: bool) -> Result<(), String> {
+        self.put_secret("cenai_email_verified", if verified { "true" } else { "false" })
+    }
+
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
         if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
