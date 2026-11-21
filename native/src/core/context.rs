@@ -121,7 +121,7 @@ pub fn rank_personal_memories<'a>(
     goal: &str,
     records: &'a [ContextRecord],
     max_items: usize,
-    max_chars: usize,
+    max_bytes: usize,
 ) -> Vec<&'a ContextRecord> {
     fn terms(value: &str) -> std::collections::HashSet<String> {
         value.split(|character: char| !character.is_ascii_alphanumeric())
@@ -144,12 +144,12 @@ pub fn rank_personal_memories<'a>(
     ranked.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(&right.0)));
 
     let mut selected = Vec::new();
-    let mut used_chars = 0usize;
+    let mut used_bytes = 0usize;
     for (_, record, _) in ranked {
         if selected.len() >= max_items { break; }
-        let next = record.content.chars().count();
-        if next == 0 || used_chars.saturating_add(next) > max_chars { continue; }
-        used_chars += next;
+        let next = record.content.len();
+        if next == 0 || used_bytes.saturating_add(next) > max_bytes { continue; }
+        used_bytes += next;
         selected.push(record);
     }
     selected
