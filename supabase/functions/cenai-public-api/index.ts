@@ -33,7 +33,7 @@ Deno.serve(async (req:Request) => {
     if(keyError) throw keyError;
     if(!key || !key.enabled) return reply(401,{error:"Invalid or revoked API key."});
     const { data: ownerResult, error: ownerError } = await db.auth.admin.getUserById(key.owner_user_id);
-    if (ownerError || !ownerResult.user || !await registrationAllowed(ownerResult.user)) return reply(403,{error:"This account must complete Discord invitation registration before API access."});
+    if (ownerError || !ownerResult.user || !await registrationAllowed(ownerResult.user)) return reply(403,{error:"Complete Discord invitation registration before API access."});
     const {data:quota,error:quotaError}=await db.from("ai_quota_policies").select("daily_request_limit,monthly_token_limit,enabled").eq("owner_user_id",key.owner_user_id).maybeSingle();
     if(quotaError) throw quotaError;
     const policy={daily_request_limit:quota?.daily_request_limit ?? 100,monthly_token_limit:quota?.monthly_token_limit ?? 500000,enabled:quota?.enabled !== false};
