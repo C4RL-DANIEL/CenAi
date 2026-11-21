@@ -82,13 +82,32 @@ impl WorkspaceStore {
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
         let parent = path.parent().ok_or("Invalid workspace path")?;
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-        let mut file = OpenOptions::new().write(true).create_new(true).open(&temporary)
-            .or_else(|_| OpenOptions::new().write(true).truncate(true).create(true).open(&temporary))
-            .map_err(|error| error.to_string())?;
-        file.write_all(bytes).map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
-        fs::rename(&temporary, path).map_err(|error| error.to_string())
+        // Each writer gets a distinct temporary file. Never truncate another writer's
+        // in-flight file: workspace writes may be triggered by concurrent UI/background tasks.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
+        let (temporary, mut file) = loop {
+            let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+            let candidate = path.with_extension(format!("tmp-{}-{sequence}", std::process::id()));
+            match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+                Ok(file) => break (candidate, file),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.to_string()),
+            }
+        };
+        let write_result = (|| -> Result<(), String> {
+            file.write_all(bytes).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+            fs::rename(&temporary, path).map_err(|error| error.to_string())?;
+            if let Ok(directory) = OpenOptions::new().read(true).open(parent) {
+                let _ = directory.sync_all();
+            }
+            Ok(())
+        })();
+        if write_result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        write_result
     }
 
 
