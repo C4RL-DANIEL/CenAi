@@ -73,7 +73,8 @@ pub fn validate_provider_endpoint(endpoint: &str) -> Result<(), &'static str> {
     {
         return Err("Provider endpoint cannot target a local or internal hostname");
     }
-    if let Ok(ip) = normalized.parse::<std::net::IpAddr>() {
+    let ip_literal = normalized.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = ip_literal.parse::<std::net::IpAddr>() {
         let is_private = match ip {
             std::net::IpAddr::V4(address) => address.is_private()
                 || address.is_loopback() || address.is_link_local()
