@@ -402,7 +402,10 @@ async function cloudVoiceSpeech(request, env) {
   if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > 65536) return json(413, { error: "Voice request exceeds the 64 KB limit." });
-  const body = await request.json().catch(() => null);
+  const rawBody = await request.text();
+  if (rawBody.length > 65536) return json(413, { error: "Voice request exceeds the 64 KB limit." });
+  let body = null;
+  try { body = JSON.parse(rawBody); } catch { return json(400, { error: "Voice request must be valid JSON." }); }
   const input = typeof body?.input === "string" ? body.input.trim() : "";
   const language = typeof body?.language === "string" ? body.language : "English";
   const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
@@ -424,7 +427,12 @@ async function cloudVoiceSpeech(request, env) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) {
       return json(401, { error: "A verified CenAI account is required for cloud voice." });
     }
-    const upstreamUrl = env.CENAI_TTS_BACKEND_URL.replace(/\/+$/, "") + "/v1/audio/speech";
+    let backend;
+    try { backend = new URL(env.CENAI_TTS_BACKEND_URL); } catch { return json(503, { error: "CenAI Voice backend URL is invalid." }); }
+    if (backend.protocol !== "https:" || backend.username || backend.password) {
+      return json(503, { error: "CenAI Voice backend must use a trusted HTTPS origin." });
+    }
+    const upstreamUrl = backend.origin + "/v1/audio/speech";
     const upstream = await fetch(upstreamUrl, {
       method: "POST",
       headers: {
