@@ -27,6 +27,56 @@ fn valid_supabase_user_id(value: &str) -> bool {
         })
 }
 
+fn is_non_public_provider_ip(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+                || ip.is_multicast() || ip.is_broadcast() || octets[0] == 0 || octets[0] >= 240
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && (octets[2] == 0 || octets[2] == 2))
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || (octets[1] == 51 && octets[2] == 100)))
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+        }
+        std::net::IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            let octets = ip.octets();
+            let mapped_v4 = segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
+            let compatible_v4 = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
+            if mapped_v4 || compatible_v4 {
+                return is_non_public_provider_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    octets[12], octets[13], octets[14], octets[15]
+                )));
+            }
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+                || ip.is_unspecified() || ip.is_multicast()
+                || (segments[0] == 0x2001 && (segments[1] == 0x0db8 || segments[1] == 0x0002))
+                || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
+                || (segments[0] & 0xffc0 == 0xfec0)
+        }
+    }
+}
+
+async fn pinned_provider_client(endpoint: &str) -> Result<(Client, reqwest::Url), String> {
+    let url = reqwest::Url::parse(endpoint).map_err(|_| "Provider endpoint is invalid")?;
+    let host = url.host_str().ok_or("Provider endpoint host is missing")?;
+    let port = url.port_or_known_default().ok_or("Provider endpoint port is missing")?;
+    let addresses = tokio::net::lookup_host((host, port)).await
+        .map_err(|error| format!("Provider host DNS lookup failed: {error}"))?
+        .collect::<Vec<_>>();
+    if addresses.is_empty() || addresses.iter().any(|address| is_non_public_provider_ip(address.ip())) {
+        return Err("Provider hostname resolves to a private, reserved or local network address".into());
+    }
+    let client = Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(config::STREAM_TIMEOUT_SECONDS))
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, &addresses)
+        .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
+        .build().map_err(|error| error.to_string())?;
+    Ok((client, url))
+}
+
 pub trait SessionVault: Send + Sync {
     fn access_token(&self) -> Result<String, String>;
     fn refresh_token(&self) -> Result<String, String>;
@@ -300,14 +350,16 @@ impl CenAiApi {
         request.validate()?;
         if api_key.trim().is_empty() { return Err("Provider API key is missing.".into()); }
         let base = endpoint.trim_end_matches('/');
-        let url = if base.ends_with("/chat/completions") { base.to_owned() } else { format!("{base}/chat/completions") };
+        let endpoint = if base.ends_with("/chat/completions") { base.to_owned() } else { format!("{base}/chat/completions") };
+        let (provider_client, parsed_endpoint) = pinned_provider_client(&endpoint).await?;
+        let url = parsed_endpoint.as_str();
         let payload = serde_json::json!({
             "model": request.model,
             "messages": request.messages,
             "max_tokens": request.max_tokens,
             "stream": true
         });
-        let response = self.provider_client.post(url)
+        let response = provider_client.post(url)
             .bearer_auth(api_key)
             .header(header::ACCEPT, "text/event-stream")
             .json(&payload)
