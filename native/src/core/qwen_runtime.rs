@@ -10,6 +10,7 @@ use super::qwen_voice::{QwenLanguage, SynthesisRequest};
 pub const NATIVE_LIBRARY_NAME: &str = "libcenai_qwen_bridge.so";
 pub const PRIMARY_GGUF_MODEL: &str = "qwen-talker-0.6b-base-Q8_0.gguf";
 pub const TOKENIZER_GGUF_MODEL: &str = "qwen-tokenizer-12hz-Q8_0.gguf";
+#[cfg(target_os = "android")]
 const MAX_AUDIO_SECONDS: usize = 15 * 60;
 
 pub const MODEL_REVISION: &str = "b7ee2e8c7459c3bea99da23e3d178125a7d1713c";
@@ -374,6 +375,7 @@ fn language_id(language: QwenLanguage) -> i32 {
     }
 }
 
+#[cfg(any(target_os = "android", test))]
 fn write_pcm16_wav(sample_rate: u32, samples: &[f32]) -> Vec<u8> {
     let data_len = samples.len().saturating_mul(2).min(u32::MAX as usize - 36) as u32;
     let mut wav = Vec::with_capacity(44 + data_len as usize);
