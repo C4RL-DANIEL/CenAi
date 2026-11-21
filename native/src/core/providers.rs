@@ -44,7 +44,12 @@ pub fn parse_openai_sse_event(line: &str) -> Option<String> {
     let data = line.trim().strip_prefix("data:")?.trim();
     if data.is_empty() || data == "[DONE]" { return None; }
     let value: serde_json::Value = serde_json::from_str(data).ok()?;
-    value.pointer("/choices/0/delta/content")?.as_str().map(str::to_owned)
+    value.pointer("/choices/0/delta/content")
+        .or_else(|| value.get("response"))
+        .or_else(|| value.get("generated_text"))
+        .or_else(|| value.get("text"))?
+        .as_str()
+        .map(str::to_owned)
 }
 
 pub fn validate_provider_endpoint(endpoint: &str) -> Result<(), &'static str> {
@@ -83,6 +88,7 @@ mod tests {
     #[test]
     fn openai_sse_parser_extracts_text_deltas() {
         assert_eq!(parse_openai_sse_event(r#"data: {"choices":[{"delta":{"content":"hello"}}]}"#).as_deref(), Some("hello"));
+        assert_eq!(parse_openai_sse_event(r#"data: {"response":"managed chunk"}"#).as_deref(), Some("managed chunk"));
         assert_eq!(parse_openai_sse_event("data: [DONE]"), None);
     }
 }
