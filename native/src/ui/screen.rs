@@ -1067,7 +1067,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 }
             }
             if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from cloud")).clicked() {
-                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                if state.backup_passphrase_draft.len() < 12 {
                     state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
                 } else if !state.backup_restore_confirmed {
                     state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
@@ -1077,7 +1077,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 }
             }
             if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from file")).clicked() {
-                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                if state.backup_passphrase_draft.len() < 12 {
                     state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
                 } else if !state.backup_restore_confirmed {
                     state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
