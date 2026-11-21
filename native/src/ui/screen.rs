@@ -320,6 +320,17 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
             }
         } else {
             ui.label(text(format!("Signed in as {}", state.account_email), 12.0, egui::Color32::from_rgb(119, 220, 183)));
+            if state.email_verified {
+                ui.label(text("Email verified", 11.0, egui::Color32::from_rgb(119, 220, 183)));
+            } else {
+                ui.label(text("Email verification required for protected account features.", 11.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.horizontal(|ui| {
+                    if ui.button("Send verification code").clicked() { state.pending_send_otp = true; state.otp_status = "Sending verification code…".into(); }
+                });
+                ui.add(egui::TextEdit::singleline(&mut state.otp_draft).hint_text("Six-digit email code").desired_width(f32::INFINITY));
+                if ui.button("Verify email").clicked() { state.pending_verify_otp = Some(state.otp_draft.trim().to_owned()); state.otp_status = "Verifying email…".into(); }
+                if !state.otp_status.is_empty() { ui.label(text(&state.otp_status, 10.0, egui::Color32::from_rgb(220, 184, 121))); }
+            }
             if ui.button("Sign out").clicked() {
                 state.pending_sign_out = true;
                 state.auth_status = "Signing out…".into();
