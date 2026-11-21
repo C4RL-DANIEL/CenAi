@@ -224,6 +224,24 @@ mod tests {
     }
 
     #[test]
+    fn runtime_statuses_and_stopped_plans_can_be_persisted_safely() {
+        let mut plan = TaskPlan {
+            id: "task-persist".into(), goal: "Persist execution".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![] },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1] },
+            ],
+        };
+        plan.begin_step(1).unwrap();
+        assert!(plan.validate_persisted().is_ok());
+        plan.complete_step(1).unwrap();
+        plan.request_step_approval(2).unwrap();
+        assert!(plan.validate_persisted().is_ok());
+        plan.stop();
+        assert!(plan.validate_persisted().is_ok());
+    }
+
+    #[test]
     fn dependency_cycles_are_rejected() {
         let plan = TaskPlan {
             id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
