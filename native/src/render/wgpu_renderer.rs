@@ -51,7 +51,7 @@ fn ecosystem_apps_from_response(value: serde_json::Value) -> Result<Vec<Ecosyste
         let strings = |key: &str| app.get(key).and_then(serde_json::Value::as_array)
             .map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect())
             .unwrap_or_default();
-        let (granted_scopes, revoked) = grant_map.get(&app_id).cloned().unwrap_or_default();
+        let (granted_scopes, revoked) = grant_map.get(&app_id).cloned().unwrap_or_else(|| (Vec::new(), true));
         Some(EcosystemAppItem {
             app_id,
             publisher_id: app.get("publisher_id").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
