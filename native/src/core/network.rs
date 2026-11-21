@@ -342,7 +342,7 @@ impl CenAiApi {
 
     pub async fn save_personal_memory(&self, category: &str, content: &str, source: &str) -> Result<Value, String> {
         if !matches!(category, "preference" | "profile" | "project" | "workflow" | "fact")
-            || !matches!(source, "user" | "assistant_confirmed" | "imported")
+            || !matches!(source, "user" | "imported")
             || content.trim().is_empty() || content.len() > 8000 {
             return Err("Personal memory category, source or content is invalid.".into());
         }
