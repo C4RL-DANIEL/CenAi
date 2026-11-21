@@ -4,25 +4,13 @@ on:
   push:
     branches:
       - "rewrite/**"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "native/**"
-      - "app-rust/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "gradle/**"
-      - "settings.gradle*"
-      - "build.gradle*"
-      - ".github/workflows/rust-android-debug.yml"
   workflow_dispatch:
 
 concurrency:
   # Give each commit an independent runner slot; an older queued Android job must not
   # block the newest APK artifact indefinitely.
-  group: ${{ github.workflow }}-${{ github.sha }}-${{ github.event_name }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
