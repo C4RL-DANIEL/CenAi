@@ -92,6 +92,7 @@ Deno.serve(async(req:Request)=>{
    if(!(await db.from("admin_feature_flags").select("enabled").eq("key","billing.enabled").maybeSingle()).data?.enabled) return fail(503,"Billing is disabled by the platform owner.");
    const user=await currentUser(req);
    if(!user)return fail(401,"Sign in required");
+   if(!await registrationAllowed(user))return fail(403,"Complete Discord invitation registration before using CenAI.");
    const body=await req.json().catch(()=>({}));
    const plan=String(body.plan||"");
    const price=plan==="supporter"?Deno.env.get("STRIPE_PRICE_SUPPORTER"):plan==="pro"?Deno.env.get("STRIPE_PRICE_PRO"):null;
