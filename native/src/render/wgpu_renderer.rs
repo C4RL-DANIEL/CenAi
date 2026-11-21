@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::network::CenAiApi, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{network::CenAiApi, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -34,14 +34,16 @@ pub struct WgpuRenderer {
     last_dispatched_message_id: u64,
     response_tx: mpsc::Sender<(u64, Result<String, String>)>,
     response_rx: mpsc::Receiver<(u64, Result<String, String>)>,
+    workspace: Option<WorkspaceStore>,
+    last_saved_message_count: usize,
 }
 
 impl WgpuRenderer {
-    pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle) -> anyhow::Result<Self> {
-        pollster::block_on(Self::new_async(window, api, runtime))
+    pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>) -> anyhow::Result<Self> {
+        pollster::block_on(Self::new_async(window, api, runtime, workspace))
     }
 
-    async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle) -> anyhow::Result<Self> {
+    async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone())?;
         let adapter = instance
@@ -144,6 +146,13 @@ impl WgpuRenderer {
         let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
 
         let (response_tx, response_rx) = mpsc::channel();
+        let mut app_state = AppState::default();
+        if let Some(store) = &workspace {
+            if let Ok(messages) = store.load_conversation("primary") {
+                app_state.conversation.restore_messages(messages);
+            }
+        }
+        let last_saved_message_count = app_state.conversation.messages().count();
         Ok(Self {
             surface,
             device,
@@ -157,12 +166,14 @@ impl WgpuRenderer {
             egui_context,
             egui_state,
             egui_renderer,
-            app_state: AppState::default(),
+            app_state,
             api,
             runtime,
             last_dispatched_message_id: 0,
             response_tx,
             response_rx,
+            workspace,
+            last_saved_message_count,
         })
     }
 
@@ -246,6 +257,16 @@ impl WgpuRenderer {
                 }
             }
             log::debug!("Completed CenAI request for message {message_id}");
+        }
+        let message_count = self.app_state.conversation.messages().count();
+        if message_count != self.last_saved_message_count {
+            if let Some(store) = &self.workspace {
+                let messages: Vec<_> = self.app_state.conversation.messages().cloned().collect();
+                if let Err(error) = store.save_conversation("primary", &messages) {
+                    log::warn!("Local conversation autosave failed: {error}");
+                }
+            }
+            self.last_saved_message_count = message_count;
         }
         self.egui_state.handle_platform_output(window, full_output.platform_output);
         let paint_jobs = self.egui_context.tessellate(full_output.shapes, full_output.pixels_per_point);
