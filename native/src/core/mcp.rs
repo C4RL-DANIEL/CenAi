@@ -38,6 +38,32 @@ fn validate_endpoint_url(endpoint: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+fn is_non_public_ip(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+                || ip.is_multicast() || ip.is_broadcast() || octets[0] == 0 || octets[0] >= 240
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && (octets[2] == 0 || octets[2] == 2))
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || (octets[1] == 51 && octets[2] == 100)))
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+        }
+        std::net::IpAddr::V6(ip) => ip.is_loopback() || ip.is_unique_local()
+            || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast(),
+    }
+}
+
+async fn resolve_public_addresses(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
+    let addresses = tokio::net::lookup_host((host, port)).await
+        .map_err(|error| format!("MCP host DNS lookup failed: {error}"))?.collect::<Vec<_>>();
+    if addresses.is_empty() { return Err("MCP host did not resolve to an address".into()); }
+    if addresses.iter().any(|address| is_non_public_ip(address.ip())) {
+        return Err("MCP host resolves to a private, reserved, or local network address".into());
+    }
+    Ok(addresses)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct McpServerManifest {
     pub server_id: String,
@@ -251,12 +277,19 @@ pub struct McpHttpClient {
 }
 
 impl McpHttpClient {
-    pub fn new(manifest: McpServerManifest, bearer_token: Option<String>) -> Result<Self, String> {
+    pub async fn new(manifest: McpServerManifest, bearer_token: Option<String>) -> Result<Self, String> {
         manifest.validate(1).map_err(|error| format!("Invalid MCP manifest: {error:?}"))?;
+        let endpoint = reqwest::Url::parse(&manifest.endpoint_url).map_err(|error| error.to_string())?;
+        let host = endpoint.host_str().ok_or("MCP endpoint host is missing")?;
+        let port = endpoint.port_or_known_default().ok_or("MCP endpoint port is missing")?;
+        // Resolve once, reject private/reserved results, and pin the approved addresses
+        // into the HTTP client to prevent DNS rebinding between validation and connect.
+        let addresses = resolve_public_addresses(host, port).await?;
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
             .timeout(std::time::Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(host, &addresses)
             .user_agent("CenAI-MCP/0.3")
             .build().map_err(|error| error.to_string())?;
         Ok(Self {
@@ -408,6 +441,17 @@ mod tests {
                 requested_scopes: vec!["mail.send".into()],
             }],
         }
+    }
+
+    #[test]
+    fn dns_policy_rejects_private_and_reserved_addresses() {
+        assert!(is_non_public_ip("127.0.0.1".parse().unwrap()));
+        assert!(is_non_public_ip("10.0.0.8".parse().unwrap()));
+        assert!(is_non_public_ip("100.64.0.1".parse().unwrap()));
+        assert!(is_non_public_ip("192.0.2.10".parse().unwrap()));
+        assert!(is_non_public_ip("2001:db8::1".parse().unwrap()));
+        assert!(!is_non_public_ip("8.8.8.8".parse().unwrap()));
+        assert!(!is_non_public_ip("2606:4700:4700::1111".parse().unwrap()));
     }
 
     #[test]
