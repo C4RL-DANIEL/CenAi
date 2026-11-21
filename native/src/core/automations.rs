@@ -74,15 +74,17 @@ impl AutomationScheduler {
     }
 
     pub fn persist_to_workspace(&self, store: &WorkspaceStore) -> Result<(), String> {
-        for automation in self.automations.values() {
-            store.save_automation(automation.clone())?;
-        }
-        Ok(())
+        let automations = self.automations.values().cloned().collect::<Vec<_>>();
+        store.save_automations(&automations)
     }
 
     pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
+        let previous = self.automations.clone();
         let due = self.poll_due(now);
-        self.persist_to_workspace(store)?;
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations = previous;
+            return Err(error);
+        }
         Ok(due)
     }
 
