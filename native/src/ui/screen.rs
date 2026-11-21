@@ -79,6 +79,62 @@ fn navigation(ui: &mut egui::Ui, state: &mut AppState) {
     });
 }
 
+fn markdown(ui: &mut egui::Ui, source: &str, user_message: bool) {
+    if user_message {
+        ui.label(text(source, 14.0, egui::Color32::from_rgb(231, 235, 247)));
+        return;
+    }
+    let mut code_mode = false;
+    let mut code = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            if code_mode {
+                egui::Frame::new()
+                    .fill(egui::Color32::from_rgb(10, 14, 26))
+                    .inner_margin(egui::Margin::same(10))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .show(ui, |ui| {
+                        ui.add(egui::Label::new(egui::RichText::new(code.trim_end()).monospace().size(12.0).color(egui::Color32::from_rgb(190, 211, 255))).wrap());
+                    });
+                code.clear();
+                code_mode = false;
+            } else {
+                code_mode = true;
+            }
+            continue;
+        }
+        if code_mode {
+            code.push_str(line);
+            code.push('\n');
+        } else if let Some(heading) = trimmed.strip_prefix("### ") {
+            ui.label(text(heading, 16.0, egui::Color32::WHITE).strong());
+        } else if let Some(heading) = trimmed.strip_prefix("## ") {
+            ui.label(text(heading, 19.0, egui::Color32::WHITE).strong());
+        } else if let Some(heading) = trimmed.strip_prefix("# ") {
+            ui.label(text(heading, 22.0, egui::Color32::WHITE).strong());
+        } else if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+            ui.horizontal(|ui| {
+                ui.label(text("•", 14.0, accent()));
+                ui.label(text(item, 13.0, egui::Color32::from_rgb(224, 230, 245)));
+            });
+        } else if trimmed.is_empty() {
+            ui.add_space(4.0);
+        } else {
+            ui.label(text(trimmed, 13.0, egui::Color32::from_rgb(224, 230, 245)));
+        }
+    }
+    if code_mode && !code.is_empty() {
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgb(10, 14, 26))
+            .inner_margin(egui::Margin::same(10))
+            .corner_radius(egui::CornerRadius::same(10))
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(code).monospace().size(12.0).color(egui::Color32::from_rgb(190, 211, 255))).wrap());
+            });
+    }
+}
+
 fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(8.0);
     ui.label(text("A little more than a chat.", 25.0, egui::Color32::WHITE).strong());
@@ -110,7 +166,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                             ui.label(text("GENERATING", 9.0, egui::Color32::from_rgb(183, 168, 255)));
                         }
                     });
-                    ui.label(text(&message.body, 14.0, egui::Color32::from_rgb(231, 235, 247)));
+                    markdown(ui, &message.body, is_user);
                 });
                 ui.add_space(8.0);
             }
