@@ -1,5 +1,12 @@
 import { connect } from "cloudflare:sockets";
 
+// The Worker is copied as a native ES module by build.mjs (not passed through esbuild).
+// Preserve function names without relying on esbuild's injected helper.
+function __name(target, value) {
+  Object.defineProperty(target, "name", { value, configurable: true });
+  return target;
+}
+
 const STATIC_CACHE_VERSION = "20261121-discord-registration-invites-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
