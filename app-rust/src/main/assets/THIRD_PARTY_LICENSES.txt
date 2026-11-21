@@ -18,7 +18,14 @@ Qwen model weights, Qwen architecture, qwen3-tts.cpp, or GGML.
    This source is included as a pinned Git submodule and compiled into the Android
    native library.
 
-3. GGML backend
+3. Android NDK build configuration
+   Copyright (c) 2026 Danmoreng
+   License: MIT License
+   Source: https://github.com/Danmoreng/qwen3-tts-android
+   The CMake build configuration is adapted for CenAI's native library bridge.
+   The MIT license text above applies to this sample project as well.
+
+4. GGML backend
    Copyright (c) 2023-2026 The ggml authors
    License: MIT License
    Source: https://github.com/ggml-org/ggml
