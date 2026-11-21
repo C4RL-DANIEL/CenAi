@@ -37,7 +37,7 @@ impl AndroidSecretVault {
         operation(&mut env).map_err(|error| error.to_string())
     }
 
-    fn key(env: &mut JNIEnv<'_>) -> jni::errors::Result<JObject<'_>> {
+    fn key<'local>(env: &mut JNIEnv<'local>) -> jni::errors::Result<JObject<'local>> {
         let store_class = env.find_class("java/security/KeyStore")?;
         let provider = env.new_string("AndroidKeyStore")?;
         let store = env.call_static_method(
