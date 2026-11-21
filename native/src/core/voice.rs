@@ -136,6 +136,43 @@ impl VoiceAudioBuffer {
     }
 }
 
+pub struct VoicePipeline {
+    pub session: VoiceSession,
+    audio: VoiceAudioBuffer,
+}
+
+impl VoicePipeline {
+    pub fn new(mode: VoiceMode, sample_rate_hz: u32, max_chunk_ms: u32) -> Result<Self, &'static str> {
+        Ok(Self { session: VoiceSession::new(mode), audio: VoiceAudioBuffer::new(sample_rate_hz, max_chunk_ms)? })
+    }
+
+    pub fn start(&mut self) -> Result<VoiceEvent, &'static str> { self.session.start() }
+
+    pub fn permission_result(&mut self, granted: bool) -> Result<VoiceEvent, &'static str> {
+        self.session.permission_result(granted)
+    }
+
+    pub fn provider_connected(&mut self) -> Result<VoiceEvent, &'static str> {
+        self.session.provider_connected()
+    }
+
+    pub fn ingest_frame(&mut self, frame: AudioFrame) -> Result<Option<AudioChunk>, &'static str> {
+        if self.session.state != VoiceState::Listening {
+            return Err("Audio frames can only be accepted while the voice session is listening");
+        }
+        self.audio.push_frame(frame)
+    }
+
+    pub fn finish_capture(&mut self) -> Result<Option<AudioChunk>, &'static str> {
+        if self.session.state != VoiceState::Listening {
+            return Err("Voice session is not listening");
+        }
+        Ok(self.audio.finish())
+    }
+
+    pub fn stop(&mut self) -> VoiceEvent { self.session.stop() }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VoiceSession {
     pub mode: VoiceMode,
@@ -267,6 +304,20 @@ mod tests {
         assert_eq!(&wav[36..40], b"data");
         assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 6);
         assert_eq!(wav.len(), 50);
+    }
+
+    #[test]
+    fn voice_pipeline_accepts_audio_only_after_permission_and_connection() {
+        let mut pipeline = VoicePipeline::new(VoiceMode::PushToTalk, 16_000, 5_000).unwrap();
+        assert!(pipeline.ingest_frame(frame(1200)).is_err());
+        pipeline.start().unwrap();
+        pipeline.permission_result(true).unwrap();
+        pipeline.provider_connected().unwrap();
+        assert!(pipeline.ingest_frame(frame(1200)).unwrap().is_none());
+        let chunk = pipeline.finish_capture().unwrap().unwrap();
+        assert!(chunk.speech_detected);
+        assert_eq!(chunk.duration_ms(), 100);
+        assert_eq!(pipeline.stop(), VoiceEvent::CloseSession);
     }
 
     #[test]
