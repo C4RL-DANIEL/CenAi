@@ -195,7 +195,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(false, egui::Button::new("CenAI Voice · Runtime in development")).clicked() {
+                if ui.add_enabled(state.voice_model_download_progress >= 1.0, egui::Button::new("Read aloud · CenAI Voice")).clicked() {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
@@ -776,11 +776,23 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
 fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     surface(ui, |ui| {
         ui.label(text("CenAI Voice", 18.0, egui::Color32::WHITE).strong());
-        ui.label(text("Powered by the Qwen3-TTS open model family · CenAI's own voice identity and controls.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.label(text("Primary profile: CenAI Original English · en-US", 11.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Model foundation: Qwen3-TTS 12Hz · 0.6B Base (fine-tuning source)", 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Language catalogue: 10 upstream languages; English quality is the first release gate.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Offline Android inference: not integrated yet. Google TTS and cloud speech fallback are disabled.", 10.0, egui::Color32::from_rgb(230, 190, 125)));
+        ui.label(text("CenAI-branded offline speech, powered by the open Qwen3-TTS model family.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Primary profile: CenAI Voice · English · en-US (custom voice refinement is next)", 11.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Native engine: Qwen3-TTS 12Hz · 0.6B Base · Q8_0", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Language catalogue: 10 upstream languages; English is the first quality gate.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Offline Android inference is integrated. Google TTS and cloud speech fallback are disabled.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        ui.separator();
+        ui.label(text("Offline model pack · about 1.3 GB", 12.0, egui::Color32::WHITE).strong());
+        if ui.add_enabled(!state.pending_voice_model_download && state.voice_model_download_progress < 1.0, egui::Button::new("Download and verify English voice model")).clicked() {
+            state.pending_voice_model_download = true;
+            state.voice_model_status = "Preparing secure model download…".into();
+        }
+        if state.voice_model_download_progress > 0.0 && state.voice_model_download_progress < 1.0 {
+            ui.add(egui::ProgressBar::new(state.voice_model_download_progress).show_percentage());
+        }
+        if !state.voice_model_status.is_empty() {
+            ui.label(text(&state.voice_model_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        }
         if ui.small_button("View CenAI Voice implementation plan").clicked() {
             state.pending_open_url = Some("https://github.com/C4RL-DANIEL/CenAi/blob/rewrite/rust-native-core/docs/CENAI-VOICE.md".into());
         }
