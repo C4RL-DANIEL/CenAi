@@ -69,6 +69,36 @@ async fn reload_ecosystem(api: &CenAiApi) -> Result<Vec<EcosystemAppItem>, Strin
     ecosystem_apps_from_response(api.ecosystem_list().await?)
 }
 
+fn normalize_attachment_mime(mime_type: &str, file_name: &str) -> String {
+    let mime = mime_type.trim().to_ascii_lowercase();
+    if mime != "application/octet-stream" && !mime.is_empty() {
+        return mime;
+    }
+    match file_name.rsplit('.').next().unwrap_or_default().to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "avif" => "image/avif",
+        "heic" => "image/heic",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "md" | "markdown" => "text/markdown",
+        "csv" => "text/csv",
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "webm" => "video/webm",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        _ => "application/octet-stream",
+    }.to_owned()
+}
+
 fn mfa_factors_from_response(value: serde_json::Value) -> Result<Vec<crate::ui::model::MfaFactor>, String> {
     let factors = value.get("all").or_else(|| value.get("totp"))
         .and_then(serde_json::Value::as_array)
