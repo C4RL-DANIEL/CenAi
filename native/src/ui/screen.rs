@@ -321,6 +321,10 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
             state.pending_mcp_token_save = Some((state.mcp_server_id_draft.trim().to_owned(), state.mcp_bearer_token_draft.clone()));
             state.mcp_status = "Saving server token to the Android Keystore…".into();
         }
+        if ui.add_enabled(!state.mcp_server_id_draft.trim().is_empty(), egui::Button::new("Remove saved server token")).clicked() {
+            state.pending_mcp_token_save = Some((state.mcp_server_id_draft.trim().to_owned(), String::new()));
+            state.mcp_status = "Removing saved server token…".into();
+        }
         ui.checkbox(&mut state.mcp_reviewed, "I reviewed the publisher, endpoint and requested capabilities");
         if ui.button("Discover tools").clicked() {
             let capabilities = state.mcp_capabilities_draft.split(',')
