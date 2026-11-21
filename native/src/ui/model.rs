@@ -93,6 +93,7 @@ pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
     pub reduced_motion: bool,
+    pub planning_mode: bool,
     pub provider_key_provider: String,
     pub provider_key_draft: String,
     pub provider_key_status: String,
