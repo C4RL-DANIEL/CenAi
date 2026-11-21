@@ -233,6 +233,9 @@ pub struct AppState {
     pub pending_voice_start: bool,
     pub pending_voice_stop: bool,
     pub voice_status: String,
+    pub pending_speech_text: Option<String>,
+    pub pending_speech_stop: bool,
+    pub speech_status: String,
 }
 
 impl Default for AppState {
