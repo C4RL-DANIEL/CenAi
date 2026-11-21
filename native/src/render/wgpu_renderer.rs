@@ -40,14 +40,13 @@ impl WgpuRenderer {
                 force_fallback_adapter: false,
             })
             .await
-            .map_err(|error| anyhow::anyhow!("No compatible GPU adapter: {error}"))?;
+            .ok_or_else(|| anyhow::anyhow!("No compatible GPU adapter was found"))?;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("CenAI GPU device"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
-                trace: wgpu::Trace::Off,
             })
             .await?;
         let size = window.inner_size();
