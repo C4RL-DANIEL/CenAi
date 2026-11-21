@@ -11,6 +11,12 @@ object NativeCore {
 
     external fun normalizePrompt(input: String): String
 
+    /** Normalizes line endings and removes unsafe control characters from message bodies. */
+    external fun normalizeMessageContent(input: String): String
+
+    /** Returns true only for system, user, assistant, or tool messages. */
+    external fun isValidChatRole(role: String): Boolean
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
