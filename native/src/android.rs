@@ -98,7 +98,7 @@ impl CenAiApplication {
             let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
-            let activity = unsafe { JObject::from_raw(callback_app.activity_as_ptr().cast()) };
+            let Ok(activity) = activity_local(&mut env, &callback_app) else { log::error!("Could not access CenAI activity on JNI thread"); return; };
             let result = (|| -> jni::errors::Result<()> {
                 let uri_string = env.new_string(url)?;
                 let uri = env.call_static_method("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", &[JValue::Object(&uri_string)])?.l()?;
