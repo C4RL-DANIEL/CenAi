@@ -119,6 +119,7 @@ impl AutomationScheduler {
     pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
         let previous = self.automations.clone();
         let due = self.poll_due(now);
+        if due.is_empty() { return Ok(due); }
         if let Err(error) = self.persist_to_workspace(store) {
             self.automations = previous;
             return Err(error);
@@ -169,8 +170,14 @@ impl AutomationScheduler {
             let cursor = automation.last_scheduled_at
                 .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
                 .unwrap_or_else(|| now - Duration::minutes(1));
-            let Ok(Some(next)) = automation.next_run_after(cursor) else { continue; };
-            if next <= now {
+            let Ok(schedule) = automation.schedule.parse::<Schedule>() else { continue; };
+            // Coalesce missed intervals into the latest due occurrence so a long
+            // app suspension does not replay an unbounded backlog of old tasks.
+            let mut latest_due = None;
+            for occurrence in schedule.after(&cursor).take(10_000) {
+                if occurrence <= now { latest_due = Some(occurrence); } else { break; }
+            }
+            if let Some(next) = latest_due {
                 automation.last_scheduled_at = Some(next.timestamp());
                 due.push(AutomationTrigger {
                     automation_id: automation.id.clone(),
@@ -252,6 +259,19 @@ mod tests {
         assert!(scheduler.pause(OWNER, "quarter-hour"));
         assert!(scheduler.poll_due(now + Duration::minutes(15)).is_empty());
         assert!(scheduler.resume(OWNER, "quarter-hour"));
+    }
+
+    #[test]
+    fn delayed_scheduler_coalesces_missed_occurrences_without_backlog_replay() {
+        let mut scheduler = AutomationScheduler::default();
+        let mut item = automation("hourly", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        scheduler.upsert(item).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T10:02:00Z").unwrap().with_timezone(&Utc);
+        let due = scheduler.poll_due(now);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T10:00:00Z").unwrap().timestamp());
+        assert!(scheduler.poll_due(now).is_empty());
     }
 
     #[test]
