@@ -2,6 +2,7 @@
 use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 use crate::core::workspace::Project;
+use crate::core::agents::TaskPlan;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
@@ -102,6 +103,7 @@ pub struct AppState {
     pub provider_key_status: String,
     pub pending_provider_key: Option<(String, String)>,
     pub projects: Vec<Project>,
+    pub task_plans: Vec<TaskPlan>,
     pub project_name_draft: String,
     pub project_description_draft: String,
     pub project_status: String,
@@ -156,6 +158,7 @@ impl Default for AppState {
             provider_key_status: String::new(),
             pending_provider_key: None,
             projects: Vec::new(),
+            task_plans: Vec::new(),
             project_name_draft: String::new(),
             project_description_draft: String::new(),
             project_status: String::new(),
