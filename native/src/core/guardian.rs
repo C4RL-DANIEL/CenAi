@@ -14,8 +14,20 @@ pub struct DiagnosticEvent {
 }
 
 fn sanitize_label(value: &str, limit: usize) -> String {
-    value.split(|character: char| !character.is_ascii_alphanumeric() && character != '_' && character != '-')
-        .filter(|word| !matches!(word.to_ascii_lowercase().as_str(), "secret" | "token" | "password" | "private" | "credential" | "authorization" | "key"))
+    const SENSITIVE: &[&str] = &[
+        "secret", "token", "password", "private", "credential", "authorization",
+        "apikey", "api_key", "bearer", "cookie", "session", "refresh",
+    ];
+    value.split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|word| {
+            let lower = word.to_ascii_lowercase();
+            !word.is_empty()
+                && word.len() <= 32
+                && !SENSITIVE.iter().any(|sensitive| lower.contains(sensitive))
+                // Long mixed alphanumeric fragments are commonly keys, hashes or opaque identifiers.
+                && !(word.len() >= 20 && word.chars().any(|c| c.is_ascii_alphabetic()) && word.chars().any(|c| c.is_ascii_digit()))
+        })
+        .take(8)
         .collect::<String>()
         .chars().take(limit).collect()
 }
@@ -53,6 +65,11 @@ impl GuardianMonitor {
         let key = format!("{:?}:{}:{}", event.kind, event.component, event.code);
         if self.last_seen.get(&key).is_some_and(|last| event.occurred_at_unix_ms.saturating_sub(*last) < 60_000) {
             return false;
+        }
+        if self.last_seen.len() >= 256 {
+            if let Some(oldest) = self.last_seen.iter().min_by_key(|(_, timestamp)| **timestamp).map(|(key, _)| key.clone()) {
+                self.last_seen.remove(&oldest);
+            }
         }
         self.last_seen.insert(key, event.occurred_at_unix_ms);
         if self.local_events.len() == 64 {
