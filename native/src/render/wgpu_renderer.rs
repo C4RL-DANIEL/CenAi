@@ -1013,6 +1013,72 @@ impl WgpuRenderer {
                 self.app_state.personal_memory_status = "Sign in before saving personal memories.".into();
             }
         }
+        if std::mem::take(&mut self.app_state.pending_mfa_refresh) {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.mfa_factors().await.and_then(mfa_factors_from_response);
+                    let _ = sender.send(ChatEvent::MfaFactorsLoaded(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.mfa_status = "Sign in before managing multi-factor authentication.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_mfa_enroll) {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        let value = api.mfa_enroll_totp("CenAI authenticator").await?;
+                        let factor_id = value.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+                        let secret = value.pointer("/totp/secret").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+                        let qr = value.pointer("/totp/qr_code").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+                        if factor_id.is_empty() || secret.is_empty() {
+                            return Err("MFA service did not return a valid TOTP setup secret.".into());
+                        }
+                        Ok((factor_id, secret, qr))
+                    }.await;
+                    let _ = sender.send(ChatEvent::MfaEnrolled(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.mfa_status = "Sign in before enrolling an authenticator.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_mfa_verify) {
+            let factor_id = self.app_state.mfa_enrollment_factor_id.clone();
+            let code = self.app_state.mfa_code_draft.trim().to_owned();
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        let challenge = api.mfa_challenge(&factor_id).await?;
+                        api.mfa_verify_totp(&factor_id, &challenge, &code).await
+                    }.await;
+                    let _ = sender.send(ChatEvent::MfaVerified(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.mfa_status = "Sign in before verifying an authenticator.".into();
+            }
+        }
+        if let Some(factor_id) = self.app_state.pending_mfa_unenroll.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.mfa_unenroll(&factor_id).await;
+                    let _ = sender.send(ChatEvent::MfaRemoved(generation, factor_id, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.mfa_status = "Sign in before removing an authenticator.".into();
+            }
+        }
         if let Some(enabled) = self.app_state.pending_guardian_consent.take() {
             self.guardian.set_telemetry_consent(enabled);
             if let Some(api) = self.api.clone() {
