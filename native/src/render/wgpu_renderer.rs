@@ -270,6 +270,8 @@ impl WgpuRenderer {
             .filter(|message| message.role == MessageRole::User)
             .map(|message| message.body.clone()).last().unwrap_or_default();
         if self.app_state.planning_mode {
+            let include_personal_memory = self.app_state.personal_memory_enabled && self.app_state.include_memory_for_request;
+            self.app_state.include_memory_for_request = false;
             let recent_messages = self.app_state.conversation.messages()
                 .filter(|message| message.role != MessageRole::System)
                 .collect::<Vec<_>>();
@@ -284,7 +286,8 @@ impl WgpuRenderer {
             let task = self.runtime.spawn(async move {
                 let result = match user_id {
                     Ok(user_id) => {
-                        let request = ContextRequest::new(user_id.clone(), "conversation", session_id.clone());
+                        let mut request = ContextRequest::new(user_id.clone(), "conversation", session_id.clone());
+                        request.apply_user_approved_grants(false, include_personal_memory);
                         let records = [ContextRecord {
                             owner_user_id: user_id,
                             feature_id: "conversation".into(),
