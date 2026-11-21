@@ -84,8 +84,11 @@ jobs:
           }
           const body = "Subject: test\r\n\r\n.first line\r\n..second line";
           const formatted = body.replace(/(^|\r\n)\./g, "$1..") + "\r\n.\r\n";
-          if (!formatted.endsWith("\r\n.\r\n") || formatted.endsWith("\r\n..\r\n")) {
+          if (formatted.slice(-5) !== "\r\n.\r\n") {
             throw new Error("SMTP terminator regression test failed");
+          }
+          if (!formatted.includes("\r\n..first line") || !formatted.includes("\r\n...second line")) {
+            throw new Error("SMTP dot-stuffing regression test failed");
           }
           console.log("SMTP DATA terminator regression test passed.");
           NODE
