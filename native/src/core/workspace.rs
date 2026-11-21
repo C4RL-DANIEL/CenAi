@@ -193,8 +193,9 @@ impl WorkspaceStore {
             || payload.automations.len() > 1000 || payload.artifacts.len() > 2000 {
             return Err("Workspace backup schema or item limits are invalid".into());
         }
+        let mut project_ids = std::collections::HashSet::new();
         for project in &payload.projects {
-            if !safe_segment(&project.id) || project.name.trim().is_empty()
+            if !project_ids.insert(project.id.clone()) || !safe_segment(&project.id) || project.name.trim().is_empty()
                 || project.id.len() > 80 || project.name.len() > 160 || project.description.len() > 20_000
                 || project.artifacts.len() > 2000 {
                 return Err("Workspace backup contains invalid project metadata".into());
@@ -204,18 +205,25 @@ impl WorkspaceStore {
                     || artifact.file_name.len() > 240 || artifact.file_name.contains('/')
                     || artifact.file_name.contains('\\') || artifact.file_name.chars().any(char::is_control)
                     || artifact.media_type.trim().is_empty() || artifact.media_type.len() > 120
+                    || !artifact.media_type.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'/' | b'.' | b'+' | b'-' | b';' | b'=' | b' '))
                     || artifact.byte_length == 0 || artifact.byte_length > 25 * 1024 * 1024
                     || artifact.sha256.len() != 64 || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                     return Err("Workspace backup contains invalid artifact metadata".into());
                 }
             }
         }
+        let mut task_ids = std::collections::HashSet::new();
         for task in &payload.tasks {
-            if task.id != task.plan.id || task.plan.validate_persisted().is_err() {
+            if !task_ids.insert(task.id.clone()) || task.id != task.plan.id || task.plan.validate_persisted().is_err() {
                 return Err("Workspace backup contains an invalid task plan".into());
             }
         }
+        let mut automation_ids = std::collections::HashSet::new();
         for automation in &payload.automations {
+            if !automation_ids.insert(automation.id.clone()) {
+                return Err("Workspace backup contains duplicate automation identifiers".into());
+            }
             automation.validate().map_err(|error| format!("Invalid backup automation: {error}"))?;
             if automation.owner_scope != self.user_identity {
                 return Err("Backup automation belongs to a different account".into());
