@@ -414,6 +414,72 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
         }
     });
     surface(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(text("Ecosystem Engine", 16.0, egui::Color32::WHITE).strong());
+            if ui.button("Refresh catalog").clicked() {
+                state.pending_ecosystem_refresh = true;
+                state.ecosystem_status = "Loading the app catalog for this account…".into();
+            }
+        });
+        ui.label(text("Connect other apps to CenAI with explicit, account-specific permissions. Every grant can be revoked independently.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        if state.account_email.is_empty() {
+            ui.label(text("Sign in to view your private app connections.", 11.0, egui::Color32::from_rgb(220, 184, 121)));
+        } else if state.ecosystem_apps.is_empty() {
+            ui.label(text("No compatible apps are currently registered. Refresh to check the catalog.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        }
+        let apps = state.ecosystem_apps.clone();
+        for app in apps {
+            ui.separator();
+            ui.label(text(&app.app_id, 13.0, egui::Color32::WHITE).strong());
+            ui.label(text(format!("Publisher: {} · Version {}", app.publisher_id, app.version), 10.0, accent()));
+            if !app.description.is_empty() {
+                ui.label(text(&app.description, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+            }
+            let active_grant = !app.revoked && !app.granted_scopes.is_empty();
+            if active_grant {
+                ui.label(text(format!("Granted: {}", app.granted_scopes.join(", ")), 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            } else {
+                ui.label(text("No active permissions granted.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            }
+            if state.ecosystem_selected_app != app.app_id {
+                if ui.button("Review permissions").clicked() {
+                    state.ecosystem_selected_app = app.app_id.clone();
+                    state.ecosystem_grant_scopes_draft.clear();
+                }
+            } else {
+                ui.label(text("Choose only the permissions this app needs:", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                let mut selected = state.ecosystem_grant_scopes_draft.split(',')
+                    .map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned).collect::<std::collections::HashSet<_>>();
+                for scope in &app.requested_scopes {
+                    let mut checked = selected.contains(scope);
+                    if ui.checkbox(&mut checked, scope).changed() {
+                        if checked { selected.insert(scope.clone()); } else { selected.remove(scope); }
+                    }
+                }
+                state.ecosystem_grant_scopes_draft = selected.into_iter().collect::<Vec<_>>().join(",");
+                ui.horizontal(|ui| {
+                    let scopes = state.ecosystem_grant_scopes_draft.split(',')
+                        .map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+                    if ui.add_enabled(!scopes.is_empty(), egui::Button::new("Grant selected permissions")).clicked() {
+                        state.pending_ecosystem_grant = Some((app.app_id.clone(), scopes));
+                        state.ecosystem_status = "Saving this account's app permissions…".into();
+                    }
+                    if active_grant && ui.button("Revoke access").clicked() {
+                        state.pending_ecosystem_revoke = Some(app.app_id.clone());
+                        state.ecosystem_status = "Revoking this app's permissions…".into();
+                    }
+                    if ui.button("Close").clicked() {
+                        state.ecosystem_selected_app.clear();
+                        state.ecosystem_grant_scopes_draft.clear();
+                    }
+                });
+            }
+        }
+        if !state.ecosystem_status.is_empty() {
+            ui.label(text(&state.ecosystem_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    surface(ui, |ui| {
         ui.label(text("Managed model routing", 16.0, egui::Color32::WHITE).strong());
         let managed_status = if state.account_email.is_empty() {
             "Sign in to your CenAI account to use managed Cloud AI."
