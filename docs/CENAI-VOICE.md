@@ -72,7 +72,7 @@ After the voice-actor dataset and written consent are secured, use Qwen's docume
 
 - [x] English-first CenAI Voice profile and ten-language metadata.
 - [x] Rust client for authenticated cloud WAV synthesis with account-switch checks and a dedicated 240-second timeout.
-- [x] Cloudflare Worker gateway with Supabase JWT validation, immutable user identity forwarding, payload limits and private backend token.
+- [x] Cloudflare Worker gateway with Supabase JWT validation, immutable user identity forwarding, payload limits, private backend token and authenticated GPU readiness checks.
 - [x] GPU FastAPI inference service with model caching, fixed voice-clone prompt, request validation and bounded concurrency.
 - [x] Android read-aloud wired to the cloud gateway; no local model download or Google TTS synthesis path.
 - [x] Removed the Qwen C++/GGML build from the APK workflow to keep the client small.
