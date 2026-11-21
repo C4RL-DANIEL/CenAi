@@ -134,7 +134,7 @@ pub struct VoiceEngineStatus {
 impl Default for VoiceEngineStatus {
     fn default() -> Self {
         Self {
-            runtime: RuntimeState::NativeRuntimeNotIntegrated,
+            runtime: RuntimeState::ModelNotInstalled,
             model_id: PRIMARY_MODEL_ID,
             offline_only: true,
             fallback_enabled: false,
@@ -179,7 +179,7 @@ pub fn offline_unavailable_reason(status: &VoiceEngineStatus) -> Option<&'static
     if status.can_synthesize_offline() {
         None
     } else {
-        Some("CenAI Voice's Qwen-based offline runtime is not installed yet. No cloud or Google TTS fallback is permitted.")
+        Some("CenAI Voice's offline Qwen model pack is not installed yet. No cloud or Google TTS fallback is permitted.")
     }
 }
 
@@ -227,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_never_claims_offline_ready_or_falls_back_to_cloud() {
+    fn runtime_requires_a_verified_model_pack_and_never_falls_back_to_cloud() {
         let status = VoiceEngineStatus::default();
         assert!(!status.can_synthesize_offline());
         assert!(!status.fallback_enabled);
