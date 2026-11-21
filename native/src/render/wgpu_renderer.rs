@@ -462,7 +462,7 @@ impl WgpuRenderer {
                         Ok((manifest, client, tools)) => {
                             self.mcp_clients.insert(manifest.server_id.clone(), client);
                             self.app_state.mcp_tools = tools;
-                            self.app_state.mcp_status = format!("Discovered {} tools. No tool has been executed.", self.app_state.mcp_tools.len());
+                            self.app_state.mcp_status = format!("Connected to {} server(s); discovered {} tools. No tool has been executed.", self.mcp_clients.len(), self.app_state.mcp_tools.len());
                         }
                         Err(error) => self.app_state.mcp_status = format!("MCP discovery failed: {error}"),
                     }
