@@ -37,7 +37,14 @@ Deno.serve(async (req: Request) => {
 
     const raw = await req.text();
     if (raw.length > 32_000) return fail(413, "Memory request is too large");
-    const body = JSON.parse(raw || "{}");
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(raw || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fail(400, "Request body must be a JSON object");
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return fail(400, "Request body must contain valid JSON");
+    }
     const action = String(body.action ?? "");
 
     if (action === "memory_status") {
