@@ -283,6 +283,31 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_atomic_writes_never_expose_partial_file_contents() {
+        let root = temp_root();
+        let store = std::sync::Arc::new(
+            WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440008").unwrap()
+        );
+        let target = store.user_root.join("concurrent.bin");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let writers = (0..8).map(|index| {
+            let store = store.clone();
+            let barrier = barrier.clone();
+            let target = target.clone();
+            std::thread::spawn(move || {
+                let payload = vec![b'A' + index; 128 * 1024];
+                barrier.wait();
+                store.write_atomic(&target, &payload).unwrap();
+                payload
+            })
+        }).collect::<Vec<_>>();
+        let expected = writers.into_iter().map(|writer| writer.join().unwrap()).collect::<Vec<_>>();
+        let actual = fs::read(&target).unwrap();
+        assert!(expected.iter().any(|payload| payload == &actual));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn task_plans_persist_per_account_and_are_bounded() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440001").unwrap();
