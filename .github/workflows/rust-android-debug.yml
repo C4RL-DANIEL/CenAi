@@ -21,8 +21,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Serialize push and PR builds for the same source branch; newer commits supersede stale emulator runs.
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # Cancel stale snapshots within each GitHub event stream before starting the newest build.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
