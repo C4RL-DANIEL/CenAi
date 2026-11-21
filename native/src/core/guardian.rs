@@ -72,7 +72,7 @@ fn parse_cpu_counters(content: &str) -> Option<(u64, u64)> {
     let line = content.lines().next()?;
     let mut fields = line.split_whitespace();
     if fields.next()? != "cpu" { return None; }
-    let values = fields.map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
+    let values = fields.take(8).map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok()?;
     if values.len() < 4 { return None; }
     let total = values.iter().copied().sum();
     let idle = values.get(3).copied().unwrap_or(0).saturating_add(values.get(4).copied().unwrap_or(0));
