@@ -283,9 +283,6 @@ impl CenAiApi {
         let mut pending = String::new();
         let mut answer = String::new();
         while let Some(chunk) = stream.next().await {
-            if self.vault.account_id()? != account_id {
-                return Err("The active CenAI account changed while this stream was running.".into());
-            }
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
             while let Some(newline) = pending.find('\n') {
