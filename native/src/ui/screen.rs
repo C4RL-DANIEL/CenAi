@@ -214,7 +214,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
 fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Your Work", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Projects, files and tasks in one persistent space.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text("Projects and saved artifacts in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Create a project", 17.0, egui::Color32::WHITE).strong());
@@ -277,16 +277,6 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
     }
-    ui.add_space(10.0);
-    surface(ui, |ui| {
-        ui.label(text("Recent activity", 17.0, egui::Color32::WHITE).strong());
-        ui.label(text("No saved activity yet.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
-    });
-    ui.add_space(10.0);
-    surface(ui, |ui| {
-        ui.label(text("Files and artifacts", 17.0, egui::Color32::WHITE).strong());
-        ui.label(text("Documents, generated files and checkpoints will be organized here.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
-    });
 }
 
 fn connections(ui: &mut egui::Ui, state: &mut AppState) {
@@ -348,22 +338,27 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
             });
         }
     });
-    for (name, description, status) in [
-        ("Cloud AI", "CenAI managed model routing", "Backend integration pending"),
-        ("Your API keys", "Use your own provider credentials", "Secure vault integration pending"),
-        ("MCP tools", "Discover and authorize external capabilities", "Permission system in progress"),
-    ] {
-        surface(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(text(name, 16.0, egui::Color32::WHITE).strong());
-                    ui.label(text(description, 12.0, egui::Color32::from_rgb(163, 174, 203)));
-                    ui.label(text(status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
-                });
-            });
-        });
-        ui.add_space(8.0);
-    }
+    surface(ui, |ui| {
+        ui.label(text("Managed model routing", 16.0, egui::Color32::WHITE).strong());
+        let managed_status = if state.account_email.is_empty() {
+            "Sign in to your CenAI account to use managed Cloud AI."
+        } else {
+            "CenAI Cloud is available for this signed-in account; server-side quotas apply."
+        };
+        ui.label(text(managed_status, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.separator();
+        ui.label(text("Bring your own provider", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Configure OpenAI-compatible or DeepSeek credentials in Settings. Keys are stored in Android Keystore and used only for the selected provider route.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.separator();
+        ui.label(text("Remote MCP tools", 16.0, egui::Color32::WHITE).strong());
+        let tool_status = if state.mcp_tools.is_empty() {
+            "No tools discovered. Connect an HTTPS MCP server above."
+                .to_owned()
+        } else {
+            format!("{} tools discovered. Discovery does not grant execution permission.", state.mcp_tools.len())
+        };
+        ui.label(text(tool_status, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+    });
     if !state.mcp_call_result.is_empty() {
         surface(ui, |ui| {
             ui.label(text("Last tool result", 13.0, egui::Color32::WHITE).strong());
@@ -397,6 +392,7 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Appearance & accessibility", 16.0, egui::Color32::WHITE).strong());
+        ui.checkbox(&mut state.light_mode, "Use light appearance");
         ui.checkbox(&mut state.reduced_motion, "Reduce interface motion");
         let previous_guardian_consent = state.guardian_consent;
         ui.checkbox(&mut state.guardian_consent, "Allow minimal Guardian diagnostics");
