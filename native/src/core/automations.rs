@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use cron_parser::Schedule;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::core::workspace::WorkspaceStore;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
@@ -64,6 +65,27 @@ pub struct AutomationScheduler {
 }
 
 impl AutomationScheduler {
+    pub fn from_workspace(store: &WorkspaceStore) -> Result<Self, String> {
+        let mut scheduler = Self::default();
+        for automation in store.automations()? {
+            scheduler.upsert(automation).map_err(|error| error.to_owned())?;
+        }
+        Ok(scheduler)
+    }
+
+    pub fn persist_to_workspace(&self, store: &WorkspaceStore) -> Result<(), String> {
+        for automation in self.automations.values() {
+            store.save_automation(automation.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
+        let due = self.poll_due(now);
+        self.persist_to_workspace(store)?;
+        Ok(due)
+    }
+
     fn key(owner_scope: &str, automation_id: &str) -> String {
         format!("{owner_scope}:{automation_id}")
     }
