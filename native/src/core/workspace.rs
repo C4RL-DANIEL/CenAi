@@ -60,7 +60,7 @@ impl WorkspaceStore {
         let index_path = user_root.join("workspace.json");
         let store = Self { user_root, index_path };
         if !store.index_path.exists() {
-            store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new() })?;
+            store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new() })?;
         }
         Ok(store)
     }
