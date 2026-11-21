@@ -298,7 +298,7 @@ function estimateTokens(value) {
 }
 
 function streamAiChatResponse(upstream, env, token, reservation, model, inputTokens, started) {
-  const base = env.SUPABASE_URL.replace(/\\/$/, "");
+  const base = env.SUPABASE_URL.replace(/\/$/, "");
   let reader;
   let cancelled = false;
   let finalized = false;
@@ -354,7 +354,7 @@ function streamAiChatResponse(upstream, env, token, reservation, model, inputTok
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split(/\\r?\\n/);
+          const lines = buffer.split(/\r?\n/);
           buffer = lines.pop() || "";
           for (const line of lines) collectText(line);
           controller.enqueue(value);
