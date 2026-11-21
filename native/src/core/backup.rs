@@ -14,7 +14,7 @@ const KDF_ID: &str = "argon2id-v1.3-m65536-t3-p1";
 const AAD: &[u8] = b"CenAI::workspace-backup::v1";
 const SALT_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 12;
-const MAX_PLAINTEXT_BYTES: usize = 100 * 1024 * 1024;
+const MAX_PLAINTEXT_BYTES: usize = 70 * 1024 * 1024;
 const MAX_CIPHERTEXT_BYTES: usize = MAX_PLAINTEXT_BYTES + 16;
 const MAX_ENCODED_CIPHERTEXT_BYTES: usize = MAX_CIPHERTEXT_BYTES.div_ceil(3) * 4;
 
@@ -32,7 +32,7 @@ impl EncryptedBackup {
     pub fn seal(plaintext: &[u8], passphrase: &str) -> Result<Self, String> {
         validate_passphrase(passphrase)?;
         if plaintext.is_empty() || plaintext.len() > MAX_PLAINTEXT_BYTES {
-            return Err("Backup payload must be non-empty and no larger than 100 MB".into());
+            return Err("Backup payload must be non-empty and no larger than 70 MB".into());
         }
 
         let mut salt = [0u8; SALT_LENGTH];
