@@ -211,6 +211,7 @@ impl WgpuRenderer {
         let Some((message_id, _)) = latest else { return; };
         if message_id <= self.last_dispatched_message_id { return; }
         self.last_dispatched_message_id = message_id;
+        self.app_state.conversation.sending = true;
 
         let Some(api) = self.api.clone() else {
             let _ = self.response_tx.send(ChatEvent::Finished(message_id, Err("The account service is not initialized.".into())));
@@ -470,6 +471,7 @@ impl WgpuRenderer {
                     }
                 }
                 ChatEvent::PlanFinished(message_id, result) => {
+                    self.app_state.conversation.sending = false;
                     match result {
                         Ok(plan) => {
                             let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
@@ -515,6 +517,7 @@ impl WgpuRenderer {
                     }
                 }
                 ChatEvent::Finished(message_id, result) => {
+                    self.app_state.conversation.sending = false;
                     match result {
                         Ok(answer) => {
                             if let Some(stream_id) = self.active_streams.remove(&message_id) {
