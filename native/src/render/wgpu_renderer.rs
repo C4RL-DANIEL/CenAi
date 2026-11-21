@@ -518,6 +518,11 @@ impl WgpuRenderer {
             self.app_state.backup_status = "Sign in before restoring a private workspace backup.".into();
             return;
         };
+        if !self.app_state.backup_restore_confirmed {
+            self.app_state.backup_status = "Confirm that restoring replaces this account's current local workspace.".into();
+            let _ = std::fs::remove_file(path);
+            return;
+        }
         let passphrase = self.app_state.backup_passphrase_draft.clone();
         if passphrase.trim().is_empty() {
             self.app_state.backup_status = "Enter the backup passphrase before selecting the encrypted backup file.".into();
@@ -1217,6 +1222,52 @@ impl WgpuRenderer {
                     self.app_state.attachment_status = "Analyzing attachment with Gemini…".into();
                 }
                 _ => self.app_state.attachment_status = "Sign in and add a Gemini API key before analyzing attachments.".into(),
+            }
+        }
+        if let Some((attachment_id, prompt)) = self.app_state.pending_attachment_analysis.take() {
+            let metadata = self.app_state.attachments.iter()
+                .find(|attachment| attachment.id == attachment_id).cloned();
+            match (self.api.clone(), self.attachment_store.clone(), metadata) {
+                (Some(api), Some(store), Some(metadata)) if !prompt.trim().is_empty() => {
+                    let sender = self.response_tx.clone();
+                    let generation = self.account_generation;
+                    let event_id = attachment_id.clone();
+                    let task = self.runtime.spawn(async move {
+                        let result = async {
+                            let load_metadata = metadata.clone();
+                            let bytes = tokio::task::spawn_blocking(move || store.load(&load_metadata))
+                                .await.map_err(|error| format!("Attachment load task failed: {error}"))??;
+                            api.analyze_attachment_gemini(&metadata, &bytes, &prompt).await
+                        }.await;
+                        let _ = sender.send(ChatEvent::AttachmentAnalyzed(generation, event_id, result));
+                    });
+                    self.track_task(task);
+                    self.app_state.attachment_status = "Sending the selected attachment to Gemini for analysis…".into();
+                }
+                (_, _, None) => {
+                    self.app_state.attachment_status = "That attachment is no longer available in this account.".into();
+                }
+                (_, _, Some(_)) if prompt.trim().is_empty() => {
+                    self.app_state.attachment_status = "Enter an analysis instruction first.".into();
+                }
+                _ => {
+                    self.app_state.attachment_status = "Sign in and configure a Gemini API key before analyzing attachments.".into();
+                }
+            }
+        }
+        if let Some(attachment_id) = self.app_state.pending_attachment_delete.take() {
+            if let Some(store) = self.attachment_store.as_ref() {
+                match store.delete(&attachment_id) {
+                    Ok(true) => {
+                        self.app_state.attachments = store.list().unwrap_or_default();
+                        self.app_state.attachment_analysis_result.clear();
+                        self.app_state.attachment_status = "Attachment removed from this account.".into();
+                    }
+                    Ok(false) => self.app_state.attachment_status = "Attachment was already removed.".into(),
+                    Err(error) => self.app_state.attachment_status = format!("Could not remove attachment: {error}"),
+                }
+            } else {
+                self.app_state.attachment_status = "Sign in before removing private attachments.".into();
             }
         }
         if let Some((category, content)) = self.app_state.pending_memory_save.take() {
@@ -1923,6 +1974,28 @@ impl WgpuRenderer {
                             self.app_state.ecosystem_status = message;
                         }
                         Err(error) => self.app_state.ecosystem_status = format!("Ecosystem Engine: {error}"),
+                    }
+                }
+                ChatEvent::AttachmentImported(_, result) => {
+                    match result {
+                        Ok(metadata) => {
+                            self.app_state.attachments.retain(|item| item.id != metadata.id);
+                            self.app_state.attachments.push(metadata.clone());
+                            self.app_state.attachment_status = format!("{} added to your private attachments.", metadata.file_name);
+                        }
+                        Err(error) => self.app_state.attachment_status = format!("Attachment import failed: {error}"),
+                    }
+                }
+                ChatEvent::AttachmentAnalyzed(_, attachment_id, result) => {
+                    if !self.app_state.attachments.iter().any(|item| item.id == attachment_id) {
+                        continue;
+                    }
+                    match result {
+                        Ok(answer) => {
+                            self.app_state.attachment_analysis_result = answer;
+                            self.app_state.attachment_status = "Attachment analysis complete. Review the result before using it.".into();
+                        }
+                        Err(error) => self.app_state.attachment_status = format!("Attachment analysis failed: {error}"),
                     }
                 }
                 ChatEvent::VoiceTranscribed(_, result) => {
