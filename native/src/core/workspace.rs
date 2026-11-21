@@ -52,7 +52,9 @@ pub struct WorkspaceStore {
 
 impl WorkspaceStore {
     pub fn new(root: impl AsRef<Path>, user_identity: &str) -> Result<Self, String> {
-        if user_identity.trim().is_empty() { return Err("A signed-in user scope is required".into()); }
+        if !valid_account_uuid(user_identity) {
+            return Err("A canonical authenticated Supabase user UUID is required for workspace access".into());
+        }
         let digest = Sha256::digest(user_identity.as_bytes());
         let scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         let user_root = root.as_ref().join(scope);
@@ -226,6 +228,15 @@ impl WorkspaceStore {
     }
 }
 
+fn valid_account_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
 fn safe_segment(value: &str) -> bool {
     !value.is_empty() && value.len() <= 80
         && value.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
@@ -244,9 +255,18 @@ mod tests {
     }
 
     #[test]
+    fn workspace_rejects_non_uuid_identity_scopes() {
+        let root = temp_root();
+        assert!(WorkspaceStore::new(&root, "person@example.com").is_err());
+        assert!(WorkspaceStore::new(&root, "not-a-user-id").is_err());
+        assert!(WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440007").is_ok());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn task_plans_persist_per_account_and_are_bounded() {
         let root = temp_root();
-        let store = WorkspaceStore::new(&root, "task-user").unwrap();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440001").unwrap();
         let plan = TaskPlan {
             id: "task-1".into(),
             goal: "Build a tested feature".into(),
@@ -257,7 +277,7 @@ mod tests {
             ],
         };
         store.save_task_plan(plan.clone(), 100).unwrap();
-        let other = WorkspaceStore::new(&root, "other-task-user").unwrap();
+        let other = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440002").unwrap();
         assert_eq!(store.task_plans().unwrap()[0].plan, plan);
         assert!(other.task_plans().unwrap().is_empty());
         assert_eq!(store.task_plans().unwrap()[0].created_at_unix_ms, 100);
@@ -267,8 +287,8 @@ mod tests {
     #[test]
     fn workspaces_are_isolated_by_user_identity() {
         let root = temp_root();
-        let alice = WorkspaceStore::new(&root, "alice-account").unwrap();
-        let bob = WorkspaceStore::new(&root, "bob-account").unwrap();
+        let alice = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440003").unwrap();
+        let bob = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440004").unwrap();
         let project = Project {
             id: "project-1".into(), name: "Project".into(), description: String::new(),
             created_at_unix_ms: 1, updated_at_unix_ms: 1, archived: false, artifacts: Vec::new(),
@@ -282,7 +302,7 @@ mod tests {
     #[test]
     fn conversation_history_round_trips_per_user() {
         let root = temp_root();
-        let store = WorkspaceStore::new(&root, "history-user").unwrap();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440005").unwrap();
         let messages = vec![
             crate::ui::model::Message { id: 1, role: crate::ui::model::MessageRole::User, body: "hello".into(), streaming: false },
             crate::ui::model::Message { id: 2, role: crate::ui::model::MessageRole::Assistant, body: "world".into(), streaming: false },
@@ -296,7 +316,7 @@ mod tests {
     #[test]
     fn artifact_paths_are_safe_and_content_is_integrity_tagged() {
         let root = temp_root();
-        let store = WorkspaceStore::new(&root, "test-user").unwrap();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440006").unwrap();
         store.save_project(Project {
             id: "p1".into(), name: "Artifacts".into(), description: String::new(),
             created_at_unix_ms: 1, updated_at_unix_ms: 1, archived: false, artifacts: Vec::new(),
