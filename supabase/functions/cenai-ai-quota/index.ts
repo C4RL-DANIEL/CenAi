@@ -61,7 +61,7 @@ Deno.serve(async (req: Request) => {
       const inputTokens = Math.max(0, Math.min(20000, Math.floor(Number(body.inputTokens) || 0)));
       const outputTokens = Math.max(0, Math.min(2048, Math.floor(Number(body.outputTokens) || 0)));
       const latencyMs = Math.max(0, Math.min(600000, Math.floor(Number(body.latencyMs) || 0)));
-      const status = body.status === "error" ? "error" : "success";
+      const status = ["success", "error", "cancelled", "blocked"].includes(String(body.status)) ? String(body.status) : "success";
       if (!Number.isSafeInteger(eventId) || eventId < 1) return reply(400, { error: "Invalid usage event." });
       const { data, error } = await adminDb.from("usage_events").update({
         input_tokens: inputTokens, output_tokens: outputTokens, latency_ms: latencyMs, status,
