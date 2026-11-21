@@ -11,6 +11,33 @@ pub struct McpCapability {
     pub requested_scopes: Vec<String>,
 }
 
+fn validate_endpoint_url(endpoint: &str) -> Result<(), &'static str> {
+    if endpoint.len() > 2048 {
+        return Err("MCP endpoint URL exceeds the supported size");
+    }
+    let url = reqwest::Url::parse(endpoint).map_err(|_| "MCP endpoint URL is invalid")?;
+    if url.scheme() != "https" || url.host_str().is_none() {
+        return Err("Remote MCP endpoints must use HTTPS");
+    }
+    if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+        return Err("MCP endpoint URLs cannot contain credentials, query parameters or fragments");
+    }
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return Err("Local-only MCP hosts are not accepted by the remote connector");
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let is_private = match ip {
+            std::net::IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_multicast(),
+            std::net::IpAddr::V6(ip) => ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast(),
+        };
+        if is_private {
+            return Err("Private, loopback and link-local MCP addresses are blocked");
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct McpServerManifest {
     pub server_id: String,
@@ -43,9 +70,7 @@ impl McpServerManifest {
         if self.version.trim().is_empty() || self.license_id.trim().is_empty() {
             return Err("Server version and license must be declared");
         }
-        if !self.endpoint_url.starts_with("https://") || self.endpoint_url.len() > 2048 {
-            return Err("Remote MCP endpoints must use HTTPS");
-        }
+        validate_endpoint_url(&self.endpoint_url)?;
         if self.protocol_version != supported_protocol {
             return Err("Unsupported MCP protocol version");
         }
@@ -115,6 +140,7 @@ impl McpHttpClient {
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
             .timeout(std::time::Duration::from_secs(60))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("CenAI-MCP/0.3")
             .build().map_err(|error| error.to_string())?;
         Ok(Self {
@@ -260,6 +286,12 @@ mod tests {
         let mut server = test_server();
         server.endpoint_url = "http://mcp.example.com".into();
         assert_eq!(server.validate(1), Err("Remote MCP endpoints must use HTTPS"));
+        server.endpoint_url = "https://user:password@mcp.example.com".into();
+        assert!(server.validate(1).is_err());
+        server.endpoint_url = "https://127.0.0.1/mcp".into();
+        assert!(server.validate(1).is_err());
+        server.endpoint_url = "https://mcp.example.com?token=secret".into();
+        assert!(server.validate(1).is_err());
         server.endpoint_url = "https://mcp.example.com".into();
         server.capabilities.push(server.capabilities[0].clone());
         assert_eq!(server.validate(1), Err("MCP capability names must be unique"));
