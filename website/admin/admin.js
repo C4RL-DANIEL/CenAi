@@ -248,7 +248,7 @@
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     ["overview","members","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","registration","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
-      const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing","members"].includes(tab) ? {} : await api(tab);
+      const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing","members","registration"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
       if (tab === "overview") {
         $("plane").textContent = data.controlPlane || "Not configured";
