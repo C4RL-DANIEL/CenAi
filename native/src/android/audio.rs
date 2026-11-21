@@ -3,7 +3,7 @@ use std::{
     sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Mutex},
     thread::{self, JoinHandle},
 };
-use jni::{objects::{GlobalRef, JByteArray, JObject, JValue}, JavaVM};
+use jni::{objects::{GlobalRef, JObject, JValue}, JavaVM};
 use winit::platform::android::activity::AndroidApp;
 use crate::core::voice::AudioFrame;
 
