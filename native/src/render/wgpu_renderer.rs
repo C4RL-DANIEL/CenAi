@@ -472,6 +472,10 @@ impl WgpuRenderer {
         self.app_state.pending_provider_key = None;
         self.app_state.pending_project_create = None;
         self.app_state.pending_artifact = None;
+        self.app_state.pending_artifact_open = None;
+        self.app_state.artifact_preview_name.clear();
+        self.app_state.artifact_preview_content.clear();
+        self.app_state.artifact_preview_status.clear();
         self.app_state.pending_mcp_connect = None;
         self.app_state.pending_mcp_call = None;
         self.app_state.mcp_pending_approval = None;
@@ -748,6 +752,33 @@ impl WgpuRenderer {
                 };
             } else {
                 self.app_state.artifact_status = "Sign in to save artifacts to your account workspace.".into();
+            }
+        }
+        if let Some(artifact_id) = self.app_state.pending_artifact_open.take() {
+            if let Some(store) = &self.workspace {
+                match store.read_artifact(&artifact_id) {
+                    Ok(bytes) => match String::from_utf8(bytes) {
+                        Ok(content) => {
+                            if let Some(artifact) = self.app_state.projects.iter()
+                                .flat_map(|project| project.artifacts.iter())
+                                .find(|artifact| artifact.id == artifact_id) {
+                                self.app_state.artifact_preview_name = artifact.file_name.clone();
+                                self.app_state.artifact_preview_content = content;
+                                self.app_state.artifact_preview_status.clear();
+                            } else {
+                                self.app_state.artifact_preview_status = "Artifact metadata was not found in this workspace.".into();
+                            }
+                        }
+                        Err(_) => {
+                            self.app_state.artifact_preview_name.clear();
+                            self.app_state.artifact_preview_content.clear();
+                            self.app_state.artifact_preview_status = "This artifact is not a UTF-8 text file and cannot be previewed here.".into();
+                        }
+                    },
+                    Err(error) => self.app_state.artifact_preview_status = format!("Could not open artifact: {error}"),
+                }
+            } else {
+                self.app_state.artifact_preview_status = "Sign in to open your private workspace artifacts.".into();
             }
         }
         if let Some((name, description)) = self.app_state.pending_project_create.take() {
