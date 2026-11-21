@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use crate::core::agents::TaskPlan;
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -28,10 +29,20 @@ pub struct Project {
     pub artifacts: Vec<Artifact>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TaskRecord {
+    pub id: String,
+    pub plan: TaskPlan,
+    pub created_at_unix_ms: u64,
+    pub updated_at_unix_ms: u64,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 struct WorkspaceIndex {
     schema_version: u16,
     projects: Vec<Project>,
+    #[serde(default)]
+    tasks: Vec<TaskRecord>,
 }
 
 pub struct WorkspaceStore {
@@ -93,6 +104,40 @@ impl WorkspaceStore {
         if !path.exists() { return Ok(Vec::new()); }
         let bytes = fs::read(path).map_err(|error| error.to_string())?;
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+    }
+
+    pub fn task_plans(&self) -> Result<Vec<TaskRecord>, String> {
+        let mut tasks = self.read_index()?.tasks;
+        tasks.sort_by_key(|task| std::cmp::Reverse(task.updated_at_unix_ms));
+        Ok(tasks)
+    }
+
+    pub fn save_task_plan(&self, plan: TaskPlan, now_unix_ms: u64) -> Result<TaskRecord, String> {
+        plan.validate().map_err(|error| format!("Invalid task plan: {error}"))?;
+        let mut index = self.read_index()?;
+        let record = match index.tasks.iter_mut().find(|task| task.id == plan.id) {
+            Some(existing) => {
+                existing.plan = plan;
+                existing.updated_at_unix_ms = now_unix_ms;
+                existing.clone()
+            }
+            None => {
+                let record = TaskRecord {
+                    id: plan.id.clone(),
+                    plan,
+                    created_at_unix_ms: now_unix_ms,
+                    updated_at_unix_ms: now_unix_ms,
+                };
+                index.tasks.push(record.clone());
+                record
+            }
+        };
+        if index.tasks.len() > 200 {
+            index.tasks.sort_by_key(|task| std::cmp::Reverse(task.updated_at_unix_ms));
+            index.tasks.truncate(200);
+        }
+        self.write_index(&index)?;
+        Ok(record)
     }
 
     pub fn projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
@@ -196,6 +241,27 @@ mod tests {
             static NEXT: AtomicU64 = AtomicU64::new(1);
             std::env::temp_dir().join(format!("cenai-workspace-test-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
         }
+    }
+
+    #[test]
+    fn task_plans_persist_per_account_and_are_bounded() {
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "task-user").unwrap();
+        let plan = TaskPlan {
+            id: "task-1".into(),
+            goal: "Build a tested feature".into(),
+            stopped: false,
+            steps: vec![
+                crate::core::agents::TaskStep { id: 1, role: crate::core::agents::AgentRole::Developer, title: "Implement".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![] },
+                crate::core::agents::TaskStep { id: 2, role: crate::core::agents::AgentRole::Tester, title: "Test".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![1] },
+            ],
+        };
+        store.save_task_plan(plan.clone(), 100).unwrap();
+        let other = WorkspaceStore::new(&root, "other-task-user").unwrap();
+        assert_eq!(store.task_plans().unwrap()[0].plan, plan);
+        assert!(other.task_plans().unwrap().is_empty());
+        assert_eq!(store.task_plans().unwrap()[0].created_at_unix_ms, 100);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
