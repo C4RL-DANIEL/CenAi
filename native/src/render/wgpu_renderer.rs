@@ -1525,8 +1525,12 @@ impl WgpuRenderer {
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default();
-                                if let Ok(messages) = workspace.load_conversation(&self.session_id) {
+                                if let Ok(messages) = workspace.load_conversation("primary") {
                                     self.app_state.conversation.restore_messages(messages);
+                                    self.last_saved_message_count = self.app_state.conversation.messages().count();
+                                    self.last_dispatched_message_id = self.app_state.conversation.messages()
+                                        .filter(|message| message.role == MessageRole::User)
+                                        .map(|message| message.id).max().unwrap_or(0);
                                 }
                             }
                             self.app_state.backup_passphrase_draft.clear();
