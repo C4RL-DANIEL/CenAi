@@ -1110,6 +1110,7 @@ impl WgpuRenderer {
                         enabled: true,
                         requires_approval: true,
                         last_scheduled_at: None,
+                        pending_scheduled_at: None,
                     };
                     let scheduler = self.automation_scheduler.get_or_insert_with(|| AutomationScheduler::from_workspace(store).unwrap_or_default());
                     match scheduler.upsert_and_persist(automation, store) {
