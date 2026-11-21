@@ -1,5 +1,6 @@
 //! UI state model shared by the GPU scene graph and input system.
 use std::collections::VecDeque;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
@@ -9,14 +10,14 @@ pub enum Destination {
     Settings,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MessageRole {
     User,
     Assistant,
     System,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub id: u64,
     pub role: MessageRole,
@@ -24,7 +25,7 @@ pub struct Message {
     pub streaming: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConversationState {
     messages: VecDeque<Message>,
     next_id: u64,
@@ -39,6 +40,12 @@ impl Default for ConversationState {
 }
 
 impl ConversationState {
+    pub fn restore_messages(&mut self, messages: Vec<Message>) {
+        self.next_id = messages.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1).max(1);
+        self.messages = messages.into_iter().collect();
+        self.sending = false;
+    }
+
     pub fn messages(&self) -> impl Iterator<Item = &Message> {
         self.messages.iter()
     }
