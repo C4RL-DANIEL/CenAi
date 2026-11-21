@@ -1,10 +1,10 @@
 //! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
-use std::sync::{mpsc, Arc};
+use std::{collections::HashMap, sync::{mpsc, Arc}};
 use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{network::CenAiApi, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -13,6 +13,11 @@ struct ShaderUniforms {
     resolution: [f32; 2],
     time_seconds: f32,
     intensity: f32,
+}
+
+enum ChatEvent {
+    Delta(u64, String),
+    Finished(u64, Result<String, String>),
 }
 
 pub struct WgpuRenderer {
@@ -32,8 +37,9 @@ pub struct WgpuRenderer {
     api: Option<CenAiApi>,
     runtime: Handle,
     last_dispatched_message_id: u64,
-    response_tx: mpsc::Sender<(u64, Result<String, String>)>,
-    response_rx: mpsc::Receiver<(u64, Result<String, String>)>,
+    response_tx: mpsc::Sender<ChatEvent>,
+    response_rx: mpsc::Receiver<ChatEvent>,
+    active_streams: HashMap<u64, u64>,
     workspace: Option<WorkspaceStore>,
     last_saved_message_count: usize,
 }
@@ -172,6 +178,7 @@ impl WgpuRenderer {
             last_dispatched_message_id: 0,
             response_tx,
             response_rx,
+            active_streams: HashMap::new(),
             workspace,
             last_saved_message_count,
         })
@@ -187,36 +194,54 @@ impl WgpuRenderer {
         self.last_dispatched_message_id = message_id;
 
         let Some(api) = self.api.clone() else {
-            let _ = self.response_tx.send((message_id, Err("The account service is not initialized.".into())));
+            let _ = self.response_tx.send(ChatEvent::Finished(message_id, Err("The account service is not initialized.".into())));
             return;
         };
-        let messages: Vec<serde_json::Value> = self.app_state.conversation.messages()
-            .map(|message| serde_json::json!({
-                "role": match message.role {
+        let messages: Vec<ChatMessage> = self.app_state.conversation.messages()
+            .map(|message| ChatMessage {
+                role: match message.role {
                     MessageRole::User => "user",
                     MessageRole::Assistant => "assistant",
                     MessageRole::System => "system",
-                },
-                "content": message.body,
-            }))
+                }.into(),
+                content: message.body.clone(),
+            })
             .collect();
-        let payload = serde_json::json!({
-            "model": "cloudflare-gemma-4-26b-a4b-it",
-            "messages": messages,
-            "max_tokens": 1024,
-            "stream": false,
-        });
+        let provider = self.app_state.provider_key_provider.clone();
+        let key = api.provider_key(&provider).unwrap_or_default();
         let sender = self.response_tx.clone();
-        self.runtime.spawn(async move {
-            let result = api.cloud_chat(&payload).await.and_then(|data| {
-                data.pointer("/choices/0/message/content")
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|answer| !answer.is_empty())
-                    .map(str::to_owned)
-                    .ok_or_else(|| "CenAI Cloud returned an empty response.".to_owned())
+
+        if !key.is_empty() {
+            let (endpoint, model) = match provider.as_str() {
+                "deepseek" => ("https://api.deepseek.com", "deepseek-flash"),
+                _ => ("https://api.openai.com/v1", "gpt-4.1-mini"),
+            };
+            let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
+            self.runtime.spawn(async move {
+                let delta_sender = sender.clone();
+                let result = api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
+                    let _ = delta_sender.send(ChatEvent::Delta(message_id, delta.to_owned()));
+                }).await;
+                let _ = sender.send(ChatEvent::Finished(message_id, result));
             });
-            let _ = sender.send((message_id, result));
-        });
+        } else {
+            let payload = serde_json::json!({
+                "model": "cloudflare-gemma-4-26b-a4b-it",
+                "messages": messages,
+                "max_tokens": 1024,
+                "stream": false,
+            });
+            self.runtime.spawn(async move {
+                let result = api.cloud_chat(&payload).await.and_then(|data| {
+                    data.pointer("/choices/0/message/content")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|answer| !answer.is_empty())
+                        .map(str::to_owned)
+                        .ok_or_else(|| "CenAI Cloud returned an empty response.".to_owned())
+                });
+                let _ = sender.send(ChatEvent::Finished(message_id, result));
+            });
+        }
     }
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
@@ -244,19 +269,41 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
+            self.app_state.provider_key_status = match self.api.as_ref() {
+                Some(api) => match api.save_provider_key(&provider, &key) {
+                    Ok(()) => { self.app_state.provider_key_draft.clear(); if key.is_empty() { "Stored key removed.".into() } else { "API key encrypted and saved.".into() } },
+                    Err(error) => format!("Could not save key: {error}"),
+                },
+                None => "Secure account service is unavailable.".into(),
+            };
+        }
         self.dispatch_new_message();
-        while let Ok((message_id, result)) = self.response_rx.try_recv() {
-            match result {
-                Ok(answer) => {
-                    let stream_id = self.app_state.conversation.begin_stream();
-                    self.app_state.conversation.append_stream(stream_id, &answer);
-                    self.app_state.conversation.finish_stream(stream_id);
+        while let Ok(event) = self.response_rx.try_recv() {
+            match event {
+                ChatEvent::Delta(message_id, delta) => {
+                    let stream_id = *self.active_streams.entry(message_id).or_insert_with(|| self.app_state.conversation.begin_stream());
+                    self.app_state.conversation.append_stream(stream_id, &delta);
                 }
-                Err(error) => {
-                    self.app_state.conversation.push(MessageRole::Assistant, format!("I could not complete that request: {error}"));
+                ChatEvent::Finished(message_id, result) => {
+                    match result {
+                        Ok(answer) => {
+                            if let Some(stream_id) = self.active_streams.remove(&message_id) {
+                                self.app_state.conversation.finish_stream(stream_id);
+                            } else if !answer.is_empty() {
+                                let stream_id = self.app_state.conversation.begin_stream();
+                                self.app_state.conversation.append_stream(stream_id, &answer);
+                                self.app_state.conversation.finish_stream(stream_id);
+                            }
+                        }
+                        Err(error) => {
+                            self.active_streams.remove(&message_id);
+                            self.app_state.conversation.push(MessageRole::Assistant, format!("I could not complete that request: {error}"));
+                        }
+                    }
+                    log::debug!("Completed CenAI request for message {message_id}");
                 }
             }
-            log::debug!("Completed CenAI request for message {message_id}");
         }
         let message_count = self.app_state.conversation.messages().count();
         if message_count != self.last_saved_message_count {
