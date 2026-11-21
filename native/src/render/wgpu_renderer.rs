@@ -473,6 +473,8 @@ impl WgpuRenderer {
         self.app_state.pending_project_create = None;
         self.app_state.pending_artifact = None;
         self.app_state.pending_artifact_open = None;
+        self.app_state.artifact_preview_id.clear();
+        self.app_state.artifact_preview_project_id.clear();
         self.app_state.artifact_preview_name.clear();
         self.app_state.artifact_preview_content.clear();
         self.app_state.artifact_preview_status.clear();
@@ -762,6 +764,10 @@ impl WgpuRenderer {
                             if let Some(artifact) = self.app_state.projects.iter()
                                 .flat_map(|project| project.artifacts.iter())
                                 .find(|artifact| artifact.id == artifact_id) {
+                                self.app_state.artifact_preview_id = artifact.id.clone();
+                                self.app_state.artifact_preview_project_id = self.app_state.projects.iter()
+                                    .find(|project| project.artifacts.iter().any(|item| item.id == artifact_id))
+                                    .map(|project| project.id.clone()).unwrap_or_default();
                                 self.app_state.artifact_preview_name = artifact.file_name.clone();
                                 self.app_state.artifact_preview_content = content;
                                 self.app_state.artifact_preview_status.clear();
