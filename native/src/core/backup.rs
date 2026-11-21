@@ -16,6 +16,7 @@ const SALT_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 12;
 const MAX_PLAINTEXT_BYTES: usize = 100 * 1024 * 1024;
 const MAX_CIPHERTEXT_BYTES: usize = MAX_PLAINTEXT_BYTES + 16;
+const MAX_ENCODED_CIPHERTEXT_BYTES: usize = MAX_CIPHERTEXT_BYTES.div_ceil(3) * 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,6 +60,10 @@ impl EncryptedBackup {
         if self.format_version != FORMAT_VERSION || self.kdf != KDF_ID {
             return Err("Backup format or key-derivation parameters are unsupported".into());
         }
+        if self.salt_base64.len() > 64 || self.nonce_base64.len() > 64
+            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES {
+            return Err("Backup envelope contains oversized encoded fields".into());
+        }
         let salt = STANDARD.decode(&self.salt_base64).map_err(|_| "Backup salt is malformed".to_owned())?;
         let nonce = STANDARD.decode(&self.nonce_base64).map_err(|_| "Backup nonce is malformed".to_owned())?;
         let ciphertext = STANDARD.decode(&self.ciphertext_base64).map_err(|_| "Backup ciphertext is malformed".to_owned())?;
@@ -79,7 +84,7 @@ impl EncryptedBackup {
     }
 
     pub fn from_json(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.is_empty() || bytes.len() > MAX_CIPHERTEXT_BYTES * 2 {
+        if bytes.is_empty() || bytes.len() > MAX_ENCODED_CIPHERTEXT_BYTES + 4096 {
             return Err("Backup envelope file is empty or exceeds the supported size".into());
         }
         let backup: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
@@ -90,6 +95,10 @@ impl EncryptedBackup {
     fn validate_envelope(&self) -> Result<(), String> {
         if self.format_version != FORMAT_VERSION || self.kdf != KDF_ID {
             return Err("Backup format or key-derivation parameters are unsupported".into());
+        }
+        if self.salt_base64.len() > 64 || self.nonce_base64.len() > 64
+            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES {
+            return Err("Backup envelope contains oversized encoded fields".into());
         }
         let salt = STANDARD.decode(&self.salt_base64).map_err(|_| "Backup salt is malformed".to_owned())?;
         let nonce = STANDARD.decode(&self.nonce_base64).map_err(|_| "Backup nonce is malformed".to_owned())?;
@@ -146,6 +155,13 @@ mod tests {
         let mut unsupported = EncryptedBackup::seal(b"private", PASSPHRASE).unwrap();
         unsupported.format_version = 99;
         assert!(unsupported.open(PASSPHRASE).is_err());
+    }
+
+    #[test]
+    fn encrypted_backup_rejects_oversized_base64_before_decoding() {
+        let mut backup = EncryptedBackup::seal(b"payload", PASSPHRASE).unwrap();
+        backup.ciphertext_base64 = "A".repeat(MAX_ENCODED_CIPHERTEXT_BYTES + 1);
+        assert!(backup.validate_envelope().is_err());
     }
 
     #[test]
