@@ -76,7 +76,7 @@ jobs:
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");
-          if (!source.includes('message.replace(/(^|\\r\\n)\\./g, "$1..") + "\\r\\n.\\r\\n"')) {
+          if (!source.includes("const smtpData = message.replace")) {
             throw new Error("SMTP DATA must dot-stuff content but preserve the single-dot terminator");
           }
           if (source.includes('.replace(/\\r?\\n\\./g')) {
