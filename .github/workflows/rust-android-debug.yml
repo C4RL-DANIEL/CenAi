@@ -4,16 +4,26 @@ on:
   push:
     branches:
       - "rewrite/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle/**"
+      - ".github/workflows/rust-android-debug.yml"
   workflow_dispatch:
 
 concurrency:
-  # Keep every commit's build isolated; later commits must not cancel verification
-  # of the source snapshot currently being tested.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # Keep the newest source snapshot moving through build and emulator checks.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
