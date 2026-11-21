@@ -62,8 +62,8 @@ jobs:
           grep -q 'registration_invite_create' supabase/functions/cenai-control-plane/index.ts
           grep -q 'registration_redeem' supabase/functions/cenai-control-plane/index.ts
           grep -q 'code_challenge_method' website/register.js
-          grep -q 'registration_invites' supabase/migrations/20261121100000_discord_registration_invites.sql
-          grep -q 'registration_policy' supabase/migrations/20261121100000_discord_registration_invites.sql
+          grep -q 'registration_invites' supabase/migrations/20261121222402_discord_registration_invites.sql
+          grep -q 'registration_policy' supabase/migrations/20261121222402_discord_registration_invites.sql
           grep -q 'registration_status' native/src/core/network.rs
           grep -q 'registration_status' supabase/functions/cenai-control-plane/index.ts
           grep -q 'Complete Discord invitation registration' supabase/functions/cenai-ai-quota/index.ts
@@ -110,11 +110,11 @@ jobs:
           grep -q 'function __name' website/worker.js
           grep -q 'voice_authorize' supabase/functions/cenai-ai-quota/index.ts
           grep -q 'voice_status' supabase/functions/cenai-ai-quota/index.ts
-          grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
-          grep -q 'cenai_record_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
-          grep -q 'voice.cloud.enabled' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
-          grep -q 'cenai_ai_daily_budget' supabase/migrations/20261122110000_cenai_shared_workers_ai_neuron_budget.sql
-          grep -q 'cenai_reserve_ai_request_v2' supabase/migrations/20261122110000_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_record_voice_usage' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'voice.cloud.enabled' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_ai_daily_budget' supabase/migrations/20261121222413_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/migrations/20261121222413_cenai_shared_workers_ai_neuron_budget.sql
           grep -q 'cenai_reserve_ai_request_v2' supabase/functions/cenai-ai-quota/index.ts
           grep -q 'globalNeuronLimit: 8000' supabase/functions/cenai-ai-quota/index.ts
           node --check website/worker.js
