@@ -205,6 +205,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.speech_status.is_empty() {
                 ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
+            ui.label(text("Read-aloud sends the selected response text to Google Gemini for speech synthesis.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
     }
     ui.add_space(10.0);
@@ -238,6 +239,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.voice_status.is_empty() {
                 ui.label(text(&state.voice_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
+            ui.label(text("Voice transcription sends your recording to Google Gemini using your configured Gemini key. The transcript stays in the draft until you review and send it.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
         ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
