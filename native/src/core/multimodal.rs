@@ -127,26 +127,37 @@ impl AttachmentStore {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
         }
-        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
-            .map_err(|error| error.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
-        }
-        file.write_all(bytes).map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
-        drop(file);
-        fs::rename(&temporary, &path).map_err(|error| {
-            let _ = fs::remove_file(&temporary);
-            error.to_string()
-        })?;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
+        let temporary = path.with_extension(format!(
+            "tmp-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        let write_result = (|| -> Result<(), String> {
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+                .map_err(|error| error.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
+            }
+            file.write_all(bytes).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+            drop(file);
+            fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+            Ok(())
+        })();
+        if write_result.is_err() { let _ = fs::remove_file(&temporary); }
+        write_result?;
         Ok(path)
     }
 
     pub fn load(&self, metadata: &AttachmentMetadata) -> Result<Vec<u8>, String> {
+        metadata.validate().map_err(str::to_owned)?;
         let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
+        let actual_size = fs::metadata(&path).map_err(|error| error.to_string())?.len();
+        if actual_size != metadata.byte_length {
+            return Err("Stored attachment size does not match its metadata".into());
+        }
         let bytes = fs::read(path).map_err(|error| error.to_string())?;
         metadata.validate_content(&bytes).map_err(str::to_owned)?;
         Ok(bytes)
