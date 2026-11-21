@@ -322,7 +322,6 @@ impl CenAiApi {
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
             if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
-            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
                 pending.drain(..=newline);
@@ -484,7 +483,6 @@ impl CenAiApi {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
-            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
