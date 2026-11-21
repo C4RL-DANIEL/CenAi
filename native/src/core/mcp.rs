@@ -104,25 +104,51 @@ pub struct McpReview {
 
 impl McpServerManifest {
     pub fn validate(&self, supported_protocol: u16) -> Result<(), &'static str> {
-        if self.server_id.trim().is_empty() || self.publisher.trim().is_empty() {
-            return Err("Publisher and server identity are required");
+        if self.server_id.trim().is_empty() || self.server_id.len() > 128
+            || !self.server_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            || self.publisher.trim().is_empty() || self.publisher.len() > 160 {
+            return Err("Publisher and safe server identity are required");
         }
-        if self.version.trim().is_empty() || self.license_id.trim().is_empty() {
-            return Err("Server version and license must be declared");
+        if self.version.trim().is_empty() || self.version.len() > 64
+            || self.license_id.trim().is_empty() || self.license_id.len() > 80 {
+            return Err("Server version and license must be declared within supported limits");
+        }
+        if self.declared_dependencies.len() > 64 || self.declared_dependencies.iter().any(|dependency| {
+            dependency.trim().is_empty() || dependency.len() > 160
+                || !dependency.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._@/-".contains(&byte))
+        }) {
+            return Err("MCP dependencies contain an invalid or oversized identifier");
+        }
+        let dependencies: HashSet<&str> = self.declared_dependencies.iter().map(String::as_str).collect();
+        if dependencies.len() != self.declared_dependencies.len() {
+            return Err("MCP dependencies must be unique");
         }
         validate_endpoint_url(&self.endpoint_url)?;
         if self.protocol_version != supported_protocol {
             return Err("Unsupported MCP protocol version");
         }
-        if self.capabilities.is_empty() || self.capabilities.iter().any(|cap| cap.name.trim().is_empty()) {
-            return Err("Server must declare valid capabilities");
+        if self.capabilities.is_empty() || self.capabilities.len() > 128
+            || self.capabilities.iter().any(|cap| cap.name.trim().is_empty()
+                || cap.name.len() > 128
+                || !cap.name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+                || cap.description.len() > 2000
+                || cap.requested_scopes.is_empty()
+                || cap.requested_scopes.len() > 32
+                || cap.requested_scopes.iter().any(|scope| scope.trim().is_empty()
+                    || scope.len() > 128
+                    || !scope.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte)))
+        }) {
+            return Err("Server must declare bounded capabilities and valid non-empty scopes");
         }
         let names: HashSet<&str> = self.capabilities.iter().map(|cap| cap.name.as_str()).collect();
         if names.len() != self.capabilities.len() {
             return Err("MCP capability names must be unique");
         }
-        if self.capabilities.iter().any(|cap| cap.requested_scopes.iter().any(|scope| scope.trim().is_empty())) {
-            return Err("Capability scopes cannot be empty");
+        for capability in &self.capabilities {
+            let scopes: HashSet<&str> = capability.requested_scopes.iter().map(String::as_str).collect();
+            if scopes.len() != capability.requested_scopes.len() {
+                return Err("MCP capability scopes must be unique");
+            }
         }
         Ok(())
     }
@@ -455,6 +481,22 @@ mod tests {
                 requested_scopes: vec!["mail.send".into()],
             }],
         }
+    }
+
+    #[test]
+    fn manifests_reject_ambiguous_or_unbounded_capability_metadata() {
+        let mut manifest = test_server();
+        manifest.capabilities[0].requested_scopes.push("mail.send".into());
+        assert!(manifest.validate(1).is_err());
+        let mut manifest = test_server();
+        manifest.capabilities[0].name = "mail send".into();
+        assert!(manifest.validate(1).is_err());
+        let mut manifest = test_server();
+        manifest.declared_dependencies = vec!["shell-wrapper".into(), "shell-wrapper".into()];
+        assert!(manifest.validate(1).is_err());
+        let mut manifest = test_server();
+        manifest.capabilities[0].requested_scopes.clear();
+        assert!(manifest.validate(1).is_err());
     }
 
     #[test]
