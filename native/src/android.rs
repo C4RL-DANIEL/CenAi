@@ -34,11 +34,12 @@ impl CenAiApplication {
 
     fn open_external_url(app: AndroidApp, url: String) {
         if !url.starts_with("https://checkout.stripe.com/") { log::warn!("Blocked external checkout URL outside the Stripe allowlist"); return; }
+        let callback_app = app.clone();
         app.run_on_java_main_thread(Box::new(move || {
-            let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+            let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
-            let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+            let activity = unsafe { JObject::from_raw(callback_app.activity_as_ptr().cast()) };
             let result = (|| -> jni::errors::Result<()> {
                 let uri_string = env.new_string(url)?;
                 let uri = env.call_static_method("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", &[JValue::Object(&uri_string)])?.l()?;
