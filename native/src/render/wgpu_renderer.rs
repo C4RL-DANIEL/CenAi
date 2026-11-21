@@ -1982,6 +1982,7 @@ impl WgpuRenderer {
                             self.app_state.speech_status = "Speech generation cancelled.".into();
                         }
                         Ok(wav) => {
+                            self.app_state.voice_service_status = "Connected · CenAI Original English cloud voice.".into();
                             #[cfg(target_os = "android")]
                             {
                                 if let Some(playback) = self.audio_playback.as_mut() {
@@ -1994,9 +1995,12 @@ impl WgpuRenderer {
                                 }
                             }
                             #[cfg(not(target_os = "android"))]
-                            { let _ = wav; self.app_state.speech_status = "Speech playback is available in the Android app.".into(); }
+                            { let _ = wav; self.app_state.speech_status = "Cloud speech audio received.".into(); }
                         }
-                        Err(error) => self.app_state.speech_status = format!("Speech synthesis failed: {error}"),
+                        Err(error) => {
+                            self.app_state.voice_service_status = error.clone();
+                            self.app_state.speech_status = format!("Speech synthesis failed: {error}");
+                        }
                     }
                 }
                 ChatEvent::BackupUploaded(_, result) => {
