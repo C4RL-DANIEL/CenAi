@@ -7,6 +7,7 @@ pub const BILLING_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/function
 pub const PAYPAL_BILLING_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing";
 pub const TELEMETRY_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-telemetry";
 pub const CLOUD_CHAT_URL: &str = "https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions";
+pub const CLOUD_VOICE_URL: &str = "https://cenai-website.aglibotcarldaniel.workers.dev/api/voice/speech";
 pub const WEBSITE_OTP_URL: &str = "https://cenai-website.cenai-app.workers.dev/api/email-otp";
 pub const REQUEST_TIMEOUT_SECONDS: u64 = 40;
 pub const STREAM_TIMEOUT_SECONDS: u64 = 300;
