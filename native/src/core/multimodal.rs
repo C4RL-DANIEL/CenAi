@@ -1,7 +1,8 @@
 //! Validated multimodal metadata and rich response blocks.
+use crate::core::{network::SessionVault, workspace::WORKSPACE_CIPHER_MAGIC};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, path::{Path, PathBuf}};
+use std::{fs, io::Write, path::{Path, PathBuf}, sync::Arc};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,12 +103,76 @@ impl AttachmentMetadata {
 pub struct AttachmentStore {
     root: PathBuf,
     user_id: String,
+    vault: Option<Arc<dyn SessionVault>>,
 }
 
 impl AttachmentStore {
     pub fn new(root: impl AsRef<Path>, user_id: &str) -> Result<Self, &'static str> {
         if !valid_account_uuid(user_id) { return Err("Attachment storage requires a canonical account UUID"); }
-        Ok(Self { root: root.as_ref().to_path_buf(), user_id: user_id.to_owned() })
+        Ok(Self { root: root.as_ref().to_path_buf(), user_id: user_id.to_owned(), vault: None })
+    }
+
+    pub fn new_encrypted(root: impl AsRef<Path>, user_id: &str, vault: Arc<dyn SessionVault>) -> Result<Self, String> {
+        if !valid_account_uuid(user_id) { return Err("Attachment storage requires a canonical account UUID".into()); }
+        if vault.account_id()? != user_id { return Err("Attachment encryption vault does not match the authenticated account".into()); }
+        let store = Self { root: root.as_ref().to_path_buf(), user_id: user_id.to_owned(), vault: Some(vault) };
+        store.migrate_plaintext_files()?;
+        Ok(store)
+    }
+
+    fn relative_key(&self, attachment_id: &str, extension: &str) -> String {
+        format!("attachments/{attachment_id}.{extension}")
+    }
+
+    fn encode(&self, relative: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        match &self.vault { Some(vault) => vault.encrypt_workspace_bytes(&self.user_id, relative, bytes), None => Ok(bytes.to_vec()) }
+    }
+
+    fn decode(&self, relative: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        match &self.vault { Some(vault) => vault.decrypt_workspace_bytes(&self.user_id, relative, bytes), None => Ok(bytes.to_vec()) }
+    }
+
+    fn read_storage(&self, path: &Path, relative: &str) -> Result<Vec<u8>, String> {
+        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        self.decode(relative, &bytes)
+    }
+
+    fn write_atomic(&self, path: &Path, relative: &str, bytes: &[u8]) -> Result<(), String> {
+        let stored = self.encode(relative, bytes)?;
+        let parent = path.parent().ok_or("Attachment storage path is invalid")?;
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?; }
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
+        let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)));
+        let result = (|| -> Result<(), String> {
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary).map_err(|error| error.to_string())?;
+            #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?; }
+            file.write_all(&stored).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+            drop(file);
+            fs::rename(&temporary, path).map_err(|error| error.to_string())?;
+            Ok(())
+        })();
+        if result.is_err() { let _ = fs::remove_file(&temporary); }
+        result
+    }
+
+    fn migrate_plaintext_files(&self) -> Result<(), String> {
+        let directory = self.root.join(&self.user_id).join("attachments");
+        if !directory.exists() { return Ok(()); }
+        for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            if !path.is_file() { continue; }
+            let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("");
+            if extension != "bin" && extension != "json" { continue; }
+            let id = path.file_stem().and_then(|value| value.to_str()).ok_or("Attachment filename is invalid")?;
+            let relative = self.relative_key(id, extension);
+            let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+            if bytes.starts_with(WORKSPACE_CIPHER_MAGIC) { self.decode(&relative, &bytes)?; }
+            else { self.write_atomic(&path, &relative, &bytes)?; }
+        }
+        Ok(())
     }
 
     fn path_for(&self, attachment_id: &str) -> Result<PathBuf, &'static str> {
@@ -121,59 +186,15 @@ impl AttachmentStore {
     pub fn save(&self, metadata: &AttachmentMetadata, bytes: &[u8]) -> Result<PathBuf, String> {
         metadata.validate_content(bytes).map_err(str::to_owned)?;
         let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
-        let parent = path.parent().ok_or("Attachment storage path is invalid")?;
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
-        }
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
-        let temporary = path.with_extension(format!(
-            "tmp-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
-        let write_result = (|| -> Result<(), String> {
-            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
-                .map_err(|error| error.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
-            }
-            file.write_all(bytes).map_err(|error| error.to_string())?;
-            file.sync_all().map_err(|error| error.to_string())?;
-            drop(file);
-            fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
-            Ok(())
-        })();
-        if write_result.is_err() { let _ = fs::remove_file(&temporary); }
-        write_result?;
         let metadata_path = path.with_extension("json");
-        let metadata_temp = metadata_path.with_extension(format!("json.tmp-{}", std::process::id()));
         let metadata_bytes = serde_json::to_vec(metadata).map_err(|error| error.to_string())?;
-        let metadata_result = (|| -> Result<(), String> {
-            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&metadata_temp)
-                .map_err(|error| error.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
-            }
-            file.write_all(&metadata_bytes).map_err(|error| error.to_string())?;
-            file.sync_all().map_err(|error| error.to_string())?;
-            drop(file);
-            fs::rename(&metadata_temp, &metadata_path).map_err(|error| error.to_string())?;
-            Ok(())
-        })();
-        if let Err(error) = metadata_result {
-            let _ = fs::remove_file(&metadata_temp);
+        self.write_atomic(&path, &self.relative_key(&metadata.id, "bin"), bytes)?;
+        if let Err(error) = self.write_atomic(&metadata_path, &self.relative_key(&metadata.id, "json"), &metadata_bytes) {
             let _ = fs::remove_file(&path);
             return Err(error);
         }
         Ok(path)
     }
-
     pub fn list(&self) -> Result<Vec<AttachmentMetadata>, String> {
         let directory = self.root.join(&self.user_id).join("attachments");
         if !directory.exists() { return Ok(Vec::new()); }
