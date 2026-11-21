@@ -742,6 +742,17 @@ impl WgpuRenderer {
         self.app_state.pending_backup_upload = false;
         self.app_state.pending_backup_download = false;
         self.app_state.backup_status.clear();
+        self.app_state.mfa_factors.clear();
+        self.app_state.mfa_friendly_name_draft = "CenAI Android".into();
+        self.app_state.mfa_status.clear();
+        self.app_state.mfa_enrollment_factor_id.clear();
+        self.app_state.mfa_enrollment_secret.clear();
+        self.app_state.mfa_enrollment_qr.clear();
+        self.app_state.mfa_code_draft.clear();
+        self.app_state.pending_mfa_refresh = false;
+        self.app_state.pending_mfa_enroll = false;
+        self.app_state.pending_mfa_verify = false;
+        self.app_state.pending_mfa_unenroll = None;
         self.app_state.automations.clear();
         self.app_state.automation_status.clear();
         self.app_state.pending_automation_save = false;
@@ -1469,6 +1480,7 @@ impl WgpuRenderer {
                                 self.reset_user_scoped_state();
                             }
                             self.active_user_id = account_id.clone();
+                            self.app_state.pending_mfa_refresh = true;
                             self.app_state.pending_ecosystem_refresh = true;
                             self.app_state.ecosystem_status = "Loading your account's app permissions…".into();
                             self.app_state.account_email = email.clone();
@@ -1843,7 +1855,7 @@ impl WgpuRenderer {
                 }
                 ChatEvent::OtpVerified(_, result) => {
                     match result {
-                        Ok(message) => { self.app_state.email_verified = true; self.app_state.otp_draft.clear(); self.app_state.otp_status = message; }
+                        Ok(message) => { self.app_state.email_verified = true; self.app_state.pending_mfa_refresh = true; self.app_state.otp_draft.clear(); self.app_state.otp_status = message; }
                         Err(error) => self.app_state.otp_status = format!("Verification failed: {error}"),
                     }
                 }
