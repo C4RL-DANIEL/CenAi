@@ -293,6 +293,58 @@ fn connections(ui: &mut egui::Ui) {
     ui.label(text("Connections", 26.0, egui::Color32::WHITE).strong());
     ui.label(text("Bring your models, tools and services together.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
+    surface(ui, |ui| {
+        ui.label(text("Connect a remote MCP server", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Add a server endpoint over HTTPS. Discovery does not grant permission to run its tools.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.mcp_server_id_draft).hint_text("Server ID (for example, org.example.tools)").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.mcp_endpoint_draft).hint_text("HTTPS endpoint URL").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.mcp_publisher_draft).hint_text("Publisher name").desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut state.mcp_version_draft).hint_text("Version"));
+            ui.add(egui::TextEdit::singleline(&mut state.mcp_license_draft).hint_text("License"));
+        });
+        ui.add(egui::TextEdit::singleline(&mut state.mcp_capabilities_draft).hint_text("Declared capability names, comma separated").desired_width(f32::INFINITY));
+        ui.checkbox(&mut state.mcp_reviewed, "I reviewed the publisher, endpoint and requested capabilities");
+        if ui.button("Discover tools").clicked() {
+            let capabilities = state.mcp_capabilities_draft.split(',')
+                .map(str::trim).filter(|name| !name.is_empty())
+                .map(|name| crate::core::mcp::McpCapability {
+                    name: name.to_owned(),
+                    description: "Declared capability; inspect remote tool schema before use".into(),
+                    requires_sensitive_read: true,
+                    requires_external_write: true,
+                    requested_scopes: Vec::new(),
+                }).collect::<Vec<_>>();
+            if !state.mcp_reviewed {
+                state.mcp_status = "Review the publisher and requested capabilities first.".into();
+            } else {
+                state.pending_mcp_connect = Some(crate::core::mcp::McpServerManifest {
+                    server_id: state.mcp_server_id_draft.trim().to_owned(),
+                    version: state.mcp_version_draft.trim().to_owned(),
+                    endpoint_url: state.mcp_endpoint_draft.trim().to_owned(),
+                    protocol_version: 1,
+                    publisher: state.mcp_publisher_draft.trim().to_owned(),
+                    publisher_verified: false,
+                    license_id: state.mcp_license_draft.trim().to_owned(),
+                    declared_dependencies: Vec::new(),
+                    capabilities,
+                });
+                state.mcp_status = "Connecting and inspecting tool schemas…".into();
+            }
+        }
+        if !state.mcp_status.is_empty() {
+            ui.label(text(&state.mcp_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+        }
+        for tool in &state.mcp_tools {
+            ui.collapsing(&tool.name, |ui| {
+                if let Some(description) = &tool.description {
+                    ui.label(text(description, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+                }
+                ui.label(text(tool.input_schema.to_string(), 10.0, egui::Color32::from_rgb(170, 190, 225)));
+                ui.label(text("Execution remains disabled until per-action approval is implemented.", 9.0, egui::Color32::from_rgb(220, 184, 121)));
+            });
+        }
+    });
     for (name, description, status) in [
         ("Cloud AI", "CenAI managed model routing", "Backend integration pending"),
         ("Your API keys", "Use your own provider credentials", "Secure vault integration pending"),
