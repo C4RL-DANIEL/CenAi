@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["native"]
+
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+anyhow = "1"
+bytemuck = { version = "1", features = ["derive"] }
+log = "0.4"
+pollster = "0.4"
+wgpu = "24"
+winit = { version = "0.30", features = ["android-native-activity"] }
