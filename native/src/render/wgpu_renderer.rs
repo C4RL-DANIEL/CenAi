@@ -1997,6 +1997,25 @@ mod ecosystem_ui_tests {
     }
 
     #[test]
+    fn mfa_parser_exposes_only_totp_factors() {
+        let response = serde_json::json!({
+            "all": [
+                { "id": "550e8400-e29b-41d4-a716-446655440051", "factor_type": "totp", "friendly_name": "Tablet", "status": "verified" },
+                { "id": "550e8400-e29b-41d4-a716-446655440052", "factor_type": "phone", "friendly_name": "Phone", "status": "verified" }
+            ]
+        });
+        let factors = mfa_factors_from_response(response).unwrap();
+        assert_eq!(factors.len(), 1);
+        assert_eq!(factors[0].friendly_name, "Tablet");
+        assert_eq!(factors[0].status, "verified");
+    }
+
+    #[test]
+    fn mfa_parser_rejects_malformed_factor_payloads() {
+        assert!(mfa_factors_from_response(serde_json::json!({ "all": "not-an-array" })).is_err());
+    }
+
+    #[test]
     fn ecosystem_catalog_defaults_to_no_access_without_a_grant() {
         let response = serde_json::json!({
             "apps": [{
