@@ -12,6 +12,18 @@ use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
 
+fn jwt_has_active_aal2(token: &str, now_unix: i64) -> bool {
+    let mut segments = token.split('.');
+    let (Some(_header), Some(payload), Some(_signature), None) =
+        (segments.next(), segments.next(), segments.next(), segments.next())
+    else { return false; };
+    if payload.is_empty() || payload.len() > 16 * 1024 { return false; }
+    let Ok(decoded) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload) else { return false; };
+    let Ok(claims) = serde_json::from_slice::<Value>(&decoded) else { return false; };
+    claims.get("aal").and_then(Value::as_str) == Some("aal2")
+        && claims.get("exp").and_then(Value::as_i64).is_some_and(|expires| expires > now_unix)
+}
+
 fn pcm16_mono_to_wav(sample_rate_hz: u32, pcm: &[u8]) -> Result<Vec<u8>, String> {
     if !matches!(sample_rate_hz, 16_000 | 24_000 | 48_000) || pcm.is_empty() || pcm.len() % 2 != 0 {
         return Err("Gemini returned unsupported or misaligned PCM audio".into());
@@ -157,6 +169,11 @@ impl CenAiApi {
 
     pub fn has_session(&self) -> bool {
         self.vault.access_token().map(|token| !token.is_empty()).unwrap_or(false)
+    }
+
+    /// Trusts only a non-expired Supabase-signed AAL2 claim from the stored session.
+    pub fn session_has_aal2(&self) -> bool {
+        self.vault.access_token().map(|token| jwt_has_active_aal2(&token, chrono::Utc::now().timestamp())).unwrap_or(false)
     }
 
     pub async fn sign_in(&self, email: &str, password: &str) -> Result<String, String> {
@@ -1144,6 +1161,26 @@ mod speech_audio_tests {
         assert!(pcm16_mono_to_wav(44_100, &[1, 0]).is_err());
         assert!(pcm16_mono_to_wav(24_000, &[1]).is_err());
         assert!(pcm16_mono_to_wav(24_000, &[]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod assurance_claim_tests {
+    use super::*;
+
+    #[test]
+    fn only_non_expired_aal2_jwt_claims_satisfy_step_up() {
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            br#"{"aal":"aal2","exp":2000000000}"#
+        );
+        let token = format!("header.{payload}.signature");
+        assert!(jwt_has_active_aal2(&token, 1_900_000_000));
+        assert!(!jwt_has_active_aal2(&token, 2_000_000_000));
+        let aal1 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            br#"{"aal":"aal1","exp":2000000000}"#
+        );
+        assert!(!jwt_has_active_aal2(&format!("header.{aal1}.signature"), 1_900_000_000));
+        assert!(!jwt_has_active_aal2("not-a-jwt", 1_900_000_000));
     }
 }
 
