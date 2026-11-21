@@ -78,6 +78,7 @@ pub struct WgpuRenderer {
     active_streams: HashMap<u64, u64>,
     workspace: Option<WorkspaceStore>,
     last_saved_message_count: usize,
+    last_saved_preferences: (bool, bool),
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
     mcp_clients: HashMap<String, Arc<McpHttpClient>>,
@@ -192,6 +193,10 @@ impl WgpuRenderer {
 
         let (response_tx, response_rx) = mpsc::channel();
         let mut app_state = AppState::default();
+        if let Some(service) = &api {
+            app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
+            app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
+        }
         if let Some(store) = &workspace {
             if let Ok(messages) = store.load_conversation("primary") {
                 app_state.conversation.restore_messages(messages);
@@ -199,6 +204,7 @@ impl WgpuRenderer {
             app_state.projects = store.projects(false).unwrap_or_default();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
+        let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
@@ -230,6 +236,7 @@ impl WgpuRenderer {
             active_streams: HashMap::new(),
             workspace,
             last_saved_message_count,
+            last_saved_preferences,
             workspace_root,
             guardian,
             mcp_clients: HashMap::new(),
@@ -338,6 +345,9 @@ impl WgpuRenderer {
         self.app_state.provider_key_draft.clear();
         self.app_state.provider_key_status.clear();
         self.app_state.guardian_consent = false;
+        self.app_state.light_mode = false;
+        self.app_state.reduced_motion = false;
+        self.last_saved_preferences = (false, false);
         self.app_state.account_email.clear();
         self.app_state.email_verified = false;
         self.app_state.otp_draft.clear();
@@ -419,6 +429,16 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        let preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
+        if preferences != self.last_saved_preferences {
+            if let Some(service) = &self.api {
+                let light_saved = service.save_user_setting("light_mode", if preferences.0 { "true" } else { "false" }).is_ok();
+                let motion_saved = service.save_user_setting("reduced_motion", if preferences.1 { "true" } else { "false" }).is_ok();
+                if light_saved && motion_saved {
+                    self.last_saved_preferences = preferences;
+                }
+            }
+        }
         if let Some(plan) = self.app_state.pending_checkout_plan.take() {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
@@ -567,6 +587,11 @@ impl WgpuRenderer {
                             self.app_state.account_email = email.clone();
                             self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
                             self.app_state.guardian_consent = self.api.as_ref().is_some_and(CenAiApi::guardian_consent);
+                            if let Some(service) = &self.api {
+                                self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
+                                self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
+                                self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
+                            }
                             self.guardian.set_telemetry_consent(self.app_state.guardian_consent);
                             self.app_state.auth_status = "Signed in successfully.".into();
                             match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &account_id) {
