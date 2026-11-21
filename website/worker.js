@@ -393,6 +393,50 @@ function streamAiChatResponse(upstream, env, token, reservation, model, inputTok
 }
 __name(streamAiChatResponse, "streamAiChatResponse");
 
+async function cloudVoiceStatus(request, env) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
+    return json(503, { error: "CenAI Voice cloud inference is not provisioned yet." });
+  }
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  if (!token) return json(401, { error: "Sign in to CenAI before checking cloud voice." });
+  try {
+    const base = env.SUPABASE_URL.replace(/\\/$/, "");
+    const identity = await fetch(base + "/auth/v1/user", {
+      method: "GET",
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
+      cache: "no-store"
+    });
+    if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
+    const user = await identity.json().catch(() => ({}));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) {
+      return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    }
+    let backend;
+    try { backend = new URL(env.CENAI_TTS_BACKEND_URL); } catch { return json(503, { error: "CenAI Voice backend URL is invalid." }); }
+    if (backend.protocol !== "https:" || backend.username || backend.password) {
+      return json(503, { error: "CenAI Voice backend must use a trusted HTTPS origin." });
+    }
+    const upstream = await fetch(backend.origin + "/readyz", {
+      headers: { Authorization: "Bearer " + env.CENAI_TTS_BACKEND_TOKEN },
+      signal: AbortSignal.timeout(10000),
+      cache: "no-store"
+    });
+    if (!upstream.ok) return json(503, { error: "CenAI Voice GPU model is not ready." });
+    const status = await upstream.json().catch(() => ({}));
+    return json(200, {
+      ready: status.status === "ready",
+      profile: status.profile || "cenai-en-v1",
+      model: status.model || "Qwen3-TTS",
+      service: "CenAI Voice"
+    });
+  } catch (error) {
+    console.error("CenAI Voice health check failed", error instanceof Error ? error.message : "unknown error");
+    return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
+  }
+}
+__name(cloudVoiceStatus, "cloudVoiceStatus");
+
 async function cloudVoiceSpeech(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
@@ -731,6 +775,7 @@ export default {
         return releaseFeed();
       }
       if (url.pathname === "/api/beta-notification") return betaNotification(request, env);
+      if (url.pathname === "/api/voice/status") return cloudVoiceStatus(request, env);
       if (url.pathname === "/api/voice/speech") return cloudVoiceSpeech(request, env);
       if (url.pathname === "/api/ai/chat/completions") return aiChat(request, env);
       if (url.pathname === "/api/email-otp") return emailOtp(request, env);
