@@ -381,11 +381,13 @@ impl WgpuRenderer {
         }
         if self.app_state.pending_speech_stop {
             self.app_state.pending_speech_stop = false;
+            self.app_state.speech_cancelled = true;
             #[cfg(target_os = "android")]
             if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
             self.app_state.speech_status = "Speech playback stopped.".into();
         }
         if let Some(text) = self.app_state.pending_speech_text.take() {
+            self.app_state.speech_cancelled = false;
             let Some(api) = self.api.clone() else {
                 self.app_state.speech_status = "Sign in and configure a Gemini API key before speech playback.".into();
                 return;
@@ -689,6 +691,7 @@ impl WgpuRenderer {
         if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
         self.app_state.pending_speech_text = None;
         self.app_state.pending_speech_stop = false;
+        self.app_state.speech_cancelled = false;
         self.app_state.speech_status.clear();
         self.app_state.voice_active = false;
         self.app_state.pending_voice_start = false;
@@ -812,7 +815,7 @@ impl WgpuRenderer {
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
         if matches!(event, WindowEvent::Focused(false)) {
-            if self.app_state.voice_active {
+            if self.app_state.voice_active || self.app_state.pending_voice_start {
                 self.app_state.pending_voice_stop = true;
                 self.app_state.voice_status = "Voice input stopped because CenAI lost focus.".into();
             }
@@ -1414,6 +1417,10 @@ impl WgpuRenderer {
                 }
                 ChatEvent::SpeechSynthesized(_, result) => {
                     match result {
+                        Ok(wav) if self.app_state.speech_cancelled => {
+                            let _ = wav;
+                            self.app_state.speech_status = "Speech generation cancelled.".into();
+                        }
                         Ok(wav) => {
                             #[cfg(target_os = "android")]
                             {
