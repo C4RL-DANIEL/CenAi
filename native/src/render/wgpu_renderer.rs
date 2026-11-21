@@ -173,6 +173,7 @@ enum ChatEvent {
     #[cfg(target_os = "android")]
     VoiceTranscribed(u64, Result<String, String>),
     SpeechSynthesized(u64, Result<Vec<u8>, String>),
+    VoiceServiceChecked(u64, Result<serde_json::Value, String>),
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
@@ -205,6 +206,7 @@ impl ChatEvent {
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
             | Self::SpeechSynthesized(generation, ..)
+            | Self::VoiceServiceChecked(generation, ..)
             | Self::BackupUploaded(generation, ..)
             | Self::BackupDownloaded(generation, ..)
             | Self::BackupRestored(generation, ..)
@@ -580,6 +582,19 @@ impl WgpuRenderer {
     }
 
     fn process_speech_output(&mut self) {
+        if std::mem::take(&mut self.app_state.pending_voice_service_check) {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.cloud_voice_status().await;
+                    let _ = sender.send(ChatEvent::VoiceServiceChecked(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.voice_service_status = "Sign in to your CenAI account to check cloud voice.".into();
+            }
+        }
         #[cfg(target_os = "android")]
         if let Some(error) = self.audio_playback.as_ref().and_then(AndroidAudioPlayback::try_error) {
             self.app_state.speech_status = format!("Speech playback failed: {error}");
@@ -2003,6 +2018,18 @@ impl WgpuRenderer {
                         }
                         Err(error) => self.app_state.voice_status = format!("Voice transcription failed: {error}"),
                     }
+                }
+
+                ChatEvent::VoiceServiceChecked(_, result) => {
+                    self.app_state.voice_service_status = match result {
+                        Ok(status) if status.get("ready").and_then(serde_json::Value::as_bool) == Some(true) => {
+                            let profile = status.get("profile").and_then(serde_json::Value::as_str).unwrap_or("CenAI Original");
+                            let model = status.get("model").and_then(serde_json::Value::as_str).unwrap_or("cloud model");
+                            format!("Ready · {profile} · {model}")
+                        }
+                        Ok(_) => "CenAI Voice GPU service responded but the model is not ready.".into(),
+                        Err(error) => error,
+                    };
                 }
                 ChatEvent::SpeechSynthesized(_, result) => {
                     self.voice_synthesis_task = None;
