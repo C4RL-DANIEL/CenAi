@@ -52,7 +52,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Conversation message model, Markdown headings/lists/code fences, local per-account conversation autosave.
 - Existing-account sign-in against the existing Supabase/CenAI identity system; no open in-app registration. Any account creation must originate from the authorized Discord onboarding path. Email OTP is an existing-account verification step, not a substitute registration path.
 - Supabase token refresh and account-bound API requests. Session mutations are serialized; a request that resumes after an account switch cannot refresh into or return data for the new account.
-- CenAI Cloud chat endpoint integration for managed requests, including incremental SSE streaming where supported and JSON fallback. The active conversation history is sent with a managed chat request; project artifacts and other workspace files are not automatically attached.
+- CenAI Cloud chat endpoint integration for managed requests. The Rust client can parse OpenAI-compatible SSE, but the currently deployed Cloudflare Worker explicitly rejects `stream: true`; the app therefore uses its supported JSON response until a server-side streaming change is reviewed and deployed. The active conversation history is sent with a managed chat request; project artifacts and other workspace files are not automatically attached.
 - OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore. Provider authorization remains separate from CenAI account authentication.
 - Per-account project creation, archived-project state, artifact metadata and local artifact storage.
 - Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
@@ -69,7 +69,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Add the remaining provider adapters and model catalog, MFA, subscription status/checkout UI, billing lifecycle and entitlement enforcement.
 - Finish project artifact UI, workspace backup/sync and cross-device restore.
 - Implement real MCP registry discovery, remote MCP transport, sandbox execution and isolated coding-agent workflows.
-- Implement voice input/output, multimodal attachment picker and processing, computer-use approval flow.
+- Implement true managed Cloudflare Workers AI streaming in the Worker and deploy only after server-side quota-recording and disconnect/error behavior are tested. Implement voice input/output, multimodal attachment picker and processing, computer-use approval flow.
 - Connect Guardian to real lifecycle/performance/network events and user-consented telemetry.
 - Complete Ecosystem Engine service authentication, server-side registration, revocation, compatibility and audit integration.
 - Run API 35+ emulator and REDMI Pad 2 Pro physical-device checks; record animation smoothness, lifecycle recovery, battery, memory, network failure and accessibility results.
