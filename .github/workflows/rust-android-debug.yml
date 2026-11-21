@@ -57,16 +57,17 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app-rust:assembleDebug
       - name: Verify NativeActivity on API 35 emulator
+        timeout-minutes: 8
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-boot-timeout: 900000
+          emulator-boot-timeout: 300000
           script: |
             adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
-            adb shell am start -n com.cenai.app.rustdebug/android.app.NativeActivity
+            timeout 45s adb shell am start -W -n com.cenai.app.rustdebug/android.app.NativeActivity
             for attempt in $(seq 1 30); do
               if adb shell pidof com.cenai.app.rustdebug >/dev/null 2>&1; then
                 echo "CenAI NativeActivity process is running."
