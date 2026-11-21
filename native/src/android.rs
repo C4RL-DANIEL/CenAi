@@ -20,7 +20,6 @@ use crate::render::wgpu_renderer::WgpuRenderer;
 #[derive(Debug)]
 enum AndroidPlatformEvent {
     FilePicked { request_code: i32, path: String, mime_type: String, display_name: String, error: String },
-    DocumentCreated { request_code: i32, uri: String },
 }
 
 static PLATFORM_EVENTS: OnceLock<Mutex<VecDeque<AndroidPlatformEvent>>> = OnceLock::new();
@@ -53,17 +52,6 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked
         error: java_string(&mut env, error),
     });
 }
-
-#[no_mangle]
-pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnDocumentCreated(
-    mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint, uri: JString<'_>,
-) {
-    push_platform_event(AndroidPlatformEvent::DocumentCreated {
-        request_code,
-        uri: java_string(&mut env, uri),
-    });
-}
-
 
 struct CenAiApplication {
     api: Option<CenAiApi>,
@@ -183,9 +171,6 @@ impl ApplicationHandler for CenAiApplication {
                                     8102 => renderer.handle_backup_file_import(path, error),
                                     _ => log::warn!("Ignoring unknown Android file picker request {request_code}"),
                                 }
-                            }
-                            AndroidPlatformEvent::DocumentCreated { request_code, uri: _ } => {
-                                log::warn!("Ignoring unhandled Android document-save result for request {request_code}");
                             }
                         }
                     }
