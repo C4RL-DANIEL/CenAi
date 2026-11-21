@@ -16,6 +16,16 @@ pub struct AudioFrame {
 }
 
 impl AudioFrame {
+    pub fn from_pcm16_le(sample_rate_hz: u32, channels: u8, bytes: &[u8]) -> Result<Self, &'static str> {
+        if bytes.len() % 2 != 0 { return Err("PCM16 audio buffer has an incomplete sample"); }
+        let samples = bytes.chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        let frame = Self { sample_rate_hz, channels, samples };
+        frame.validate()?;
+        Ok(frame)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if !matches!(self.sample_rate_hz, 16_000 | 24_000 | 48_000) {
             return Err("Unsupported voice sample rate");
@@ -252,6 +262,13 @@ mod tests {
 
     fn frame(level: i16) -> AudioFrame {
         AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![level; 1_600] }
+    }
+
+    #[test]
+    fn audio_frame_decodes_little_endian_pcm16() {
+        let frame = AudioFrame::from_pcm16_le(16_000, 1, &[0x01, 0x00, 0xff, 0xff]).unwrap();
+        assert_eq!(frame.samples, vec![1, -1]);
+        assert!(AudioFrame::from_pcm16_le(16_000, 1, &[0x01]).is_err());
     }
 
     #[test]
