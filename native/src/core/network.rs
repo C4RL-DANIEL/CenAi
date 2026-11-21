@@ -7,7 +7,7 @@ use reqwest::{header, Client, StatusCode};
 use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 
-use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, workspace::WorkspaceStore};
+use crate::core::{config, multimodal::AttachmentStore, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, workspace::WorkspaceStore};
 
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
@@ -161,6 +161,12 @@ impl CenAiApi {
     pub fn workspace_store(&self, root: impl AsRef<std::path::Path>) -> Result<WorkspaceStore, String> {
         let account_id = self.account_id()?;
         WorkspaceStore::new_encrypted(root, &account_id, self.vault.clone())
+    }
+
+    /// Creates account-bound, encrypted storage for selected multimodal attachments.
+    pub fn attachment_store(&self, root: impl AsRef<std::path::Path>) -> Result<AttachmentStore, String> {
+        let account_id = self.account_id()?;
+        AttachmentStore::new_encrypted(root, &account_id, self.vault.clone())
     }
 
     pub fn has_session(&self) -> bool {
