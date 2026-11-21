@@ -111,10 +111,33 @@ pub struct SandboxJobSummary {
 }
 
 impl SandboxJobSummary {
+    fn redact_output(value: &str, max_bytes: usize) -> String {
+        let mut output = String::new();
+        for line in value.lines() {
+            let lower = line.to_ascii_lowercase();
+            let sensitive_assignment = [
+                "authorization:", "bearer ", "api_key=", "api-key=", "access_token=",
+                "refresh_token=", "password=", "passphrase=", "client_secret=",
+                "service_role=", "private_key=",
+            ].iter().any(|needle| lower.contains(needle));
+            let safe_line = if sensitive_assignment { "[redacted sensitive output]" } else { line };
+            if !output.is_empty() { output.push('\n'); }
+            let remaining = max_bytes.saturating_sub(output.len());
+            if remaining == 0 { break; }
+            let mut bounded = safe_line.to_owned();
+            while bounded.len() > remaining {
+                bounded.pop();
+            }
+            output.push_str(&bounded);
+            if output.len() >= max_bytes { break; }
+        }
+        output
+    }
+
     pub fn sanitized_output(&self, max_bytes: usize) -> (String, String) {
         (
-            self.stdout.chars().take(max_bytes).collect(),
-            self.stderr.chars().take(max_bytes).collect(),
+            Self::redact_output(&self.stdout, max_bytes),
+            Self::redact_output(&self.stderr, max_bytes),
         )
     }
 }
@@ -145,6 +168,26 @@ mod tests {
     fn valid_project_scoped_job_passes_policy() {
         let (commands, hosts) = policy();
         assert!(request().validate(&commands, &hosts).is_ok());
+    }
+
+    #[test]
+    fn sandbox_output_redacts_credential_lines_and_obeys_byte_limits() {
+        let summary = SandboxJobSummary {
+            job_id: "job-1".into(),
+            user_scope: "550e8400-e29b-41d4-a716-446655440001".into(),
+            state: SandboxJobState::Failed,
+            exit_code: Some(1),
+            stdout: "build started\nAPI_KEY=secret-value\nbuild failed".into(),
+            stderr: "Authorization: Bearer secret-token".into(),
+            duration_ms: 10,
+        };
+        let (stdout, stderr) = summary.sanitized_output(128);
+        assert!(stdout.contains("build started"));
+        assert!(!stdout.contains("secret-value"));
+        assert!(stdout.contains("[redacted sensitive output]"));
+        assert!(!stderr.contains("secret-token"));
+        let (short, _) = summary.sanitized_output(8);
+        assert!(short.len() <= 8);
     }
 
     #[test]
