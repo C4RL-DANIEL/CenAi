@@ -54,7 +54,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Supabase token refresh and account-bound API requests. Session mutations are serialized; a request that resumes after an account switch cannot refresh into or return data for the new account.
 - CenAI Cloud chat endpoint integration for managed requests. The rewrite branch now includes quota-accounted Workers AI SSE forwarding, cancellation/error usage recording, and Rust parsing for both OpenAI delta chunks and Workers AI response chunks. The production Worker has not yet been deployed with this change, so the app intentionally continues using its compatible JSON response until the branch is approved and deployed. The active conversation history is sent with a managed chat request; project artifacts and other workspace files are not automatically attached.
 - OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore. Provider authorization remains separate from CenAI account authentication.
-- Per-account project creation, archived-project state, artifact metadata and local artifact storage.
+- Per-account project creation, archived-project state, artifact metadata and local artifact storage with SHA-256 integrity verification, safe IDs and a 25 MB per-artifact limit.
 - Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
 - MCP HTTPS/protocol/publisher/license/capability checks and explicit approval for sensitive reads and external writes.
 - Guardian diagnostic redaction, deduplication, bounded local buffering and consent gating; pre-consent diagnostics are not retroactively uploaded and opt-out clears the upload queue.
