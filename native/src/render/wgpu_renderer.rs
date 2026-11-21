@@ -157,6 +157,7 @@ impl WgpuRenderer {
             if let Ok(messages) = store.load_conversation("primary") {
                 app_state.conversation.restore_messages(messages);
             }
+            app_state.projects = store.projects(false).unwrap_or_default();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         Ok(Self {
@@ -277,6 +278,23 @@ impl WgpuRenderer {
                 },
                 None => "Secure account service is unavailable.".into(),
             };
+        }
+        if let Some((name, description)) = self.app_state.pending_project_create.take() {
+            if name.is_empty() {
+                self.app_state.project_status = "Enter a project name first.".into();
+            } else if let Some(store) = &self.workspace {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                let project = crate::core::workspace::Project {
+                    id: format!("project-{now}"), name, description,
+                    created_at_unix_ms: now, updated_at_unix_ms: now, archived: false, artifacts: Vec::new(),
+                };
+                self.app_state.project_status = match store.save_project(project) {
+                    Ok(()) => { self.app_state.projects = store.projects(false).unwrap_or_default(); self.app_state.project_name_draft.clear(); self.app_state.project_description_draft.clear(); "Project saved to your private workspace.".into() },
+                    Err(error) => format!("Could not save project: {error}"),
+                };
+            } else {
+                self.app_state.project_status = "Sign in to save projects to your account workspace.".into();
+            }
         }
         self.dispatch_new_message();
         while let Ok(event) = self.response_rx.try_recv() {
