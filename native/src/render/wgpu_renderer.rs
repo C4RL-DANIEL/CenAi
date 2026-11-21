@@ -1,10 +1,10 @@
 //! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
-use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc, Mutex}};
+use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc}};
 use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, qwen_runtime::{QwenRuntime, validate_synthesis_text, PRIMARY_GGUF_MODEL, TOKENIZER_GGUF_MODEL}, qwen_voice::QwenLanguage, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 #[cfg(target_os = "android")]
@@ -173,8 +173,6 @@ enum ChatEvent {
     #[cfg(target_os = "android")]
     VoiceTranscribed(u64, Result<String, String>),
     SpeechSynthesized(u64, Result<Vec<u8>, String>),
-    VoiceModelDownloadProgress(u64, String, f32),
-    VoiceModelDownloaded(u64, Result<(), String>),
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
@@ -207,8 +205,6 @@ impl ChatEvent {
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
             | Self::SpeechSynthesized(generation, ..)
-            | Self::VoiceModelDownloadProgress(generation, ..)
-            | Self::VoiceModelDownloaded(generation, ..)
             | Self::BackupUploaded(generation, ..)
             | Self::BackupDownloaded(generation, ..)
             | Self::BackupRestored(generation, ..)
@@ -259,7 +255,6 @@ pub struct WgpuRenderer {
     automation_scheduler: Option<AutomationScheduler>,
     last_automation_poll: std::time::Instant,
     voice_pipeline: Option<VoicePipeline>,
-    qwen_runtime: Arc<Mutex<Option<QwenRuntime>>>,
     #[cfg(target_os = "android")]
     audio_capture: Option<AndroidAudioCapture>,
     #[cfg(target_os = "android")]
@@ -390,15 +385,6 @@ impl WgpuRenderer {
 
         let (response_tx, response_rx) = mpsc::channel();
         let mut app_state = AppState::default();
-        let voice_model_directory = workspace_root.join("models").join("cenai-voice");
-        let voice_model_installed = voice_model_directory.join(PRIMARY_GGUF_MODEL).is_file()
-            && voice_model_directory.join(TOKENIZER_GGUF_MODEL).is_file();
-        app_state.voice_model_download_progress = if voice_model_installed { 1.0 } else { 0.0 };
-        app_state.voice_model_status = if voice_model_installed {
-            "CenAI Voice offline model pack files are present.".into()
-        } else {
-            "CenAI Voice offline model pack not downloaded.".into()
-        };
         if let Some(service) = &api {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
@@ -474,7 +460,6 @@ impl WgpuRenderer {
             automation_scheduler,
             last_automation_poll: std::time::Instant::now(),
             voice_pipeline: None,
-            qwen_runtime: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "android")]
             audio_capture: None,
             #[cfg(target_os = "android")]
@@ -585,34 +570,6 @@ impl WgpuRenderer {
     }
 
     fn process_speech_output(&mut self) {
-        if self.app_state.pending_voice_model_download {
-            self.app_state.pending_voice_model_download = false;
-            self.app_state.voice_model_download_progress = 0.0;
-            self.app_state.voice_model_status = "Downloading and verifying CenAI Voice model files…".into();
-            let model_directory = self.workspace_root.join("models").join("cenai-voice");
-            let sender = self.response_tx.clone();
-            let progress_sender = sender.clone();
-            let generation = self.account_generation;
-            let task = self.runtime.spawn(async move {
-                let result = crate::core::qwen_runtime::download_model_pack(
-                    model_directory,
-                    move |file_name, progress| {
-                        let overall = if file_name == PRIMARY_GGUF_MODEL {
-                            progress * 0.773
-                        } else {
-                            0.773 + progress * 0.227
-                        };
-                        let _ = progress_sender.send(ChatEvent::VoiceModelDownloadProgress(
-                            generation,
-                            file_name.to_owned(),
-                            overall,
-                        ));
-                    },
-                ).await;
-                let _ = sender.send(ChatEvent::VoiceModelDownloaded(generation, result));
-            });
-            self.track_task(task);
-        }
         #[cfg(target_os = "android")]
         if let Some(error) = self.audio_playback.as_ref().and_then(AndroidAudioPlayback::try_error) {
             self.app_state.speech_status = format!("Speech playback failed: {error}");
@@ -632,37 +589,18 @@ impl WgpuRenderer {
         }
         if let Some(text) = self.app_state.pending_speech_text.take() {
             self.app_state.speech_cancelled = false;
-            let model_directory = self.workspace_root.join("models").join("cenai-voice");
-            let speaker_embedding = self.workspace_root.join("voice_profiles").join("cenai_voice_en_v1.speaker.json");
-            let runtime = self.qwen_runtime.clone();
-            let sender = self.response_tx.clone();
-            let generation = self.account_generation;
-            self.app_state.speech_status = "Preparing local CenAI Voice model…".into();
-            let task = self.runtime.spawn(async move {
-                let result = tokio::task::spawn_blocking(move || {
-                    let talker = model_directory.join(PRIMARY_GGUF_MODEL);
-                    let tokenizer = model_directory.join(TOKENIZER_GGUF_MODEL);
-                    if !talker.is_file() || !tokenizer.is_file() {
-                        return Err("CenAI Voice model pack is not installed. Download the CenAI Voice offline model pack in Voice settings.".to_owned());
-                    }
-                    let request = validate_synthesis_text(&text, QwenLanguage::English)
-                        .map_err(str::to_owned)?;
-                    let mut guard = runtime.lock()
-                        .map_err(|_| "CenAI Voice runtime lock was poisoned".to_owned())?;
-                    if guard.is_none() {
-                        *guard = Some(QwenRuntime::load(&model_directory, 4)?);
-                    }
-                    let embedding = speaker_embedding.is_file().then_some(speaker_embedding.as_path());
-                    guard.as_mut().expect("runtime initialized").synthesize_wav(
-                        &request.text,
-                        request.language,
-                        embedding,
-                        4,
-                    ).map(|(wav, _elapsed_ms)| wav)
-                }).await.unwrap_or_else(|error| Err(format!("CenAI Voice worker failed: {error}")));
-                let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
-            });
-            self.track_task(task);
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                self.app_state.speech_status = "Connecting to CenAI Voice cloud…".into();
+                let task = self.runtime.spawn(async move {
+                    let result = api.synthesize_voice_cloud(&text, "English", "cenai-en-v1").await;
+                    let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.speech_status = "Sign in to your CenAI account to use cloud voice.".into();
+            }
         }
     }
 
@@ -2035,25 +1973,6 @@ impl WgpuRenderer {
                             self.app_state.voice_status = "Transcription ready. Review it in the message box before sending.".into();
                         }
                         Err(error) => self.app_state.voice_status = format!("Voice transcription failed: {error}"),
-                    }
-                }
-                ChatEvent::VoiceModelDownloadProgress(_, file_name, progress) => {
-                    self.app_state.voice_model_download_progress = progress.clamp(0.0, 1.0);
-                    self.app_state.voice_model_status = format!(
-                        "Downloading {file_name} · {:.0}%",
-                        self.app_state.voice_model_download_progress * 100.0,
-                    );
-                }
-                ChatEvent::VoiceModelDownloaded(_, result) => {
-                    match result {
-                        Ok(()) => {
-                            self.app_state.voice_model_download_progress = 1.0;
-                            self.app_state.voice_model_status = "Verified offline model pack installed. Read-aloud is now local.".into();
-                        }
-                        Err(error) => {
-                            self.app_state.voice_model_download_progress = 0.0;
-                            self.app_state.voice_model_status = format!("Offline model installation failed: {error}");
-                        }
                     }
                 }
                 ChatEvent::SpeechSynthesized(_, result) => {
