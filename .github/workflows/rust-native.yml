@@ -10,8 +10,8 @@ on:
 concurrency:
   # Keep only the newest pending run for this branch while allowing the active
   # build to finish. A per-commit group otherwise creates an unbounded queue.
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
