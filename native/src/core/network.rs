@@ -659,7 +659,7 @@ fn parse_gemini_sse_event(line: &str) -> Result<Option<String>, String> {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::{parse_anthropic_sse_event, parse_gemini_sse_event, valid_supabase_user_id, CenAiApi};
+    use super::{append_stream_delta, parse_anthropic_sse_event, parse_gemini_sse_event, valid_supabase_user_id, CenAiApi, MAX_STREAM_RESPONSE_BYTES};
 
     #[test]
     fn anthropic_stream_parser_extracts_only_text_deltas() {
@@ -695,6 +695,16 @@ mod identity_tests {
         assert!(first.starts_with("mcp_"));
         assert!(!first.contains("private-tools"));
         assert!(CenAiApi::mcp_token_slot("").is_err());
+    }
+
+    #[test]
+    fn streamed_provider_output_is_bounded_without_partial_overflow() {
+        let mut answer = String::new();
+        append_stream_delta(&mut answer, "hello").unwrap();
+        assert_eq!(answer, "hello");
+        let overflow = "x".repeat(MAX_STREAM_RESPONSE_BYTES);
+        assert!(append_stream_delta(&mut answer, &overflow).is_err());
+        assert_eq!(answer, "hello");
     }
 
     #[test]
