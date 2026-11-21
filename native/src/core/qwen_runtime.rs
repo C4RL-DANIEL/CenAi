@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(&wav[8..12], b"WAVE");
         assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 24_000);
         assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 10);
-        assert_eq!(i16::from_le_bytes([wav[46], wav[47]]), (0.5 * i16::MAX as f32) as i16);
+        assert_eq!(i16::from_le_bytes([wav[46], wav[47]]), (0.5 * i16::MAX as f32).round() as i16);
     }
 
     #[test]
