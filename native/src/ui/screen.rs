@@ -1,5 +1,5 @@
 //! Native CenAI screens. No WebView or Compose UI is used in this module.
-use crate::ui::model::{AppState, Destination, MessageRole};
+use crate::{core::qwen_voice::QwenLanguage, ui::model::{AppState, Destination, MessageRole}};
 use std::cell::Cell;
 
 thread_local! { static LIGHT_MODE: Cell<bool> = const { Cell::new(false) }; }
@@ -780,6 +780,15 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label(text("Primary profile: CenAI Original · English · en-US", 11.0, egui::Color32::from_rgb(190, 201, 224)));
         ui.label(text("Server model: Qwen3-TTS 12Hz · 1.7B Base · GPU inference", 10.0, egui::Color32::from_rgb(190, 201, 224)));
         ui.label(text("Multilingual model catalogue: 10 languages. English is the first quality gate.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        egui::ComboBox::from_label("Speech language")
+            .selected_text(state.voice_language.as_str())
+            .show_ui(ui, |ui| {
+                for language in QwenLanguage::ALL {
+                    let label = language.model_label();
+                    ui.selectable_value(&mut state.voice_language, label.to_owned(), label);
+                }
+            });
+        ui.label(text("English is the primary quality target. Other languages are available but need their own quality validation.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.label(text("The app contains no TTS model weights. Requests are authenticated through CenAI Cloud; model credentials stay server-side.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
         ui.separator();
         ui.label(text("Cloud voice service", 12.0, egui::Color32::WHITE).strong());
