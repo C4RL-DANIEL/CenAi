@@ -205,13 +205,13 @@ impl AttachmentStore {
             if !path.is_file() || path.extension().and_then(|extension| extension.to_str()) != Some("json") {
                 continue;
             }
-            let bytes = fs::read(path).map_err(|error| error.to_string())?;
+            let id = path.file_stem().and_then(|value| value.to_str()).ok_or("Attachment filename is invalid")?;
+            let bytes = self.read_storage(&path, &self.relative_key(id, "json"))?;
             let metadata: AttachmentMetadata = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
             metadata.validate().map_err(str::to_owned)?;
+            if metadata.id != id { return Err("Attachment metadata identifier does not match its filename".into()); }
             let stored = self.path_for(&metadata.id).map_err(str::to_owned)?;
-            if fs::metadata(stored).map_err(|error| error.to_string())?.len() != metadata.byte_length {
-                continue;
-            }
+            if !stored.is_file() { continue; }
             items.push(metadata);
         }
         items.sort_by(|left, right| left.file_name.cmp(&right.file_name));
@@ -231,11 +231,7 @@ impl AttachmentStore {
     pub fn load(&self, metadata: &AttachmentMetadata) -> Result<Vec<u8>, String> {
         metadata.validate().map_err(str::to_owned)?;
         let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
-        let actual_size = fs::metadata(&path).map_err(|error| error.to_string())?.len();
-        if actual_size != metadata.byte_length {
-            return Err("Stored attachment size does not match its metadata".into());
-        }
-        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        let bytes = self.read_storage(&path, &self.relative_key(&metadata.id, "bin"))?;
         metadata.validate_content(&bytes).map_err(str::to_owned)?;
         Ok(bytes)
     }
