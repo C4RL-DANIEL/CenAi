@@ -68,46 +68,48 @@ mod android {
             }
 
             let loaded = unsafe {
-                let create: Create = load_symbol(handle, "cenai_qwen_create")?;
-                let destroy: Destroy = load_symbol(handle, "cenai_qwen_destroy")?;
-                let set_threads: SetThreads = load_symbol(handle, "cenai_qwen_set_cpu_threads")?;
-                let load_models: LoadModels = load_symbol(handle, "cenai_qwen_load_models")?;
-                let synthesize: Synthesize = load_symbol(handle, "cenai_qwen_synthesize")?;
-                let extract_embedding: ExtractEmbedding = load_symbol(handle, "cenai_qwen_extract_speaker_embedding")?;
-                let free_result: FreeResult = load_symbol(handle, "cenai_qwen_free_result")?;
-                let last_error: LastError = load_symbol(handle, "cenai_qwen_last_error")?;
-                let free_string: FreeString = load_symbol(handle, "cenai_qwen_free_string")?;
+                (|| -> Result<Self, String> {
+                    let create: Create = load_symbol(handle, "cenai_qwen_create")?;
+                    let destroy: Destroy = load_symbol(handle, "cenai_qwen_destroy")?;
+                    let set_threads: SetThreads = load_symbol(handle, "cenai_qwen_set_cpu_threads")?;
+                    let load_models: LoadModels = load_symbol(handle, "cenai_qwen_load_models")?;
+                    let synthesize: Synthesize = load_symbol(handle, "cenai_qwen_synthesize")?;
+                    let extract_embedding: ExtractEmbedding = load_symbol(handle, "cenai_qwen_extract_speaker_embedding")?;
+                    let free_result: FreeResult = load_symbol(handle, "cenai_qwen_free_result")?;
+                    let last_error: LastError = load_symbol(handle, "cenai_qwen_last_error")?;
+                    let free_string: FreeString = load_symbol(handle, "cenai_qwen_free_string")?;
+                    let directory = CString::new(model_directory.to_string_lossy().as_bytes())
+                        .map_err(|_| "Model directory contains an invalid path character")?;
+                    let model_name = CString::new(PRIMARY_GGUF_MODEL).expect("static model name");
 
-                let context = create();
-                if context.is_null() {
-                    return Err("Qwen3-TTS could not allocate its native context.".into());
-                }
-                let directory = CString::new(model_directory.to_string_lossy().as_bytes())
-                    .map_err(|_| "Model directory contains an invalid path character")?;
-                let model_name = CString::new(PRIMARY_GGUF_MODEL).expect("static model name");
-                let _ = set_threads(cpu_threads.max(1));
-                if load_models(context, directory.as_ptr(), model_name.as_ptr()) == 0 {
-                    let message_ptr = last_error(context);
-                    let message = if message_ptr.is_null() {
-                        "Qwen3-TTS could not load the CenAI Voice model pack.".to_owned()
-                    } else {
-                        let message = CStr::from_ptr(message_ptr).to_string_lossy().into_owned();
-                        free_string(message_ptr);
-                        message
-                    };
-                    destroy(context);
-                    return Err(message);
-                }
-                Ok(Self {
-                    handle,
-                    context,
-                    destroy,
-                    synthesize,
-                    extract_embedding,
-                    free_result,
-                    last_error,
-                    free_string,
-                })
+                    let context = create();
+                    if context.is_null() {
+                        return Err("Qwen3-TTS could not allocate its native context.".into());
+                    }
+                    let _ = set_threads(cpu_threads.max(1));
+                    if load_models(context, directory.as_ptr(), model_name.as_ptr()) == 0 {
+                        let message_ptr = last_error(context);
+                        let message = if message_ptr.is_null() {
+                            "Qwen3-TTS could not load the CenAI Voice model pack.".to_owned()
+                        } else {
+                            let message = CStr::from_ptr(message_ptr).to_string_lossy().into_owned();
+                            free_string(message_ptr);
+                            message
+                        };
+                        destroy(context);
+                        return Err(message);
+                    }
+                    Ok(Self {
+                        handle,
+                        context,
+                        destroy,
+                        synthesize,
+                        extract_embedding,
+                        free_result,
+                        last_error,
+                        free_string,
+                    })
+                })()
             };
 
             match loaded {
