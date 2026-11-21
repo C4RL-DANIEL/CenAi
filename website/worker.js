@@ -393,6 +393,71 @@ function streamAiChatResponse(upstream, env, token, reservation, model, inputTok
 }
 __name(streamAiChatResponse, "streamAiChatResponse");
 
+async function cloudVoiceSpeech(request, env) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
+    return json(503, { error: "CenAI Voice cloud inference is not provisioned yet." });
+  }
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
+  const body = await request.json().catch(() => null);
+  const input = typeof body?.input === "string" ? body.input.trim() : "";
+  const language = typeof body?.language === "string" ? body.language : "English";
+  const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
+  const supported = new Set(["English", "Chinese", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"]);
+  if (!input || input.length > 8000 || /[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/.test(input)) {
+    return json(400, { error: "Speech text must contain 1–8,000 supported characters." });
+  }
+  if (!supported.has(language)) return json(400, { error: "The requested speech language is not supported." });
+  if (voice !== "cenai-en-v1") return json(400, { error: "The requested CenAI Voice profile is not available." });
+  try {
+    const base = env.SUPABASE_URL.replace(/\\/$/, "");
+    const identity = await fetch(base + "/auth/v1/user", {
+      method: "GET",
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
+      cache: "no-store"
+    });
+    if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
+    const user = await identity.json().catch(() => ({}));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) {
+      return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    }
+    const upstreamUrl = env.CENAI_TTS_BACKEND_URL.replace(/\\/+$/, "") + "/v1/audio/speech";
+    const upstream = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + env.CENAI_TTS_BACKEND_TOKEN,
+        "Content-Type": "application/json",
+        Accept: "audio/wav",
+        "X-CenAI-User-ID": user.id
+      },
+      body: JSON.stringify({ input, language, voice, response_format: "wav" }),
+      signal: AbortSignal.timeout(180000)
+    });
+    if (!upstream.ok) {
+      const detail = await upstream.json().catch(() => ({}));
+      console.error("CenAI Voice inference returned HTTP", upstream.status);
+      return json(upstream.status >= 500 ? 503 : upstream.status, {
+        error: typeof detail.error === "string" ? detail.error.slice(0, 240) : "CenAI Voice inference failed."
+      });
+    }
+    const contentType = upstream.headers.get("Content-Type") || "";
+    const contentLength = Number(upstream.headers.get("Content-Length") || 0);
+    if (!contentType.toLowerCase().startsWith("audio/wav") || (contentLength && contentLength > 33554432)) {
+      return json(502, { error: "CenAI Voice backend returned an invalid audio response." });
+    }
+    const headers = new Headers(corsHeaders);
+    headers.set("Content-Type", "audio/wav");
+    headers.set("Cache-Control", "no-store, no-transform");
+    headers.set("X-CenAI-Voice-Profile", voice);
+    return new Response(upstream.body, { status: 200, headers });
+  } catch (error) {
+    console.error("CenAI Voice gateway failed", error instanceof Error ? error.message : "unknown error");
+    return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
+  }
+}
+__name(cloudVoiceSpeech, "cloudVoiceSpeech");
+
 async function aiChat(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
@@ -656,6 +721,7 @@ export default {
         return releaseFeed();
       }
       if (url.pathname === "/api/beta-notification") return betaNotification(request, env);
+      if (url.pathname === "/api/voice/speech") return cloudVoiceSpeech(request, env);
       if (url.pathname === "/api/ai/chat/completions") return aiChat(request, env);
       if (url.pathname === "/api/email-otp") return emailOtp(request, env);
       if (url.pathname === "/api/webhooks/paypal") return proxyFunction(request, env, "cenai-paypal-billing");
