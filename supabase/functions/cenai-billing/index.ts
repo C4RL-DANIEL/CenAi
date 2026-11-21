@@ -8,6 +8,17 @@ const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:f
 const authDb=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:false}});
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 const fail=(status:number,error:string)=>json(status,{error});
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await db.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 function hex(bytes:Uint8Array){return Array.from(bytes).map(x=>x.toString(16).padStart(2,"0")).join("");}
 function safeEqual(a:string,b:string){if(a.length!==b.length)return false;let n=0;for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i);return n===0;}
 async function currentUser(req:Request){
