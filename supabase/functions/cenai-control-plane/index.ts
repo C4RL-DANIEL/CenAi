@@ -19,6 +19,16 @@ function createInviteToken() {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await adminDb.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
 async function audit(user: any, action: string, details: Record<string, unknown> = {}) {
   const { error } = await adminDb.from("admin_audit_logs").insert({ actor_user_id: user.id, actor_email: user.email ?? "", action, details });
   if (error) throw error;
@@ -45,6 +55,7 @@ Deno.serve(async (req: Request) => {
     if (authError || !user || user.is_anonymous) return fail(401, "Invalid or expired session");
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
+    if (!["registration_status", "registration_redeem"].includes(action) && !await registrationAllowed(user)) return fail(403, "Complete Discord invitation registration before using CenAI.");
     if (action === "apply") {
       const { data: verifiedEmail, error: verifyError } = await adminDb.from("email_verifications").select("email").eq("user_id", user.id).eq("email", String(user.email ?? "").toLowerCase()).maybeSingle();
       if (verifyError) throw verifyError;
