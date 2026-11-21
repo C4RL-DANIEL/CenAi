@@ -752,6 +752,7 @@ impl WgpuRenderer {
         self.app_state.pending_backup_download = false;
         self.app_state.backup_status.clear();
         self.app_state.mfa_factors.clear();
+        self.app_state.mfa_login_required = false;
         self.app_state.mfa_friendly_name_draft = "CenAI Android".into();
         self.app_state.mfa_status.clear();
         self.app_state.mfa_enrollment_factor_id.clear();
