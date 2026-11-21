@@ -367,12 +367,10 @@ pub fn validate_synthesis_text(text: &str, language: QwenLanguage) -> Result<Syn
 }
 
 #[cfg(target_os = "android")]
-fn language_id(language: QwenLanguage) -> i32 {
-    match language {
-        QwenLanguage::English => 2050,
-        // Qwen's C++ runtime accepts -1 for automatic language detection.
-        _ => -1,
-    }
+fn language_id(_language: QwenLanguage) -> i32 {
+    // Let Qwen detect the input language. English is the first quality target,
+    // but multilingual requests must not be forced through an English-only ID.
+    -1
 }
 
 #[cfg(any(target_os = "android", test))]
