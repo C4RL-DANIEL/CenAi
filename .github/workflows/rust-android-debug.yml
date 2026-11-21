@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep the newest source snapshot moving through build and emulator checks.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  # Serialize push and PR builds for the same source branch; newer commits supersede stale emulator runs.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
