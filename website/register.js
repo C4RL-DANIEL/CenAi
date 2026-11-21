@@ -19,7 +19,7 @@
     config = await response.json();
     if (!config.supabaseUrl || !config.publishableKey) throw new Error("The secure registration service is not configured.");
   }
-  async function finishRegistration(accessToken) {
+  async function finishRegistration(accessToken, authSession = null) {
     if (busy) return;
     busy = true;
     $("discord").disabled = true;
@@ -37,12 +37,10 @@
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result.registered !== true) throw new Error(result.error || "The invitation could not be redeemed.");
-      const fragment = new URLSearchParams(location.hash.replace(/^#/, ""));
-      const expiresIn = Number(fragment.get("expires_in") || 3600);
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         access_token: accessToken,
-        refresh_token: fragment.get("refresh_token") || "",
-        expires_at: Math.floor(Date.now() / 1000) + expiresIn
+        refresh_token: authSession?.refresh_token || "",
+        expires_at: Math.floor(Date.now() / 1000) + Number(authSession?.expires_in || 3600)
       }));
       sessionStorage.removeItem(INVITE_KEY);
       cleanUrl();
@@ -77,6 +75,8 @@
   }
   async function init() {
     const params = new URLSearchParams(location.search);
+    const oauthCode = params.get("code");
+    const oauthError = params.get("error_description") || params.get("error");
     invite = params.get("invite") || sessionStorage.getItem(INVITE_KEY) || "";
     if (invite) sessionStorage.setItem(INVITE_KEY, invite);
     cleanUrl();
