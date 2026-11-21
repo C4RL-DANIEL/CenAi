@@ -14,6 +14,22 @@ These decisions are binding. Do not collapse them into one generic "AI app" arch
 
 The replacement application UI, state, networking orchestration and feature logic are Rust-owned. Android's NativeActivity is only the lifecycle host. No Compose UI or WebView is used by `:app-rust`. The existing Kotlin application remains in `:app` as a rollback/reference until feature parity, device testing and release verification are complete.
 
+## Central Brain: shared engine, isolated context
+
+The Central Brain is one shared intelligence service, **not one shared memory pool**.
+
+- Shared across the service: planner/orchestrator implementation, model routing, approved capability catalogue, tool/MCP protocol implementation, policy engine and managed compute infrastructure.
+- Isolated by immutable Supabase user UUID: personal memory, conversations, files, projects, workspace indexes, provider credentials, connected accounts, settings, permissions, billing entitlements, diagnostics and automation/task ownership.
+- Isolated by feature namespace: feature-specific instructions, workspace data and feature memory. Cross-feature access requires an explicit user-approved grant for that user.
+- Isolated by session: temporary task state, conversation context, tool outputs and scratch data are usable only by the exact owning feature/session.
+- No cross-user retrieval is ever allowed, even when a user has granted cross-feature access. That grant can never widen access to another account.
+- Every Brain request binds to the immutable user UUID returned by Supabase and checks it against the active authenticated session before context is assembled or sent to managed inference.
+- Context retrieval must enforce the owner/feature/session predicates at the data-access layer, including database queries, vector indexes, cache keys and remote requests. Filtering after retrieval alone is insufficient.
+- Personal memory is included only when the user's memory setting and request-level permission allow it. Model output cannot grant permissions or broaden context.
+- Send only the minimum authorized excerpts needed for the task; never ship a whole account history by default. Deletion must also remove indexed/embedded copies and cached derivatives.
+
+The Rust rewrite adds a context authorization gate with tests for cross-user denial, cross-feature grants, per-session isolation, explicit personal-memory access and malformed foreign records. This gate is a client-side defense-in-depth layer; Cloudflare/Supabase services must enforce the same tenant predicates server-side.
+
 ## Current architecture
 
 - `native/`: Rust application runtime and shared service/domain code.
