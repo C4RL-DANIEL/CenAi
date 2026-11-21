@@ -11,7 +11,7 @@ concurrency:
   # Keep only the newest pending run for this branch while allowing the active
   # build to finish. A per-commit group otherwise creates an unbounded queue.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
