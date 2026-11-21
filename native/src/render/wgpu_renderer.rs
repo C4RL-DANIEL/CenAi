@@ -1735,6 +1735,51 @@ impl WgpuRenderer {
                         Err(error) => self.app_state.backup_status = format!("Backup restore failed: {error}"),
                     }
                 }
+                ChatEvent::MfaFactorsLoaded(_, result) => {
+                    match result {
+                        Ok(factors) => {
+                            self.app_state.mfa_factors = factors;
+                            self.app_state.mfa_status = "Authenticator status refreshed.".into();
+                        }
+                        Err(error) => self.app_state.mfa_status = format!("Could not load authenticator status: {error}"),
+                    }
+                }
+                ChatEvent::MfaEnrolled(_, result) => {
+                    match result {
+                        Ok((factor_id, secret, qr)) => {
+                            self.app_state.mfa_enrollment_factor_id = factor_id;
+                            self.app_state.mfa_enrollment_secret = secret;
+                            self.app_state.mfa_enrollment_qr = qr;
+                            self.app_state.mfa_status = "Authenticator created. Add the setup key to your authenticator app, then verify a six-digit code.".into();
+                        }
+                        Err(error) => self.app_state.mfa_status = format!("Authenticator enrollment failed: {error}"),
+                    }
+                }
+                ChatEvent::MfaVerified(_, result) => {
+                    self.app_state.mfa_code_draft.clear();
+                    match result {
+                        Ok(()) => {
+                            self.app_state.mfa_enrollment_secret.clear();
+                            self.app_state.mfa_enrollment_qr.clear();
+                            self.app_state.mfa_status = "Authenticator verified. Multi-factor authentication is active.".into();
+                            self.app_state.pending_mfa_refresh = true;
+                        }
+                        Err(error) => self.app_state.mfa_status = format!("Authenticator verification failed: {error}"),
+                    }
+                }
+                ChatEvent::MfaRemoved(_, factor_id, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.mfa_factors.retain(|factor| factor.id != factor_id);
+                            self.app_state.mfa_status = "Authenticator removed from this account.".into();
+                            self.app_state.mfa_enrollment_factor_id.clear();
+                            self.app_state.mfa_enrollment_secret.clear();
+                            self.app_state.mfa_enrollment_qr.clear();
+                            self.app_state.pending_mfa_refresh = true;
+                        }
+                        Err(error) => self.app_state.mfa_status = format!("Could not remove authenticator: {error}"),
+                    }
+                }
                 ChatEvent::CheckoutReady(_, result) => {
                     match result {
                         Ok(url) => { self.app_state.pending_open_url = Some(url); self.app_state.checkout_status = "Opening Stripe checkout…".into(); }
