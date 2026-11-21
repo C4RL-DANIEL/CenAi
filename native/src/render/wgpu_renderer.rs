@@ -1485,6 +1485,8 @@ impl WgpuRenderer {
                             self.app_state.ecosystem_status = "Loading your account's app permissions…".into();
                             self.app_state.account_email = email.clone();
                             self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
+                            self.app_state.pending_mfa_refresh = true;
+                            self.app_state.mfa_status = "Checking account authenticator status…".into();
                             self.app_state.personal_memory_enabled = false;
                             self.app_state.personal_memory_status = "Loading your private memory preference…".into();
                             if let Some(service) = self.api.clone() {
