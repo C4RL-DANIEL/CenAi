@@ -34,6 +34,9 @@ Deno.serve(async (req: Request) => {
     if (!token) return fail(401, "Sign in required");
     const { data: { user }, error: authError } = await authDb.auth.getUser(token);
     if (authError || !user || user.is_anonymous) return fail(401, "Invalid or expired session");
+    const encodedClaims = token.split(".")[1] ?? "";
+    const normalizedClaims = encodedClaims.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(normalizedClaims.padEnd(Math.ceil(normalizedClaims.length / 4) * 4, "=")));
 
     const raw = await req.text();
     if (raw.length > 32_000) return fail(413, "Memory request is too large");
@@ -46,6 +49,13 @@ Deno.serve(async (req: Request) => {
       return fail(400, "Request body must contain valid JSON");
     }
     const action = String(body.action ?? "");
+    if (["memory_set_enabled", "memory_list", "memory_save", "memory_clear", "memory_delete"].includes(action)) {
+      const { data: hasVerifiedMfa, error: mfaError } = await adminDb.rpc("cenai_user_has_verified_mfa", { p_user_id: user.id });
+      if (mfaError) throw mfaError;
+      if (hasVerifiedMfa === true && claims.aal !== "aal2") {
+        return respond(403, { error: "Complete authenticator verification before accessing or changing personal memory", code: "mfa_required" });
+      }
+    }
 
     if (action === "memory_status") {
       const { data, error } = await adminDb.from("user_memory_settings")
