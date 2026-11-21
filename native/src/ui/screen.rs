@@ -214,7 +214,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
 fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Your Work", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Projects and saved artifacts in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text("Projects, saved artifacts and reviewed task plans in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Create a project", 17.0, egui::Color32::WHITE).strong());
@@ -244,6 +244,24 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(text(format!("{} saved artifacts", project.artifacts.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
                 for artifact in &project.artifacts {
                     ui.label(text(format!("▤  {}", artifact.file_name), 11.0, egui::Color32::from_rgb(165, 184, 220)));
+                }
+            });
+            ui.add_space(8.0);
+        }
+    }
+    ui.add_space(10.0);
+    if state.task_plans.is_empty() {
+        surface(ui, |ui| {
+            ui.label(text("Planned tasks", 16.0, egui::Color32::WHITE).strong());
+            ui.label(text("Turn on “Plan task first” in Conversation to create a plan. Plans are saved here; nothing executes without separate approval.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        });
+    } else {
+        for plan in &state.task_plans {
+            surface(ui, |ui| {
+                ui.label(text(&plan.goal, 15.0, egui::Color32::WHITE).strong());
+                ui.label(text(format!("{} steps · Plan only · Not executed", plan.steps.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                for step in &plan.steps {
+                    ui.label(text(format!("○  {:?} — {}", step.role, step.title), 11.0, egui::Color32::from_rgb(163, 174, 203)));
                 }
             });
             ui.add_space(8.0);
