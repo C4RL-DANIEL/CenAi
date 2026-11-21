@@ -206,7 +206,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.speech_status.is_empty() {
                 ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
-            ui.label(text("CenAI Voice is based on Qwen3-TTS, with an English-first custom voice profile. Offline Android inference is still being integrated; Google TTS and cloud speech fallback are disabled.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+            ui.label(text("CenAI Voice uses a local multilingual speech engine. Offline synthesis works after model installation; Google TTS and cloud speech fallback are disabled.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
     }
     ui.add_space(10.0);
