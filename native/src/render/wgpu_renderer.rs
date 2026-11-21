@@ -1,8 +1,9 @@
-//! WGPU-backed full-screen ambient renderer with a tiny animated uniform.
+//! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use winit::{dpi::PhysicalSize, window::Window};
+use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
+use crate::ui::{model::AppState, screen};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -23,6 +24,10 @@ pub struct WgpuRenderer {
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     started_at: std::time::Instant,
+    egui_context: egui::Context,
+    egui_state: egui_winit::State,
+    egui_renderer: egui_wgpu::Renderer,
+    app_state: AppState,
 }
 
 impl WgpuRenderer {
@@ -121,6 +126,16 @@ impl WgpuRenderer {
             cache: None,
         });
 
+        let egui_context = egui::Context::default();
+        let egui_state = egui_winit::State::new(
+            egui_context.clone(),
+            egui::ViewportId::ROOT,
+            window.as_ref(),
+            Some(window.scale_factor() as f32),
+            window.theme(),
+        );
+        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
+
         Ok(Self {
             surface,
             device,
@@ -131,7 +146,15 @@ impl WgpuRenderer {
             uniform_buffer,
             bind_group,
             started_at: std::time::Instant::now(),
+            egui_context,
+            egui_state,
+            egui_renderer,
+            app_state: AppState::default(),
         })
+    }
+
+    pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
+        self.egui_state.on_window_event(window, event).repaint
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -144,17 +167,34 @@ impl WgpuRenderer {
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.uniforms.time_seconds = self.started_at.elapsed().as_secs_f32();
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&self.uniforms));
+    pub fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let time = if self.app_state.reduced_motion { 0.0 } else { self.started_at.elapsed().as_secs_f32() };
+        self.uniforms.time_seconds = time;
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&self.uniforms));
+
+        let raw_input = self.egui_state.take_egui_input(window);
+        let full_output = self.egui_context.run(raw_input, |ctx| {
+            screen::render(ctx, &mut self.app_state, time);
+        });
+        self.egui_state.handle_platform_output(window, full_output.platform_output);
+        let paint_jobs = self.egui_context.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: full_output.pixels_per_point,
+        };
+
+        for (id, delta) in &full_output.textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("CenAI frame encoder"),
         });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("CenAI ambient pass"),
+                label: Some("CenAI ambient background"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -171,7 +211,36 @@ impl WgpuRenderer {
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-        self.queue.submit(Some(encoder.finish()));
+
+        let user_commands = self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("CenAI interface"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.egui_renderer.render(&mut pass.forget_lifetime(), &paint_jobs, &screen_descriptor);
+        }
+
+        self.queue.submit(user_commands.into_iter().chain(std::iter::once(encoder.finish())));
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
         frame.present();
         Ok(())
     }
@@ -179,6 +248,6 @@ impl WgpuRenderer {
 
 impl RenderBackend for WgpuRenderer {
     fn backend_name(&self) -> &'static str {
-        "wgpu"
+        "wgpu + egui"
     }
 }
