@@ -69,6 +69,26 @@ async fn reload_ecosystem(api: &CenAiApi) -> Result<Vec<EcosystemAppItem>, Strin
     ecosystem_apps_from_response(api.ecosystem_list().await?)
 }
 
+fn mfa_factors_from_response(value: serde_json::Value) -> Result<Vec<crate::ui::model::MfaFactor>, String> {
+    let factors = value.get("all").or_else(|| value.get("totp"))
+        .and_then(serde_json::Value::as_array)
+        .ok_or("MFA service returned an invalid factor list")?;
+    let mut result = Vec::new();
+    for factor in factors {
+        if factor.get("factor_type").and_then(serde_json::Value::as_str).is_some_and(|kind| kind != "totp") {
+            continue;
+        }
+        let id = factor.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if id.is_empty() { continue; }
+        result.push(crate::ui::model::MfaFactor {
+            id: id.to_owned(),
+            friendly_name: factor.get("friendly_name").and_then(serde_json::Value::as_str).unwrap_or("Authenticator").to_owned(),
+            status: factor.get("status").and_then(serde_json::Value::as_str).unwrap_or("unknown").to_owned(),
+        });
+    }
+    Ok(result)
+}
+
 fn new_session_id() -> String {
     format!(
         "session-{}-{}",
