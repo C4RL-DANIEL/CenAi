@@ -411,6 +411,86 @@ impl CenAiApi {
         Ok(data)
     }
 
+    /// Synthesizes speech through CenAI's authenticated cloud voice gateway.
+    /// The model and voice reference remain on the server; no model weights are downloaded to Android.
+    pub async fn synthesize_voice_cloud(
+        &self,
+        text: &str,
+        language: &str,
+        voice: &str,
+    ) -> Result<Vec<u8>, String> {
+        const MAX_TEXT_BYTES: usize = 32_000;
+        const MAX_AUDIO_BYTES: usize = 32 * 1024 * 1024;
+        let text = text.trim();
+        if text.is_empty() || text.len() > MAX_TEXT_BYTES {
+            return Err("Speech text is empty or exceeds the CenAI Voice limit.".into());
+        }
+        if !matches!(language, "English" | "Chinese" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian") {
+            return Err("CenAI Voice does not support the selected language yet.".into());
+        }
+        if voice != "cenai-en-v1" {
+            return Err("The requested CenAI Voice profile is unavailable.".into());
+        }
+        let payload = json!({ "input": text, "language": language, "voice": voice });
+        let (mut token, account_id) = {
+            let _session_guard = self.session_lock.lock().await;
+            (self.vault.access_token()?, self.vault.account_id()?)
+        };
+        if token.is_empty() || !valid_supabase_user_id(&account_id) {
+            return Err("Sign in to your CenAI account before using cloud voice.".into());
+        }
+        let send = |token: &str| self.client.post(config::CLOUD_VOICE_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .bearer_auth(token)
+            .header(header::ACCEPT, "audio/wav")
+            .json(&payload);
+        let mut response = send(&token).send().await
+            .map_err(|error| format!("CenAI Voice connection failed: {error}"))?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let _session_guard = self.session_lock.lock().await;
+            if self.vault.account_id()? != account_id {
+                return Err("The active CenAI account changed while voice synthesis was running.".into());
+            }
+            let current_token = self.vault.access_token()?;
+            if current_token == token {
+                self.refresh_session().await?;
+                token = self.vault.access_token()?;
+            } else {
+                token = current_token;
+            }
+            if token.is_empty() { return Err("Your CenAI session expired. Sign in again.".into()); }
+            drop(_session_guard);
+            response = send(&token).send().await
+                .map_err(|error| format!("CenAI Voice retry failed: {error}"))?;
+        }
+        if !response.status().is_success() {
+            let status = response.status();
+            let raw = response.text().await.unwrap_or_default();
+            let data: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({}));
+            let message = data.get("error").and_then(Value::as_str)
+                .or_else(|| data.get("message").and_then(Value::as_str))
+                .unwrap_or("Cloud voice service is unavailable.");
+            return Err(format!("CenAI Voice HTTP {}: {}", status.as_u16(), message));
+        }
+        let content_type = response.headers().get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()).unwrap_or("");
+        if !content_type.starts_with("audio/wav") && !content_type.starts_with("audio/x-wav") {
+            return Err("CenAI Voice returned an unsupported audio format.".into());
+        }
+        if response.content_length().is_some_and(|length| length > MAX_AUDIO_BYTES as u64) {
+            return Err("CenAI Voice audio exceeded the 32 MB safety limit.".into());
+        }
+        let bytes = response.bytes().await
+            .map_err(|error| format!("Could not receive CenAI Voice audio: {error}"))?;
+        if bytes.len() < 44 || bytes.len() > MAX_AUDIO_BYTES || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+            return Err("CenAI Voice returned an invalid or oversized WAV file.".into());
+        }
+        if self.vault.account_id()? != account_id {
+            return Err("The active CenAI account changed before voice playback completed.".into());
+        }
+        Ok(bytes.to_vec())
+    }
+
     async fn personal_memory_action(&self, action: &str, mut payload: Value) -> Result<Value, String> {
         let object = payload.as_object_mut().ok_or("Request payload must be an object")?;
         object.insert("action".into(), Value::String(action.to_owned()));
