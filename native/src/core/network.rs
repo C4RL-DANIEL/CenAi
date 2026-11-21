@@ -296,7 +296,7 @@ impl CenAiApi {
             "max_tokens": request.max_tokens,
             "stream": true
         });
-        let response = self.client.post(url)
+        let response = self.provider_client.post(url)
             .bearer_auth(api_key)
             .header(header::ACCEPT, "text/event-stream")
             .json(&payload)
