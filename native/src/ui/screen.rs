@@ -195,7 +195,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(state.voice_model_download_progress >= 1.0, egui::Button::new("Read aloud · CenAI Voice")).clicked() {
+                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read aloud · CenAI Voice")).clicked() {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
@@ -206,7 +206,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.speech_status.is_empty() {
                 ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
-            ui.label(text("CenAI Voice uses a local multilingual speech engine. Offline synthesis works after model installation; Google TTS and cloud speech fallback are disabled.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+            ui.label(text("CenAI Voice uses a cloud-hosted multilingual speech model. Your account is authenticated; speech audio returns to the app for local playback.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
     }
     ui.add_space(10.0);
@@ -776,23 +776,14 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
 fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     surface(ui, |ui| {
         ui.label(text("CenAI Voice", 18.0, egui::Color32::WHITE).strong());
-        ui.label(text("CenAI's offline multilingual speech engine, designed for natural, expressive reading.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.label(text("Primary profile: CenAI Voice · English · en-US (custom voice refinement is next)", 11.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Engine profile: CenAI Voice English · high-quality Q8 model", 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Languages: English first, plus 9 additional model languages.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Runs locally after model installation. No Google TTS or cloud speech fallback.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        ui.label(text("CenAI-branded cloud speech, powered by the Qwen3-TTS model family.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Primary profile: CenAI Original · English · en-US", 11.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Server model: Qwen3-TTS 12Hz · 1.7B Base · GPU inference", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Multilingual model catalogue: 10 languages. English is the first quality gate.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("The app contains no TTS model weights. Requests are authenticated through CenAI Cloud; model credentials stay server-side.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
         ui.separator();
-        ui.label(text("Offline model pack · about 1.3 GB", 12.0, egui::Color32::WHITE).strong());
-        if ui.add_enabled(!state.pending_voice_model_download && !state.voice_model_status.starts_with("Downloading"), egui::Button::new(if state.voice_model_download_progress >= 1.0 { "Verify / repair offline voice model" } else { "Download and verify English voice model" })).clicked() {
-            state.pending_voice_model_download = true;
-            state.voice_model_status = "Preparing secure model download…".into();
-        }
-        if state.voice_model_download_progress > 0.0 && state.voice_model_download_progress < 1.0 {
-            ui.add(egui::ProgressBar::new(state.voice_model_download_progress).show_percentage());
-        }
-        if !state.voice_model_status.is_empty() {
-            ui.label(text(&state.voice_model_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        }
+        ui.label(text("Cloud voice service", 12.0, egui::Color32::WHITE).strong());
+        ui.label(text(&state.voice_service_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
         if ui.small_button("View CenAI Voice implementation plan").clicked() {
             state.pending_open_url = Some("https://github.com/C4RL-DANIEL/CenAi/blob/rewrite/rust-native-core/docs/CENAI-VOICE.md".into());
         }
