@@ -115,7 +115,7 @@ impl WorkspaceStore {
     }
 
     pub fn save_task_plan(&self, plan: TaskPlan, now_unix_ms: u64) -> Result<TaskRecord, String> {
-        plan.validate().map_err(|error| format!("Invalid task plan: {error}"))?;
+        plan.validate_persisted().map_err(|error| format!("Invalid task plan: {error}"))?;
         let mut index = self.read_index()?;
         let record = match index.tasks.iter_mut().find(|task| task.id == plan.id) {
             Some(existing) => {
