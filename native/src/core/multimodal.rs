@@ -18,6 +18,20 @@ pub struct AttachmentMetadata {
 }
 
 impl AttachmentMetadata {
+    pub fn from_bytes(id: String, file_name: String, mime_type: String, kind: AttachmentKind, bytes: &[u8]) -> Result<Self, String> {
+        let digest = Sha256::digest(bytes);
+        let metadata = Self {
+            id,
+            file_name,
+            mime_type,
+            kind,
+            byte_length: bytes.len() as u64,
+            sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
+        };
+        metadata.validate_content(bytes).map_err(str::to_owned)?;
+        Ok(metadata)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.id.is_empty() || self.id.len() > 80 || !self.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return Err("Attachment identifier is invalid");
