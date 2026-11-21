@@ -324,6 +324,10 @@ impl Default for AppState {
             pending_ecosystem_register: None,
             pending_ecosystem_grant: None,
             pending_ecosystem_revoke: None,
+            voice_active: false,
+            pending_voice_start: false,
+            pending_voice_stop: false,
+            voice_status: String::new(),
                     }
     }
 }
