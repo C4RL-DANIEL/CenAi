@@ -1,3 +1,17 @@
+-- Snapshot the Discord-only registration cutover. Existing accounts created
+-- before this timestamp remain valid; all later accounts must redeem an invite.
+create table if not exists public.registration_policy (
+  id smallint primary key check (id = 1),
+  enforced_from timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+insert into public.registration_policy(id, enforced_from)
+values (1, now())
+on conflict (id) do nothing;
+alter table public.registration_policy enable row level security;
+revoke all on public.registration_policy from public, anon, authenticated;
+grant all on public.registration_policy to service_role;
+
 -- Owner-issued Discord registration invitations.
 -- Raw invitation tokens are returned once; only SHA-256 hashes are stored.
 create table if not exists public.registration_invites (
