@@ -12,6 +12,111 @@ pub const PRIMARY_GGUF_MODEL: &str = "qwen-talker-0.6b-base-Q8_0.gguf";
 pub const TOKENIZER_GGUF_MODEL: &str = "qwen-tokenizer-12hz-Q8_0.gguf";
 const MAX_AUDIO_SECONDS: usize = 15 * 60;
 
+pub const MODEL_REVISION: &str = "b7ee2e8c7459c3bea99da23e3d178125a7d1713c";
+const MODEL_REPO: &str = "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve";
+const TALKER_SHA256: &str = "d54dbaf10591421fa764ed630d764efa717ae40cd959bd48c66d4eb1af226426";
+const TOKENIZER_SHA256: &str = "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94";
+
+/// Downloads and verifies the two pinned Q8_0 GGUF files needed for offline
+/// CenAI Voice synthesis. This is an explicit user action; synthesis itself
+/// never performs network access.
+pub async fn download_model_pack<F>(directory: std::path::PathBuf, on_progress: F) -> Result<(), String>
+where
+    F: Fn(&str, f32) + Send + Sync + 'static,
+{
+    use futures_util::StreamExt;
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncWriteExt;
+
+    tokio::fs::create_dir_all(&directory).await
+        .map_err(|error| format!("Could not create CenAI Voice model directory: {error}"))?;
+    let client = reqwest::Client::builder()
+        .user_agent("CenAI-Voice/1.0")
+        .build()
+        .map_err(|error| format!("Could not initialize model downloader: {error}"))?;
+
+    async fn verify_existing(path: &std::path::Path, expected: &str) -> Result<bool, String> {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncReadExt;
+        let mut file = match tokio::fs::File::open(path).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(format!("Could not inspect existing model file: {error}")),
+        };
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0u8; 1024 * 1024];
+        loop {
+            let count = file.read(&mut buffer).await
+                .map_err(|error| format!("Could not verify existing model file: {error}"))?;
+            if count == 0 { break; }
+            hasher.update(&buffer[..count]);
+        }
+        Ok(format!("{:x}", hasher.finalize()) == expected)
+    }
+
+    async fn download_one<F>(
+        client: &reqwest::Client,
+        directory: &std::path::Path,
+        file_name: &str,
+        expected_sha256: &str,
+        on_progress: &F,
+    ) -> Result<(), String>
+    where
+        F: Fn(&str, f32) + Send + Sync + 'static,
+    {
+        use futures_util::StreamExt;
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncWriteExt;
+
+        let destination = directory.join(file_name);
+        if verify_existing(&destination, expected_sha256).await? {
+            on_progress(file_name, 1.0);
+            return Ok(());
+        }
+        let temporary = directory.join(format!("{file_name}.part"));
+        let url = format!("{MODEL_REPO}/{MODEL_REVISION}/{file_name}");
+        let response = client.get(url).send().await
+            .map_err(|error| format!("Could not download {file_name}: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("Model host rejected {file_name}: {error}"))?;
+        let total = response.content_length().unwrap_or(0);
+        let mut stream = response.bytes_stream();
+        let mut file = tokio::fs::File::create(&temporary).await
+            .map_err(|error| format!("Could not create temporary model file: {error}"))?;
+        let mut hasher = Sha256::new();
+        let mut downloaded = 0u64;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| format!("Download interrupted for {file_name}: {error}"))?;
+            file.write_all(&chunk).await
+                .map_err(|error| format!("Could not write {file_name}: {error}"))?;
+            hasher.update(&chunk);
+            downloaded = downloaded.saturating_add(chunk.len() as u64);
+            if total > 0 {
+                on_progress(file_name, (downloaded as f32 / total as f32).clamp(0.0, 1.0));
+            }
+        }
+        file.flush().await.map_err(|error| format!("Could not flush {file_name}: {error}"))?;
+        drop(file);
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != expected_sha256 {
+            let _ = tokio::fs::remove_file(&temporary).await;
+            return Err(format!("Integrity check failed for {file_name}; the incomplete model was discarded."));
+        }
+        if tokio::fs::metadata(&destination).await.is_ok() {
+            tokio::fs::remove_file(&destination).await
+                .map_err(|error| format!("Could not replace an invalid existing model file: {error}"))?;
+        }
+        tokio::fs::rename(&temporary, &destination).await
+            .map_err(|error| format!("Could not install verified {file_name}: {error}"))?;
+        on_progress(file_name, 1.0);
+        Ok(())
+    }
+
+    download_one(&client, &directory, PRIMARY_GGUF_MODEL, TALKER_SHA256, &on_progress).await?;
+    download_one(&client, &directory, TOKENIZER_GGUF_MODEL, TOKENIZER_SHA256, &on_progress).await?;
+    Ok(())
+}
+
 #[cfg(target_os = "android")]
 mod android {
     use std::{
