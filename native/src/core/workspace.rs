@@ -302,8 +302,12 @@ impl WorkspaceStore {
         }
         if referenced.len() != files.len() { return Err("Backup contains unreferenced artifact data".into()); }
 
-        let staging = self.user_root.join(format!("artifacts.restore-{}", std::process::id()));
-        let previous = self.user_root.join(format!("artifacts.previous-{}", std::process::id()));
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_RESTORE: AtomicU64 = AtomicU64::new(1);
+        let sequence = NEXT_RESTORE.fetch_add(1, Ordering::Relaxed);
+        let suffix = format!("{}-{sequence}", std::process::id());
+        let staging = self.user_root.join(format!("artifacts.restore-{suffix}"));
+        let previous = self.user_root.join(format!("artifacts.previous-{suffix}"));
         if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
         fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
         for (id, bytes) in &files {
