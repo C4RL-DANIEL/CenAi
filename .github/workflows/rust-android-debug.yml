@@ -60,14 +60,18 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app-rust:assembleDebug
       - name: Verify NativeActivity on API 35 emulator
-        timeout-minutes: 8
+        env:
+          # GitHub-hosted Linux runners do not expose KVM. Android Emulator refuses
+          # to start with -accel off unless this explicit TCG opt-in is present.
+          ANDROID_I_WANT_MY_TCG: "yes"
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-boot-timeout: 480000
+          emulator-boot-timeout: 840000
           script: |
             adb install app-rust/build/outputs/apk/debug/app-rust-debug.apk
             adb logcat -c
@@ -100,6 +104,7 @@ jobs:
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: cenai-rust-native-debug
           path: |
