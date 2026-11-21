@@ -610,7 +610,9 @@ fn parse_gemini_sse_event(line: &str) -> Result<Option<String>, String> {
     if let Some(error) = value.get("error") {
         return Err(error.get("message").and_then(Value::as_str).unwrap_or("Gemini stream error").to_owned());
     }
-    Ok(value.pointer("/candidates/0/content/parts/0/text").and_then(Value::as_str).map(str::to_owned))
+    let text = value.pointer("/candidates/0/content/parts").and_then(Value::as_array)
+        .map(|parts| parts.iter().filter_map(|part| part.get("text").and_then(Value::as_str)).collect::<String>());
+    Ok(text.filter(|text| !text.is_empty()))
 }
 
 #[cfg(test)]
