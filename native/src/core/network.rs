@@ -651,6 +651,45 @@ impl CenAiApi {
     }
 
     /// Streams Gemini Developer API responses without placing the API key in the URL.
+    /// Generates speech audio from assistant text using the selected Gemini TTS voice.
+    pub async fn synthesize_speech_gemini(&self, text: &str) -> Result<Vec<u8>, String> {
+        if text.trim().is_empty() || text.len() > 12_000 {
+            return Err("Speech text must contain between 1 and 12,000 characters".into());
+        }
+        let api_key = self.vault.provider_key("gemini")?;
+        if api_key.trim().is_empty() {
+            return Err("Add a Google Gemini API key in Settings before using speech playback".into());
+        }
+        let payload = json!({
+            "contents": [{ "parts": [{ "text": text }] }],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": "Kore" } } }
+            }
+        });
+        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent")
+            .header("x-goog-api-key", api_key)
+            .json(&payload)
+            .send().await.map_err(|error| format!("Gemini speech request failed: {error}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Gemini speech synthesis returned HTTP {}", status.as_u16()));
+        }
+        let value: Value = response.json().await.map_err(|error| format!("Gemini speech response was invalid: {error}"))?;
+        let encoded = value.pointer("/candidates/0/content/parts")
+            .and_then(Value::as_array).into_iter().flatten()
+            .find_map(|part| part.pointer("/inlineData/data").and_then(Value::as_str))
+            .ok_or("Gemini returned no synthesized audio")?;
+        let audio = base64::engine::general_purpose::STANDARD.decode(encoded)
+            .map_err(|_| "Gemini returned malformed speech audio")?;
+        if audio.len() < 44 || audio.len() > 24 * 1024 * 1024
+            || &audio[..4] != b"RIFF" || &audio[8..12] != b"WAVE"
+        {
+            return Err("Gemini speech response was not a supported WAV file".into());
+        }
+        Ok(audio)
+    }
+
     /// Transcribes a user-initiated WAV audio clip through Gemini's multimodal endpoint.
     /// The API key is sent in a header, never embedded in the URL or returned errors.
     pub async fn transcribe_audio_gemini(&self, wav_bytes: &[u8]) -> Result<String, String> {
