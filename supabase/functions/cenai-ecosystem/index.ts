@@ -56,7 +56,10 @@ Deno.serve(async (req: Request) => {
       if (!capabilities.every(capability => scopes.includes(capability))) return fail(400, "Every declared capability must appear in requested scopes");
       const { data: publisher, error: publisherError } = await db.from("ecosystem_trusted_publishers").select("owner_user_id,enabled").eq("publisher_id", publisherId).maybeSingle();
       if (publisherError) throw publisherError;
-      const isAdmin = ["owner", "admin"].includes(String(user.app_metadata?.role ?? ""));
+      const { data: adminRecord, error: adminError } = await db.from("admin_users")
+        .select("role,is_active").eq("user_id", user.id).maybeSingle();
+      if (adminError) throw adminError;
+      const isAdmin = adminRecord?.is_active === true && ["owner", "admin"].includes(String(adminRecord.role ?? ""));
       if (!publisher || publisher.enabled !== true || (publisher.owner_user_id !== user.id && !isAdmin)) return fail(403, "Publisher is not trusted for this account");
       const { data: existing, error: existingError } = await db.from("ecosystem_apps").select("publisher_id").eq("app_id", appId).maybeSingle();
       if (existingError) throw existingError;
