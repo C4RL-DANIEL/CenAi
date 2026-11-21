@@ -163,8 +163,7 @@ impl McpHttpClient {
         }
         let payload = if content_type.contains("text/event-stream") {
             raw.lines().filter_map(|line| line.trim().strip_prefix("data:"))
-                .map(str::trim).filter(|line| !line.is_empty() && *line != "[DONE]")
-                .next_back().ok_or("MCP server returned an empty event stream")?
+                .map(str::trim).rfind(|line| !line.is_empty() && *line != "[DONE]").ok_or("MCP server returned an empty event stream")?
                 .to_owned()
         } else {
             raw
