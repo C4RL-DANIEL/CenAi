@@ -322,6 +322,47 @@ impl CenAiApi {
         Ok(answer)
     }
 
+    /// Reads only this authenticated account's saved memories. The server enforces owner scoping.
+    pub async fn personal_memories(&self) -> Result<Vec<Value>, String> {
+        let status = self.control_plane("memory_status", json!({})).await?;
+        if status.get("enabled").and_then(Value::as_bool) != Some(true) {
+            return Ok(Vec::new());
+        }
+        let data = self.control_plane("memory_list", json!({})).await?;
+        Ok(data.get("memories").and_then(Value::as_array).cloned().unwrap_or_default())
+    }
+
+    pub async fn set_personal_memory_enabled(&self, enabled: bool) -> Result<(), String> {
+        let data = self.control_plane("memory_set_enabled", json!({ "enabled": enabled })).await?;
+        if data.get("enabled").and_then(Value::as_bool) != Some(enabled) {
+            return Err("The server did not confirm the personal-memory setting.".into());
+        }
+        Ok(())
+    }
+
+    pub async fn save_personal_memory(&self, category: &str, content: &str, source: &str) -> Result<Value, String> {
+        if !matches!(category, "preference" | "profile" | "project" | "workflow" | "fact")
+            || !matches!(source, "user" | "assistant_confirmed" | "imported")
+            || content.trim().is_empty() || content.len() > 8000 {
+            return Err("Personal memory category, source or content is invalid.".into());
+        }
+        let data = self.control_plane("memory_save", json!({
+            "category": category, "content": content.trim(), "source": source
+        })).await?;
+        data.get("memory").cloned().ok_or_else(|| "The memory service returned no saved record.".into())
+    }
+
+    pub async fn delete_personal_memory(&self, memory_id: &str) -> Result<(), String> {
+        if !valid_supabase_user_id(memory_id) {
+            return Err("Invalid personal-memory identifier.".into());
+        }
+        let data = self.control_plane("memory_delete", json!({ "memoryId": memory_id })).await?;
+        if data.get("deleted").and_then(Value::as_bool) != Some(true) {
+            return Err("The memory service did not confirm deletion.".into());
+        }
+        Ok(())
+    }
+
     pub fn provider_key(&self, provider: &str) -> Result<String, String> {
         self.vault.provider_key(provider)
     }
