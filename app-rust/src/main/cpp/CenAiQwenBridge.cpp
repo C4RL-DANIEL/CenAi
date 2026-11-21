@@ -32,7 +32,7 @@ QWEN3_TTS_API qwen3_tts_result_t cenai_qwen_synthesize(
     int32_t cpu_threads
 ) {
     qwen3_tts_params_t params{};
-    params.max_audio_tokens = 2048;
+    params.max_audio_tokens = 4096;
     params.temperature = 0.9f;
     params.top_p = 1.0f;
     params.top_k = 50;
