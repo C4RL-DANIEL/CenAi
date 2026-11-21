@@ -650,6 +650,52 @@ impl CenAiApi {
     }
 
     /// Streams Gemini Developer API responses without placing the API key in the URL.
+    /// Transcribes a user-initiated WAV audio clip through Gemini's multimodal endpoint.
+    /// The API key is sent in a header, never embedded in the URL or returned errors.
+    pub async fn transcribe_audio_gemini(&self, wav_bytes: &[u8]) -> Result<String, String> {
+        const MAX_AUDIO_BYTES: usize = 20 * 1024 * 1024;
+        if wav_bytes.len() < 44 || wav_bytes.len() > MAX_AUDIO_BYTES
+            || &wav_bytes[..4] != b"RIFF" || &wav_bytes[8..12] != b"WAVE"
+        {
+            return Err("Voice audio must be a valid WAV file under 20 MB".into());
+        }
+        let api_key = self.vault.provider_key("gemini")?;
+        if api_key.trim().is_empty() {
+            return Err("Add a Google Gemini API key in Settings before using voice transcription".into());
+        }
+        let audio = base64::engine::general_purpose::STANDARD.encode(wav_bytes);
+        let payload = json!({
+            "contents": [{
+                "parts": [
+                    { "inline_data": { "mime_type": "audio/wav", "data": audio } },
+                    { "text": "Transcribe the spoken words accurately. Return only the transcription, without commentary." }
+                ]
+            }],
+            "generationConfig": { "temperature": 0, "maxOutputTokens": 2048 }
+        });
+        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+            .header("x-goog-api-key", api_key)
+            .json(&payload)
+            .send().await.map_err(|error| format!("Gemini voice request failed: {error}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Gemini voice transcription returned HTTP {}", status.as_u16()));
+        }
+        let value: Value = response.json().await.map_err(|error| format!("Gemini voice response was invalid: {error}"))?;
+        let transcript = value.pointer("/candidates/0/content/parts")
+            .and_then(Value::as_array)
+            .into_iter().flatten()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>().join("\n").trim().to_owned();
+        if transcript.is_empty() {
+            return Err("Gemini returned no speech transcription".into());
+        }
+        if transcript.len() > 16_000 {
+            return Err("Voice transcription exceeded the supported text limit".into());
+        }
+        Ok(transcript)
+    }
+
     pub async fn stream_gemini<F>(&self, request: &ChatRequest, api_key: &str, mut on_delta: F) -> Result<String, String>
     where
         F: FnMut(&str) + Send,
