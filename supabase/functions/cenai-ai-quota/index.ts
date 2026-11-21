@@ -35,6 +35,16 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     if (!await registrationAllowed(user)) return reply(403, { error: "Complete Discord invitation registration before using CenAI.", code: "REGISTRATION_REQUIRED" });
     const action = String(body.action || "");
+    if (["authorize", "record"].includes(action)) {
+      const { data: hasVerifiedMfa, error: mfaError } = await adminDb.rpc("cenai_user_has_verified_mfa", { p_user_id: user.id });
+      if (mfaError) throw mfaError;
+      const encodedClaims = token.split(".")[1] ?? "";
+      const normalizedClaims = encodedClaims.replace(/-/g, "+").replace(/_/g, "/");
+      const claims = JSON.parse(atob(normalizedClaims.padEnd(Math.ceil(normalizedClaims.length / 4) * 4, "=")));
+      if (hasVerifiedMfa === true && claims.aal !== "aal2") {
+        return reply(403, { error: "Complete authenticator verification before using managed AI services.", code: "MFA_REQUIRED" });
+      }
+    }
     if (action === "authorize") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "ai.cloud.enabled").maybeSingle();
       if (flagError) throw flagError;
