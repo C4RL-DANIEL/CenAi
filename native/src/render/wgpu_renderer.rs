@@ -1179,14 +1179,13 @@ impl WgpuRenderer {
                             );
                         }
                         let messages = self.app_state.conversation.messages().cloned().collect::<Vec<_>>();
-                        let reminder_saved = self.workspace.as_ref()
-                            .is_some_and(|workspace| workspace.save_conversation("primary", &messages).is_ok());
+                        let reminder_saved = store.save_conversation("primary", &messages).is_ok();
                         if reminder_saved {
                             self.last_saved_message_count = messages.len();
                             for trigger in &due {
                                 if let Err(error) = scheduler.acknowledge_and_persist(
                                     &trigger.owner_scope, &trigger.automation_id, trigger.scheduled_at,
-                                    self.workspace.as_ref().expect("workspace checked before acknowledgement"),
+                                    store,
                                 ) {
                                     self.app_state.automation_status = format!("Reminder saved, but its scheduler acknowledgement failed: {error}");
                                 }
