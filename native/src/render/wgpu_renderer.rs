@@ -1076,12 +1076,13 @@ impl WgpuRenderer {
             }
         }
         if std::mem::take(&mut self.app_state.pending_mfa_enroll) {
+            let friendly_name = self.app_state.mfa_friendly_name_draft.trim().to_owned();
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
                 let task = self.runtime.spawn(async move {
                     let result = async {
-                        let value = api.mfa_enroll_totp("CenAI authenticator").await?;
+                        let value = api.mfa_enroll_totp(&friendly_name).await?;
                         let factor_id = value.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
                         let secret = value.pointer("/totp/secret").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
                         let qr = value.pointer("/totp/qr_code").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
