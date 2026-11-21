@@ -575,6 +575,10 @@ impl WgpuRenderer {
     }
 
     fn dispatch_new_message(&mut self) {
+        if self.app_state.mfa_login_required {
+            self.app_state.auth_status = "Verify your authenticator before sending messages or using account features.".into();
+            return;
+        }
         let latest = self.app_state.conversation.messages()
             .filter(|message| message.role == MessageRole::User)
             .map(|message| (message.id, message.body.clone()))
