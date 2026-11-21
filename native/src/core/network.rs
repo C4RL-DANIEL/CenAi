@@ -8,6 +8,17 @@ use serde_json::{json, Value};
 
 use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}};
 
+const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
+
+fn append_stream_delta(answer: &mut String, delta: &str) -> Result<(), String> {
+    if answer.len().saturating_add(delta.len()) > MAX_STREAM_RESPONSE_BYTES {
+        return Err("AI response exceeded the 2 MiB safety limit.".into());
+    }
+    answer.push_str(delta);
+    Ok(())
+}
+
 fn valid_supabase_user_id(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36 && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
@@ -310,18 +321,20 @@ impl CenAiApi {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
                 pending.drain(..=newline);
                 if let Some(delta) = parse_openai_sse_event(&line) {
-                    answer.push_str(&delta);
+                    append_stream_delta(&mut answer, &delta)?;
                     on_delta(&delta);
                 }
             }
         }
         if !pending.trim().is_empty() {
             if let Some(delta) = parse_openai_sse_event(&pending) {
-                answer.push_str(&delta);
+                append_stream_delta(&mut answer, &delta)?;
                 on_delta(&delta);
             }
         }
@@ -471,18 +484,20 @@ impl CenAiApi {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
                 pending.drain(..=newline);
                 if let Some(delta) = parse_openai_sse_event(&line) {
-                    answer.push_str(&delta);
+                    append_stream_delta(&mut answer, &delta)?;
                     on_delta(&delta);
                 }
             }
         }
         if !pending.trim().is_empty() {
             if let Some(delta) = parse_openai_sse_event(&pending) {
-                answer.push_str(&delta);
+                append_stream_delta(&mut answer, &delta)?;
                 on_delta(&delta);
             }
         }
@@ -533,18 +548,19 @@ impl CenAiApi {
         let mut answer = String::new();
         while let Some(chunk) = stream.next().await {
             pending.push_str(&String::from_utf8_lossy(&chunk.map_err(|error| error.to_string())?));
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
                 pending.drain(..=newline);
                 if let Some(delta) = parse_anthropic_sse_event(&line)? {
-                    answer.push_str(&delta);
+                    append_stream_delta(&mut answer, &delta)?;
                     on_delta(&delta);
                 }
             }
         }
         if !pending.trim().is_empty() {
             if let Some(delta) = parse_anthropic_sse_event(&pending)? {
-                answer.push_str(&delta);
+                append_stream_delta(&mut answer, &delta)?;
                 on_delta(&delta);
             }
         }
@@ -594,18 +610,19 @@ impl CenAiApi {
         let mut answer = String::new();
         while let Some(chunk) = stream.next().await {
             pending.push_str(&String::from_utf8_lossy(&chunk.map_err(|error| error.to_string())?));
+            if pending.len() > MAX_SSE_LINE_BYTES { return Err("AI stream contained an oversized event line.".into()); }
             while let Some(newline) = pending.find('\n') {
                 let line = pending[..newline].trim_end_matches('\r').to_owned();
                 pending.drain(..=newline);
                 if let Some(delta) = parse_gemini_sse_event(&line)? {
-                    answer.push_str(&delta);
+                    append_stream_delta(&mut answer, &delta)?;
                     on_delta(&delta);
                 }
             }
         }
         if !pending.trim().is_empty() {
             if let Some(delta) = parse_gemini_sse_event(&pending)? {
-                answer.push_str(&delta);
+                append_stream_delta(&mut answer, &delta)?;
                 on_delta(&delta);
             }
         }
