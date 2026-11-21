@@ -126,12 +126,128 @@ pub struct McpTool {
     pub input_schema: serde_json::Value,
 }
 
+fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Result<(), String> {
+    if depth > 12 || !schema.is_object() {
+        return Err("MCP input schema is invalid or too deeply nested".into());
+    }
+    let kind = schema.get("type").and_then(serde_json::Value::as_str)
+        .ok_or("MCP input schema must declare a supported type")?;
+    if !matches!(kind, "object" | "array" | "string" | "number" | "integer" | "boolean" | "null") {
+        return Err("MCP input schema uses an unsupported type".into());
+    }
+    if let Some(values) = schema.get("enum") {
+        if !values.is_array() || values.as_array().is_some_and(|items| items.is_empty() || items.len() > 64) {
+            return Err("MCP schema enum must contain 1-64 values".into());
+        }
+    }
+    if kind == "object" {
+        let properties = schema.get("properties").and_then(serde_json::Value::as_object)
+            .ok_or("MCP object schema must declare properties")?;
+        if properties.len() > 128 { return Err("MCP object schema has too many properties".into()); }
+        if let Some(required) = schema.get("required") {
+            let values = required.as_array().ok_or("MCP required must be an array")?;
+            if values.len() > 128 { return Err("MCP required list is too large".into()); }
+            for item in values {
+                let name = item.as_str().ok_or("MCP required entries must be strings")?;
+                if !properties.contains_key(name) { return Err("MCP required entry is not a declared property".into()); }
+            }
+        }
+        if let Some(additional) = schema.get("additionalProperties") {
+            if !additional.is_boolean() { return Err("MCP additionalProperties must be a boolean".into()); }
+        }
+        for child in properties.values() {
+            validate_schema_definition(child, depth + 1)?;
+        }
+    }
+    if kind == "array" {
+        let items = schema.get("items").ok_or("MCP array schema must declare item schema")?;
+        validate_schema_definition(items, depth + 1)?;
+    }
+    Ok(())
+}
+
+fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, depth: usize) -> Result<(), String> {
+    if depth > 12 { return Err("MCP tool arguments exceed the supported nesting depth".into()); }
+    let kind = schema.get("type").and_then(serde_json::Value::as_str).unwrap_or_default();
+    let valid = match kind {
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "number" => value.is_number(),
+        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+        "boolean" => value.is_boolean(),
+        "null" => value.is_null(),
+        _ => false,
+    };
+    if !valid { return Err(format!("MCP argument does not match the declared {kind} type")); }
+    if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array) {
+        if !values.iter().any(|item| item == value) { return Err("MCP argument is not an allowed enum value".into()); }
+    }
+    match kind {
+        "object" => {
+            let object = value.as_object().ok_or("Expected MCP object")?;
+            if object.len() > 128 { return Err("MCP argument object has too many properties".into()); }
+            let properties = schema.get("properties").and_then(serde_json::Value::as_object).ok_or("Invalid MCP object schema")?;
+            if schema.get("additionalProperties").and_then(serde_json::Value::as_bool) == Some(false)
+                && object.keys().any(|key| !properties.contains_key(key)) {
+                return Err("MCP arguments contain undeclared properties".into());
+            }
+            if let Some(required) = schema.get("required").and_then(serde_json::Value::as_array) {
+                for item in required {
+                    let key = item.as_str().ok_or("Invalid MCP required entry")?;
+                    if !object.contains_key(key) { return Err(format!("Required MCP argument '{key}' is missing")); }
+                }
+            }
+            for (key, child) in properties {
+                if let Some(argument) = object.get(key) {
+                    validate_tool_value(child, argument, depth + 1)?;
+                }
+            }
+        }
+        "array" => {
+            let items = value.as_array().ok_or("Expected MCP array")?;
+            if items.len() > 256 { return Err("MCP argument array is too large".into()); }
+            let item_schema = schema.get("items").ok_or("Invalid MCP array schema")?;
+            for item in items { validate_tool_value(item_schema, item, depth + 1)?; }
+            if schema.get("minItems").and_then(serde_json::Value::as_u64).is_some_and(|min| items.len() < min as usize)
+                || schema.get("maxItems").and_then(serde_json::Value::as_u64).is_some_and(|max| items.len() > max as usize) {
+                return Err("MCP array length is outside the allowed range".into());
+            }
+        }
+        "string" => {
+            let text = value.as_str().unwrap_or_default();
+            if text.len() > 20_000
+                || schema.get("minLength").and_then(serde_json::Value::as_u64).is_some_and(|min| text.chars().count() < min as usize)
+                || schema.get("maxLength").and_then(serde_json::Value::as_u64).is_some_and(|max| text.chars().count() > max as usize) {
+                return Err("MCP string argument is outside the allowed length".into());
+            }
+        }
+        "number" | "integer" => {
+            let number = value.as_f64().ok_or("Invalid MCP number")?;
+            if schema.get("minimum").and_then(serde_json::Value::as_f64).is_some_and(|min| number < min)
+                || schema.get("maximum").and_then(serde_json::Value::as_f64).is_some_and(|max| number > max) {
+                return Err("MCP numeric argument is outside the allowed range".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_tool_arguments(schema: &serde_json::Value, arguments: &serde_json::Value) -> Result<(), String> {
+    if serde_json::to_vec(arguments).map_err(|error| error.to_string())?.len() > 64 * 1024 {
+        return Err("MCP tool arguments exceed the 64 KB limit".into());
+    }
+    validate_tool_value(schema, arguments, 0)
+}
+
 pub struct McpHttpClient {
     client: reqwest::Client,
     manifest: McpServerManifest,
     bearer_token: Option<String>,
     session_id: tokio::sync::Mutex<Option<String>>,
     next_id: std::sync::atomic::AtomicU64,
+    tools: tokio::sync::RwLock<std::collections::HashMap<String, McpTool>>,
 }
 
 impl McpHttpClient {
@@ -149,6 +265,7 @@ impl McpHttpClient {
             bearer_token,
             session_id: tokio::sync::Mutex::new(None),
             next_id: std::sync::atomic::AtomicU64::new(1),
+            tools: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         })
     }
 
@@ -217,8 +334,23 @@ impl McpHttpClient {
 
     pub async fn list_tools(&self) -> Result<Vec<McpTool>, String> {
         let (result, _) = self.rpc("tools/list", serde_json::json!({}), false).await?;
-        serde_json::from_value(result.get("tools").cloned().unwrap_or(serde_json::Value::Null))
-            .map_err(|error| format!("Invalid MCP tools/list response: {error}"))
+        let tools: Vec<McpTool> = serde_json::from_value(result.get("tools").cloned().unwrap_or(serde_json::Value::Null))
+            .map_err(|error| format!("Invalid MCP tools/list response: {error}"))?;
+        if tools.len() > 128 { return Err("MCP server returned more than 128 tools".into()); }
+        let mut indexed = std::collections::HashMap::new();
+        for tool in &tools {
+            if tool.name.trim().is_empty() || tool.name.len() > 128
+                || tool.description.as_ref().is_some_and(|description| description.len() > 2000)
+                || serde_json::to_vec(&tool.input_schema).map_err(|error| error.to_string())?.len() > 32 * 1024 {
+                return Err("MCP tool metadata exceeds supported limits".into());
+            }
+            validate_schema_definition(&tool.input_schema, 0)?;
+            if indexed.insert(tool.name.clone(), tool.clone()).is_some() {
+                return Err("MCP server returned duplicate tool names".into());
+            }
+        }
+        *self.tools.write().await = indexed;
+        Ok(tools)
     }
 
     pub async fn call_tool(
@@ -230,6 +362,9 @@ impl McpHttpClient {
         if !self.manifest.may_execute(tool_name, user_approved) {
             return Err("This MCP action requires explicit user approval.".into());
         }
+        let tool = self.tools.read().await.get(tool_name).cloned()
+            .ok_or("MCP tool was not discovered in the active server session")?;
+        validate_tool_arguments(&tool.input_schema, &arguments)?;
         let (result, _) = self.rpc("tools/call", serde_json::json!({
             "name": tool_name,
             "arguments": arguments
@@ -260,6 +395,24 @@ mod tests {
                 requested_scopes: vec!["mail.send".into()],
             }],
         }
+    }
+
+    #[test]
+    fn tool_arguments_must_match_discovered_json_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "to": { "type": "string", "maxLength": 200 },
+                "count": { "type": "integer", "minimum": 1, "maximum": 5 }
+            },
+            "required": ["to"],
+            "additionalProperties": false
+        });
+        assert!(validate_schema_definition(&schema, 0).is_ok());
+        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","count":2})).is_ok());
+        assert!(validate_tool_arguments(&schema, &serde_json::json!({"count":2})).is_err());
+        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","count":9})).is_err());
+        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","shell":"rm -rf /"})).is_err());
     }
 
     #[test]
