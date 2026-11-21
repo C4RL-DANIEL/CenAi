@@ -17,7 +17,7 @@ pub struct AudioFrame {
 
 impl AudioFrame {
     pub fn from_pcm16_le(sample_rate_hz: u32, channels: u8, bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() % 2 != 0 { return Err("PCM16 audio buffer has an incomplete sample"); }
+        if !bytes.len().is_multiple_of(2) { return Err("PCM16 audio buffer has an incomplete sample"); }
         let samples = bytes.chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<_>>();
