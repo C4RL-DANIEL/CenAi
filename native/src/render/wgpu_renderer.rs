@@ -1615,6 +1615,9 @@ impl WgpuRenderer {
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default();
+                                self.automation_scheduler = AutomationScheduler::from_workspace(workspace).ok();
+                                self.app_state.automations = self.automation_scheduler.as_ref()
+                                    .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
                                 if let Ok(messages) = workspace.load_conversation("primary") {
                                     self.app_state.conversation.restore_messages(messages);
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
