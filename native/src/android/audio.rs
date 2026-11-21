@@ -70,11 +70,12 @@ impl AndroidAudioCapture {
         if self.permission_requested { return; }
         self.permission_requested = true;
         let app = self.app.clone();
+        let callback_app = app.clone();
         app.run_on_java_main_thread(Box::new(move || {
-            let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+            let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
             let Ok(vm) = vm else { log::error!("Could not attach to Android VM for microphone permission"); return; };
             let Ok(mut env) = vm.attach_current_thread() else { return; };
-            let Ok(activity) = activity_local(&mut env, &app) else { return; };
+            let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
             let result = (|| -> jni::errors::Result<()> {
                 let permission = env.new_string("android.permission.RECORD_AUDIO")?;
                 let permissions = env.new_object_array(1, "java/lang/String", JObject::null())?;
