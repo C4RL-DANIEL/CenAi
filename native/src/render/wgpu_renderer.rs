@@ -173,6 +173,8 @@ enum ChatEvent {
     #[cfg(target_os = "android")]
     VoiceTranscribed(u64, Result<String, String>),
     SpeechSynthesized(u64, Result<Vec<u8>, String>),
+    VoiceModelDownloadProgress(u64, String, f32),
+    VoiceModelDownloaded(u64, Result<(), String>),
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
@@ -205,6 +207,8 @@ impl ChatEvent {
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
             | Self::SpeechSynthesized(generation, ..)
+            | Self::VoiceModelDownloadProgress(generation, ..)
+            | Self::VoiceModelDownloaded(generation, ..)
             | Self::BackupUploaded(generation, ..)
             | Self::BackupDownloaded(generation, ..)
             | Self::BackupRestored(generation, ..)
@@ -386,6 +390,15 @@ impl WgpuRenderer {
 
         let (response_tx, response_rx) = mpsc::channel();
         let mut app_state = AppState::default();
+        let voice_model_directory = workspace_root.join("models").join("cenai-voice");
+        let voice_model_installed = voice_model_directory.join(PRIMARY_GGUF_MODEL).is_file()
+            && voice_model_directory.join(TOKENIZER_GGUF_MODEL).is_file();
+        app_state.voice_model_download_progress = if voice_model_installed { 1.0 } else { 0.0 };
+        app_state.voice_model_status = if voice_model_installed {
+            "Offline Qwen model pack files are present.".into()
+        } else {
+            "Offline Qwen model pack not downloaded.".into()
+        };
         if let Some(service) = &api {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
@@ -572,6 +585,34 @@ impl WgpuRenderer {
     }
 
     fn process_speech_output(&mut self) {
+        if self.app_state.pending_voice_model_download {
+            self.app_state.pending_voice_model_download = false;
+            self.app_state.voice_model_download_progress = 0.0;
+            self.app_state.voice_model_status = "Downloading and verifying Qwen3-TTS model files…".into();
+            let model_directory = self.workspace_root.join("models").join("cenai-voice");
+            let sender = self.response_tx.clone();
+            let progress_sender = sender.clone();
+            let generation = self.account_generation;
+            let task = self.runtime.spawn(async move {
+                let result = crate::core::qwen_runtime::download_model_pack(
+                    model_directory,
+                    move |file_name, progress| {
+                        let overall = if file_name == PRIMARY_GGUF_MODEL {
+                            progress * 0.773
+                        } else {
+                            0.773 + progress * 0.227
+                        };
+                        let _ = progress_sender.send(ChatEvent::VoiceModelDownloadProgress(
+                            generation,
+                            file_name.to_owned(),
+                            overall,
+                        ));
+                    },
+                ).await;
+                let _ = sender.send(ChatEvent::VoiceModelDownloaded(generation, result));
+            });
+            self.track_task(task);
+        }
         #[cfg(target_os = "android")]
         if let Some(error) = self.audio_playback.as_ref().and_then(AndroidAudioPlayback::try_error) {
             self.app_state.speech_status = format!("Speech playback failed: {error}");
@@ -1994,6 +2035,25 @@ impl WgpuRenderer {
                             self.app_state.voice_status = "Transcription ready. Review it in the message box before sending.".into();
                         }
                         Err(error) => self.app_state.voice_status = format!("Voice transcription failed: {error}"),
+                    }
+                }
+                ChatEvent::VoiceModelDownloadProgress(_, file_name, progress) => {
+                    self.app_state.voice_model_download_progress = progress.clamp(0.0, 1.0);
+                    self.app_state.voice_model_status = format!(
+                        "Downloading {file_name} · {:.0}%",
+                        self.app_state.voice_model_download_progress * 100.0,
+                    );
+                }
+                ChatEvent::VoiceModelDownloaded(_, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.voice_model_download_progress = 1.0;
+                            self.app_state.voice_model_status = "Verified offline model pack installed. Read-aloud is now local.".into();
+                        }
+                        Err(error) => {
+                            self.app_state.voice_model_download_progress = 0.0;
+                            self.app_state.voice_model_status = format!("Offline model installation failed: {error}");
+                        }
                     }
                 }
                 ChatEvent::SpeechSynthesized(_, result) => {
