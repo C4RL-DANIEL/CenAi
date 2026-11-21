@@ -229,6 +229,10 @@ pub struct AppState {
     pub pending_ecosystem_register: Option<serde_json::Value>,
     pub pending_ecosystem_grant: Option<(String, Vec<String>)>,
     pub pending_ecosystem_revoke: Option<String>,
+    pub voice_active: bool,
+    pub pending_voice_start: bool,
+    pub pending_voice_stop: bool,
+    pub voice_status: String,
 }
 
 impl Default for AppState {
