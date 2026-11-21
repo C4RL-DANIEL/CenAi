@@ -203,6 +203,9 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
         });
         ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
+            ui.add_enabled_ui(state.personal_memory_enabled && state.planning_mode, |ui| {
+                ui.checkbox(&mut state.include_memory_for_request, "Use my private memory for this plan");
+            });
             if state.conversation.sending { ui.label(text("Working…", 10.0, accent())); }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(text("Sensitive actions always need approval", 9.0, egui::Color32::from_rgb(124, 136, 165)));
