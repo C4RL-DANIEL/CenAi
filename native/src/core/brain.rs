@@ -1,5 +1,5 @@
 //! Central Brain planning entry point. Plans are validated before any tool can execute.
-use crate::core::{agents::TaskPlan, context::{collect_authorized_context, ContextRecord, ContextRequest}, network::CenAiApi};
+use crate::core::{agents::TaskPlan, context::{collect_authorized_context, rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, network::CenAiApi};
 
 #[derive(Clone)]
 pub struct CentralBrain {
@@ -21,16 +21,23 @@ impl CentralBrain {
         // user's explicit personal-memory grant. The server derives owner identity from JWT.
         let mut scoped_records = records.to_vec();
         if request.includes_personal_memory() {
-            for memory in self.api.personal_memories().await? {
-                let content = memory.get("content").and_then(serde_json::Value::as_str).unwrap_or_default();
-                if content.is_empty() { continue; }
-                scoped_records.push(ContextRecord {
-                    owner_user_id: verified_user_id.clone(),
-                    feature_id: "personal_memory".into(),
-                    session_id: None,
-                    kind: crate::core::context::ContextKind::PersonalMemory,
-                    content: content.to_owned(),
-                });
+            let memory_records = self.api.personal_memories().await?.into_iter()
+                .filter_map(|memory| {
+                    let content = memory.get("content").and_then(serde_json::Value::as_str)?.trim();
+                    if content.is_empty() { return None; }
+                    Some(ContextRecord {
+                        owner_user_id: verified_user_id.clone(),
+                        feature_id: "personal_memory".into(),
+                        session_id: None,
+                        kind: ContextKind::PersonalMemory,
+                        content: content.to_owned(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            // Do not inject every saved fact into every task. Rank against the goal and
+            // cap both count and total text before it enters the model context.
+            for memory in rank_personal_memories(goal, &memory_records, 8, 6_000) {
+                scoped_records.push(memory.clone());
             }
         }
         let authorized = collect_authorized_context(request, &scoped_records).map_err(str::to_owned)?;
