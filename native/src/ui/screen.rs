@@ -273,6 +273,12 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     surface(ui, |ui| {
         ui.label(text("Appearance & accessibility", 16.0, egui::Color32::WHITE).strong());
         ui.checkbox(&mut state.reduced_motion, "Reduce interface motion");
+        let previous_guardian_consent = state.guardian_consent;
+        ui.checkbox(&mut state.guardian_consent, "Allow minimal Guardian diagnostics");
+        if previous_guardian_consent != state.guardian_consent {
+            state.pending_guardian_consent = Some(state.guardian_consent);
+        }
+        ui.label(text("Guardian diagnostics never include prompts, message text, file contents or API keys.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.label(text("The interface respects this setting when animating transitions.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
     });
     ui.add_space(8.0);
