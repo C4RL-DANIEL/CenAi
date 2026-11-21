@@ -277,6 +277,7 @@ impl AndroidAudioPlayback {
 
     pub fn play_wav(&mut self, wav: Vec<u8>) -> Result<(), String> {
         self.stop();
+        while self.error_receiver.try_recv().is_ok() {}
         let (sample_rate, _channels, pcm) = parse_pcm_wav(&wav)?;
         let pcm = pcm.to_vec();
         self.stop_flag.store(false, Ordering::Release);
