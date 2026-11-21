@@ -318,7 +318,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             return
         }
         vault.put("usage_count", (used + 1).toString())
-        val inputEstimate = requestMessages.sumOf { it.content.length } / 4
+        val inputText = requestMessages.joinToString("\n") { it.content }
+        val inputEstimate = runCatching { NativeCore.estimatePromptTokens(inputText) }
+            .getOrDefault(inputText.length / 4)
         val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
