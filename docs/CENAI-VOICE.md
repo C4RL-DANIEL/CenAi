@@ -1,84 +1,71 @@
 # CenAI Voice
 
-CenAI Voice is CenAI's branded, cloud-hosted speech product. The Android app contains the product experience and authenticated API client; the Qwen3-TTS model, tokenizer, and fixed voice reference remain on CenAI's GPU inference host.
+CenAI Voice is an authenticated, cloud-hosted speech synthesis feature. The Android client contains no speech model weights and does not call Google TTS or an Android system TTS fallback.
 
-## Product identity and attribution
+## Current model
 
-- Product: **CenAI Voice**
-- First profile: **CenAI Original · English · en-US** (`cenai-en-v1`)
-- Model foundation: `Qwen/Qwen3-TTS-12Hz-1.7B-Base`
-- Upstream: https://github.com/QwenLM/Qwen3-TTS
-- Model licence: Apache-2.0. Keep the required upstream notices. CenAI owns its app integration, service, profile names, pronunciation policy and evaluation process; CenAI does not claim authorship of Qwen's architecture or pretrained weights.
+- Provider: Cloudflare Workers AI.
+- Model: `@cf/deepgram/aura-1`.
+- Product profile: `cenai-en-v1`.
+- Speaker preset: `angus`.
+- Validated language exposed by this release: English only.
+- Output: linear PCM in a WAV container for Android playback.
+- The model and inference run on Cloudflare; no GPU host or Qwen weights are required.
 
-The initial CenAI Original voice is designed with Qwen VoiceDesign from an original, non-imitative voice description. The generated sample is saved once and reused as the Base model's fixed reference prompt, giving the profile a consistent speaker identity. Listen to and approve the generated reference before release. A licensed human voice-actor recording can replace it later. The reference remains private to the GPU host and is never bundled in the APK or sent by each Android user. A trained CenAI fine-tuned checkpoint is a later milestone; the current design uses Qwen Base voice-cloning conditioning, not a newly trained model.
+Do not describe this profile as a custom-trained CenAI voice. It is CenAI's product profile using the Aura-1 speaker preset. Add other languages or speaker presets only after pronunciation, intelligibility, naturalness, and playback validation.
 
-## Cloud architecture
+## Request and privacy flow
 
 ```text
 CenAI Android (Rust)
-  └─ HTTPS + user's Supabase access token
-      └─ CenAI Cloudflare Worker /api/voice/speech
-          ├─ validates the Supabase user session
-          ├─ derives the immutable user UUID
-          └─ authenticated server-to-server request
-              └─ private GPU host /v1/audio/speech
-                  ├─ Qwen3-TTS 1.7B Base + tokenizer
-                  ├─ private CenAI voice reference prompt
-                  └─ PCM16 WAV response → Android playback
+  -> HTTPS + signed-in Supabase access token
+  -> CenAI Cloudflare Worker /api/voice/speech
+       -> verifies the Supabase user
+       -> reserves account and global daily quota through cenai-ai-quota
+       -> Cloudflare Workers AI @cf/deepgram/aura-1
+       -> WAV response to Android
+       -> records reservation outcome
 ```
 
-- No Qwen model weights, voice recordings, or backend service secrets are shipped in the Android app.
-- No Google TTS, Android system TTS, Gemini TTS, DashScope, or silent cloud-provider fallback is used.
-- The user must be signed in. The Worker verifies the JWT with Supabase Auth and sends the resulting user UUID to the private inference host; the app cannot choose or spoof this identity.
-- The Worker-to-GPU credential is a server secret and must never be placed in the app, website JavaScript, or repository.
-- Speech text leaves the device for cloud synthesis. The Worker and inference host must not log speech text or store generated audio. This cloud processing must be clearly disclosed to users.
-- Add Cloudflare rate limiting and per-account usage metering before public release.
+- The Worker derives the immutable user UUID from Supabase Auth; clients cannot supply it.
+- Speech text is sent to Cloudflare for synthesis. Do not log request text or store returned audio.
+- Requests are limited to 1,000 characters and English only.
+- Each account has a 1,000-character daily limit.
+- The service reserves at most 4,000 Neurons per UTC day for Aura-1. This leaves the remainder of the 10,000-Neuron Workers AI free allocation for other AI features and a safety buffer; it is a voice allocation, not a guarantee that other Workers AI usage cannot consume the account-wide allowance.
+- Quota is reserved before inference and is not refunded on provider failure, because a failed upstream request may still consume compute.
+- Cloudflare Workers AI pricing lists Aura-1 at 1,363.64 Neurons per 1,000 input characters. Usage is character-based, not generated audio minutes.
+- Cloudflare's 10,000 free Neurons reset at 00:00 UTC. Further usage can fail on the Free plan.
 
-## Languages and quality
+## Required rollout
 
-The Qwen model catalogue documents ten languages: English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish and Italian. English is the first release-quality target. Model language support is not proof of equal quality. Each additional language needs native-speaker pronunciation, intelligibility and naturalness tests. Filipino/Tagalog is not in the documented language list and must not be marketed as natively supported.
+1. Apply `supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql` to the linked Supabase project.
+2. Deploy the updated `cenai-ai-quota` Supabase Edge Function.
+3. Deploy the updated Worker from `website/` with the existing `AI` binding in `website/wrangler.jsonc`.
+4. After authenticated synthesis, quota enforcement, WAV format, and Android playback tests pass, an administrator may enable the `voice.cloud.enabled` feature flag.
+5. Verify daily per-account and global usage against the Cloudflare dashboard before public rollout.
 
-English quality gates:
-1. WER measured with independent ASR as an evaluation tool only.
-2. Native-listener intelligibility and naturalness ratings.
-3. Pronunciation of names, abbreviations, numbers, dates, currencies, units, URLs and technical terms.
-4. Stress, punctuation pauses, long-form stability and voice identity consistency.
-5. First-audio latency, total generation time, concurrency and GPU memory.
-6. Network interruption, retry, account-switch and playback-cancellation tests.
+No new TTS API key or GPU-host secret is required. Do not enable the feature flag before the migration, Edge Function, and Worker are deployed and tested.
 
-## GPU service deployment
+## Acceptance tests
 
-The FastAPI implementation lives in `voice-server/`. It loads the Qwen model once at startup and caches a voice-clone prompt. A CUDA-capable Linux host and a persistent Hugging Face cache are required.
+- Signed-out and anonymous accounts are rejected.
+- Registration and MFA policies are enforced by the quota Edge Function.
+- Non-English requests, empty text, control characters, and requests over 1,000 characters are rejected.
+- Per-user daily characters and global daily Neuron reservations are atomic under concurrent requests.
+- Requests are blocked when either quota is exhausted.
+- The Worker rejects invalid audio content types and oversized audio.
+- Rust validates RIFF/WAVE headers and rejects stale account responses.
+- Android playback, stop/cancel, account switching, network loss, and service-unavailable behavior are verified on API 35 emulator and a physical REDMI Pad 2 Pro.
 
-Required server environment:
-- `CENAI_TTS_API_KEY`: random secret of at least 32 characters.
-- `CENAI_VOICE_REFERENCE_AUDIO`: private path to the licensed WAV reference recording.
-- `CENAI_VOICE_REFERENCE_TEXT`: exact transcript.
-- Optional `CENAI_VOICE_MODEL_ID` (defaults to the 1.7B Base model), `CENAI_TTS_ATTENTION` (defaults to SDPA), and `CENAI_TTS_MAX_CONCURRENCY` (defaults to 1).
+## Status
 
-Build with `docker build -t cenai-voice:latest voice-server`. Run behind HTTPS ingress and mount the recording read-only. See [voice-server/README.md](../voice-server/README.md) for the deployment command and API contract.
-
-Required Cloudflare Worker secrets:
-- `CENAI_TTS_BACKEND_URL`: private GPU service HTTPS origin.
-- `CENAI_TTS_BACKEND_TOKEN`: the same server-only random value as `CENAI_TTS_API_KEY`.
-
-The Worker route intentionally returns HTTP 503 until these secrets are configured. Do not configure a public third-party TTS endpoint as a shortcut.
-
-## Fine-tuning path
-
-After the voice-actor dataset and written consent are secured, use Qwen's documented 12Hz Base single-speaker fine-tuning pipeline on a compatible cloud GPU. Keep train, validation and test recordings separate; preserve dataset provenance and licence records; compare checkpoints using the English quality gates above. Do not automatically promote a checkpoint when training completes. The deployed service should select the validated checkpoint by server-side configuration, independently of the Android APK.
-
-## Implementation status
-
-- [x] English-first CenAI Voice profile and ten-language metadata.
-- [x] Rust client for authenticated cloud WAV synthesis with account-switch checks and a dedicated 240-second timeout.
-- [x] Cloudflare Worker gateway with Supabase JWT validation, immutable user identity forwarding, payload limits, private backend token and authenticated GPU readiness checks.
-- [x] GPU FastAPI inference service with model caching, fixed voice-clone prompt, request validation and bounded concurrency.
-- [x] Android read-aloud wired to the cloud gateway; no local model download or Google TTS synthesis path.
-- [x] Removed the Qwen C++/GGML build from the APK workflow to keep the client small.
-- [ ] Generate, listen to and approve the original CenAI English reference voice (or replace it with a licensed voice-actor recording).
-- [ ] Provision the CUDA GPU host and persistent model cache.
-- [ ] Configure Cloudflare Worker secrets and rate limits.
-- [ ] Run end-to-end inference and audio playback tests on Android.
-- [ ] Fine-tune and evaluate a dedicated CenAI English checkpoint.
-- [ ] Evaluate and enable additional languages individually.
+- [x] Rust authenticated cloud WAV client and account-switch protection.
+- [x] Cloudflare Workers AI binding configured in Wrangler.
+- [x] Aura-1 Worker integration with English-only validation and audio response checks.
+- [x] Per-user and global quota migration and Edge Function authorization/recording logic.
+- [x] Removed Qwen/GPU-host dependency from the active Worker voice route.
+- [ ] Apply the Supabase migration and deploy the Edge Function.
+- [ ] Deploy the Worker and test real Aura-1 WAV output.
+- [ ] Validate voice playback and cancellation on emulator and physical Android hardware.
+- [ ] Add a live in-app usage meter based on server-reported quota.
+- [ ] Enable the feature flag only after end-to-end verification.
