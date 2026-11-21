@@ -314,6 +314,37 @@ impl CenAiApi {
         self.post_authenticated(config::CONTROL_PLANE_URL, &payload).await
     }
 
+    /// Calls the per-user Ecosystem Engine. The server derives the account identity from the JWT.
+    pub async fn ecosystem_action(&self, action: &str, mut payload: Value) -> Result<Value, String> {
+        if !matches!(action, "list" | "register" | "grant" | "revoke" | "authorize") {
+            return Err("Unsupported Ecosystem Engine action".into());
+        }
+        let object = payload.as_object_mut().ok_or("Request payload must be an object")?;
+        object.insert("action".into(), Value::String(action.to_owned()));
+        self.post_authenticated(config::ECOSYSTEM_URL, &payload).await
+    }
+
+    pub async fn ecosystem_list(&self) -> Result<Value, String> {
+        self.ecosystem_action("list", json!({})).await
+    }
+
+    pub async fn ecosystem_register_app(&self, manifest: Value) -> Result<Value, String> {
+        self.ecosystem_action("register", manifest).await
+    }
+
+    pub async fn ecosystem_grant(&self, app_id: &str, scopes: &[String]) -> Result<Value, String> {
+        self.ecosystem_action("grant", json!({ "appId": app_id, "scopes": scopes })).await
+    }
+
+    pub async fn ecosystem_revoke(&self, app_id: &str) -> Result<Value, String> {
+        self.ecosystem_action("revoke", json!({ "appId": app_id })).await
+    }
+
+    pub async fn ecosystem_authorize(&self, app_id: &str, capability: &str) -> Result<bool, String> {
+        let data = self.ecosystem_action("authorize", json!({ "appId": app_id, "capability": capability })).await?;
+        Ok(data.get("authorized").and_then(Value::as_bool) == Some(true))
+    }
+
     pub async fn billing_checkout(&self, plan: &str) -> Result<String, String> {
         if !matches!(plan, "supporter" | "pro") { return Err("Choose a supported CenAI plan.".into()); }
         let data = self.post_authenticated(config::BILLING_URL, &json!({ "plan": plan })).await?;
