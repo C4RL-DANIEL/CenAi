@@ -42,6 +42,8 @@ impl ContextRequest {
     }
 
     /// Called only after the application has recorded the user's explicit approval/settings.
+    pub fn includes_personal_memory(&self) -> bool { self.grants.include_personal_memory }
+
     pub fn apply_user_approved_grants(&mut self, cross_feature: bool, personal_memory: bool) {
         self.grants.allow_cross_feature = cross_feature;
         self.grants.include_personal_memory = personal_memory;
