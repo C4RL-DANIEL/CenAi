@@ -266,7 +266,8 @@
       else if (tab === "website") await loadSitePages();
       else if (tab === "quotas") await loadQuotas();
       else if (tab === "billing") { await loadBillingPlans(); await loadRefundRequests(); }
-      else if(tab === "registration") await loadInvites();\n      else if(tab === "beta") await loadBeta();
+      else if(tab === "registration") await loadInvites();
+      else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
   }
