@@ -821,7 +821,7 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label(text("The interface respects this setting when animating transitions.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         if let Some(snapshot) = &state.guardian_snapshot {
             let ram_used = snapshot.ram_total_kb.saturating_sub(snapshot.ram_available_kb);
-            let ram_percent = if snapshot.ram_total_kb > 0 { ram_used.saturating_mul(100) / snapshot.ram_total_kb } else { 0 };
+            let ram_percent = ram_used.saturating_mul(100).checked_div(snapshot.ram_total_kb).unwrap_or(0);
             ui.separator();
             ui.label(text("Local device health", 13.0, egui::Color32::WHITE).strong());
             ui.horizontal_wrapped(|ui| {
@@ -1059,7 +1059,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             .hint_text("Backup passphrase (at least 12 characters)").desired_width(f32::INFINITY));
         ui.horizontal(|ui| {
             if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Upload encrypted backup")).clicked() {
-                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                if state.backup_passphrase_draft.len() < 12 {
                     state.backup_status = "Use a backup passphrase of at least 12 bytes.".into();
                 } else {
                     state.pending_backup_upload = true;
