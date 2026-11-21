@@ -66,7 +66,7 @@ impl ApplicationHandler for CenAiApplication {
                         }
                         Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                         Err(wgpu::SurfaceError::Timeout) => {}
-                        Err(wgpu::SurfaceError::Other) => {}
+                        Err(_) => {}
                     }
                 }
                 if let Some(window) = &self.window {
