@@ -406,7 +406,12 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(text(if automation.enabled { "Enabled" } else { "Paused" }, 10.0, if automation.enabled { egui::Color32::from_rgb(119, 220, 183) } else { egui::Color32::from_rgb(220, 184, 121) }));
             });
             ui.label(text(format!("{} · UTC · {}", automation.id, automation.schedule), 10.0, egui::Color32::from_rgb(163, 174, 203)));
-            if let Ok(Some(next)) = automation.next_run_after(chrono::Utc::now()) {
+            if let Some(pending_at) = automation.pending_scheduled_at {
+                let due = chrono::DateTime::<chrono::Utc>::from_timestamp(pending_at, 0)
+                    .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
+                    .unwrap_or_else(|| "unknown time".into());
+                ui.label(text(format!("Due · awaiting review ({due})"), 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            } else if let Ok(Some(next)) = automation.next_run_after(chrono::Utc::now()) {
                 ui.label(text(format!("Next run: {}", next.format("%Y-%m-%d %H:%M UTC")), 10.0, egui::Color32::from_rgb(140, 154, 190)));
             }
             ui.horizontal(|ui| {
