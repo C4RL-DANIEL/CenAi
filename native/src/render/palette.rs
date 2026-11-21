@@ -30,7 +30,15 @@ mod tests {
     #[test]
     fn palette_colors_are_finite_and_normalized() {
         let p = DARK;
-        let colors = [p.canvas, p.surface, p.elevated_surface, p.foreground, p.muted, p.accent, p.accent_glow];
+        let colors = [
+            p.canvas,
+            p.surface,
+            p.elevated_surface,
+            p.foreground,
+            p.muted,
+            p.accent,
+            p.accent_glow,
+        ];
         for color in colors {
             for channel in [color.0, color.1, color.2, color.3] {
                 assert!(channel.is_finite());
