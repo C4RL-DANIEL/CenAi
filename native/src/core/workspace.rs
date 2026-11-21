@@ -103,7 +103,7 @@ impl WorkspaceStore {
     }
 
     pub fn save_project(&self, project: Project) -> Result<(), String> {
-        if project.id.trim().is_empty() || project.name.trim().is_empty() {
+        if !safe_segment(&project.id) || project.name.trim().is_empty() {
             return Err("Project identifier and name are required".into());
         }
         if project.id.len() > 80 || project.name.len() > 160 || project.description.len() > 20_000 {
@@ -138,6 +138,9 @@ impl WorkspaceStore {
         if !safe_segment(artifact_id) || file_name.trim().is_empty() || file_name.len() > 240 {
             return Err("Artifact identity or filename is invalid".into());
         }
+        if bytes.len() > 25 * 1024 * 1024 {
+            return Err("Artifact exceeds the 25 MB local workspace limit".into());
+        }
         let mut index = self.read_index()?;
         let project = index.projects.iter_mut().find(|item| item.id == project_id && !item.archived)
             .ok_or("Project not found or archived")?;
@@ -163,8 +166,18 @@ impl WorkspaceStore {
 
     pub fn read_artifact(&self, artifact_id: &str) -> Result<Vec<u8>, String> {
         if !safe_segment(artifact_id) { return Err("Artifact identifier is invalid".into()); }
-        fs::read(self.user_root.join("artifacts").join(format!("{artifact_id}.bin")))
-            .map_err(|error| error.to_string())
+        let index = self.read_index()?;
+        let metadata = index.projects.iter().flat_map(|project| project.artifacts.iter())
+            .find(|artifact| artifact.id == artifact_id)
+            .ok_or("Artifact is not registered in this account workspace")?;
+        let bytes = fs::read(self.user_root.join("artifacts").join(format!("{artifact_id}.bin")))
+            .map_err(|error| error.to_string())?;
+        let digest = Sha256::digest(&bytes);
+        let actual_hash = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        if bytes.len() as u64 != metadata.byte_length || actual_hash != metadata.sha256 {
+            return Err("Artifact integrity check failed; the stored file may be incomplete or modified".into());
+        }
+        Ok(bytes)
     }
 }
 
@@ -225,7 +238,10 @@ mod tests {
         let artifact = store.save_artifact("p1", "artifact_1", "report.txt", "text/plain", b"hello").unwrap();
         assert_eq!(artifact.byte_length, 5);
         assert_eq!(store.read_artifact("artifact_1").unwrap(), b"hello");
+        fs::write(store.user_root.join("artifacts").join("artifact_1.bin"), b"tampered").unwrap();
+        assert!(store.read_artifact("artifact_1").unwrap_err().contains("integrity"));
         assert!(store.save_artifact("p1", "../escape", "x", "text/plain", b"x").is_err());
+        assert!(store.save_artifact("p1", "too_large", "large.bin", "application/octet-stream", &vec![0; 25 * 1024 * 1024 + 1]).is_err());
         let _ = fs::remove_dir_all(root);
     }
 }
