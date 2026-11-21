@@ -20,16 +20,24 @@ fn normalize_prompt(value: &str) -> String {
     filtered.trim().to_owned()
 }
 
-/// A deliberately conservative, language-agnostic estimate for UI hints only.
-/// This is not a provider tokenizer and must never be used for billing or hard limits.
 /// Sanitizes message bodies without trimming meaningful leading/trailing whitespace.
 fn sanitize_message_content(value: &str) -> String {
-    value
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .chars()
-        .filter(|ch| !ch.is_control() || *ch == '\n' || *ch == '\t')
-        .collect()
+    let carriage_return = char::from(13);
+    let newline = char::from(10);
+    let tab = char::from(9);
+    let mut chars = value.chars().peekable();
+    let mut output = String::with_capacity(value.len());
+    while let Some(ch) = chars.next() {
+        if ch == carriage_return {
+            if chars.peek() == Some(&newline) {
+                chars.next();
+            }
+            output.push(newline);
+        } else if !ch.is_control() || ch == newline || ch == tab {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 /// Only the roles understood by CenAI's conversation and provider adapters are accepted.
