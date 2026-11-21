@@ -414,7 +414,26 @@ impl WgpuRenderer {
     pub fn record_diagnostic(&mut self, kind: DiagnosticKind, component: &str, code: &str) {
         let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default().as_millis() as u64;
-        self.guardian.record(DiagnosticEvent::sanitized(kind, component, code, timestamp));
+        let event = DiagnosticEvent::sanitized(kind, component, code, timestamp);
+        let accepted = self.guardian.record(event.clone());
+        // Upload only the coarse diagnostic category, never component labels, error
+        // strings, prompts, file paths, message contents or credentials.
+        // The server independently checks persisted user consent and its rollout flag.
+        if accepted && self.app_state.guardian_consent {
+            if let Some(api) = self.api.clone() {
+                let payload = serde_json::json!({
+                    "action": "guardian",
+                    "appVersion": env!("CARGO_PKG_VERSION"),
+                    "crashCategory": format!("{:?}", event.kind).to_ascii_lowercase(),
+                });
+                let task = self.runtime.spawn(async move {
+                    if let Err(error) = api.telemetry(payload).await {
+                        log::debug!("Guardian diagnostic upload was not accepted: {error}");
+                    }
+                });
+                self.track_task(task);
+            }
+        }
     }
 
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
