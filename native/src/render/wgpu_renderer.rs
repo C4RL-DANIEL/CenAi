@@ -317,16 +317,13 @@ impl WgpuRenderer {
                 "model": "cloudflare-gemma-4-26b-a4b-it",
                 "messages": messages,
                 "max_tokens": 1024,
-                "stream": false,
+                "stream": true,
             });
             self.runtime.spawn(async move {
-                let result = api.cloud_chat(&payload).await.and_then(|data| {
-                    data.pointer("/choices/0/message/content")
-                        .and_then(serde_json::Value::as_str)
-                        .filter(|answer| !answer.is_empty())
-                        .map(str::to_owned)
-                        .ok_or_else(|| "CenAI Cloud returned an empty response.".to_owned())
-                });
+                let delta_sender = sender.clone();
+                let result = api.stream_cloud_chat(&payload, move |delta| {
+                    let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                }).await;
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
         }
