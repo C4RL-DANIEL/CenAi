@@ -55,8 +55,8 @@ impl AudioChunk {
 pub struct VoiceAudioBuffer {
     sample_rate_hz: u32,
     max_samples: usize,
-    silence_frames_to_flush: u8,
-    silence_frames: u8,
+    silence_samples_to_flush: usize,
+    silence_samples: usize,
     speech_active: bool,
     samples: Vec<i16>,
 }
@@ -72,8 +72,8 @@ impl VoiceAudioBuffer {
         Ok(Self {
             sample_rate_hz,
             max_samples: sample_rate_hz as usize * max_chunk_ms as usize / 1000,
-            silence_frames_to_flush: 3,
-            silence_frames: 0,
+            silence_samples_to_flush: sample_rate_hz as usize * 300 / 1000,
+            silence_samples: 0,
             speech_active: false,
             samples: Vec::new(),
         })
@@ -86,14 +86,14 @@ impl VoiceAudioBuffer {
         }
         if frame.rms_level() >= 500 {
             self.speech_active = true;
-            self.silence_frames = 0;
+            self.silence_samples = 0;
         } else if self.speech_active {
-            self.silence_frames = self.silence_frames.saturating_add(1);
+            self.silence_samples = self.silence_samples.saturating_add(frame.samples.len());
         } else {
             return Ok(None);
         }
         self.samples.extend(frame.samples);
-        if self.samples.len() >= self.max_samples || self.silence_frames >= self.silence_frames_to_flush {
+        if self.samples.len() >= self.max_samples || self.silence_samples >= self.silence_samples_to_flush {
             return Ok(self.take_chunk());
         }
         Ok(None)
@@ -107,7 +107,7 @@ impl VoiceAudioBuffer {
         if self.samples.is_empty() { return None; }
         let samples = std::mem::take(&mut self.samples);
         let speech_detected = std::mem::replace(&mut self.speech_active, false);
-        self.silence_frames = 0;
+        self.silence_samples = 0;
         Some(AudioChunk { sample_rate_hz: self.sample_rate_hz, samples, speech_detected })
     }
 }
@@ -201,6 +201,21 @@ mod tests {
         assert!(chunk.speech_detected);
         assert_eq!(chunk.duration_ms(), 400);
         assert!(buffer.finish().is_none());
+    }
+
+    #[test]
+    fn voice_activity_silence_timeout_is_sample_based_not_frame_count_based() {
+        let mut buffer = VoiceAudioBuffer::new(16_000, 5_000).unwrap();
+        let speech = AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![1200; 800] };
+        assert!(buffer.push_frame(speech).unwrap().is_none());
+        let short_silence = AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 800] };
+        assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
+        assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
+        assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
+        assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
+        let flushed = buffer.push_frame(short_silence).unwrap().unwrap();
+        assert!(flushed.speech_detected);
+        assert_eq!(flushed.duration_ms(), 300);
     }
 
     #[test]
