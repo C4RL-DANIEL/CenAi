@@ -17,6 +17,9 @@ object NativeCore {
     /** Returns true only for system, user, assistant, or tool messages. */
     external fun isValidChatRole(role: String): Boolean
 
+    /** Builds an OpenAI-compatible text chat payload in the Rust core. */
+    external fun buildOpenAiChatPayload(model: String, maxTokens: Int, messagesJson: String): String
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
