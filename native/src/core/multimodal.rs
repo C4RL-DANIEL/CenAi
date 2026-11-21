@@ -131,6 +131,27 @@ mod tests {
     }
 
     #[test]
+    fn attachment_content_checks_signature_length_and_sha256() {
+        let bytes = b"\x89PNG\r\n\x1a\nvalid-image-payload";
+        let digest = Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let mut metadata = AttachmentMetadata {
+            id: "image_secure".into(),
+            file_name: "photo.png".into(),
+            mime_type: "image/png".into(),
+            kind: AttachmentKind::Image,
+            byte_length: bytes.len() as u64,
+            sha256: digest.clone(),
+        };
+        assert!(metadata.validate_content(bytes).is_ok());
+        metadata.sha256 = "0".repeat(64);
+        assert_eq!(metadata.validate_content(bytes), Err("Attachment checksum does not match its content"));
+        metadata.sha256 = digest;
+        metadata.kind = AttachmentKind::Document;
+        metadata.mime_type = "application/pdf".into();
+        assert_eq!(metadata.validate_content(bytes), Err("Attachment content does not match its declared MIME type"));
+    }
+
+    #[test]
     fn rich_content_rejects_insecure_citations_and_oversized_tables() {
         let citation = RichBlock::Citation { citation: Citation { title: "Source".into(), url: "http://example.com".into(), publisher: None } };
         assert_eq!(citation.validate(), Err("Citation URL must use HTTPS"));
