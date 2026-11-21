@@ -1,10 +1,11 @@
 //! Authenticated access to the existing Supabase and CenAI Cloud endpoints.
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use reqwest::{header, Client, StatusCode};
 use serde_json::{json, Value};
 
-use crate::core::config;
+use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}};
 
 pub trait SessionVault: Send + Sync {
     fn access_token(&self) -> Result<String, String>;
@@ -117,6 +118,60 @@ impl CenAiApi {
 
     pub async fn telemetry(&self, payload: Value) -> Result<Value, String> {
         self.post_authenticated(config::TELEMETRY_URL, &payload).await
+    }
+
+
+    pub async fn stream_openai_compatible<F>(
+        &self,
+        endpoint: &str,
+        api_key: &str,
+        request: &ChatRequest,
+        mut on_delta: F,
+    ) -> Result<String, String>
+    where
+        F: FnMut(&str) + Send,
+    {
+        validate_provider_endpoint(endpoint)?;
+        request.validate()?;
+        if api_key.trim().is_empty() { return Err("Provider API key is missing.".into()); }
+        let base = endpoint.trim_end_matches('/');
+        let url = if base.ends_with("/chat/completions") { base.to_owned() } else { format!("{base}/chat/completions") };
+        let payload = serde_json::json!({
+            "model": request.model,
+            "messages": request.messages,
+            "max_tokens": request.max_tokens,
+            "stream": true
+        });
+        let response = self.client.post(url)
+            .bearer_auth(api_key)
+            .header(header::ACCEPT, "text/event-stream")
+            .json(&payload)
+            .send().await.map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Self::decode_response(response).await.map(|_| String::new());
+        }
+        let mut stream = response.bytes_stream();
+        let mut pending = String::new();
+        let mut answer = String::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| error.to_string())?;
+            pending.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(newline) = pending.find('\n') {
+                let line = pending[..newline].trim_end_matches('\r').to_owned();
+                pending.drain(..=newline);
+                if let Some(delta) = parse_openai_sse_event(&line) {
+                    answer.push_str(&delta);
+                    on_delta(&delta);
+                }
+            }
+        }
+        if !pending.trim().is_empty() {
+            if let Some(delta) = parse_openai_sse_event(&pending) {
+                answer.push_str(&delta);
+                on_delta(&delta);
+            }
+        }
+        Ok(answer)
     }
 
     pub async fn cloud_chat(&self, payload: &Value) -> Result<Value, String> {
