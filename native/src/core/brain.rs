@@ -29,13 +29,15 @@ Create 1-12 concrete steps, use unique positive integer IDs, list dependencies o
         let raw = response.pointer("/choices/0/message/content")
             .and_then(serde_json::Value::as_str)
             .ok_or("Central Brain returned no plan content")?;
-        let plan: TaskPlan = serde_json::from_str(raw.trim())
-            .or_else(|_| {
-                let start = raw.find('{').ok_or_else(|| serde_json::Error::io(std::io::Error::other("JSON object not found")))?;
-                let end = raw.rfind('}').ok_or_else(|| serde_json::Error::io(std::io::Error::other("JSON object not closed")))?;
+        let plan: TaskPlan = match serde_json::from_str(raw.trim()) {
+            Ok(plan) => plan,
+            Err(_) => {
+                let start = raw.find('{').ok_or("Central Brain response did not contain a JSON object")?;
+                let end = raw.rfind('}').ok_or("Central Brain response contained an incomplete JSON object")?;
                 serde_json::from_str(&raw[start..=end])
-            })
-            .map_err(|error| format!("Central Brain produced an invalid plan: {error}"))?;
+                    .map_err(|error| format!("Central Brain produced an invalid plan: {error}"))?
+            }
+        };
         plan.validate().map_err(str::to_owned)?;
         if plan.goal.len() > 12_000 || plan.steps.iter().any(|step| step.title.len() > 240) {
             return Err("Central Brain plan exceeds safe limits.".into());
