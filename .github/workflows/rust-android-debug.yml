@@ -32,7 +32,7 @@ jobs:
   android-debug:
     name: Build Rust-native Android APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -59,6 +59,8 @@ jobs:
           gradle-version: "8.9"
       - name: Build debug APK
         run: gradle --no-daemon :app-rust:assembleDebug
+      - name: Verify NativeActivity smoke-test script syntax
+        run: bash -n .github/scripts/verify-rust-native-activity.sh
       - name: Verify NativeActivity on API 35 emulator
         env:
           # GitHub-hosted Linux runners do not expose KVM. Android Emulator refuses
