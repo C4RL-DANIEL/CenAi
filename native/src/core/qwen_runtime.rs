@@ -171,7 +171,7 @@ mod android {
             let library_name = CString::new(NATIVE_LIBRARY_NAME).map_err(|error| error.to_string())?;
             let handle = unsafe { libc::dlopen(library_name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
             if handle.is_null() {
-                return Err("CenAI Qwen native library is missing from this APK.".into());
+                return Err("CenAI Voice native engine is missing from this APK.".into());
             }
 
             let loaded = unsafe {
@@ -191,13 +191,13 @@ mod android {
 
                     let context = create();
                     if context.is_null() {
-                        return Err("Qwen3-TTS could not allocate its native context.".into());
+                        return Err("CenAI Voice could not allocate its native context.".into());
                     }
                     let _ = set_threads(cpu_threads.max(1));
                     if load_models(context, directory.as_ptr(), model_name.as_ptr()) == 0 {
                         let message_ptr = last_error(context);
                         let message = if message_ptr.is_null() {
-                            "Qwen3-TTS could not load the CenAI Voice model pack.".to_owned()
+                            "CenAI Voice could not load its offline model pack.".to_owned()
                         } else {
                             let message = CStr::from_ptr(message_ptr).to_string_lossy().into_owned();
                             free_string(message_ptr);
@@ -259,7 +259,7 @@ mod android {
                 };
                 unsafe { (self.free_result)(result); }
                 return Err(if error.is_empty() {
-                    "Qwen3-TTS synthesis failed without an error message.".into()
+                    "CenAI Voice synthesis failed without an error message.".into()
                 } else {
                     error
                 });
@@ -267,7 +267,7 @@ mod android {
 
             if result.audio.is_null() || result.audio_len <= 0 || result.sample_rate <= 0 {
                 unsafe { (self.free_result)(result); }
-                return Err("Qwen3-TTS returned an empty or invalid audio buffer.".into());
+                return Err("CenAI Voice returned an empty or invalid audio buffer.".into());
             }
             let max_samples = result.sample_rate as usize * MAX_AUDIO_SECONDS;
             if result.audio_len as usize > max_samples {
