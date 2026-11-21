@@ -48,3 +48,20 @@ Run `supabase/migrations/202611150001_sendai_control_plane.sql` in the Supabase 
 
 ## Not yet activated
 This is a protected control-plane foundation, not a fully deployed SaaS backend. The public API currently supports model listing and usage reporting only; chat completions, quotas and full SDK coverage are not implemented. PayPal Live checkout and webhook code is deployed, but the public billing flag remains OFF until a product/plan is created through the authorized admin UI and signed webhook, approval, activation, cancellation and refund paths are verified. Guardian device diagnostics currently run locally on Android; remote ingestion is not enabled. Staged rollout workers, MFA enforcement and mobile admin tooling are not implemented. Do not enable paid plans or remote device control until those services and their security tests are deployed. Configure MFA for admin accounts before production use; current login is password-based and should be treated as a restricted beta.
+
+## Discord-only invitation registration
+
+The owner/admin portal now includes **Registration links**. An authorized owner or admin can generate a random, single-use link with a 1-hour to 7-day expiry, copy it once, review redemption status, and revoke unused invitations. The browser never receives stored token hashes; the raw token is returned only at creation. The database redemption function locks the invitation row so concurrent redemption attempts cannot both succeed. Redemption requires a verified Supabase Discord identity and sets app_metadata.cenai_registration_verified=true and app_metadata.cenai_registration_method=discord. It never grants an admin role.
+
+### Required activation steps
+
+1. Apply supabase/migrations/20261121100000_discord_registration_invites.sql to the production Supabase project after the rewrite is approved for release.
+2. In Supabase Dashboard → Authentication → Sign In / Providers → Discord, enable Discord and configure the Discord OAuth client ID and client secret.
+3. In the Discord Developer Portal, add the Supabase callback URL https://bqkzehozezvepbthglyj.supabase.co/auth/v1/callback to the Discord application's OAuth2 redirect URLs.
+4. In Supabase Dashboard → Authentication → URL Configuration, add https://cenai-website.cenai-app.workers.dev/register/complete to the redirect URL allow list. Keep the existing site URL and other redirect entries intact.
+5. Deploy the updated cenai-control-plane Edge Function and Cloudflare Worker from the approved release branch.
+6. Verify the full flow with a fresh invitation: OAuth via Discord, successful one-time redemption, replay rejection, expiry rejection, revoke rejection, and no admin role assignment.
+
+The application callback uses OAuth authorization-code PKCE. Do not disable PKCE or put Discord client secrets in website assets, Worker variables exposed to the browser, Android builds, or Git. The Discord app's registered OAuth callback remains the Supabase /auth/v1/callback; /register/complete is the post-authentication redirect back to CenAI.
+
+**Release gate:** The invitation feature is not live until the migration, Discord provider credentials, Supabase redirect allow list, Edge Function deployment, and Cloudflare Worker deployment are all confirmed. The rewrite branch must not be merged to main without the owner's explicit approval.
