@@ -35,6 +35,7 @@ pub trait SessionVault: Send + Sync {
 pub struct CenAiApi {
     client: Client,
     vault: Arc<dyn SessionVault>,
+    session_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl CenAiApi {
@@ -44,7 +45,7 @@ impl CenAiApi {
             .timeout(std::time::Duration::from_secs(config::REQUEST_TIMEOUT_SECONDS))
             .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        Ok(Self { client, vault })
+        Ok(Self { client, vault, session_lock: Arc::new(tokio::sync::Mutex::new(())) })
     }
 
     pub fn session_email(&self) -> Result<String, String> {
@@ -61,6 +62,7 @@ impl CenAiApi {
     }
 
     pub async fn sign_in(&self, email: &str, password: &str) -> Result<String, String> {
+        let _session_guard = self.session_lock.lock().await;
         if !email.contains('@') || password.is_empty() {
             return Err("Enter your existing CenAI account email and password.".into());
         }
@@ -108,7 +110,9 @@ impl CenAiApi {
         if code.len() != 6 || !code.chars().all(|character| character.is_ascii_digit()) {
             return Err("Enter the six-digit verification code.".into());
         }
+        let account_id = self.vault.account_id()?;
         let token = self.vault.access_token()?;
+        if token.is_empty() || account_id.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
         let response = self.client.post(config::WEBSITE_OTP_URL)
             .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
             .bearer_auth(token)
@@ -118,11 +122,15 @@ impl CenAiApi {
         if data.get("verified").and_then(Value::as_bool) != Some(true) {
             return Err("Email verification was not confirmed.".into());
         }
+        if self.vault.account_id()? != account_id {
+            return Err("The active account changed before verification completed.".into());
+        }
         self.vault.set_email_verified(true)?;
         Ok(data.get("message").and_then(Value::as_str).unwrap_or("Email verified.").to_owned())
     }
 
     pub async fn sign_out(&self) -> Result<(), String> {
+        let _session_guard = self.session_lock.lock().await;
         let token = self.vault.access_token()?;
         if !token.is_empty() {
             let response = self.client.post(format!("{}/auth/v1/logout", config::SUPABASE_URL))
@@ -159,8 +167,13 @@ impl CenAiApi {
     }
 
     async fn post_authenticated(&self, url: &str, body: &Value) -> Result<Value, String> {
-        let mut token = self.vault.access_token()?;
-        if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
+        let (mut token, account_id) = {
+            let _session_guard = self.session_lock.lock().await;
+            (self.vault.access_token()?, self.vault.account_id()?)
+        };
+        if token.is_empty() || account_id.is_empty() {
+            return Err("Sign in to your CenAI account first.".into());
+        }
         let mut response = self.client.post(url)
             .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
             .bearer_auth(&token)
@@ -168,16 +181,31 @@ impl CenAiApi {
             .json(body)
             .send().await.map_err(|error| error.to_string())?;
         if response.status() == StatusCode::UNAUTHORIZED {
-            self.refresh_session().await?;
-            token = self.vault.access_token()?;
+            let _session_guard = self.session_lock.lock().await;
+            if self.vault.account_id()? != account_id {
+                return Err("The active CenAI account changed while this request was running.".into());
+            }
+            let current_token = self.vault.access_token()?;
+            if current_token == token {
+                self.refresh_session().await?;
+                token = self.vault.access_token()?;
+            } else {
+                token = current_token;
+            }
+            if token.is_empty() { return Err("Your CenAI session expired. Sign in again.".into()); }
+            drop(_session_guard);
             response = self.client.post(url)
                 .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
-                .bearer_auth(token)
+                .bearer_auth(&token)
                 .header(header::ACCEPT, "application/json")
                 .json(body)
                 .send().await.map_err(|error| error.to_string())?;
         }
-        Self::decode_response(response).await
+        let data = Self::decode_response(response).await?;
+        if self.vault.account_id()? != account_id {
+            return Err("The active CenAI account changed before the response completed.".into());
+        }
+        Ok(data)
     }
 
     async fn decode_response(response: reqwest::Response) -> Result<Value, String> {
@@ -254,6 +282,9 @@ impl CenAiApi {
         let mut pending = String::new();
         let mut answer = String::new();
         while let Some(chunk) = stream.next().await {
+            if self.vault.account_id()? != account_id {
+                return Err("The active CenAI account changed while this stream was running.".into());
+            }
             let chunk = chunk.map_err(|error| error.to_string())?;
             pending.push_str(&String::from_utf8_lossy(&chunk));
             while let Some(newline) = pending.find('\n') {
@@ -292,8 +323,11 @@ impl CenAiApi {
     where
         F: FnMut(&str) + Send,
     {
-        let mut token = self.vault.access_token()?;
-        if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
+        let (mut token, account_id) = {
+            let _session_guard = self.session_lock.lock().await;
+            (self.vault.access_token()?, self.vault.account_id()?)
+        };
+        if token.is_empty() || account_id.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
         let mut response = self.client.post(config::CLOUD_CHAT_URL)
             .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
             .bearer_auth(&token)
@@ -302,8 +336,19 @@ impl CenAiApi {
             .json(payload)
             .send().await.map_err(|error| error.to_string())?;
         if response.status() == StatusCode::UNAUTHORIZED {
-            self.refresh_session().await?;
-            token = self.vault.access_token()?;
+            let _session_guard = self.session_lock.lock().await;
+            if self.vault.account_id()? != account_id {
+                return Err("The active CenAI account changed while this stream was running.".into());
+            }
+            let current_token = self.vault.access_token()?;
+            if current_token == token {
+                self.refresh_session().await?;
+                token = self.vault.access_token()?;
+            } else {
+                token = current_token;
+            }
+            if token.is_empty() { return Err("Your CenAI session expired. Sign in again.".into()); }
+            drop(_session_guard);
             response = self.client.post(config::CLOUD_CHAT_URL)
                 .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
                 .bearer_auth(&token)
@@ -323,6 +368,9 @@ impl CenAiApi {
             let answer = data.pointer("/choices/0/message/content").and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
                 .ok_or("CenAI Cloud returned an empty response.")?.to_owned();
+            if self.vault.account_id()? != account_id {
+                return Err("The active CenAI account changed before the response completed.".into());
+            }
             on_delta(&answer);
             return Ok(answer);
         }
@@ -347,6 +395,9 @@ impl CenAiApi {
                 answer.push_str(&delta);
                 on_delta(&delta);
             }
+        }
+        if self.vault.account_id()? != account_id {
+            return Err("The active CenAI account changed before the stream completed.".into());
         }
         if answer.is_empty() {
             return Err("CenAI Cloud returned an empty or unsupported streaming response.".into());
