@@ -24,6 +24,7 @@ enum ChatEvent {
     OtpVerified(Result<String, String>),
     PlanFinished(u64, Result<TaskPlan, String>),
     McpConnected(Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
+    McpCallFinished(Result<serde_json::Value, String>),
 }
 
 pub struct WgpuRenderer {
@@ -345,6 +346,20 @@ impl WgpuRenderer {
                 });
             }
         }
+        if let Some((server_id, tool_name, raw_arguments)) = self.app_state.pending_mcp_call.take() {
+            match serde_json::from_str::<serde_json::Value>(&raw_arguments) {
+                Ok(arguments) => {
+                    if let Some(client) = self.mcp_clients.get(&server_id).cloned() {
+                        let sender = self.response_tx.clone();
+                        self.runtime.spawn(async move {
+                            let result = client.call_tool(&tool_name, arguments, true).await;
+                            let _ = sender.send(ChatEvent::McpCallFinished(result));
+                        });
+                    } else { self.app_state.mcp_status = "MCP server is no longer connected.".into(); }
+                }
+                Err(error) => self.app_state.mcp_status = format!("Tool arguments are not valid JSON: {error}"),
+            }
+        }
         if let Some(manifest) = self.app_state.pending_mcp_connect.take() {
             let sender = self.response_tx.clone();
             self.runtime.spawn(async move {
@@ -456,6 +471,12 @@ impl WgpuRenderer {
                         Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
+                }
+                ChatEvent::McpCallFinished(result) => {
+                    match result {
+                        Ok(value) => { self.app_state.mcp_call_result = value.to_string(); self.app_state.mcp_status = "Approved MCP action completed.".into(); }
+                        Err(error) => self.app_state.mcp_status = format!("MCP action failed: {error}"),
+                    }
                 }
                 ChatEvent::McpConnected(result) => {
                     match result {
