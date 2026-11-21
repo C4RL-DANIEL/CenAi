@@ -355,13 +355,24 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
     egui::CentralPanel::default()
         .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(18, 10)))
         .show(ctx, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                match state.destination {
-                    Destination::Conversation => conversation(ui, state),
-                    Destination::YourWork => work(ui, state),
-                    Destination::Connections => connections(ui),
-                    Destination::Settings => settings(ui, state),
-                }
+            let available_width = ui.available_width();
+            let content_width = available_width.min(780.0);
+            ui.horizontal(|ui| {
+                ui.add_space(((available_width - content_width) * 0.5).max(0.0));
+                ui.allocate_ui_with_layout(
+                    egui::vec2(content_width, ui.available_height()),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                            match state.destination {
+                                Destination::Conversation => conversation(ui, state),
+                                Destination::YourWork => work(ui, state),
+                                Destination::Connections => connections(ui),
+                                Destination::Settings => settings(ui, state),
+                            }
+                        });
+                    },
+                );
             });
         });
 }
