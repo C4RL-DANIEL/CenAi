@@ -45,38 +45,35 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - `native/src/core/guardian.rs`: bounded local diagnostics and a separate consent-gated upload queue; pre-consent events are never uploaded retroactively and revoking consent clears pending uploads.
 - `native/src/ecosystem/manifest.rs`: trusted first-party registration and per-user capability grants.
 
-## Implemented in this branch
+## Implemented in this branch (source-level; not release-verified)
 
-- Four primary destinations: Conversation, Your Work, Connections and Settings.
-- Responsive centered content, animated GPU ambient gradient, custom dark/light surfaces, account-scoped appearance and reduced-motion preferences, custom composer and button states.
-- Conversation message model, Markdown headings/lists/code fences, local per-account conversation autosave.
-- Existing-account sign-in against the existing Supabase/CenAI identity system; no open in-app registration. Any account creation must originate from the authorized Discord onboarding path. Email OTP is an existing-account verification step, not a substitute registration path.
-- Supabase token refresh and account-bound API requests. Session mutations are serialized; a request that resumes after an account switch cannot refresh into or return data for the new account.
-- CenAI Cloud chat endpoint integration for managed requests. The rewrite branch now includes quota-accounted Workers AI SSE forwarding, cancellation/error usage recording, and Rust parsing for both OpenAI delta chunks and Workers AI response chunks. The production Worker has not yet been deployed with this change, so the app intentionally continues using its compatible JSON response until the branch is approved and deployed. The active conversation history is sent with a managed chat request; project artifacts and other workspace files are not automatically attached.
-- OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore. Provider authorization remains separate from CenAI account authentication.
-- Per-account project creation, archived-project state, artifact metadata and local artifact storage with SHA-256 integrity verification, safe IDs and a 25 MB per-artifact limit.
-- Validated Central Brain plans are persisted in the owning account's workspace with unique local IDs and shown in Your Work. They are clearly marked as proposals; no plan step executes automatically.
-- Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
-- MCP HTTPS/protocol/publisher/license/capability checks, rejection of URL credentials/query tokens/private IP literals, redirects disabled, bounded tool/response sizes, JSON-schema validation of discovered tools and arguments, and explicit approval for sensitive reads and external writes.
-- Guardian diagnostic redaction, deduplication, bounded local buffering and consent gating; pre-consent diagnostics are not retroactively uploaded and opt-out clears the upload queue.
-- Account-owned background tasks are tracked and aborted on identity changes; stale asynchronous results are rejected by account generation.
-- Connections screens report current account/provider/MCP state rather than showing false “integration pending” labels; empty activity/file placeholder panels have been removed.
-- Private ecosystem manifest and per-user authorization contract; public docs expose only the approved integration surface while private orchestration stays behind authenticated/encrypted boundaries.
-- Rust workspace formatting, unit-test and Clippy CI; Android arm64/x86_64 debug APK packaging workflow.
+- Four primary Rust-owned destinations: Conversation, Your Work, Connections and Settings, with WGPU/egui rendering, animated GPU background, responsive layouts and account-scoped appearance preferences.
+- Supabase existing-account sign-in, token refresh, email OTP, TOTP MFA, registration-policy checks and account-generation guards against stale asynchronous results.
+- Managed CenAI Cloud chat client and Workers AI quota reservation/recording source; BYOK adapters currently cover OpenAI-compatible, DeepSeek, Anthropic and Gemini paths. The model catalogue and model-selection experience remain limited.
+- Per-account encrypted workspace persistence using the Android Keystore-backed vault, atomic metadata writes, encrypted attachment storage, safe artifact IDs and SHA-256 validation.
+- Project creation, archive state, artifact save/open/delete and task-plan persistence in the local workspace.
+- Passphrase-protected Argon2id/AES-256-GCM backup export/import, plus authenticated encrypted backup upload/download to the account's private Supabase Storage object. This is backup/restore, not continuous cross-device synchronization.
+- MCP HTTPS client with endpoint/DNS safety checks, initialization, remote `tools/list`, schema validation, remote `tools/call`, per-account token storage and explicit approval for sensitive reads or external writes. Server connection is manually configured; there is no public registry discovery service.
+- Android AudioRecord microphone capture and AudioTrack playback adapters; push-to-talk recording is transcribed through the user's Gemini API key. Cloud speech synthesis source uses Cloudflare Workers AI Deepgram Aura-1, with per-user character and shared daily Neuron reservations. It is English-only and remains disabled until its backend rollout is verified.
+- Attachment import and account-scoped encrypted storage with MIME/signature/size/checksum validation. The current Gemini analyzer supports plain text/Markdown/CSV, WAV transcription, PNG/JPEG/WebP images and PDF. Other document formats, video analysis and broad OCR/office-document extraction are not implemented in this path.
+- Guardian local snapshots for CPU, RAM, network, storage and battery; sanitized/deduplicated local diagnostics; opt-in coarse telemetry with a revocation path.
+- Ecosystem Engine account-scoped app catalog, manifest registration, capability grants, revocation and authorization backed by Supabase function/migration source and audit events.
+- Android debug packaging for ARM64 and x86_64, Rust formatting/tests/Clippy CI, Worker/voice source checks and an emulator NativeActivity smoke-test script.
 
 ## Still required before release
 
-- Re-run Rust host formatting, unit tests and Clippy after the latest Guardian sanitizer hardening commit.
-- Verify Android arm64 cross-compilation, Gradle packaging, APK install and NativeActivity startup.
-- Test the actual Android Keystore path, login/refresh/logout, email OTP and provider requests on device.
-- Add the remaining provider adapters and model catalog, MFA, subscription status/checkout UI, billing lifecycle and entitlement enforcement.
-- Finish project artifact UI, workspace backup/sync and cross-device restore.
-- Implement real MCP registry discovery, remote MCP transport, sandbox execution and isolated coding-agent workflows.
-- Validate the new managed Cloudflare Workers AI SSE path with the website/Worker CI, then deploy only after server-side quota-recording and disconnect/error behavior are verified. Switch the app to stream mode only after the deployed Worker is confirmed. Implement voice input/output, multimodal attachment picker and processing, computer-use approval flow.
-- Connect Guardian to real lifecycle/performance/network events and user-consented telemetry.
-- Complete Ecosystem Engine service authentication, server-side registration, revocation, compatibility and audit integration.
-- Run API 35+ emulator and REDMI Pad 2 Pro physical-device checks; record animation smoothness, lifecycle recovery, battery, memory, network failure and accessibility results.
-- Produce release APK, SHA-256 checksum, commit identifier, test report and known-limitations report.
+- Complete the model/provider catalogue, per-model configuration and capability metadata; add subscription status, entitlement resolution and enforcement across managed AI, tools and premium features. Existing Stripe/PayPal checkout and webhook source is not proof that live entitlements are configured.
+- Finish project workflows beyond local CRUD: robust artifact type previews, versions, imports/exports, collaboration and recovery UX.
+- Implement continuous encrypted cross-device workspace synchronization with conflict resolution, deletion propagation and offline queue/retry. Current upload/download is encrypted backup/restore only.
+- Add MCP registry discovery and publisher verification/revocation at the service boundary. Build an actual remote sandbox executor in isolated per-user containers; current `sandbox.rs` validates requests and output policy but does not execute jobs.
+- Implement full-duplex real-time voice, interruption/barge-in, streaming speech recognition and synthesis, language/provider selection, and session recovery. Current Android voice input is push-to-talk and Aura-1 TTS is a separate request/response path.
+- Expand multimodal processing to office documents, scanned-PDF OCR, audio formats beyond WAV, video frame/audio extraction and provider-capability-aware routing. Unsupported formats must fail visibly rather than be represented as analyzed.
+- Implement a permissioned Android computer-use service with user-visible screen capture, narrow action allowlists, per-action approval, emergency stop, audit history and revocation. No accessibility-driven computer-use executor is currently present.
+- Connect Guardian to Android lifecycle, crash/ANR, background-task, network and render events with resource-aware sampling and consented reporting. Current metrics are best-effort snapshots, not a 24/7 monitor.
+- Complete Ecosystem Engine production hardening: trusted publisher onboarding, signed manifest verification, version compatibility, per-user capability authorization, revocation propagation and audit review. Source code and migrations still require deployment and live tests.
+- Correctly deploy the canonical Cloudflare Worker and Supabase Edge Functions/migrations, verify secrets/bindings/storage policies/feature flags, and run authenticated end-to-end tests. The Aura-1 feature flag intentionally defaults to disabled.
+- Pass Android emulator install/startup checks, then run the documented physical REDMI Pad 2 Pro / HyperOS 3 test matrix. Emulator success cannot substitute for physical-device validation.
+- Produce a same-key signed release APK, checksum, provenance, test evidence and known-limitations report. A debug artifact or successful Gradle package is not a production release.
 
 ## Security and release rules
 
