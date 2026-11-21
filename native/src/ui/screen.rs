@@ -676,6 +676,33 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 fn settings(ui: &mut egui::Ui, state: &mut AppState) {
+    if state.mfa_login_required {
+        surface(ui, |ui| {
+            ui.label(text("Secure sign-in", 19.0, egui::Color32::WHITE).strong());
+            ui.label(text("This account has a verified authenticator. CenAI remains locked until you complete the second factor.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+            if let Some(factor) = state.mfa_factors.iter().find(|factor| factor.id == state.mfa_enrollment_factor_id) {
+                ui.label(text(format!("Authenticator: {}", factor.friendly_name), 11.0, egui::Color32::WHITE));
+            }
+            ui.add(egui::TextEdit::singleline(&mut state.mfa_code_draft)
+                .password(false).char_limit(6).hint_text("6-digit authenticator code")
+                .desired_width(f32::INFINITY));
+            ui.horizontal(|ui| {
+                if ui.button("Verify and unlock CenAI").clicked() {
+                    state.pending_mfa_verify = true;
+                    state.mfa_status = "Verifying your authenticator code…".into();
+                }
+                if ui.button("Refresh authenticator").clicked() {
+                    state.pending_mfa_refresh = true;
+                    state.mfa_status = "Checking your authenticator status…".into();
+                }
+            });
+            if !state.mfa_status.is_empty() {
+                ui.label(text(&state.mfa_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            }
+            ui.label(text("Only this verification step is available until the account's second factor succeeds.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+        });
+        return;
+    }
     ui.add_space(10.0);
     ui.label(text("Settings", 26.0, egui::Color32::WHITE).strong());
     ui.label(text("Make CenAI feel right for you.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
