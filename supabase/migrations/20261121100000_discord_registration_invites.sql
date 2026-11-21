@@ -32,13 +32,13 @@ create or replace function public.cenai_redeem_registration_invite(
   p_user_id uuid
 ) returns boolean
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $function$
 declare
   invite_row public.registration_invites%rowtype;
 begin
-  if auth.role() <> 'service_role' then
+  if coalesce(auth.jwt() ->> 'role', '') <> 'service_role' then
     raise exception 'service role required';
   end if;
   if p_token_hash !~ '^[0-9a-f]{64}$' or p_user_id is null then
