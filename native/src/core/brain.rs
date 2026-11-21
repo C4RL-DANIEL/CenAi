@@ -17,7 +17,23 @@ impl CentralBrain {
         }
         let goal = goal.trim();
         if goal.is_empty() || goal.len() > 12_000 { return Err("Task goal is empty or too large.".into()); }
-        let authorized = collect_authorized_context(request, records).map_err(str::to_owned)?;
+        // Persistent memories are fetched only when the authenticated request carries the
+        // user's explicit personal-memory grant. The server derives owner identity from JWT.
+        let mut scoped_records = records.to_vec();
+        if request.includes_personal_memory() {
+            for memory in self.api.personal_memories().await? {
+                let content = memory.get("content").and_then(serde_json::Value::as_str).unwrap_or_default();
+                if content.is_empty() { continue; }
+                scoped_records.push(ContextRecord {
+                    owner_user_id: verified_user_id.clone(),
+                    feature_id: "personal_memory".into(),
+                    session_id: None,
+                    kind: crate::core::context::ContextKind::PersonalMemory,
+                    content: content.to_owned(),
+                });
+            }
+        }
+        let authorized = collect_authorized_context(request, &scoped_records).map_err(str::to_owned)?;
         let mut context = String::new();
         for item in authorized {
             if context.len() >= 12_000 { break; }
