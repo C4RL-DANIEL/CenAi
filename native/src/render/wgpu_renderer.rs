@@ -20,6 +20,8 @@ enum ChatEvent {
     Finished(u64, Result<String, String>),
     SignedIn(Result<String, String>),
     SignedOut(Result<(), String>),
+    OtpSent(Result<String, String>),
+    OtpVerified(Result<String, String>),
     PlanFinished(u64, Result<TaskPlan, String>),
 }
 
@@ -307,6 +309,19 @@ impl WgpuRenderer {
                 self.runtime.spawn(async move { let _ = sender.send(ChatEvent::SignedOut(api.sign_out().await)); });
             }
         }
+        if self.app_state.pending_send_otp {
+            self.app_state.pending_send_otp = false;
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpSent(api.send_email_otp().await)); });
+            } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
+        }
+        if let Some(code) = self.app_state.pending_verify_otp.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpVerified(api.verify_email_otp(&code).await)); });
+            } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
+        }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
                 Some(api) => match api.save_provider_key(&provider, &key) {
@@ -351,6 +366,7 @@ impl WgpuRenderer {
                     match result {
                         Ok(email) => {
                             self.app_state.account_email = email.clone();
+                            self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
                             self.app_state.auth_status = "Signed in successfully.".into();
                             match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &email) {
                                 Ok(store) => {
@@ -369,6 +385,8 @@ impl WgpuRenderer {
                     match result {
                         Ok(()) => {
                             self.app_state.account_email.clear();
+                            self.app_state.email_verified = false;
+                            self.app_state.otp_status.clear();
                             self.app_state.auth_status = "Signed out.".into();
                             self.workspace = None;
                             self.app_state.projects.clear();
@@ -391,6 +409,15 @@ impl WgpuRenderer {
                         Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
+                }
+                ChatEvent::OtpSent(result) => {
+                    self.app_state.otp_status = match result { Ok(message) => message, Err(error) => format!("Could not send code: {error}") };
+                }
+                ChatEvent::OtpVerified(result) => {
+                    match result {
+                        Ok(message) => { self.app_state.email_verified = true; self.app_state.otp_draft.clear(); self.app_state.otp_status = message; }
+                        Err(error) => self.app_state.otp_status = format!("Verification failed: {error}"),
+                    }
                 }
                 ChatEvent::Finished(message_id, result) => {
                     match result {
