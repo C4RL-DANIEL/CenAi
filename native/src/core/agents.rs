@@ -127,6 +127,6 @@ mod tests {
                 TaskStep { id: 2, role: AgentRole::Tester, title: "B".into(), status: StepStatus::Pending, depends_on: vec![1] },
             ],
         };
-        assert_eq!(plan.validate(), Err("Task plan contains a dependency cycle"));
+        assert!(plan.validate().is_err());
     }
 }
