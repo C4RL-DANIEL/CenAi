@@ -13,7 +13,7 @@ use crate::core::backup::EncryptedBackup;
 use crate::core::automations::Automation;
 use crate::core::network::SessionVault;
 
-pub const WORKSPACE_CIPHER_MAGIC: &[u8] = b"CENAI-WORKSPACE-ENC-V1\\0";
+pub const WORKSPACE_CIPHER_MAGIC: &[u8] = b"CENAI-WORKSPACE-ENC-V1:";
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -138,8 +138,8 @@ impl WorkspaceStore {
         if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
             return Err("Workspace storage path is invalid".into());
         }
-        let key = relative.to_str().ok_or("Workspace storage path is not valid UTF-8")?.replace('\\\\', "/");
-        if key.is_empty() || key.len() > 256 || key.contains('\\n') || key.contains('\\r') {
+        let key = relative.to_str().ok_or("Workspace storage path is not valid UTF-8")?.replace('\\', "/");
+        if key.is_empty() || key.len() > 256 || key.contains('\n') || key.contains('\r') {
             return Err("Workspace storage path is invalid".into());
         }
         Ok(key)
@@ -236,7 +236,7 @@ impl WorkspaceStore {
         if !safe_segment(conversation_id) { return Err("Conversation identifier is invalid".into()); }
         let path = self.user_root.join("conversations").join(format!("{conversation_id}.json"));
         if !path.exists() { return Ok(Vec::new()); }
-        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        let bytes = self.read_storage(&path)?;
         serde_json::from_slice(&bytes).map_err(|error| error.to_string())
     }
 
@@ -670,8 +670,7 @@ impl WorkspaceStore {
         let metadata = index.projects.iter().flat_map(|project| project.artifacts.iter())
             .find(|artifact| artifact.id == artifact_id)
             .ok_or("Artifact is not registered in this account workspace")?;
-        let bytes = fs::read(self.user_root.join("artifacts").join(format!("{artifact_id}.bin")))
-            .map_err(|error| error.to_string())?;
+        let bytes = self.read_storage(&self.user_root.join("artifacts").join(format!("{artifact_id}.bin")))?;
         let digest = Sha256::digest(&bytes);
         let actual_hash = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         if bytes.len() as u64 != metadata.byte_length || actual_hash != metadata.sha256 {
