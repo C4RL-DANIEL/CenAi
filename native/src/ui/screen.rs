@@ -316,6 +316,11 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
             ui.add(egui::TextEdit::singleline(&mut state.mcp_license_draft).hint_text("License"));
         });
         ui.add(egui::TextEdit::singleline(&mut state.mcp_capabilities_draft).hint_text("Declared capability names, comma separated").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.mcp_bearer_token_draft).password(true).hint_text("Optional server bearer token (encrypted on this device)").desired_width(f32::INFINITY));
+        if ui.add_enabled(!state.mcp_server_id_draft.trim().is_empty() && !state.mcp_bearer_token_draft.is_empty(), egui::Button::new("Save encrypted server token")).clicked() {
+            state.pending_mcp_token_save = Some((state.mcp_server_id_draft.trim().to_owned(), state.mcp_bearer_token_draft.clone()));
+            state.mcp_status = "Saving server token to the Android Keystore…".into();
+        }
         ui.checkbox(&mut state.mcp_reviewed, "I reviewed the publisher, endpoint and requested capabilities");
         if ui.button("Discover tools").clicked() {
             let capabilities = state.mcp_capabilities_draft.split(',')
