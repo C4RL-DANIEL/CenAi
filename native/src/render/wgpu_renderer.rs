@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -23,6 +23,7 @@ enum ChatEvent {
     OtpSent(Result<String, String>),
     OtpVerified(Result<String, String>),
     PlanFinished(u64, Result<TaskPlan, String>),
+    McpConnected(Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
 }
 
 pub struct WgpuRenderer {
@@ -49,6 +50,7 @@ pub struct WgpuRenderer {
     last_saved_message_count: usize,
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
+    mcp_clients: HashMap<String, Arc<McpHttpClient>>,
 }
 
 impl WgpuRenderer {
@@ -195,6 +197,7 @@ impl WgpuRenderer {
             last_saved_message_count,
             workspace_root,
             guardian,
+            mcp_clients: HashMap::new(),
         })
     }
 
@@ -342,6 +345,18 @@ impl WgpuRenderer {
                 });
             }
         }
+        if let Some(manifest) = self.app_state.pending_mcp_connect.take() {
+            let sender = self.response_tx.clone();
+            self.runtime.spawn(async move {
+                let result = async {
+                    let client = Arc::new(McpHttpClient::new(manifest.clone(), None)?);
+                    let _server_info = client.initialize().await?;
+                    let tools = client.list_tools().await?;
+                    Ok((manifest, client, tools))
+                }.await;
+                let _ = sender.send(ChatEvent::McpConnected(result));
+            });
+        }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
                 Some(api) => match api.save_provider_key(&provider, &key) {
@@ -441,6 +456,16 @@ impl WgpuRenderer {
                         Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
+                }
+                ChatEvent::McpConnected(result) => {
+                    match result {
+                        Ok((manifest, client, tools)) => {
+                            self.mcp_clients.insert(manifest.server_id.clone(), client);
+                            self.app_state.mcp_tools = tools;
+                            self.app_state.mcp_status = format!("Discovered {} tools. No tool has been executed.", self.app_state.mcp_tools.len());
+                        }
+                        Err(error) => self.app_state.mcp_status = format!("MCP discovery failed: {error}"),
+                    }
                 }
                 ChatEvent::OtpSent(result) => {
                     self.app_state.otp_status = match result { Ok(message) => message, Err(error) => format!("Could not send code: {error}") };
