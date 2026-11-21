@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 use super::RenderBackend;
@@ -133,6 +133,7 @@ enum ChatEvent {
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
+    AttachmentAnalyzed(u64, String, Result<String, String>),
     MfaFactorsLoaded(u64, Result<Vec<crate::ui::model::MfaFactor>, String>),
     MfaEnrolled(u64, Result<(String, String, String), String>),
     MfaVerified(u64, Result<(), String>),
@@ -198,6 +199,7 @@ pub struct WgpuRenderer {
     background_tasks: Vec<tokio::task::JoinHandle<()>>,
     active_streams: HashMap<u64, u64>,
     workspace: Option<WorkspaceStore>,
+    attachment_store: Option<AttachmentStore>,
     last_saved_message_count: usize,
     last_saved_preferences: (bool, bool),
     workspace_root: PathBuf,
@@ -351,6 +353,14 @@ impl WgpuRenderer {
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
+        let attachment_store = if active_user_id.is_empty() {
+            None
+        } else {
+            AttachmentStore::new(workspace_root.join("cenai-attachments"), &active_user_id).ok()
+        };
+        if let Some(store) = attachment_store.as_ref() {
+            app_state.attachments = store.list().unwrap_or_default();
+        }
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
         if !active_user_id.is_empty() {
             let already_stepped_up = api.as_ref().is_some_and(CenAiApi::session_has_aal2);
@@ -394,6 +404,7 @@ impl WgpuRenderer {
             background_tasks: Vec::new(),
             active_streams: HashMap::new(),
             workspace,
+            attachment_store,
             last_saved_message_count,
             last_saved_preferences,
             workspace_root,
