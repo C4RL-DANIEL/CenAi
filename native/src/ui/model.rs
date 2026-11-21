@@ -331,6 +331,9 @@ impl Default for AppState {
             pending_voice_start: false,
             pending_voice_stop: false,
             voice_status: String::new(),
+            pending_speech_text: None,
+            pending_speech_stop: false,
+            speech_status: String::new(),
                     }
     }
 }
