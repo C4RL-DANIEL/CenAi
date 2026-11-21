@@ -352,9 +352,16 @@ impl WgpuRenderer {
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
-        if !app_state.account_email.is_empty() {
+        if !active_user_id.is_empty() {
+            let already_stepped_up = api.as_ref().is_some_and(CenAiApi::session_has_aal2);
+            app_state.mfa_login_required = !already_stepped_up;
             app_state.pending_mfa_refresh = true;
-            app_state.mfa_status = "Checking account authenticator status…".into();
+            app_state.mfa_status = if already_stepped_up {
+                "Refreshing authenticator status for this verified session…".into()
+            } else {
+                app_state.destination = crate::ui::model::Destination::Settings;
+                "Checking whether this account requires an authenticator step-up…".into()
+            };
         }
         let automation_scheduler = workspace.as_ref().and_then(|store| AutomationScheduler::from_workspace(store).ok());
         app_state.automations = automation_scheduler.as_ref().map(|scheduler| scheduler.snapshot(&active_user_id)).unwrap_or_default();
