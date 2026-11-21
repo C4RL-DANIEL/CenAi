@@ -1815,7 +1815,8 @@ impl WgpuRenderer {
                             }
                             self.guardian.set_telemetry_consent(self.app_state.guardian_consent);
                             self.app_state.auth_status = "Signed in successfully.".into();
-                            match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &account_id) {
+                            match self.api.as_ref().ok_or_else(|| "Account service is unavailable.".to_owned())
+                                .and_then(|service| service.workspace_store(self.workspace_root.join("cenai-workspace"))) {
                                 Ok(store) => {
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
