@@ -36,6 +36,13 @@ Deno.serve(async (req: Request) => {
       body = parsed as Record<string, unknown>;
     } catch { return fail(400, "Request must contain valid JSON"); }
     const action = String(body.action ?? "");
+    // Supabase has already verified this JWT through getUser; use its signed assurance claim.
+    const encodedClaims = token.split(".")[1] ?? "";
+    const normalizedClaims = encodedClaims.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(normalizedClaims.padEnd(Math.ceil(normalizedClaims.length / 4) * 4, "=")));
+    if (["register", "grant", "revoke"].includes(action) && claims.aal !== "aal2") {
+      return respond(403, { error: "Complete authenticator verification before changing Ecosystem permissions", code: "mfa_required" });
+    }
 
     if (action === "list") {
       const { data: apps, error: appError } = await db.from("ecosystem_apps").select("app_id,publisher_id,version,protocol_version,description,capabilities,requested_scopes,updated_at").eq("enabled", true).order("app_id").limit(200);
