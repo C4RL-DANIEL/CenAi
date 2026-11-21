@@ -68,8 +68,9 @@
       sessionStorage.removeItem(PKCE_KEY);
       cleanUrl(false);
       $("discord").classList.add("hidden");
+      $("password-panel").classList.remove("hidden");
       $("intro").textContent = "Your Discord identity has been verified and your invitation has been redeemed.";
-      note("CenAI registration successful. Your account is ready. You can now sign in to the CenAI app with this Discord account.", "success");
+      note("One last step: create a password for signing in to the CenAI Android app.", "success");
     } catch (error) {
       cleanUrl(false);
       note(error.message, "error");
@@ -143,5 +144,32 @@
       $("discord").addEventListener("click", startDiscord);
     }
   }
+  $("password-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const password = $("new-password").value;
+    const confirmation = $("confirm-password").value;
+    if (password.length < 12) { note("Use at least 12 characters for your password.", "error"); return; }
+    if (password !== confirmation) { note("The passwords do not match.", "error"); return; }
+    const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    if (!saved?.access_token) { note("Your registration session expired. Reopen the invitation link and sign in again.", "error"); return; }
+    const button = event.currentTarget.querySelector("button[type=submit>");
+    button.disabled = true;
+    try {
+      const response = await fetch(config.supabaseUrl.replace(/\/$/, "") + "/auth/v1/user", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", apikey: config.publishableKey, Authorization: "Bearer " + saved.access_token },
+        body: JSON.stringify({ password }),
+        cache: "no-store"
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.msg || result.message || "Password could not be saved.");
+      $("password-form").classList.add("hidden");
+      note("Registration complete. Sign in to the CenAI Android app with your Discord email and the password you just created.", "success");
+    } catch (error) {
+      note(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
   init();
 })();
