@@ -243,6 +243,40 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             ui.label(text("Voice transcription sends your recording to Google Gemini using your configured Gemini key. The transcript stays in the draft until you review and send it.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
         ui.horizontal(|ui| {
+            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("＋ Add attachment")).clicked() {
+                state.pending_attachment_picker = true;
+                state.attachment_status = "Opening Android file picker…".into();
+            }
+            if !state.attachment_status.is_empty() {
+                ui.label(text(&state.attachment_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            }
+        });
+        if !state.attachments.is_empty() {
+            ui.add(egui::TextEdit::singleline(&mut state.attachment_prompt_draft)
+                .hint_text("What should CenAI inspect in these files?").desired_width(f32::INFINITY));
+            let mut analyze_attachment = None;
+            let mut delete_attachment = None;
+            for attachment in &state.attachments {
+                ui.horizontal(|ui| {
+                    ui.label(text(format!("{} · {:.1} KB", attachment.file_name, attachment.byte_length as f64 / 1024.0), 10.0, egui::Color32::from_rgb(190, 201, 224)));
+                    if ui.small_button("Analyze").clicked() {
+                        analyze_attachment = Some(attachment.id.clone());
+                    }
+                    if ui.small_button("Remove").clicked() {
+                        delete_attachment = Some(attachment.id.clone());
+                    }
+                });
+            }
+            if let Some(attachment_id) = analyze_attachment {
+                state.pending_attachment_analysis = Some((attachment_id, state.attachment_prompt_draft.trim().to_owned()));
+                state.attachment_status = "Preparing attachment analysis…".into();
+            }
+            if let Some(attachment_id) = delete_attachment {
+                state.pending_attachment_delete = Some(attachment_id);
+                state.attachment_status = "Removing attachment…".into();
+            }
+        }
+        ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
             ui.add_enabled_ui(state.personal_memory_enabled, |ui| {
                 ui.checkbox(&mut state.include_memory_for_request, "Use my private memory for this message");
