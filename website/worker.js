@@ -400,7 +400,7 @@ async function cloudVoiceSpeech(request, env) {
   }
   const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
-  const body = await request.json().catch(() => null);
+  const declaredLength = Number(request.headers.get("Content-Length") || 0);\n  if (declaredLength > 65536) return json(413, { error: "Voice request exceeds the 64 KB limit." });\n  const body = await request.json().catch(() => null);
   const input = typeof body?.input === "string" ? body.input.trim() : "";
   const language = typeof body?.language === "string" ? body.language : "English";
   const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
