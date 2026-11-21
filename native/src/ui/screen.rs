@@ -351,6 +351,86 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label(text("Bring your models, tools and services together.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
     surface(ui, |ui| {
+        ui.label(text("Ecosystem Engine", 17.0, egui::Color32::WHITE).strong());
+        ui.label(text("Register compatible apps and manage separate, revocable permissions for this account. App access never crosses user accounts.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        if ui.button("Refresh app catalog").clicked() {
+            state.pending_ecosystem_refresh = true;
+            state.ecosystem_status = "Loading your app catalog…".into();
+        }
+        ui.separator();
+        ui.label(text("Register an app manifest", 13.0, egui::Color32::WHITE).strong());
+        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_app_id_draft).hint_text("App ID (com.example.app)").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_publisher_id_draft).hint_text("Trusted publisher ID").desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut state.ecosystem_version_draft).hint_text("Version"));
+        });
+        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_description_draft).hint_text("Short app description").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_capabilities_draft).hint_text("Capabilities, comma separated (notes.read)").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_scopes_draft).hint_text("Requested scopes, comma separated").desired_width(f32::INFINITY));
+        if ui.button("Register app manifest").clicked() {
+            let capabilities = state.ecosystem_capabilities_draft.split(',').map(str::trim)
+                .filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+            let requested_scopes = state.ecosystem_scopes_draft.split(',').map(str::trim)
+                .filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+            if state.ecosystem_app_id_draft.trim().is_empty()
+                || state.ecosystem_publisher_id_draft.trim().is_empty()
+                || state.ecosystem_version_draft.trim().is_empty()
+                || capabilities.is_empty() || requested_scopes.is_empty() {
+                state.ecosystem_status = "Complete the app identity, publisher, version, capabilities and requested scopes.".into();
+            } else {
+                state.pending_ecosystem_register = Some(serde_json::json!({
+                    "appId": state.ecosystem_app_id_draft.trim(),
+                    "publisherId": state.ecosystem_publisher_id_draft.trim(),
+                    "version": state.ecosystem_version_draft.trim(),
+                    "protocolVersion": 1,
+                    "description": state.ecosystem_description_draft.trim(),
+                    "capabilities": capabilities,
+                    "requestedScopes": requested_scopes
+                }));
+                state.ecosystem_status = "Submitting manifest to the trusted-publisher registry…".into();
+            }
+        }
+        if !state.ecosystem_apps.is_empty() {
+            ui.separator();
+            ui.label(text("Registered apps", 13.0, egui::Color32::WHITE).strong());
+            egui::ComboBox::from_id_salt("cenai_ecosystem_selected_app")
+                .selected_text(if state.ecosystem_selected_app.is_empty() { "Choose an app" } else { &state.ecosystem_selected_app })
+                .show_ui(ui, |ui| {
+                    for app in &state.ecosystem_apps {
+                        ui.selectable_value(&mut state.ecosystem_selected_app, app.app_id.clone(), &app.app_id);
+                    }
+                });
+            if let Some(app) = state.ecosystem_apps.iter().find(|app| app.app_id == state.ecosystem_selected_app) {
+                ui.label(text(format!("Publisher: {} · Version: {}", app.publisher_id, app.version), 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                if !app.description.is_empty() {
+                    ui.label(text(&app.description, 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                }
+                ui.label(text(format!("Declared capabilities: {}", app.capabilities.join(", ")), 10.0, egui::Color32::from_rgb(190, 201, 224)));
+                ui.label(text(format!("Current account grants: {}", if app.revoked || app.granted_scopes.is_empty() { "none".into() } else { app.granted_scopes.join(", ") }), 10.0, accent()));
+                ui.add(egui::TextEdit::singleline(&mut state.ecosystem_grant_scopes_draft).hint_text("Scopes to grant, comma separated").desired_width(f32::INFINITY));
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Grant selected scopes").clicked() {
+                        let scopes = state.ecosystem_grant_scopes_draft.split(',').map(str::trim)
+                            .filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+                        if scopes.is_empty() {
+                            state.ecosystem_status = "Enter at least one requested scope to grant.".into();
+                        } else {
+                            state.pending_ecosystem_grant = Some((app.app_id.clone(), scopes));
+                            state.ecosystem_status = "Saving this account's app permissions…".into();
+                        }
+                    }
+                    if ui.button("Revoke app access").clicked() {
+                        state.pending_ecosystem_revoke = Some(app.app_id.clone());
+                        state.ecosystem_status = "Revoking this account's app access…".into();
+                    }
+                });
+            }
+        }
+        if !state.ecosystem_status.is_empty() {
+            ui.label(text(&state.ecosystem_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    surface(ui, |ui| {
         ui.label(text("Connect a remote MCP server", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Add a server endpoint over HTTPS. Discovery does not grant permission to run its tools.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::singleline(&mut state.mcp_server_id_draft).hint_text("Server ID (for example, org.example.tools)").desired_width(f32::INFINITY));
