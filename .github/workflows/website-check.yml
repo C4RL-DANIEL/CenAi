@@ -51,7 +51,7 @@ jobs:
 
       - name: Verify Cloudflare API and recovery routes
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           grep -q 'cenai-email-otp' website/worker.js
           grep -q 'cenai-control-plane' website/worker.js
           grep -q 'cenai-paypal-billing' website/worker.js
