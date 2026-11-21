@@ -108,6 +108,10 @@ enum ChatEvent {
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
+    MfaFactorsLoaded(u64, Result<Vec<crate::ui::model::MfaFactor>, String>),
+    MfaEnrolled(u64, Result<(String, String, String), String>),
+    MfaVerified(u64, Result<(), String>),
+    MfaRemoved(u64, String, Result<(), String>),
 }
 
 impl ChatEvent {
@@ -134,7 +138,11 @@ impl ChatEvent {
             | Self::SpeechSynthesized(generation, ..)
             | Self::BackupUploaded(generation, ..)
             | Self::BackupDownloaded(generation, ..)
-            | Self::BackupRestored(generation, ..) => *generation,
+            | Self::BackupRestored(generation, ..)
+            | Self::MfaFactorsLoaded(generation, ..)
+            | Self::MfaEnrolled(generation, ..)
+            | Self::MfaVerified(generation, ..)
+            | Self::MfaRemoved(generation, ..) => *generation,
         }
     }
 }
