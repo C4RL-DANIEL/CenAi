@@ -643,7 +643,7 @@ impl WgpuRenderer {
                     let talker = model_directory.join(PRIMARY_GGUF_MODEL);
                     let tokenizer = model_directory.join(TOKENIZER_GGUF_MODEL);
                     if !talker.is_file() || !tokenizer.is_file() {
-                        return Err("CenAI Voice model pack is not installed. Download the offline Qwen3-TTS 0.6B model pack in Voice settings.".to_owned());
+                        return Err("CenAI Voice model pack is not installed. Download the CenAI Voice offline model pack in Voice settings.".to_owned());
                     }
                     let request = validate_synthesis_text(&text, QwenLanguage::English)
                         .map_err(str::to_owned)?;
