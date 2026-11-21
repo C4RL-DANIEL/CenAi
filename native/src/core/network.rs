@@ -1,6 +1,7 @@
 //! Authenticated access to the existing Supabase and CenAI Cloud endpoints.
 use std::sync::Arc;
 
+use base64::Engine as _;
 use futures_util::StreamExt;
 use reqwest::{header, Client, StatusCode};
 use sha2::{Digest, Sha256};
