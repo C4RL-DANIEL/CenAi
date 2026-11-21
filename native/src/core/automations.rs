@@ -120,7 +120,16 @@ impl AutomationScheduler {
         Ok(true)
     }
 
-    /// Clears a due occurrence only after its reminder is durably recorded for the user.
+    /// Clears a due occurrence in memory after its reminder has been durably recorded.
+    pub fn acknowledge(&mut self, owner_scope: &str, automation_id: &str, scheduled_at: i64) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        let Some(item) = self.automations.get_mut(&Self::key(owner_scope, automation_id)) else { return false; };
+        if item.pending_scheduled_at != Some(scheduled_at) { return false; }
+        item.pending_scheduled_at = None;
+        true
+    }
+
+    /// Persists the acknowledgement; failed writes restore the pending trigger.
     pub fn acknowledge_and_persist(
         &mut self,
         owner_scope: &str,
@@ -130,10 +139,9 @@ impl AutomationScheduler {
     ) -> Result<bool, String> {
         if !valid_user_uuid(owner_scope) { return Ok(false); }
         let key = Self::key(owner_scope, automation_id);
-        let Some(item) = self.automations.get_mut(&key) else { return Ok(false); };
-        if item.pending_scheduled_at != Some(scheduled_at) { return Ok(false); }
-        let previous = item.clone();
-        item.pending_scheduled_at = None;
+        let Some(previous) = self.automations.get(&key).cloned() else { return Ok(false); };
+        if previous.pending_scheduled_at != Some(scheduled_at) { return Ok(false); }
+        if !self.acknowledge(owner_scope, automation_id, scheduled_at) { return Ok(false); }
         if let Err(error) = self.persist_to_workspace(store) {
             self.automations.insert(key, previous);
             return Err(error);
@@ -243,6 +251,10 @@ mod tests {
     const OWNER: &str = "550e8400-e29b-41d4-a716-446655440010";
     const OTHER: &str = "550e8400-e29b-41d4-a716-446655440011";
 
+    fn due_timestamp(value: &str) -> i64 {
+        DateTime::parse_from_rfc3339(value).unwrap().timestamp()
+    }
+
     fn automation(id: &str, owner: &str, schedule: &str) -> Automation {
         Automation {
             id: id.into(),
@@ -298,6 +310,8 @@ mod tests {
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp());
         assert!(due[0].requires_approval);
+        assert_eq!(scheduler.poll_due(now), due);
+        assert!(scheduler.acknowledge(OWNER, "quarter-hour", due[0].scheduled_at));
         assert!(scheduler.poll_due(now).is_empty());
         assert!(scheduler.pause(OWNER, "quarter-hour"));
         assert!(scheduler.poll_due(now + Duration::minutes(15)).is_empty());
@@ -314,6 +328,8 @@ mod tests {
         let due = scheduler.poll_due(now);
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T10:00:00Z").unwrap().timestamp());
+        assert_eq!(scheduler.poll_due(now), due);
+        assert!(scheduler.acknowledge(OWNER, "hourly", due[0].scheduled_at));
         assert!(scheduler.poll_due(now).is_empty());
     }
 
@@ -332,7 +348,11 @@ mod tests {
         assert!(reloaded.automations.values().all(|automation| automation.last_scheduled_at
             == Some(DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp())));
         let mut reloaded = reloaded;
-        assert!(reloaded.poll_due_and_persist(now, &store).unwrap().is_empty());
+        let replayed = reloaded.poll_due_and_persist(now + Duration::minutes(5), &store).unwrap();
+        assert_eq!(replayed.len(), 1);
+        assert_eq!(replayed[0].scheduled_at, due_timestamp("2026-11-21T09:15:00Z"));
+        assert!(reloaded.acknowledge_and_persist(OWNER, "quarter-hour", replayed[0].scheduled_at, &store).unwrap());
+        assert!(reloaded.poll_due_and_persist(now + Duration::minutes(5), &store).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
 
