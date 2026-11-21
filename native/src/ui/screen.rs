@@ -381,7 +381,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(12.0);
     surface(ui, |ui| {
         ui.label(text("Automations", 17.0, egui::Color32::WHITE).strong());
-        ui.label(text("Create account-owned UTC schedules. Due runs are surfaced for review; sensitive actions still require approval.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Create account-owned UTC schedules. Every due run is saved for your review; no action runs without your approval.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::singleline(&mut state.automation_id_draft).hint_text("Schedule ID (daily-report)").desired_width(f32::INFINITY));
         ui.add(egui::TextEdit::singleline(&mut state.automation_title_draft).hint_text("What should CenAI prepare?").desired_width(f32::INFINITY));
         ui.add(egui::TextEdit::singleline(&mut state.automation_schedule_draft).hint_text("Cron schedule in UTC (0 9 * * 1-5)").desired_width(f32::INFINITY));
