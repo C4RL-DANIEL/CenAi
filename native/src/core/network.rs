@@ -220,6 +220,7 @@ impl CenAiApi {
         let token = self.vault.access_token()?;
         if token.is_empty() { return Err("Sign in to your CenAI account first.".into()); }
         let response = self.client.post(config::CLOUD_CHAT_URL)
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
             .bearer_auth(token)
             .header(header::ACCEPT, "application/json")
             .json(payload)
