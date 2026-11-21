@@ -1053,11 +1053,20 @@ impl WgpuRenderer {
             if let (Some(scheduler), Some(store)) = (self.automation_scheduler.as_mut(), self.workspace.as_ref()) {
                 match scheduler.poll_due_and_persist(chrono::Utc::now(), store) {
                     Ok(due) if !due.is_empty() => {
-                        for trigger in due {
-                            if let Some(automation) = self.app_state.automations.iter().find(|item| item.id == trigger.automation_id) {
-                                self.app_state.conversation.draft = format!("Please prepare this scheduled task for my review: {}", automation.title);
-                                self.app_state.automation_status = format!("{} is due. Review the prepared task in Conversation; no action is executed automatically.", automation.title);
+                        let due_titles = due.iter().filter_map(|trigger| {
+                            self.app_state.automations.iter().find(|item| item.id == trigger.automation_id)
+                                .map(|automation| automation.title.clone())
+                        }).collect::<Vec<_>>();
+                        if !due_titles.is_empty() {
+                            let prompt = due_titles.iter().map(|title| format!("- {title}")).collect::<Vec<_>>().join("\n");
+                            let scheduled_prompt = format!("Please prepare these scheduled tasks for my review:\n{prompt}");
+                            if self.app_state.conversation.draft.trim().is_empty() {
+                                self.app_state.conversation.draft = scheduled_prompt;
+                            } else {
+                                self.app_state.conversation.draft.push_str("\n\n");
+                                self.app_state.conversation.draft.push_str(&scheduled_prompt);
                             }
+                            self.app_state.automation_status = format!("{} scheduled task(s) are due. Review the prepared list in Conversation; no action is executed automatically.", due_titles.len());
                         }
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
                     }
