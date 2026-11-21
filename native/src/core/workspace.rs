@@ -938,3 +938,74 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 }
+
+#[cfg(test)]
+mod encrypted_workspace_tests {
+    use super::*;
+
+    struct TestVault { account: String }
+
+    impl SessionVault for TestVault {
+        fn access_token(&self) -> Result<String, String> { Ok(String::new()) }
+        fn refresh_token(&self) -> Result<String, String> { Ok(String::new()) }
+        fn account_email(&self) -> Result<String, String> { Ok(String::new()) }
+        fn account_id(&self) -> Result<String, String> { Ok(self.account.clone()) }
+        fn save_session(&self, _: &str, _: &str, _: &str, _: &str) -> Result<(), String> { Ok(()) }
+        fn clear_session(&self) -> Result<(), String> { Ok(()) }
+        fn provider_key(&self, _: &str) -> Result<String, String> { Ok(String::new()) }
+        fn save_provider_key(&self, _: &str, _: &str) -> Result<(), String> { Ok(()) }
+        fn email_verified(&self) -> Result<bool, String> { Ok(true) }
+        fn set_email_verified(&self, _: bool) -> Result<(), String> { Ok(()) }
+        fn guardian_consent(&self) -> Result<bool, String> { Ok(false) }
+        fn set_guardian_consent(&self, _: bool) -> Result<(), String> { Ok(()) }
+        fn user_setting(&self, _: &str) -> Result<String, String> { Ok(String::new()) }
+        fn set_user_setting(&self, _: &str, _: &str) -> Result<(), String> { Ok(()) }
+        fn encrypt_workspace_bytes(&self, user: &str, path: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
+            let mut payload = format!("{user}\n{path}\n").into_bytes();
+            payload.extend_from_slice(plaintext);
+            payload.iter_mut().for_each(|byte| *byte ^= 0x5a);
+            let mut result = WORKSPACE_CIPHER_MAGIC.to_vec();
+            result.extend(payload);
+            Ok(result)
+        }
+        fn decrypt_workspace_bytes(&self, user: &str, path: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+            if user != self.account || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC) { return Err("wrong account or envelope".into()); }
+            let mut payload = ciphertext[WORKSPACE_CIPHER_MAGIC.len()..].to_vec();
+            payload.iter_mut().for_each(|byte| *byte ^= 0x5a);
+            let prefix = format!("{user}\n{path}\n");
+            if !payload.starts_with(prefix.as_bytes()) { return Err("wrong account or path".into()); }
+            Ok(payload.split_off(prefix.len()))
+        }
+    }
+
+    #[test]
+    fn encrypted_workspace_migrates_plaintext_and_restores_artifacts() {
+        let root = temp_root();
+        let account = "550e8400-e29b-41d4-a716-446655440000";
+        let plain = WorkspaceStore::new(&root, account).unwrap();
+        plain.save_project(Project { id: "private-project".into(), name: "Private Project".into(), description: "secret metadata".into(), created_at_unix_ms: 1, updated_at_unix_ms: 1, archived: false, artifacts: Vec::new() }).unwrap();
+        drop(plain);
+        let vault: Arc<dyn SessionVault> = Arc::new(TestVault { account: account.into() });
+        let encrypted = WorkspaceStore::new_encrypted(&root, account, vault.clone()).unwrap();
+        assert_eq!(encrypted.projects(false).unwrap()[0].name, "Private Project");
+        encrypted.save_artifact("private-project", "artifact-1", "private.txt", "text/plain", b"private artifact bytes").unwrap();
+        assert_eq!(encrypted.read_artifact("artifact-1").unwrap(), b"private artifact bytes");
+        let stored_index = fs::read(&encrypted.index_path).unwrap();
+        assert!(stored_index.starts_with(WORKSPACE_CIPHER_MAGIC));
+        assert!(!stored_index.windows(b"Private Project".len()).any(|window| window == b"Private Project"));
+        let backup = encrypted.export_backup_payload().unwrap();
+        let restored = WorkspaceStore::new_encrypted(temp_root(), account, vault).unwrap();
+        restored.import_backup_payload(&backup).unwrap();
+        assert_eq!(restored.read_artifact("artifact-1").unwrap(), b"private artifact bytes");
+    }
+
+    #[test]
+    fn encrypted_workspace_rejects_account_or_path_swaps() {
+        let account = "550e8400-e29b-41d4-a716-446655440000";
+        let vault = TestVault { account: account.into() };
+        let encrypted = vault.encrypt_workspace_bytes(account, "workspace.json", b"secret").unwrap();
+        assert!(vault.decrypt_workspace_bytes("550e8400-e29b-41d4-a716-446655440001", "workspace.json", &encrypted).is_err());
+        assert!(vault.decrypt_workspace_bytes(account, "artifacts/other.bin", &encrypted).is_err());
+        assert_eq!(vault.decrypt_workspace_bytes(account, "workspace.json", &encrypted).unwrap(), b"secret");
+    }
+}
