@@ -2009,6 +2009,30 @@ impl WgpuRenderer {
                         Err(error) => self.app_state.backup_status = format!("Backup restore failed: {error}"),
                     }
                 }
+                ChatEvent::AttachmentImported(_, result) => {
+                    match result {
+                        Ok(metadata) => {
+                            self.app_state.attachments.retain(|item| item.id != metadata.id);
+                            self.app_state.attachments.push(metadata.clone());
+                            self.app_state.attachment_status = format!("Added {} to your private attachments.", metadata.file_name);
+                        }
+                        Err(error) => self.app_state.attachment_status = format!("Attachment import failed: {error}"),
+                    }
+                }
+                ChatEvent::AttachmentAnalyzed(_, attachment_id, result) => {
+                    match result {
+                        Ok(analysis) => {
+                            let file_name = self.app_state.attachments.iter().find(|item| item.id == attachment_id)
+                                .map(|item| item.file_name.clone()).unwrap_or_else(|| "attachment".into());
+                            self.app_state.conversation.push(
+                                MessageRole::Assistant,
+                                format!("**Analysis of {file_name}**\n\n{analysis}")
+                            );
+                            self.app_state.attachment_status = format!("Finished analyzing {file_name}.");
+                        }
+                        Err(error) => self.app_state.attachment_status = format!("Attachment analysis failed: {error}"),
+                    }
+                }
                 ChatEvent::MfaFactorsLoaded(_, result) => {
                     match result {
                         Ok(factors) => {
