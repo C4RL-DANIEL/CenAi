@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # Keep a validation run attached to each exact source revision.
+  group: ${{ github.workflow }}-${{ github.sha }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
