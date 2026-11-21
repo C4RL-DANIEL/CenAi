@@ -3,6 +3,7 @@ use std::sync::Arc;
 use jni::{objects::{JObject, JValue}, JavaVM};
 
 mod vault;
+pub mod audio;
 use vault::AndroidSecretVault;
 use crate::core::{guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
 
@@ -63,7 +64,7 @@ impl ApplicationHandler for CenAiApplication {
             .with_transparent(false);
         let window = Arc::new(event_loop.create_window(attributes).expect("create Android window"));
         self.last_size = window.inner_size();
-        match WgpuRenderer::new(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take(), self.workspace_root.clone()) {
+        match WgpuRenderer::new_android(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take(), self.workspace_root.clone(), self.android_app.clone()) {
             Ok(renderer) => {
                 log::info!("CenAI renderer initialized: {}", crate::RUNTIME_ID);
                 self.renderer = Some(renderer);
