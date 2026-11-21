@@ -25,7 +25,7 @@ fn jwt_has_active_aal2(token: &str, now_unix: i64) -> bool {
 }
 
 fn pcm16_mono_to_wav(sample_rate_hz: u32, pcm: &[u8]) -> Result<Vec<u8>, String> {
-    if !matches!(sample_rate_hz, 16_000 | 24_000 | 48_000) || pcm.is_empty() || pcm.len() % 2 != 0 {
+    if !matches!(sample_rate_hz, 16_000 | 24_000 | 48_000) || pcm.is_empty() || !pcm.len().is_multiple_of(2) {
         return Err("Gemini returned unsupported or misaligned PCM audio".into());
     }
     if pcm.len() > u32::MAX as usize - 36 {
@@ -942,7 +942,7 @@ impl CenAiApi {
             // RFC 2586 audio/L16 is network-byte-order; Android PCM16 WAV is little-endian.
             if mime_type.starts_with("audio/l16") {
                 if pcm.len() % 2 != 0 { return Err("Gemini returned misaligned L16 audio".into()); }
-                for sample in pcm.chunks_exact_mut(2) { sample.swap(0, 1); }
+                for sample in pcm.as_chunks_mut::<2>().0 { sample.swap(0, 1); }
             }
             return pcm16_mono_to_wav(sample_rate, &pcm);
         }
