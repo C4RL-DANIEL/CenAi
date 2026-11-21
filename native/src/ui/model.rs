@@ -43,7 +43,7 @@ impl Default for ConversationState {
 impl ConversationState {
     pub fn restore_messages(&mut self, messages: Vec<Message>) {
         self.next_id = messages.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1).max(1);
-        self.messages = messages.into_iter().collect();
+        self.messages = messages.into_iter().map(|mut message| { message.streaming = false; message }).collect();
         self.sending = false;
     }
 
