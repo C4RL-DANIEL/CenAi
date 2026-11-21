@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 mod vault;
 use vault::AndroidSecretVault;
-use crate::core::{network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
+use crate::core::{guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
@@ -81,9 +81,13 @@ impl ApplicationHandler for CenAiApplication {
                     match renderer.render(window) {
                         Ok(()) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                            renderer.record_diagnostic(DiagnosticKind::RenderFailure, "gpu_surface", "lost_or_outdated");
                             renderer.resize(self.last_size);
                         }
-                        Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            renderer.record_diagnostic(DiagnosticKind::RenderFailure, "gpu_surface", "out_of_memory");
+                            event_loop.exit();
+                        },
                         Err(wgpu::SurfaceError::Timeout) => {}
                         Err(_) => {}
                     }
