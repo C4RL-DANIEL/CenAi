@@ -69,3 +69,8 @@ Run `npm run check` and `npm run build`. The build excludes `api/`, internal set
 ## Engineering architecture
 
 See [../docs/ENGINEERING-ARCHITECTURE.md](../docs/ENGINEERING-ARCHITECTURE.md) for platform boundaries, dependency direction, security invariants, refactor boundaries, and deployment verification.
+
+
+## Private Discord registration invitations
+
+The restricted admin portal has a Registration links panel backed by the registration_invites table in Supabase. It issues one-time, expiring links for the dedicated /register page. Tokens are generated with Web Crypto, only their SHA-256 digests are stored, and the Supabase Auth Discord identity is checked server-side before atomic redemption. See ADMIN-SETUP.md for the required provider, redirect allow-list, migration, and deployment configuration.
