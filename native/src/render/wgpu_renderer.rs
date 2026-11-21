@@ -351,6 +351,18 @@ impl WgpuRenderer {
                 None => "Secure account service is unavailable.".into(),
             };
         }
+        if let Some((project_id, artifact_id, file_name, artifact_content)) = self.app_state.pending_artifact.take() {
+            if file_name.is_empty() || artifact_content.trim().is_empty() {
+                self.app_state.artifact_status = "Add a filename and some content first.".into();
+            } else if let Some(store) = &self.workspace {
+                self.app_state.artifact_status = match store.save_artifact(&project_id, &artifact_id, &file_name, "text/plain", artifact_content.as_bytes()) {
+                    Ok(_) => { self.app_state.projects = store.projects(false).unwrap_or_default(); self.app_state.artifact_name_draft.clear(); self.app_state.artifact_content_draft.clear(); "Artifact saved to your private workspace.".into() },
+                    Err(error) => format!("Could not save artifact: {error}"),
+                };
+            } else {
+                self.app_state.artifact_status = "Sign in to save artifacts to your account workspace.".into();
+            }
+        }
         if let Some((name, description)) = self.app_state.pending_project_create.take() {
             if name.is_empty() {
                 self.app_state.project_status = "Enter a project name first.".into();
