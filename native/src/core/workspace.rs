@@ -11,6 +11,9 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use crate::core::agents::TaskPlan;
 use crate::core::backup::EncryptedBackup;
 use crate::core::automations::Automation;
+use crate::core::network::SessionVault;
+
+pub const WORKSPACE_CIPHER_MAGIC: &[u8] = b"CENAI-WORKSPACE-ENC-V1\\0";
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -82,10 +85,22 @@ pub struct WorkspaceStore {
     // Clones of a workspace share this lock so read-modify-write index updates
     // cannot silently overwrite one another when UI and background tasks race.
     index_lock: Arc<Mutex<()>>,
+    vault: Option<Arc<dyn SessionVault>>,
 }
 
 impl WorkspaceStore {
     pub fn new(root: impl AsRef<Path>, user_identity: &str) -> Result<Self, String> {
+        Self::build(root, user_identity, None)
+    }
+
+    pub fn new_encrypted(root: impl AsRef<Path>, user_identity: &str, vault: Arc<dyn SessionVault>) -> Result<Self, String> {
+        if vault.account_id()? != user_identity {
+            return Err("Workspace encryption vault does not match the authenticated account".into());
+        }
+        Self::build(root, user_identity, Some(vault))
+    }
+
+    fn build(root: impl AsRef<Path>, user_identity: &str, vault: Option<Arc<dyn SessionVault>>) -> Result<Self, String> {
         if !valid_account_uuid(user_identity) {
             return Err("A canonical authenticated Supabase user UUID is required for workspace access".into());
         }
@@ -94,7 +109,8 @@ impl WorkspaceStore {
         let user_root = root.as_ref().join(scope);
         fs::create_dir_all(user_root.join("artifacts")).map_err(|error| error.to_string())?;
         let index_path = user_root.join("workspace.json");
-        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path, index_lock: Arc::new(Mutex::new(())) };
+        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path, index_lock: Arc::new(Mutex::new(())), vault };
+        if store.vault.is_some() { store.migrate_plaintext_files()?; }
         if !store.index_path.exists() {
             store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new(), automations: Vec::new() })?;
         }
@@ -106,7 +122,7 @@ impl WorkspaceStore {
     }
 
     fn read_index(&self) -> Result<WorkspaceIndex, String> {
-        let bytes = fs::read(&self.index_path).map_err(|error| error.to_string())?;
+        let bytes = self.read_storage(&self.index_path)?;
         let index: WorkspaceIndex = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
         if index.schema_version != 1 { return Err("Unsupported workspace schema version".into()); }
         Ok(index)
@@ -117,7 +133,66 @@ impl WorkspaceStore {
         self.write_atomic(&self.index_path, &bytes)
     }
 
+    fn relative_key(&self, path: &Path) -> Result<String, String> {
+        let relative = path.strip_prefix(&self.user_root).map_err(|_| "Workspace path escaped the account directory")?;
+        if relative.components().any(|part| !matches!(part, Component::Normal(_))) {
+            return Err("Workspace storage path is invalid".into());
+        }
+        let key = relative.to_str().ok_or("Workspace storage path is not valid UTF-8")?.replace('\\\\', "/");
+        if key.is_empty() || key.len() > 256 || key.contains('\\n') || key.contains('\\r') {
+            return Err("Workspace storage path is invalid".into());
+        }
+        Ok(key)
+    }
+
+    fn encode_storage_bytes(&self, relative_path: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        match &self.vault {
+            Some(vault) => vault.encrypt_workspace_bytes(&self.user_identity, relative_path, bytes),
+            None => Ok(bytes.to_vec()),
+        }
+    }
+
+    fn decode_storage_bytes(&self, relative_path: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        match &self.vault {
+            Some(vault) => vault.decrypt_workspace_bytes(&self.user_identity, relative_path, bytes),
+            None => Ok(bytes.to_vec()),
+        }
+    }
+
+    fn read_storage(&self, path: &Path) -> Result<Vec<u8>, String> {
+        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        if self.vault.is_some() {
+            let relative = self.relative_key(path)?;
+            self.decode_storage_bytes(&relative, &bytes)
+        } else { Ok(bytes) }
+    }
+
+    fn migrate_plaintext_files(&self) -> Result<(), String> {
+        let mut files = vec![self.index_path.clone()];
+        for directory in [self.user_root.join("artifacts"), self.user_root.join("conversations")] {
+            if !directory.exists() { continue; }
+            for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+                let path = entry.map_err(|error| error.to_string())?.path();
+                if path.is_file() { files.push(path); }
+            }
+        }
+        for path in files {
+            if !path.exists() { continue; }
+            let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+            if bytes.starts_with(WORKSPACE_CIPHER_MAGIC) {
+                let relative = self.relative_key(&path)?;
+                self.decode_storage_bytes(&relative, &bytes)?;
+            } else {
+                self.write_atomic(&path, &bytes)?;
+            }
+        }
+        Ok(())
+    }
+
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
+        let relative = self.relative_key(path)?;
+        let stored = self.encode_storage_bytes(&relative, bytes)?;
+        let bytes = stored.as_slice();
         let parent = path.parent().ok_or("Invalid workspace path")?;
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         // Each writer gets a distinct temporary file. Never truncate another writer's
