@@ -107,6 +107,7 @@ jobs:
           grep -q 'cenai-ai-quota' website/worker.js
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q '@cf/deepgram/aura-1' website/worker.js
+          grep -q 'function __name' website/worker.js
           grep -q 'voice_authorize' supabase/functions/cenai-ai-quota/index.ts
           grep -q 'voice_status' supabase/functions/cenai-ai-quota/index.ts
           grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261122100000_cenai_aura1_voice_quotas.sql
@@ -140,6 +141,10 @@ jobs:
             exit 1
           fi
           node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
+          for endpoint in /api/voice/status /api/voice/speech; do
+            code=$(curl -sS --max-time 15 -o /tmp/cenai-voice-auth.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE$endpoint")
+            if [[ "$code" != "401" ]]; then cat /tmp/cenai-voice-auth.json; echo "$endpoint should require a signed-in account (expected 401, got $code)"; exit 1; fi
+          done
           for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html /about.html /privacy.html /terms.html /contact.html /guides/ /guides/choosing-ai-models.html /guides/approval-first-agents.html /guides/organizing-ai-projects.html /guides/local-vs-cloud-ai.html /guides/checking-ai-answers.html /robots.txt /sitemap.xml; do
             code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
             if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi
