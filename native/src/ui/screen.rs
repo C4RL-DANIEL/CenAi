@@ -233,6 +233,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     });
     ui.add_space(10.0);
     let mut open_artifact = None;
+    let mut delete_artifact = None;
     if state.projects.is_empty() {
         surface(ui, |ui| {
             ui.label(text("Projects", 17.0, egui::Color32::WHITE).strong());
@@ -252,6 +253,9 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                         if ui.small_button("Open").clicked() {
                             open_artifact = Some(artifact.id.clone());
                         }
+                        if ui.small_button("Delete").clicked() {
+                            delete_artifact = Some(artifact.id.clone());
+                        }
                     });
                 }
             });
@@ -261,6 +265,25 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(artifact_id) = open_artifact {
         state.pending_artifact_open = Some(artifact_id);
         state.artifact_preview_status = "Opening artifact…".into();
+    }
+    if let Some(artifact_id) = delete_artifact {
+        state.confirm_artifact_delete = Some(artifact_id);
+    }
+    if let Some(artifact_id) = state.confirm_artifact_delete.clone() {
+        let mut open = true;
+        egui::Window::new("Delete workspace artifact").collapsible(false).resizable(false).open(&mut open).show(ui.ctx(), |ui| {
+            ui.label(text("This permanently deletes the selected artifact from this account's private workspace.", 12.0, egui::Color32::WHITE));
+            ui.horizontal(|ui| {
+                if ui.button("Delete permanently").clicked() {
+                    state.pending_artifact_delete = Some(artifact_id.clone());
+                    state.confirm_artifact_delete = None;
+                }
+                if ui.button("Cancel").clicked() {
+                    state.confirm_artifact_delete = None;
+                }
+            });
+        });
+        if !open { state.confirm_artifact_delete = None; }
     }
     if !state.artifact_preview_name.is_empty() || !state.artifact_preview_status.is_empty() {
         ui.add_space(10.0);
