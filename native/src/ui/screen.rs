@@ -75,6 +75,7 @@ fn navigation(ui: &mut egui::Ui, state: &mut AppState) {
             (Destination::Settings, "⚙", "Settings"),
         ];
         for (destination, glyph, label) in items {
+            if state.mfa_login_required && destination != Destination::Settings { continue; }
             let selected = state.destination == destination;
             let fill = if selected {
                 egui::Color32::from_rgb(49, 59, 104)
@@ -83,7 +84,7 @@ fn navigation(ui: &mut egui::Ui, state: &mut AppState) {
             };
             let color = if selected { egui::Color32::WHITE } else { egui::Color32::from_rgb(145, 154, 180) };
             if ui.add_sized(
-                [ui.available_width() / 4.0, 54.0],
+                [if state.mfa_login_required { ui.available_width() } else { ui.available_width() / 4.0 }, 54.0],
                 egui::Button::new(text(format!("{glyph}\n{label}"), 11.0, color))
                     .fill(fill)
                     .stroke(egui::Stroke::NONE),
@@ -909,6 +910,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             ui.label(text(&state.auth_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
         }
     });
+    if state.mfa_login_required { return; }
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("CenAI membership", 16.0, egui::Color32::WHITE).strong());
@@ -958,6 +960,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
 }
 
 pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
+    if state.mfa_login_required { state.destination = Destination::Settings; }
     LIGHT_MODE.with(|light| light.set(state.light_mode));
     ctx.set_visuals(if state.light_mode { egui::Visuals::light() } else { egui::Visuals::dark() });
     ctx.style_mut(|style| {
