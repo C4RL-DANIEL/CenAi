@@ -155,7 +155,7 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_buildOpenAiChatPayload(
             Ok(value) => value.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
-        Err(error) => match env.new_string(format!("{{\"error\":{}}}", serde_json::to_string(&error).unwrap_or_else(|_| "\"Request error\"".to_owned()))) {
+        Err(error) => match env.new_string(serde_json::json!({ "error": error }).to_string()) {
             Ok(value) => value.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
