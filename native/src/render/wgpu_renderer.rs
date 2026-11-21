@@ -390,7 +390,7 @@ impl WgpuRenderer {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
             if let Ok(language) = service.user_setting("voice_language") {
-                if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language) {
+                if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                     app_state.voice_language = language;
                 }
             }
@@ -1772,7 +1772,7 @@ impl WgpuRenderer {
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
                                 self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
                                 if let Ok(language) = service.user_setting("voice_language") {
-                                    if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language) {
+                                    if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                                         self.app_state.voice_language = language;
                                     }
                                 }
