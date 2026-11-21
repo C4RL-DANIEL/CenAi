@@ -28,12 +28,24 @@ pub struct TaskPlan {
 
 impl TaskPlan {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.id.trim().is_empty() || self.goal.trim().is_empty() { return Err("Task identity and goal are required"); }
-        if self.steps.is_empty() || self.steps.len() > 12 { return Err("Task plan must contain between 1 and 12 steps"); }
+        if self.id.trim().is_empty() || self.id.len() > 128 || self.goal.trim().is_empty() || self.goal.len() > 12_000 {
+            return Err("Task identity and goal are required and must fit the supported limits");
+        }
+        if self.stopped || self.steps.is_empty() || self.steps.len() > 12 {
+            return Err("Task plan must contain 1-12 steps and cannot start in a stopped state");
+        }
         let ids: std::collections::HashSet<u64> = self.steps.iter().map(|step| step.id).collect();
         if ids.len() != self.steps.len() { return Err("Task step identifiers must be unique"); }
-        if self.steps.iter().any(|step| step.title.trim().is_empty() || step.depends_on.iter().any(|id| !ids.contains(id) || *id == step.id)) {
-            return Err("Task plan contains an invalid step or dependency");
+        if self.steps.iter().any(|step| {
+            step.id == 0 || step.title.trim().is_empty() || step.title.len() > 240
+                || step.status != StepStatus::Pending || step.depends_on.len() > 12
+                || {
+                    let unique: std::collections::HashSet<u64> = step.depends_on.iter().copied().collect();
+                    unique.len() != step.depends_on.len()
+                }
+                || step.depends_on.iter().any(|id| !ids.contains(id) || *id >= step.id)
+        }) {
+            return Err("Task plan contains an invalid step, status or dependency");
         }
         let mut completed = std::collections::HashSet::new();
         loop {
@@ -85,6 +97,25 @@ mod tests {
         plan.stop();
         assert!(plan.ready_steps().is_empty());
         assert_eq!(plan.steps[1].status, StepStatus::Cancelled);
+    }
+
+    #[test]
+    fn planner_cannot_claim_completed_steps_or_create_forward_dependencies() {
+        let mut plan = TaskPlan {
+            id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![] },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Test".into(), status: StepStatus::Pending, depends_on: vec![1] },
+            ],
+        };
+        plan.steps[0].status = StepStatus::Completed;
+        assert!(plan.validate().is_err());
+        plan.steps[0].status = StepStatus::Pending;
+        plan.steps[0].depends_on = vec![2];
+        assert!(plan.validate().is_err());
+        plan.steps[0].depends_on.clear();
+        plan.steps[1].depends_on = vec![1, 1];
+        assert!(plan.validate().is_err());
     }
 
     #[test]
