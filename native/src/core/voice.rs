@@ -188,9 +188,12 @@ impl VoiceSession {
     }
 
     pub fn start(&mut self) -> Result<VoiceEvent, &'static str> {
-        if self.state != VoiceState::Idle && self.state != VoiceState::Ended {
+        if !matches!(self.state, VoiceState::Idle | VoiceState::Ended | VoiceState::Failed) {
             return Err("Voice session is already active");
         }
+        self.microphone_granted = false;
+        self.output_active = false;
+        self.last_error = None;
         self.state = VoiceState::AwaitingPermission;
         Ok(VoiceEvent::RequestMicrophonePermission)
     }
@@ -339,6 +342,17 @@ mod tests {
         assert_eq!(session.user_interrupted(), Ok(VoiceEvent::InterruptPlayback));
         assert_eq!(session.resume_listening(), Ok(VoiceEvent::StartCapture));
         assert_eq!(session.state, VoiceState::Listening);
+    }
+
+    #[test]
+    fn voice_session_can_retry_after_permission_denial() {
+        let mut session = VoiceSession::new(VoiceMode::PushToTalk);
+        session.start().unwrap();
+        assert!(session.permission_result(false).is_err());
+        assert_eq!(session.state, VoiceState::Failed);
+        assert_eq!(session.start(), Ok(VoiceEvent::RequestMicrophonePermission));
+        assert_eq!(session.state, VoiceState::AwaitingPermission);
+        assert!(session.last_error.is_none());
     }
 
     #[test]
