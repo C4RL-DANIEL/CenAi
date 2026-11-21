@@ -198,6 +198,25 @@ mod tests {
     }
 
     #[test]
+    fn due_automation_occurrence_is_persisted_before_it_is_dispatched() {
+        let root = std::env::temp_dir().join(format!("cenai-automation-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(&root, OWNER).unwrap();
+        let mut item = automation("quarter-hour", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        store.save_automation(item).unwrap();
+        let mut scheduler = AutomationScheduler::from_workspace(&store).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T09:15:30Z").unwrap().with_timezone(&Utc);
+        assert_eq!(scheduler.poll_due_and_persist(now, &store).unwrap().len(), 1);
+        let reloaded = AutomationScheduler::from_workspace(&store).unwrap();
+        assert!(reloaded.automations.values().all(|automation| automation.last_scheduled_at
+            == Some(DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp())));
+        let mut reloaded = reloaded;
+        assert!(reloaded.poll_due_and_persist(now, &store).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn automation_scheduler_isolates_accounts_and_supports_next_run_queries() {
         let mut scheduler = AutomationScheduler::default();
         scheduler.upsert(automation("daily", OWNER, "0 9 * * *")).unwrap();
