@@ -267,9 +267,9 @@ mod tests {
         unsafe_hosts.insert("localhost".into());
         assert!(job.validate(&commands, &unsafe_hosts).is_err());
         let mut job = request();
-        job.network_hosts = vec!["[::ffff:127.0.0.1]".into()];
+        job.network_hosts = vec!["::ffff:127.0.0.1".into()];
         let mut unsafe_hosts = hosts.clone();
-        unsafe_hosts.insert("[::ffff:127.0.0.1]".into());
+        unsafe_hosts.insert("::ffff:127.0.0.1".into());
         assert!(job.validate(&commands, &unsafe_hosts).is_err());
     }
 
