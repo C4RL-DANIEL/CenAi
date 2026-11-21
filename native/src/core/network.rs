@@ -7,7 +7,7 @@ use reqwest::{header, Client, StatusCode};
 use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 
-use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}};
+use crate::core::{config, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, workspace::WorkspaceStore};
 
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
@@ -106,6 +106,14 @@ pub trait SessionVault: Send + Sync {
     fn set_guardian_consent(&self, enabled: bool) -> Result<(), String>;
     fn user_setting(&self, key: &str) -> Result<String, String>;
     fn set_user_setting(&self, key: &str, value: &str) -> Result<(), String>;
+    /// Encrypts private workspace bytes with a device-held key and account/path binding.
+    fn encrypt_workspace_bytes(&self, _user_identity: &str, _relative_path: &str, _plaintext: &[u8]) -> Result<Vec<u8>, String> {
+        Err("This platform does not provide encrypted workspace storage".into())
+    }
+    /// Decrypts workspace bytes only for the matching authenticated account and relative path.
+    fn decrypt_workspace_bytes(&self, _user_identity: &str, _relative_path: &str, _ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+        Err("This platform does not provide encrypted workspace storage".into())
+    }
 }
 
 #[derive(Clone)]
@@ -147,6 +155,12 @@ impl CenAiApi {
     /// Returns the immutable account UUID received from Supabase, never an email-derived identity.
     pub fn account_id(&self) -> Result<String, String> {
         self.vault.account_id()
+    }
+
+    /// Creates an account-bound workspace whose files are encrypted by the platform vault.
+    pub fn workspace_store(&self, root: impl AsRef<std::path::Path>) -> Result<WorkspaceStore, String> {
+        let account_id = self.account_id()?;
+        WorkspaceStore::new_encrypted(root, &account_id, self.vault.clone())
     }
 
     pub fn has_session(&self) -> bool {
