@@ -10,7 +10,7 @@ CenAI Voice is CenAI's branded, cloud-hosted speech product. The Android app con
 - Upstream: https://github.com/QwenLM/Qwen3-TTS
 - Model licence: Apache-2.0. Keep the required upstream notices. CenAI owns its app integration, service, profile names, pronunciation policy and evaluation process; CenAI does not claim authorship of Qwen's architecture or pretrained weights.
 
-The fixed CenAI voice is created from a licensed voice-actor reference recording and its exact transcript. The reference is stored only on the private inference host. It is not bundled in the APK or sent by each Android user. A trained CenAI fine-tuned checkpoint is a later milestone; the current design uses Qwen Base voice-cloning conditioning, not a newly trained model.
+The initial CenAI Original voice is designed with Qwen VoiceDesign from an original, non-imitative voice description. The generated sample is saved once and reused as the Base model's fixed reference prompt, giving the profile a consistent speaker identity. Listen to and approve the generated reference before release. A licensed human voice-actor recording can replace it later. The reference remains private to the GPU host and is never bundled in the APK or sent by each Android user. A trained CenAI fine-tuned checkpoint is a later milestone; the current design uses Qwen Base voice-cloning conditioning, not a newly trained model.
 
 ## Cloud architecture
 
@@ -76,7 +76,7 @@ After the voice-actor dataset and written consent are secured, use Qwen's docume
 - [x] GPU FastAPI inference service with model caching, fixed voice-clone prompt, request validation and bounded concurrency.
 - [x] Android read-aloud wired to the cloud gateway; no local model download or Google TTS synthesis path.
 - [x] Removed the Qwen C++/GGML build from the APK workflow to keep the client small.
-- [ ] Provide and approve a licensed English voice-actor reference recording and transcript.
+- [ ] Generate, listen to and approve the original CenAI English reference voice (or replace it with a licensed voice-actor recording).
 - [ ] Provision the CUDA GPU host and persistent model cache.
 - [ ] Configure Cloudflare Worker secrets and rate limits.
 - [ ] Run end-to-end inference and audio playback tests on Android.
