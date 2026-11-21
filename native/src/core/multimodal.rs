@@ -98,6 +98,7 @@ impl AttachmentMetadata {
 }
 
 /// Account-scoped, atomic storage for validated attachment bytes.
+#[derive(Clone)]
 pub struct AttachmentStore {
     root: PathBuf,
     user_id: String,
