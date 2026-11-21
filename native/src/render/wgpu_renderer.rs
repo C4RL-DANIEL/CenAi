@@ -1486,7 +1486,8 @@ impl WgpuRenderer {
                 }
                 ChatEvent::SignedIn(_, result) => {
                     match result {
-                        Ok(email) => {
+                        Ok(outcome) => {
+                            let email = outcome.email;
                             let account_id = self.api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
                             if account_id.is_empty() {
                                 self.reset_user_scoped_state();
@@ -1498,13 +1499,32 @@ impl WgpuRenderer {
                                 self.reset_user_scoped_state();
                             }
                             self.active_user_id = account_id.clone();
-                            self.app_state.pending_mfa_refresh = true;
                             self.app_state.pending_ecosystem_refresh = true;
                             self.app_state.ecosystem_status = "Loading your account's app permissions…".into();
                             self.app_state.account_email = email.clone();
                             self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
-                            self.app_state.pending_mfa_refresh = true;
-                            self.app_state.mfa_status = "Checking account authenticator status…".into();
+                            self.app_state.mfa_factors.clear();
+                            self.app_state.mfa_login_required = false;
+                            self.app_state.mfa_enrollment_factor_id.clear();
+                            self.app_state.pending_mfa_refresh = false;
+                            match outcome.mfa_factors {
+                                Ok(factors) => {
+                                    self.app_state.mfa_factors = factors;
+                                    if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
+                                        self.app_state.mfa_login_required = true;
+                                        self.app_state.mfa_enrollment_factor_id = factor.id.clone();
+                                        self.app_state.mfa_status = "This account requires an authenticator code before CenAI can be used.".into();
+                                        self.app_state.destination = crate::ui::model::Destination::Settings;
+                                    } else {
+                                        self.app_state.mfa_status = "No verified authenticator challenge is required.".into();
+                                    }
+                                }
+                                Err(error) => {
+                                    self.app_state.mfa_login_required = true;
+                                    self.app_state.mfa_status = format!("Could not verify MFA status. Retry the check before using CenAI: {error}");
+                                    self.app_state.destination = crate::ui::model::Destination::Settings;
+                                }
+                            }
                             self.app_state.personal_memory_enabled = false;
                             self.app_state.personal_memory_status = "Loading your private memory preference…".into();
                             if let Some(service) = self.api.clone() {
