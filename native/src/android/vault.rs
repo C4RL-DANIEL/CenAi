@@ -28,14 +28,6 @@ fn valid_supabase_user_id(value: &str) -> bool {
         })
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct WorkspaceCipherEnvelope {
-    schema_version: u8,
-    user_identity: String,
-    relative_path: String,
-    bytes_base64: String,
-}
-
 fn valid_workspace_relative_path(value: &str) -> bool {
     !value.is_empty() && value.len() <= 256 && !value.starts_with('/')
         && !value.contains('\\') && !value.contains('\n') && !value.contains('\r')
@@ -243,17 +235,12 @@ impl SessionVault for AndroidSecretVault {
     fn account_id(&self) -> Result<String, String> { self.get_secret("supabase_account_id") }
 
     fn encrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
-        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path) || plaintext.len() > 32 * 1024 * 1024 {
-            return Err("Workspace encryption identity, path, or payload size is invalid".into());
+        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path) || plaintext.len() > 110 * 1024 * 1024 {
+            return Err("Account-file encryption identity, path, or payload size is invalid".into());
         }
-        let envelope = WorkspaceCipherEnvelope {
-            schema_version: 1,
-            user_identity: user_identity.to_owned(),
-            relative_path: relative_path.to_owned(),
-            bytes_base64: STANDARD_NO_PAD.encode(plaintext),
-        };
-        let serialized = serde_json::to_string(&envelope).map_err(|error| error.to_string())?;
-        let encrypted = self.encrypt(&serialized)?;
+        let mut envelope = format!("CENAI-ACCOUNT-FILE-V1\\n{user_identity}\\n{relative_path}\\n").into_bytes();
+        envelope.extend_from_slice(plaintext);
+        let encrypted = self.encrypt_bytes(&envelope)?;
         let mut output = WORKSPACE_CIPHER_MAGIC.to_vec();
         output.extend_from_slice(&encrypted);
         Ok(output)
@@ -261,16 +248,16 @@ impl SessionVault for AndroidSecretVault {
 
     fn decrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
         if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path)
-            || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC) || ciphertext.len() > 48 * 1024 * 1024 {
-            return Err("Encrypted workspace identity, path, or envelope is invalid".into());
+            || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC) || ciphertext.len() > 120 * 1024 * 1024 {
+            return Err("Encrypted account-file identity, path, or envelope is invalid".into());
         }
-        let serialized = self.decrypt(&ciphertext[WORKSPACE_CIPHER_MAGIC.len()..])?;
-        let envelope: WorkspaceCipherEnvelope = serde_json::from_str(&serialized).map_err(|_| "Encrypted workspace metadata is invalid".to_owned())?;
-        if envelope.schema_version != 1 || envelope.user_identity != user_identity || envelope.relative_path != relative_path {
-            return Err("Encrypted workspace belongs to a different account or storage path".into());
+        let envelope = self.decrypt_bytes(&ciphertext[WORKSPACE_CIPHER_MAGIC.len()..])?;
+        let prefix = format!("CENAI-ACCOUNT-FILE-V1\\n{user_identity}\\n{relative_path}\\n");
+        if !envelope.starts_with(prefix.as_bytes()) {
+            return Err("Encrypted file belongs to a different account or storage path".into());
         }
-        let plaintext = STANDARD_NO_PAD.decode(envelope.bytes_base64).map_err(|_| "Encrypted workspace payload encoding is invalid".to_owned())?;
-        if plaintext.len() > 32 * 1024 * 1024 { return Err("Encrypted workspace payload exceeds the storage limit".into()); }
+        let plaintext = envelope[prefix.len()..].to_vec();
+        if plaintext.len() > 110 * 1024 * 1024 { return Err("Encrypted account file exceeds the storage limit".into()); }
         Ok(plaintext)
     }
 
