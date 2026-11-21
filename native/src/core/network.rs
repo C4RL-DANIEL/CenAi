@@ -893,62 +893,6 @@ impl CenAiApi {
         Ok(answer)
     }
 
-    /// Generates speech audio from assistant text using the selected Gemini TTS voice.
-    pub async fn synthesize_speech_gemini(&self, text: &str) -> Result<Vec<u8>, String> {
-        if text.trim().is_empty() || text.len() > 12_000 {
-            return Err("Speech text must contain between 1 and 12,000 characters".into());
-        }
-        let api_key = self.vault.provider_key("gemini")?;
-        if api_key.trim().is_empty() {
-            return Err("Add a Google Gemini API key in Settings before using speech playback".into());
-        }
-        let payload = json!({
-            "contents": [{ "parts": [{ "text": text }] }],
-            "generationConfig": {
-                "responseModalities": ["AUDIO"],
-                "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": "Kore" } } }
-            }
-        });
-        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent")
-            .header("x-goog-api-key", api_key)
-            .json(&payload)
-            .send().await.map_err(|error| format!("Gemini speech request failed: {error}"))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(format!("Gemini speech synthesis returned HTTP {}", status.as_u16()));
-        }
-        let value: Value = response.json().await.map_err(|error| format!("Gemini speech response was invalid: {error}"))?;
-        let audio_part = value.pointer("/candidates/0/content/parts")
-            .and_then(Value::as_array).into_iter().flatten()
-            .find(|part| part.pointer("/inlineData/data").and_then(Value::as_str).is_some())
-            .ok_or("Gemini returned no synthesized audio")?;
-        let encoded = audio_part.pointer("/inlineData/data").and_then(Value::as_str)
-            .ok_or("Gemini returned no synthesized audio data")?;
-        let mime_type = audio_part.pointer("/inlineData/mimeType").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
-        let audio = base64::engine::general_purpose::STANDARD.decode(encoded)
-            .map_err(|_| "Gemini returned malformed speech audio")?;
-        if audio.len() > 24 * 1024 * 1024 {
-            return Err("Gemini speech audio exceeded the 24 MB safety limit".into());
-        }
-        if audio.starts_with(b"RIFF") && audio.get(8..12) == Some(b"WAVE") {
-            if audio.len() < 44 { return Err("Gemini returned a truncated WAV file".into()); }
-            return Ok(audio);
-        }
-        if mime_type.starts_with("audio/pcm") || mime_type.starts_with("audio/l16") {
-            let sample_rate = mime_type.split(';').find_map(|part| {
-                part.trim().strip_prefix("rate=")?.parse::<u32>().ok()
-            }).unwrap_or(24_000);
-            let mut pcm = audio;
-            // RFC 2586 audio/L16 is network-byte-order; Android PCM16 WAV is little-endian.
-            if mime_type.starts_with("audio/l16") {
-                if !pcm.len().is_multiple_of(2) { return Err("Gemini returned misaligned L16 audio".into()); }
-                for sample in pcm.as_chunks_mut::<2>().0 { sample.swap(0, 1); }
-            }
-            return pcm16_mono_to_wav(sample_rate, &pcm);
-        }
-        Err("Gemini returned an unsupported speech audio format".into())
-    }
-
     /// Transcribes a user-initiated WAV audio clip through Gemini's multimodal endpoint.
     /// The API key is sent in a header, never embedded in the URL or returned errors.
     pub async fn transcribe_audio_gemini(&self, wav_bytes: &[u8]) -> Result<String, String> {
