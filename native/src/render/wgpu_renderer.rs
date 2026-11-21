@@ -133,6 +133,7 @@ enum ChatEvent {
     BackupUploaded(u64, Result<(), String>),
     BackupDownloaded(u64, Result<Vec<u8>, String>),
     BackupRestored(u64, Result<(), String>),
+    AttachmentImported(u64, Result<AttachmentMetadata, String>),
     AttachmentAnalyzed(u64, String, Result<String, String>),
     MfaFactorsLoaded(u64, Result<Vec<crate::ui::model::MfaFactor>, String>),
     MfaEnrolled(u64, Result<(String, String, String), String>),
@@ -168,7 +169,9 @@ impl ChatEvent {
             | Self::MfaFactorsLoaded(generation, ..)
             | Self::MfaEnrolled(generation, ..)
             | Self::MfaVerified(generation, ..)
-            | Self::MfaRemoved(generation, ..) => *generation,
+            | Self::MfaRemoved(generation, ..)
+            | Self::AttachmentImported(generation, ..)
+            | Self::AttachmentAnalyzed(generation, ..) => *generation,
         }
     }
 }
@@ -418,6 +421,80 @@ impl WgpuRenderer {
             #[cfg(target_os = "android")]
             audio_playback: None,
         })
+    }
+
+    pub fn take_attachment_picker_request(&mut self) -> bool {
+        std::mem::take(&mut self.app_state.pending_attachment_picker)
+    }
+
+    pub fn take_backup_picker_request(&mut self) -> bool {
+        std::mem::take(&mut self.app_state.pending_backup_file_picker)
+    }
+
+    pub fn handle_attachment_import(&mut self, path: String, mime_type: String, display_name: String, error: String) {
+        if !error.is_empty() {
+            self.app_state.attachment_status = error;
+            return;
+        }
+        let Some(store) = self.attachment_store.clone() else {
+            self.app_state.attachment_status = "Sign in before adding private attachments.".into();
+            return;
+        };
+        let generation = self.account_generation;
+        let sender = self.response_tx.clone();
+        let attachment_id = format!("att-{}", new_session_id());
+        let task = self.runtime.spawn_blocking(move || {
+            let result = (|| -> Result<AttachmentMetadata, String> {
+                let bytes = std::fs::read(&path).map_err(|error| format!("Could not read selected attachment: {error}"))?;
+                let _ = std::fs::remove_file(&path);
+                let mime = normalize_attachment_mime(&mime_type, &display_name);
+                let kind = if mime.starts_with("image/") {
+                    AttachmentKind::Image
+                } else if mime.starts_with("audio/") {
+                    AttachmentKind::Audio
+                } else if mime.starts_with("video/") {
+                    AttachmentKind::Video
+                } else {
+                    AttachmentKind::Document
+                };
+                let safe_name = display_name.rsplit(['/', '\\']).next().unwrap_or("attachment")
+                    .chars().filter(|character| !character.is_control()).take(240).collect::<String>();
+                let metadata = AttachmentMetadata::from_bytes(attachment_id, safe_name, mime, kind, &bytes)?;
+                store.save(&metadata, &bytes)?;
+                Ok(metadata)
+            })();
+            let _ = sender.send(ChatEvent::AttachmentImported(generation, result));
+        });
+        self.track_task(task);
+        self.app_state.attachment_status = "Importing and validating attachment…".into();
+    }
+
+    pub fn handle_backup_file_import(&mut self, path: String, error: String) {
+        if !error.is_empty() {
+            self.app_state.backup_status = error;
+            return;
+        }
+        let Some(workspace) = self.workspace.clone() else {
+            self.app_state.backup_status = "Sign in before restoring a private workspace backup.".into();
+            return;
+        };
+        let passphrase = self.app_state.backup_passphrase_draft.clone();
+        if passphrase.trim().is_empty() {
+            self.app_state.backup_status = "Enter the backup passphrase before selecting the encrypted backup file.".into();
+            let _ = std::fs::remove_file(path);
+            return;
+        }
+        let generation = self.account_generation;
+        let sender = self.response_tx.clone();
+        let task = self.runtime.spawn_blocking(move || {
+            let result = std::fs::read(&path)
+                .map_err(|error| format!("Could not read backup file: {error}"))
+                .and_then(|bytes| workspace.restore_encrypted_backup(&bytes, &passphrase));
+            let _ = std::fs::remove_file(path);
+            let _ = sender.send(ChatEvent::BackupRestored(generation, result));
+        });
+        self.track_task(task);
+        self.app_state.backup_status = "Decrypting and validating local backup…".into();
     }
 
     fn dispatch_voice_chunk(&mut self, chunk: AudioChunk) {
