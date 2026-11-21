@@ -165,7 +165,7 @@ impl AndroidSecretVault {
             let ciphertext = env.byte_array_from_slice(&packed[12..])?;
             let ciphertext_object = JObject::from(ciphertext);
             let plain = env.call_method(&cipher, "doFinal", "([B)[B", &[JValue::Object(&ciphertext_object)])?.l()?;
-            env.convert_byte_array(JByteArray::from(plain)).map_err(|error| error.to_string())
+            env.convert_byte_array(JByteArray::from(plain))
         })
     }
 
