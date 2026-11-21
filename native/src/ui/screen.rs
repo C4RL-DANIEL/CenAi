@@ -822,6 +822,37 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Encrypted workspace backup", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Back up projects, tasks, automations, conversations and files. The backup is encrypted on this device before upload; CenAI storage only receives the encrypted envelope.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.backup_passphrase_draft).password(true)
+            .hint_text("Backup passphrase (at least 12 characters)").desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Upload encrypted backup")).clicked() {
+                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                    state.backup_status = "Use a backup passphrase of at least 12 bytes.".into();
+                } else {
+                    state.pending_backup_upload = true;
+                    state.backup_status = "Encrypting your workspace before upload…".into();
+                }
+            }
+            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from cloud")).clicked() {
+                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                    state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
+                } else if !state.backup_restore_confirmed {
+                    state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
+                } else {
+                    state.pending_backup_download = true;
+                    state.backup_status = "Downloading encrypted backup…".into();
+                }
+            }
+        });
+        ui.checkbox(&mut state.backup_restore_confirmed, "I understand restore replaces this account's current local workspace");
+        if !state.backup_status.is_empty() {
+            ui.label(text(&state.backup_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Privacy & security", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Per-user isolation, encrypted credentials and explicit approvals are part of the runtime design.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
     });
