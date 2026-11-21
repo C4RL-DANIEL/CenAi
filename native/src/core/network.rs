@@ -13,6 +13,8 @@ pub trait SessionVault: Send + Sync {
     fn account_email(&self) -> Result<String, String>;
     fn save_session(&self, access: &str, refresh: &str, email: &str) -> Result<(), String>;
     fn clear_session(&self) -> Result<(), String>;
+    fn provider_key(&self, provider: &str) -> Result<String, String>;
+    fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String>;
 }
 
 #[derive(Clone)]
@@ -163,6 +165,14 @@ impl CenAiApi {
             }
         }
         Ok(answer)
+    }
+
+    pub fn provider_key(&self, provider: &str) -> Result<String, String> {
+        self.vault.provider_key(provider)
+    }
+
+    pub fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
+        self.vault.save_provider_key(provider, key)
     }
 
     pub async fn cloud_chat(&self, payload: &Value) -> Result<Value, String> {
