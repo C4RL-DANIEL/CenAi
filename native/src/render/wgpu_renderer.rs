@@ -645,6 +645,13 @@ impl WgpuRenderer {
 
     fn reset_user_scoped_state(&mut self) {
         for task in self.background_tasks.drain(..) { task.abort(); }
+        #[cfg(target_os = "android")]
+        if let Some(capture) = self.audio_capture.as_mut() { capture.stop(); }
+        if let Some(mut pipeline) = self.voice_pipeline.take() { let _ = pipeline.stop(); }
+        self.app_state.voice_active = false;
+        self.app_state.pending_voice_start = false;
+        self.app_state.pending_voice_stop = false;
+        self.app_state.voice_status.clear();
         self.workspace = None;
         self.app_state.conversation.restore_messages(Vec::new());
         self.app_state.projects.clear();
