@@ -35,6 +35,7 @@ impl DiagnosticEvent {
 #[derive(Default)]
 pub struct GuardianMonitor {
     telemetry_consent: bool,
+    local_events: std::collections::VecDeque<DiagnosticEvent>,
     pending: std::collections::VecDeque<DiagnosticEvent>,
     last_seen: std::collections::HashMap<String, u64>,
 }
@@ -42,6 +43,10 @@ pub struct GuardianMonitor {
 impl GuardianMonitor {
     pub fn set_telemetry_consent(&mut self, enabled: bool) {
         self.telemetry_consent = enabled;
+        if !enabled {
+            // Revoking consent immediately discards anything waiting for cloud upload.
+            self.pending.clear();
+        }
     }
 
     pub fn record(&mut self, event: DiagnosticEvent) -> bool {
@@ -50,11 +55,22 @@ impl GuardianMonitor {
             return false;
         }
         self.last_seen.insert(key, event.occurred_at_unix_ms);
-        if self.pending.len() == 64 {
-            self.pending.pop_front();
+        if self.local_events.len() == 64 {
+            self.local_events.pop_front();
         }
-        self.pending.push_back(event);
+        self.local_events.push_back(event.clone());
+        // Events created before consent are never uploaded retroactively.
+        if self.telemetry_consent {
+            if self.pending.len() == 64 {
+                self.pending.pop_front();
+            }
+            self.pending.push_back(event);
+        }
         true
+    }
+
+    pub fn local_batch(&self, limit: usize) -> Vec<DiagnosticEvent> {
+        self.local_events.iter().rev().take(limit.min(64)).cloned().collect()
     }
 
     pub fn pending_batch(&self, limit: usize) -> Vec<DiagnosticEvent> {
@@ -83,10 +99,16 @@ mod tests {
         let event = DiagnosticEvent::sanitized(DiagnosticKind::Network, "chat", "timeout", 100_000);
         assert!(monitor.record(event.clone()));
         assert!(!monitor.record(event.clone()));
+        assert_eq!(monitor.local_batch(8).len(), 1);
         assert!(monitor.pending_batch(8).is_empty());
         monitor.set_telemetry_consent(true);
+        // Opting in later must not retroactively upload pre-consent diagnostics.
+        assert!(monitor.pending_batch(8).is_empty());
+        let next = DiagnosticEvent::sanitized(DiagnosticKind::Network, "chat", "offline", 200_000);
+        assert!(monitor.record(next));
         assert_eq!(monitor.pending_batch(8).len(), 1);
-        monitor.acknowledge_uploaded(1);
+        monitor.set_telemetry_consent(false);
+        assert!(monitor.pending_batch(8).is_empty());
         assert_eq!(monitor.pending_count(), 0);
     }
 
