@@ -1,6 +1,9 @@
 //! Android NativeActivity entrypoint. All application UI and rendering live in Rust.
 use std::sync::Arc;
 
+mod vault;
+use vault::AndroidSecretVault;
+
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
