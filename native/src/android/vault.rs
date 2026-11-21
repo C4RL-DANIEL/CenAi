@@ -10,8 +10,7 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
 use jni::{
-    objects::{JByteArray, JObject, JString, JValue},
-    sys::jobject,
+    objects::{JByteArray, JObject, JValue},
     JNIEnv, JavaVM,
 };
 use winit::platform::android::activity::AndroidApp;
@@ -33,7 +32,7 @@ impl AndroidSecretVault {
     }
 
     fn with_env<T>(&self, operation: impl FnOnce(&mut JNIEnv<'_>) -> jni::errors::Result<T>) -> Result<T, String> {
-        let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr()) }.map_err(|error| error.to_string())?;
+        let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
         let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
         operation(&mut env).map_err(|error| error.to_string())
     }
