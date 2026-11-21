@@ -27,6 +27,15 @@ pub struct ContextRequest {
     grants: ContextGrants,
 }
 
+fn valid_user_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
 impl ContextRequest {
     pub fn new(user_id: impl Into<String>, feature_id: impl Into<String>, session_id: impl Into<String>) -> Self {
         Self { user_id: user_id.into(), feature_id: feature_id.into(), session_id: session_id.into(), grants: ContextGrants::default() }
@@ -50,11 +59,14 @@ pub struct ContextRecord {
 
 impl ContextRequest {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.user_id.trim().is_empty() || self.feature_id.trim().is_empty() || self.session_id.trim().is_empty() {
-            return Err("Verified user, feature and session scopes are required");
+        if !valid_user_uuid(&self.user_id) || self.feature_id.trim().is_empty() || self.session_id.trim().is_empty() {
+            return Err("A verified Supabase user UUID, feature and session scope are required");
         }
-        if self.user_id.len() > 256 || self.feature_id.len() > 128 || self.session_id.len() > 128 {
-            return Err("Context scope exceeds the supported size");
+        if self.feature_id.len() > 128 || self.session_id.len() > 128
+            || !self.feature_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            || !self.session_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+        {
+            return Err("Context feature or session scope is invalid");
         }
         Ok(())
     }
@@ -62,13 +74,22 @@ impl ContextRequest {
 
 impl ContextRecord {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.owner_user_id.trim().is_empty() || self.feature_id.trim().is_empty() || self.content.trim().is_empty() {
-            return Err("Context owner, feature and content are required");
+        if !valid_user_uuid(&self.owner_user_id) || self.feature_id.trim().is_empty() || self.content.trim().is_empty() {
+            return Err("Context owner UUID, feature and content are required");
         }
-        if self.content.len() > 100_000 {
-            return Err("Context record exceeds the supported size");
+        if self.feature_id.len() > 128 || self.content.len() > 100_000
+            || !self.feature_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+        {
+            return Err("Context record exceeds supported scope or content limits");
         }
-        if self.kind == ContextKind::SessionState && self.session_id.as_deref().unwrap_or_default().is_empty() {
+        if let Some(session_id) = &self.session_id {
+            if session_id.is_empty() || session_id.len() > 128
+                || !session_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+            {
+                return Err("Context session identifier is invalid");
+            }
+        }
+        if self.kind == ContextKind::SessionState && self.session_id.is_none() {
             return Err("Session state must carry its exact session identifier");
         }
         Ok(())
@@ -114,7 +135,7 @@ mod tests {
     use super::*;
 
     fn request() -> ContextRequest {
-        ContextRequest::new("user-a", "research", "session-1")
+        ContextRequest::new("550e8400-e29b-41d4-a716-446655440000", "research", "session-1")
     }
 
     fn record(owner: &str, feature: &str, session: Option<&str>, kind: ContextKind, content: &str) -> ContextRecord {
@@ -130,15 +151,15 @@ mod tests {
     #[test]
     fn shared_brain_never_reads_another_users_context() {
         let records = vec![
-            record("user-a", "research", None, ContextKind::FeatureData, "A private note"),
-            record("user-b", "research", None, ContextKind::FeatureData, "B private note"),
+            record("550e8400-e29b-41d4-a716-446655440000", "research", None, ContextKind::FeatureData, "A private note"),
+            record("650e8400-e29b-41d4-a716-446655440000", "research", None, ContextKind::FeatureData, "B private note"),
         ];
         assert_eq!(collect_authorized_context(&request(), &records).unwrap(), vec!["A private note"]);
     }
 
     #[test]
     fn feature_context_requires_explicit_cross_feature_grant() {
-        let records = vec![record("user-a", "coding", None, ContextKind::FeatureData, "Code workspace")];
+        let records = vec![record("550e8400-e29b-41d4-a716-446655440000", "coding", None, ContextKind::FeatureData, "Code workspace")];
         assert!(collect_authorized_context(&request(), &records).unwrap().is_empty());
         let mut granted = request();
         granted.apply_user_approved_grants(true, false);
@@ -148,16 +169,16 @@ mod tests {
     #[test]
     fn session_state_never_crosses_sessions_or_features() {
         let records = vec![
-            record("user-a", "research", Some("session-1"), ContextKind::SessionState, "Current task"),
-            record("user-a", "research", Some("session-2"), ContextKind::SessionState, "Other session"),
-            record("user-a", "coding", Some("session-1"), ContextKind::SessionState, "Other feature"),
+            record("550e8400-e29b-41d4-a716-446655440000", "research", Some("session-1"), ContextKind::SessionState, "Current task"),
+            record("550e8400-e29b-41d4-a716-446655440000", "research", Some("session-2"), ContextKind::SessionState, "Other session"),
+            record("550e8400-e29b-41d4-a716-446655440000", "coding", Some("session-1"), ContextKind::SessionState, "Other feature"),
         ];
         assert_eq!(collect_authorized_context(&request(), &records).unwrap(), vec!["Current task"]);
     }
 
     #[test]
     fn personal_memory_requires_explicit_request_permission() {
-        let records = vec![record("user-a", "memory", None, ContextKind::PersonalMemory, "Saved preference")];
+        let records = vec![record("550e8400-e29b-41d4-a716-446655440000", "memory", None, ContextKind::PersonalMemory, "Saved preference")];
         assert!(collect_authorized_context(&request(), &records).unwrap().is_empty());
         let mut enabled = request();
         enabled.apply_user_approved_grants(false, true);
@@ -167,15 +188,15 @@ mod tests {
     #[test]
     fn malformed_foreign_records_cannot_block_or_influence_another_user() {
         let records = vec![
-            record("user-b", "", None, ContextKind::SessionState, "Foreign malformed content"),
-            record("user-a", "research", None, ContextKind::FeatureData, "Visible note"),
+            record("650e8400-e29b-41d4-a716-446655440000", "", None, ContextKind::SessionState, "Foreign malformed content"),
+            record("550e8400-e29b-41d4-a716-446655440000", "research", None, ContextKind::FeatureData, "Visible note"),
         ];
         assert_eq!(collect_authorized_context(&request(), &records).unwrap(), vec!["Visible note"]);
     }
 
     #[test]
     fn malformed_session_records_are_rejected() {
-        let records = vec![record("user-a", "research", None, ContextKind::SessionState, "No session id")];
+        let records = vec![record("550e8400-e29b-41d4-a716-446655440000", "research", None, ContextKind::SessionState, "No session id")];
         assert!(collect_authorized_context(&request(), &records).is_err());
     }
 }
