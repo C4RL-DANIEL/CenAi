@@ -268,6 +268,8 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             ui.horizontal(|ui| {
                 ui.label(text(if state.artifact_preview_name.is_empty() { "Artifact preview" } else { &state.artifact_preview_name }, 15.0, egui::Color32::WHITE).strong());
                 if ui.small_button("Close").clicked() {
+                    state.artifact_preview_id.clear();
+                    state.artifact_preview_project_id.clear();
                     state.artifact_preview_name.clear();
                     state.artifact_preview_content.clear();
                     state.artifact_preview_status.clear();
@@ -278,8 +280,20 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             }
             if !state.artifact_preview_content.is_empty() {
                 egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
-                    ui.add(egui::Label::new(text(&state.artifact_preview_content, 11.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                    ui.add(egui::TextEdit::multiline(&mut state.artifact_preview_content)
+                        .desired_rows(10)
+                        .desired_width(f32::INFINITY)
+                        .font(egui::TextStyle::Monospace));
                 });
+            }
+            if !state.artifact_preview_id.is_empty() && ui.button("Save changes to this artifact").clicked() {
+                state.pending_artifact = Some((
+                    state.artifact_preview_project_id.clone(),
+                    state.artifact_preview_id.clone(),
+                    state.artifact_preview_name.clone(),
+                    state.artifact_preview_content.clone(),
+                ));
+                state.artifact_status = "Saving artifact changes…".into();
             }
         });
     }
