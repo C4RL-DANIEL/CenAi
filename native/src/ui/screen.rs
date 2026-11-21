@@ -195,7 +195,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read aloud · CenAI Voice")).clicked() {
+                if ui.add_enabled(false, egui::Button::new("CenAI Voice · Runtime in development")).clicked() {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
@@ -774,6 +774,18 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 fn settings(ui: &mut egui::Ui, state: &mut AppState) {
+    surface(ui, |ui| {
+        ui.label(text("CenAI Voice", 18.0, egui::Color32::WHITE).strong());
+        ui.label(text("Powered by the Qwen3-TTS open model family · CenAI's own voice identity and controls.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Primary profile: CenAI Original English · en-US", 11.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Model foundation: Qwen3-TTS 12Hz · 0.6B Base (fine-tuning source)", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Language catalogue: 10 upstream languages; English quality is the first release gate.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text("Offline Android inference: not integrated yet. Google TTS and cloud speech fallback are disabled.", 10.0, egui::Color32::from_rgb(230, 190, 125)));
+        if ui.small_button("View CenAI Voice implementation plan").clicked() {
+            state.pending_open_url = Some("https://github.com/C4RL-DANIEL/CenAi/blob/rewrite/rust-native-core/docs/CENAI-VOICE.md".into());
+        }
+    });
+    ui.add_space(8.0);
     if state.mfa_login_required {
         surface(ui, |ui| {
             ui.label(text("Secure sign-in", 19.0, egui::Color32::WHITE).strong());
