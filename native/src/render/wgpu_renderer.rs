@@ -105,6 +105,9 @@ enum ChatEvent {
     EcosystemUpdated(u64, String, Result<Vec<EcosystemAppItem>, String>),
     VoiceTranscribed(u64, Result<String, String>),
     SpeechSynthesized(u64, Result<Vec<u8>, String>),
+    BackupUploaded(u64, Result<(), String>),
+    BackupDownloaded(u64, Result<Vec<u8>, String>),
+    BackupRestored(u64, Result<(), String>),
 }
 
 impl ChatEvent {
@@ -128,7 +131,10 @@ impl ChatEvent {
             | Self::MemoryCleared(generation, ..)
             | Self::EcosystemUpdated(generation, ..)
             | Self::VoiceTranscribed(generation, ..)
-            | Self::SpeechSynthesized(generation, ..) => *generation,
+            | Self::SpeechSynthesized(generation, ..)
+            | Self::BackupUploaded(generation, ..)
+            | Self::BackupDownloaded(generation, ..)
+            | Self::BackupRestored(generation, ..) => *generation,
         }
     }
 }
@@ -693,6 +699,11 @@ impl WgpuRenderer {
         self.app_state.pending_speech_stop = false;
         self.app_state.speech_cancelled = false;
         self.app_state.speech_status.clear();
+        self.app_state.backup_passphrase_draft.clear();
+        self.app_state.backup_restore_confirmed = false;
+        self.app_state.pending_backup_upload = false;
+        self.app_state.pending_backup_download = false;
+        self.app_state.backup_status.clear();
         self.app_state.voice_active = false;
         self.app_state.pending_voice_start = false;
         self.app_state.pending_voice_stop = false;
@@ -966,6 +977,41 @@ impl WgpuRenderer {
                     let _ = api.telemetry(serde_json::json!({ "action": "consent", "usageAnalytics": false, "guardian": enabled })).await;
                 });
                 self.track_task(task);
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_backup_upload) {
+            let passphrase = self.app_state.backup_passphrase_draft.clone();
+            if passphrase.as_bytes().len() < 12 {
+                self.app_state.backup_status = "Backup passphrase must be at least 12 bytes.".into();
+            } else if let (Some(api), Some(workspace)) = (self.api.clone(), self.workspace.clone()) {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result: Result<(), String> = async {
+                        let encrypted = tokio::task::spawn_blocking(move || workspace.export_encrypted_backup(&passphrase))
+                            .await.map_err(|error| format!("Backup encryption task failed: {error}"))??;
+                        api.upload_encrypted_backup(encrypted).await
+                    }.await;
+                    let _ = sender.send(ChatEvent::BackupUploaded(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.backup_status = "Sign in and open your workspace before creating a backup.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_backup_download) {
+            if self.app_state.backup_passphrase_draft.as_bytes().len() < 12 || !self.app_state.backup_restore_confirmed {
+                self.app_state.backup_status = "Enter the backup passphrase and confirm the restore operation.".into();
+            } else if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.download_encrypted_backup().await;
+                    let _ = sender.send(ChatEvent::BackupDownloaded(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.backup_status = "Sign in before downloading a backup.".into();
             }
         }
         if self.app_state.pending_ecosystem_refresh {
@@ -1437,6 +1483,49 @@ impl WgpuRenderer {
                             { let _ = wav; self.app_state.speech_status = "Speech playback is available in the Android app.".into(); }
                         }
                         Err(error) => self.app_state.speech_status = format!("Speech synthesis failed: {error}"),
+                    }
+                }
+                ChatEvent::BackupUploaded(_, result) => {
+                    self.app_state.backup_status = match result {
+                        Ok(()) => "Encrypted workspace backup uploaded successfully.".into(),
+                        Err(error) => format!("Backup upload failed: {error}"),
+                    };
+                }
+                ChatEvent::BackupDownloaded(_, result) => {
+                    match result {
+                        Ok(envelope) => {
+                            if !self.app_state.backup_restore_confirmed {
+                                self.app_state.backup_status = "Restore cancelled because confirmation was removed.".into();
+                            } else if let Some(workspace) = self.workspace.clone() {
+                                let passphrase = self.app_state.backup_passphrase_draft.clone();
+                                let sender = self.response_tx.clone();
+                                let generation = self.account_generation;
+                                self.app_state.backup_status = "Decrypting and validating backup before restore…".into();
+                                let task = self.runtime.spawn(async move {
+                                    let result = tokio::task::spawn_blocking(move || workspace.restore_encrypted_backup(&envelope, &passphrase))
+                                        .await.map_err(|error| format!("Backup restore task failed: {error}"))
+                                        .and_then(|result| result);
+                                    let _ = sender.send(ChatEvent::BackupRestored(generation, result));
+                                });
+                                self.track_task(task);
+                            } else {
+                                self.app_state.backup_status = "Workspace is unavailable; backup was not restored.".into();
+                            }
+                        }
+                        Err(error) => self.app_state.backup_status = format!("Backup download failed: {error}"),
+                    }
+                }
+                ChatEvent::BackupRestored(_, result) => {
+                    self.app_state.backup_restore_confirmed = false;
+                    match result {
+                        Ok(()) => {
+                            if let Some(workspace) = self.workspace.as_ref() {
+                                self.app_state.projects = workspace.projects(false).unwrap_or_default();
+                                self.app_state.task_plans = workspace.task_plans().unwrap_or_default();
+                            }
+                            self.app_state.backup_status = "Workspace restored from the encrypted backup.".into();
+                        }
+                        Err(error) => self.app_state.backup_status = format!("Backup restore failed: {error}"),
                     }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
