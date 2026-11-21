@@ -3,7 +3,7 @@ use std::sync::Arc;
 use jni::{objects::{JObject, JValue}, JavaVM};
 
 mod vault;
-pub pub(crate) mod audio;
+pub(crate) mod audio;
 use vault::AndroidSecretVault;
 use crate::core::{guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
 
