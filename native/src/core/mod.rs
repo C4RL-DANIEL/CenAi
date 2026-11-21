@@ -14,3 +14,4 @@ pub mod brain;
 pub mod sandbox;
 pub mod voice;
 pub mod multimodal;
+pub mod qwen_voice;
