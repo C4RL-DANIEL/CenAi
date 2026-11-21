@@ -195,7 +195,9 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read aloud · CenAI Voice")).clicked() {
+                let voice_ready = state.voice_service_status.starts_with("Ready ·")
+                    || state.voice_service_status.starts_with("Connected ·");
+                if ui.add_enabled(!state.account_email.is_empty() && voice_ready, egui::Button::new("Read aloud · CenAI Voice")).clicked() {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
