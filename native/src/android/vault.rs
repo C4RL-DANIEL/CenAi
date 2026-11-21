@@ -278,6 +278,22 @@ impl SessionVault for AndroidSecretVault {
         self.put_secret(&name, if enabled { "true" } else { "false" })
     }
 
+    fn user_setting(&self, key: &str) -> Result<String, String> {
+        if !matches!(key, "light_mode" | "reduced_motion") {
+            return Err("Unsupported account preference".into());
+        }
+        let name = self.scoped_secret_name("settings", key)?;
+        self.get_secret(&name)
+    }
+
+    fn set_user_setting(&self, key: &str, value: &str) -> Result<(), String> {
+        if !matches!(key, "light_mode" | "reduced_motion") || !matches!(value, "true" | "false") {
+            return Err("Unsupported account preference value".into());
+        }
+        let name = self.scoped_secret_name("settings", key)?;
+        self.put_secret(&name, value)
+    }
+
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
         if provider.len() > 32 || !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
             return Err("Provider identifier is invalid".into());
