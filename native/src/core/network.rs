@@ -36,6 +36,7 @@ pub trait SessionVault: Send + Sync {
 #[derive(Clone)]
 pub struct CenAiApi {
     client: Client,
+    provider_client: Client,
     vault: Arc<dyn SessionVault>,
     session_lock: Arc<tokio::sync::Mutex<()>>,
 }
@@ -47,7 +48,14 @@ impl CenAiApi {
             .timeout(std::time::Duration::from_secs(config::REQUEST_TIMEOUT_SECONDS))
             .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        Ok(Self { client, vault, session_lock: Arc::new(tokio::sync::Mutex::new(())) })
+        // Never forward provider credentials through redirects to another origin.
+        let provider_client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(config::STREAM_TIMEOUT_SECONDS))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent(concat!("CenAI/", env!("CARGO_PKG_VERSION")))
+            .build()?;
+        Ok(Self { client, provider_client, vault, session_lock: Arc::new(tokio::sync::Mutex::new(())) })
     }
 
     pub fn session_email(&self) -> Result<String, String> {
@@ -492,7 +500,7 @@ impl CenAiApi {
             "stream": true
         });
         if !system.is_empty() { payload["system"] = Value::String(system); }
-        let response = self.client.post("https://api.anthropic.com/v1/messages")
+        let response = self.provider_client.post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header(header::ACCEPT, "text/event-stream")
@@ -554,7 +562,7 @@ impl CenAiApi {
             payload["systemInstruction"] = json!({ "parts": [{ "text": system_parts.join("\n\n") }] });
         }
         let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse", request.model);
-        let response = self.client.post(url)
+        let response = self.provider_client.post(url)
             .header("x-goog-api-key", api_key)
             .header(header::ACCEPT, "text/event-stream")
             .json(&payload)
