@@ -303,6 +303,29 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("CenAI account", 16.0, egui::Color32::WHITE).strong());
+        if state.account_email.is_empty() {
+            ui.label(text("Sign in with an existing CenAI account. New accounts are provisioned through the authorized CenAI Discord process; registration is not available in this app.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.add(egui::TextEdit::singleline(&mut state.auth_email_draft).hint_text("Account email").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(&mut state.auth_password_draft).password(true).hint_text("Password").desired_width(f32::INFINITY));
+            if ui.button("Sign in securely").clicked() {
+                state.pending_sign_in = Some((state.auth_email_draft.trim().to_owned(), state.auth_password_draft.clone()));
+                state.auth_password_draft.clear();
+                state.auth_status = "Signing in…".into();
+            }
+        } else {
+            ui.label(text(format!("Signed in as {}", state.account_email), 12.0, egui::Color32::from_rgb(119, 220, 183)));
+            if ui.button("Sign out").clicked() {
+                state.pending_sign_out = true;
+                state.auth_status = "Signing out…".into();
+            }
+        }
+        if !state.auth_status.is_empty() {
+            ui.label(text(&state.auth_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Privacy & security", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Per-user isolation, encrypted credentials and explicit approvals are part of the runtime design.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
     });
