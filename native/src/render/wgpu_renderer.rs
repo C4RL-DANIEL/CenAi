@@ -511,6 +511,8 @@ impl WgpuRenderer {
         self.app_state.pending_project_create = None;
         self.app_state.pending_artifact = None;
         self.app_state.pending_artifact_open = None;
+        self.app_state.pending_artifact_delete = None;
+        self.app_state.confirm_artifact_delete = None;
         self.app_state.artifact_preview_id.clear();
         self.app_state.artifact_preview_project_id.clear();
         self.app_state.artifact_preview_name.clear();
@@ -898,6 +900,27 @@ impl WgpuRenderer {
                 }
             } else {
                 self.app_state.artifact_preview_status = "Sign in to open your private workspace artifacts.".into();
+            }
+        }
+        if let Some(artifact_id) = self.app_state.pending_artifact_delete.take() {
+            if let Some(store) = &self.workspace {
+                self.app_state.artifact_status = match store.delete_artifact(&artifact_id) {
+                    Ok(true) => {
+                        self.app_state.projects = store.projects(false).unwrap_or_default();
+                        if self.app_state.artifact_preview_id == artifact_id {
+                            self.app_state.artifact_preview_id.clear();
+                            self.app_state.artifact_preview_project_id.clear();
+                            self.app_state.artifact_preview_name.clear();
+                            self.app_state.artifact_preview_content.clear();
+                            self.app_state.artifact_preview_status.clear();
+                        }
+                        "Artifact permanently deleted from your private workspace.".into()
+                    }
+                    Ok(false) => "Artifact was already removed from this workspace.".into(),
+                    Err(error) => format!("Could not delete artifact: {error}"),
+                };
+            } else {
+                self.app_state.artifact_status = "Sign in to delete private workspace artifacts.".into();
             }
         }
         if let Some((name, description)) = self.app_state.pending_project_create.take() {
