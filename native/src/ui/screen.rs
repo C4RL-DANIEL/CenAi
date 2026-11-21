@@ -134,15 +134,41 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     });
 }
 
-fn work(ui: &mut egui::Ui) {
+fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Your Work", 26.0, egui::Color32::WHITE).strong());
     ui.label(text("Projects, files and tasks in one persistent space.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
     ui.add_space(18.0);
     surface(ui, |ui| {
-        ui.label(text("Projects", 17.0, egui::Color32::WHITE).strong());
-        ui.label(text("Your projects will appear here as you create and save work.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Create a project", 17.0, egui::Color32::WHITE).strong());
+        ui.add(egui::TextEdit::singleline(&mut state.project_name_draft).hint_text("Project name").desired_width(f32::INFINITY));
+        ui.add(egui::TextEdit::multiline(&mut state.project_description_draft).hint_text("What are you working on?").desired_width(f32::INFINITY).desired_rows(2));
+        if ui.button("Create project").clicked() {
+            state.pending_project_create = Some((state.project_name_draft.trim().to_owned(), state.project_description_draft.trim().to_owned()));
+            state.project_status = "Saving project…".into();
+        }
+        if !state.project_status.is_empty() {
+            ui.label(text(&state.project_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
     });
+    ui.add_space(10.0);
+    if state.projects.is_empty() {
+        surface(ui, |ui| {
+            ui.label(text("Projects", 17.0, egui::Color32::WHITE).strong());
+            ui.label(text("Your saved projects will appear here.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
+        });
+    } else {
+        for project in &state.projects {
+            surface(ui, |ui| {
+                ui.label(text(&project.name, 16.0, egui::Color32::WHITE).strong());
+                if !project.description.is_empty() {
+                    ui.label(text(&project.description, 12.0, egui::Color32::from_rgb(163, 174, 203)));
+                }
+                ui.label(text(format!("{} saved artifacts", project.artifacts.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+            });
+            ui.add_space(8.0);
+        }
+    }
     ui.add_space(10.0);
     surface(ui, |ui| {
         ui.label(text("Recent activity", 17.0, egui::Color32::WHITE).strong());
@@ -253,7 +279,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 match state.destination {
                     Destination::Conversation => conversation(ui, state),
-                    Destination::YourWork => work(ui),
+                    Destination::YourWork => work(ui, state),
                     Destination::Connections => connections(ui),
                     Destination::Settings => settings(ui, state),
                 }
