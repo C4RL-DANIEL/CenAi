@@ -241,6 +241,12 @@ impl CenAiApi {
         Ok(data)
     }
 
+    async fn personal_memory_action(&self, action: &str, mut payload: Value) -> Result<Value, String> {
+        let object = payload.as_object_mut().ok_or("Request payload must be an object")?;
+        object.insert("action".into(), Value::String(action.to_owned()));
+        self.post_authenticated(config::PERSONAL_MEMORY_URL, &payload).await
+    }
+
     pub async fn control_plane(&self, action: &str, mut payload: Value) -> Result<Value, String> {
         let object = payload.as_object_mut().ok_or("Request payload must be an object")?;
         object.insert("action".into(), Value::String(action.to_owned()));
@@ -324,16 +330,16 @@ impl CenAiApi {
 
     /// Reads only this authenticated account's saved memories. The server enforces owner scoping.
     pub async fn personal_memories(&self) -> Result<Vec<Value>, String> {
-        let status = self.control_plane("memory_status", json!({})).await?;
+        let status = self.personal_memory_action("memory_status", json!({})).await?;
         if status.get("enabled").and_then(Value::as_bool) != Some(true) {
             return Ok(Vec::new());
         }
-        let data = self.control_plane("memory_list", json!({})).await?;
+        let data = self.personal_memory_action("memory_list", json!({})).await?;
         Ok(data.get("memories").and_then(Value::as_array).cloned().unwrap_or_default())
     }
 
     pub async fn set_personal_memory_enabled(&self, enabled: bool) -> Result<(), String> {
-        let data = self.control_plane("memory_set_enabled", json!({ "enabled": enabled })).await?;
+        let data = self.personal_memory_action("memory_set_enabled", json!({ "enabled": enabled })).await?;
         if data.get("enabled").and_then(Value::as_bool) != Some(enabled) {
             return Err("The server did not confirm the personal-memory setting.".into());
         }
@@ -346,7 +352,7 @@ impl CenAiApi {
             || content.trim().is_empty() || content.len() > 8000 {
             return Err("Personal memory category, source or content is invalid.".into());
         }
-        let data = self.control_plane("memory_save", json!({
+        let data = self.personal_memory_action("memory_save", json!({
             "category": category, "content": content.trim(), "source": source
         })).await?;
         data.get("memory").cloned().ok_or_else(|| "The memory service returned no saved record.".into())
@@ -356,7 +362,7 @@ impl CenAiApi {
         if !valid_supabase_user_id(memory_id) {
             return Err("Invalid personal-memory identifier.".into());
         }
-        let data = self.control_plane("memory_delete", json!({ "memoryId": memory_id })).await?;
+        let data = self.personal_memory_action("memory_delete", json!({ "memoryId": memory_id })).await?;
         if data.get("deleted").and_then(Value::as_bool) != Some(true) {
             return Err("The memory service did not confirm deletion.".into());
         }
