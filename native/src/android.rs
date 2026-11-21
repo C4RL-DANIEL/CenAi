@@ -1,5 +1,6 @@
 //! Android NativeActivity entrypoint. All application UI and rendering live in Rust.
 use std::sync::Arc;
+use jni::{objects::{JObject, JValue}, JavaVM};
 
 mod vault;
 use vault::AndroidSecretVault;
@@ -20,14 +21,35 @@ struct CenAiApplication {
     runtime: tokio::runtime::Handle,
     workspace: Option<WorkspaceStore>,
     workspace_root: std::path::PathBuf,
+    android_app: AndroidApp,
     window: Option<Arc<Window>>,
     renderer: Option<WgpuRenderer>,
     last_size: winit::dpi::PhysicalSize<u32>,
 }
 
 impl CenAiApplication {
-    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle, workspace: Option<WorkspaceStore>, workspace_root: std::path::PathBuf) -> Self {
-        Self { api, runtime, workspace, workspace_root, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
+    fn new(api: Option<CenAiApi>, runtime: tokio::runtime::Handle, workspace: Option<WorkspaceStore>, workspace_root: std::path::PathBuf, android_app: AndroidApp) -> Self {
+        Self { api, runtime, workspace, workspace_root, android_app, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
+    }
+
+    fn open_external_url(&self, url: String) {
+        if !url.starts_with("https://checkout.stripe.com/") { log::warn!("Blocked external checkout URL outside the Stripe allowlist"); return; }
+        let app = self.android_app.clone();
+        self.android_app.run_on_java_main_thread(Box::new(move || {
+            let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+            let Ok(vm) = vm else { log::error!("Could not attach to Android Java VM"); return; };
+            let Ok(mut env) = vm.attach_current_thread() else { log::error!("Could not attach JNI thread"); return; };
+            let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+            let result = (|| -> jni::errors::Result<()> {
+                let uri_string = env.new_string(url)?;
+                let uri = env.call_static_method("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", &[JValue::Object(&uri_string)])?.l()?;
+                let action = env.new_string("android.intent.action.VIEW")?;
+                let intent = env.new_object("android/content/Intent", "(Ljava/lang/String;Landroid/net/Uri;)V", &[JValue::Object(&action), JValue::Object(&uri)])?;
+                env.call_method(&activity, "startActivity", "(Landroid/content/Intent;)V", &[JValue::Object(&intent)])?;
+                Ok(())
+            })();
+            if let Err(error) = result { log::error!("Could not open checkout: {error}"); }
+        }));
     }
 }
 
@@ -91,6 +113,9 @@ impl ApplicationHandler for CenAiApplication {
                         Err(wgpu::SurfaceError::Timeout) => {}
                         Err(_) => {}
                     }
+                    if let Some(url) = renderer.take_open_url() {
+                        self.open_external_url(url);
+                    }
                 }
                 if let Some(window) = &self.window {
                     window.request_redraw();
@@ -126,6 +151,6 @@ pub fn android_main(app: AndroidApp) {
     builder.with_android_app(app);
     let event_loop = builder.build().expect("create Android event loop");
     event_loop
-        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace, workspace_root))
+        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace, workspace_root, app.clone()))
         .expect("run CenAI Android application");
 }
