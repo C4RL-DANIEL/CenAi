@@ -161,7 +161,11 @@ mod tests {
     use super::*;
 
     fn temp_root() -> PathBuf {
-        std::env::temp_dir().join(format!("cenai-workspace-test-{}", std::process::id()))
+        {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(1);
+            std::env::temp_dir().join(format!("cenai-workspace-test-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
+        }
     }
 
     #[test]
