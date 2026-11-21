@@ -228,8 +228,8 @@ mod tests {
 
     #[test]
     fn builds_valid_openai_payload_and_sanitizes_message_content() {
-        let messages = serde_json::json!([{"role":"user","content":"hello\\r\\nworld"}]).to_string();
-        let payload = build_openai_chat_payload("gpt-test", 2048, messages).unwrap();
+        let messages = serde_json::json!([{"role":"user","content":"hello\r\nworld"}]).to_string();
+        let payload = build_openai_chat_payload("gpt-test", 2048, &messages).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["model"], "gpt-test");
         assert_eq!(parsed["stream"], true);
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn rejects_unsupported_roles_in_provider_payload() {
         let messages = serde_json::json!([{"role":"developer","content":"no"}]).to_string();
-        assert!(build_openai_chat_payload("gpt-test", 100, messages).is_err());
+        assert!(build_openai_chat_payload("gpt-test", 100, &messages).is_err());
     }
 
     #[test]
