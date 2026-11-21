@@ -1,2 +1,10 @@
 //! Shared permission and task-domain primitives.
 pub mod permissions;
+pub mod agents;
+pub mod automations;
+pub mod config;
+pub mod guardian;
+pub mod mcp;
+pub mod network;
+pub mod providers;
+pub mod workspace;
