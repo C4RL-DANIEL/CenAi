@@ -380,6 +380,10 @@ impl WgpuRenderer {
 
     fn process_speech_output(&mut self) {
         #[cfg(target_os = "android")]
+        if let Some(error) = self.audio_playback.as_ref().and_then(AndroidAudioPlayback::try_error) {
+            self.app_state.speech_status = format!("Speech playback failed: {error}");
+        }
+        #[cfg(target_os = "android")]
         if self.app_state.speech_status == "Speaking…"
             && self.audio_playback.as_ref().is_some_and(|playback| !playback.is_playing())
         {
