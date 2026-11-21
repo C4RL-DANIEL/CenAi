@@ -51,7 +51,7 @@ This is a protected control-plane foundation, not a fully deployed SaaS backend.
 
 ## Discord-only invitation registration
 
-The owner/admin portal now includes **Registration links**. An authorized owner or admin can generate a random, single-use link with a 1-hour to 7-day expiry, copy it once, review redemption status, and revoke unused invitations. The browser never receives stored token hashes; the raw token is returned only at creation. The database redemption function locks the invitation row so concurrent redemption attempts cannot both succeed. Redemption requires a verified Supabase Discord identity and sets app_metadata.cenai_registration_verified=true and app_metadata.cenai_registration_method=discord. It never grants an admin role.
+The owner/admin portal now includes **Registration links**. An authorized owner or admin can generate a random, single-use link with a 1-hour to 7-day expiry, copy it once, review redemption status, and revoke unused invitations. The browser never receives stored token hashes; the raw token is returned only at creation. The database redemption function locks the invitation row so concurrent redemption attempts cannot both succeed. Redemption requires a verified Supabase Discord identity and sets app_metadata.cenai_registration_verified=true and app_metadata.cenai_registration_method=discord. It never grants an admin role. After redemption, the user sets a 12-character-minimum app password so the native Android sign-in can use the verified Discord email. The registration policy cutover timestamp is stored in registration_policy; accounts created before it are grandfathered, while later accounts must have the Discord verification marker.
 
 ### Required activation steps
 
