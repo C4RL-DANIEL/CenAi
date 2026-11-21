@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -48,6 +48,7 @@ pub struct WgpuRenderer {
     workspace: Option<WorkspaceStore>,
     last_saved_message_count: usize,
     workspace_root: PathBuf,
+    guardian: GuardianMonitor,
 }
 
 impl WgpuRenderer {
@@ -167,6 +168,9 @@ impl WgpuRenderer {
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
+        app_state.guardian_consent = api.as_ref().is_some_and(CenAiApi::guardian_consent);
+        let mut guardian = GuardianMonitor::default();
+        guardian.set_telemetry_consent(app_state.guardian_consent);
         Ok(Self {
             surface,
             device,
@@ -190,6 +194,7 @@ impl WgpuRenderer {
             workspace,
             last_saved_message_count,
             workspace_root,
+            guardian,
         })
     }
 
@@ -269,6 +274,12 @@ impl WgpuRenderer {
         }
     }
 
+    pub fn record_diagnostic(&mut self, kind: DiagnosticKind, component: &str, code: &str) {
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis() as u64;
+        self.guardian.record(DiagnosticEvent::sanitized(kind, component, code, timestamp));
+    }
+
     pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
         self.egui_state.on_window_event(window, event).repaint
     }
@@ -321,6 +332,15 @@ impl WgpuRenderer {
                 let sender = self.response_tx.clone();
                 self.runtime.spawn(async move { let _ = sender.send(ChatEvent::OtpVerified(api.verify_email_otp(&code).await)); });
             } else { self.app_state.otp_status = "Account service is unavailable.".into(); }
+        }
+        if let Some(enabled) = self.app_state.pending_guardian_consent.take() {
+            self.guardian.set_telemetry_consent(enabled);
+            if let Some(api) = self.api.clone() {
+                let _ = api.set_guardian_consent(enabled);
+                self.runtime.spawn(async move {
+                    let _ = api.telemetry(serde_json::json!({ "action": "consent", "usageAnalytics": false, "guardian": enabled })).await;
+                });
+            }
         }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
