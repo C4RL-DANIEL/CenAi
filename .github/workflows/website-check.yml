@@ -1,12 +1,7 @@
 name: Website checks
 on:
   push:
-    branches: [ main, "feat/**", cloudflare-migration ]
-    paths:
-      - "website/**"
-      - "supabase/**"
-      - ".github/workflows/website-check.yml"
-  pull_request:
+    branches: [ main, "feat/**", "rewrite/**", cloudflare-migration ]
     paths:
       - "website/**"
       - "supabase/**"
@@ -31,6 +26,7 @@ jobs:
           npm run build
           test -s dist/index.html
           test -s dist/admin/index.html
+          test -s dist/register.html
           test -s dist/_worker.js
           test -s dist/styles.css
           test -s dist/editorial.css
@@ -63,6 +59,20 @@ jobs:
           grep -q 'issue_admin' website/api/email-otp.js
           grep -q 'verify_admin' website/api/email-otp.js
           grep -q 'email MFA fallback' website/admin/admin.js
+          grep -q 'registration_invite_create' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'registration_redeem' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'code_challenge_method' website/register.js
+          grep -q 'registration_invites' supabase/migrations/20261121100000_discord_registration_invites.sql
+          grep -q 'registration_policy' supabase/migrations/20261121100000_discord_registration_invites.sql
+          grep -q 'registration_status' native/src/core/network.rs
+          grep -q 'registration_status' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-public-api/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-telemetry/index.ts
+          grep -q 'link.hash = "invite="' website/admin/admin.js
+          grep -q 'password-form' website/register.js
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");

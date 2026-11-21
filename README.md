@@ -1,5 +1,7 @@
 # CenAI
 
+> **Branch distinction:** `main` documents and ships the existing Kotlin/Compose application. The active `rewrite/rust-native-core` branch is a separate, pure-Rust Android replacement. Its UI and application logic must remain Rust-owned; the legacy app is retained only as rollback/reference until parity and physical-device verification pass. See [the Rust-native rewrite plan](docs/RUST-NATIVE-REWRITE.md) for the binding architecture, local-first data rules, identity/provider authorization boundary and private Ecosystem Engine design.
+
 CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack Compose and a Rust JNI core.
 
 ## Current features

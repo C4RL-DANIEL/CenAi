@@ -1,0 +1,34 @@
+name: Rust Native CI
+
+on:
+  push:
+    branches:
+      - main
+      - "rewrite/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust workspace checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format Rust sources
+        run: cargo fmt --all
+      - name: Verify formatting
+        run: cargo fmt --all -- --check
+      - name: Run unit tests
+        run: cargo test --workspace --all-targets
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

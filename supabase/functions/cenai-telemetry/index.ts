@@ -7,6 +7,17 @@ const authDb=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:
 const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 const fail=(status:number,error:string)=>json(status,{error});
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await db.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 async function userFor(req:Request){
  const token=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
  if(!token)return null;
@@ -22,6 +33,7 @@ Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return fail(405,"POST required");
  try{
   const user=await userFor(req);if(!user)return fail(401,"Sign in required");
+  if(!await registrationAllowed(user))return fail(403,"Complete Discord invitation registration before using CenAI.");
   const body=await req.json().catch(()=>({}));
   const action=String(body.action||"");
   if(action==="consent"){

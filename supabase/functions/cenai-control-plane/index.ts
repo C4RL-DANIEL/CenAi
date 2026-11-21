@@ -9,6 +9,26 @@ const authDb = createClient(url, anonKey, { auth: { persistSession: false, autoR
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json", "Cache-Control": "no-store" };
 const response = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: cors });
 const fail = (status: number, message: string) => response(status, { error: message });
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+function createInviteToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await adminDb.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
 async function audit(user: any, action: string, details: Record<string, unknown> = {}) {
   const { error } = await adminDb.from("admin_audit_logs").insert({ actor_user_id: user.id, actor_email: user.email ?? "", action, details });
   if (error) throw error;
@@ -35,6 +55,7 @@ Deno.serve(async (req: Request) => {
     if (authError || !user || user.is_anonymous) return fail(401, "Invalid or expired session");
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
+    if (!["registration_status", "registration_redeem"].includes(action) && !await registrationAllowed(user)) return fail(403, "Complete Discord invitation registration before using CenAI.");
     if (action === "apply") {
       const { data: verifiedEmail, error: verifyError } = await adminDb.from("email_verifications").select("email").eq("user_id", user.id).eq("email", String(user.email ?? "").toLowerCase()).maybeSingle();
       if (verifyError) throw verifyError;
@@ -73,6 +94,41 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await adminDb.from("beta_feedback").insert({ user_id: user.id, category, title, body: content, app_version: String(body.appVersion ?? "").slice(0,40) }).select("id,created_at").single();
       if (error) throw error;
       return response(201, { feedback: data });
+    }
+    if (action === "registration_status") {
+      const { data: policy, error: policyError } = await adminDb.from("registration_policy")
+        .select("enforced_from").eq("id", 1).maybeSingle();
+      if (policyError) throw policyError;
+      if (!policy?.enforced_from) return fail(503, "Discord registration policy is not configured");
+      const createdAt = Date.parse(String(user.created_at ?? ""));
+      const enforcedFrom = Date.parse(String(policy.enforced_from));
+      const legacyAccount = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+      const discordVerified = user.app_metadata?.cenai_registration_verified === true
+        && user.app_metadata?.cenai_registration_method === "discord";
+      return response(200, {
+        registered: legacyAccount || discordVerified,
+        legacyAccount,
+        registrationMethod: discordVerified ? "discord" : legacyAccount ? "legacy" : null
+      });
+    }
+    if (action === "registration_redeem") {
+      const inviteToken = String(body.inviteToken ?? "");
+      if (!/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) return fail(400, "Invalid registration invitation");
+      const providers = Array.isArray(user.app_metadata?.providers) ? user.app_metadata.providers : [];
+      const identities = Array.isArray(user.identities) ? user.identities : [];
+      const isDiscord = user.app_metadata?.provider === "discord" || providers.includes("discord") || identities.some((identity: any) => identity?.provider === "discord");
+      if (!isDiscord) return fail(403, "Continue with Discord to redeem this invitation");
+      if (!user.email) return fail(403, "Your Discord account must provide an email address to use CenAI sign-in.");
+      if (!user.email) return fail(403, "Your Discord account must provide an email address to use CenAI sign-in.");
+      const tokenHash = await sha256Hex(inviteToken);
+      const { data: redeemed, error: redeemError } = await adminDb.rpc("cenai_redeem_registration_invite", { p_token_hash: tokenHash, p_user_id: user.id });
+      if (redeemError) throw redeemError;
+      if (redeemed !== true) return fail(403, "This invitation is expired, revoked, invalid, or has already been used");
+      const appMetadata = { ...(user.app_metadata ?? {}), cenai_registration_verified: true, cenai_registration_method: "discord" };
+      const { error: metadataError } = await adminDb.auth.admin.updateUserById(user.id, { app_metadata: appMetadata });
+      if (metadataError) throw metadataError;
+      await audit(user, "registration.invite.redeemed", { registration_method: "discord" });
+      return response(200, { registered: true, provider: "discord", email: user.email ?? null });
     }
     if (action === "admin_preflight") {
       const { data: preflightAdmin, error: preflightError } = await adminDb.from("admin_users").select("role,is_active").eq("user_id", user.id).maybeSingle();
@@ -261,6 +317,41 @@ Deno.serve(async (req: Request) => {
       if (!data) return fail(404, "API key not found");
       await audit(user, "api.key.revoked", { api_key_id:id });
       return response(200, { apiKey:data });
+    }
+    if (action === "registration_invite_create") {
+      if (!["owner", "admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const label = String(body.label ?? "").trim().slice(0, 120);
+      const hours = Math.max(1, Math.min(168, Math.floor(Number(body.expiresInHours) || 24)));
+      const token = createInviteToken();
+      const tokenHash = await sha256Hex(token);
+      const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+      const { data, error } = await adminDb.from("registration_invites").insert({
+        token_hash: tokenHash, created_by: user.id, label, expires_at: expiresAt
+      }).select("id,label,expires_at,created_at").single();
+      if (error) throw error;
+      await audit(user, "registration.invite.created", { invite_id: data.id, expires_at: expiresAt, expires_in_hours: hours });
+      return response(201, { invite: data, token });
+    }
+    if (action === "registration_invite_list") {
+      if (!["owner", "admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const { data, error } = await adminDb.from("registration_invites")
+        .select("id,label,expires_at,created_at,redeemed_at,revoked_at,redeemed_by")
+        .order("created_at", { ascending: false }).limit(100);
+      if (error) throw error;
+      return response(200, { invites: data ?? [] });
+    }
+    if (action === "registration_invite_revoke") {
+      if (!["owner", "admin"].includes(role)) return fail(403, "Owner or admin role required");
+      const id = String(body.id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return fail(400, "Invalid invitation identifier");
+      const { data, error } = await adminDb.from("registration_invites")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("id", id).is("redeemed_at", null).is("revoked_at", null)
+        .select("id,revoked_at").maybeSingle();
+      if (error) throw error;
+      if (!data) return fail(409, "Invitation is already used, expired, or revoked");
+      await audit(user, "registration.invite.revoked", { invite_id: id });
+      return response(200, { invite: data });
     }
     if (action === "admin_list") {
       const status = String(body.status ?? "pending");

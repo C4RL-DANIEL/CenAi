@@ -17,6 +17,17 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
   status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 const fail = (status: number, error: string) => json(status, { error });
+async function registrationAllowed(user: any) {
+  const { data: policy, error } = await db.from("registration_policy").select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true && user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 const baseUrl = () => "https://cenai-website.cenai-app.workers.dev";
 const PAYPAL_SUBSCRIPTION_WEBHOOK_EVENTS = [
   "BILLING.SUBSCRIPTION.CREATED",
@@ -722,6 +733,7 @@ Deno.serve(async (req: Request) => {
 
     const user = await currentUser(req);
     if (!user) return fail(401, "Sign in required");
+    if (!await registrationAllowed(user)) return fail(403, "Complete Discord invitation registration before using CenAI.");
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "create_subscription");
 
