@@ -246,7 +246,7 @@
   }
   async function load(tab) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-    ["overview","members","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
+    ["overview","members","flags","audit","integrations","releases","models","api-keys","analytics","website","quotas","billing","registration","beta","feedback"].forEach(name => $("tab-"+name).hidden = name !== tab);
     try {
       const data = ["beta","feedback","models","api-keys","analytics","website","quotas","billing","members"].includes(tab) ? {} : await api(tab);
       status("Signed in as "+userEmail+" · server authorization verified.");
@@ -266,7 +266,7 @@
       else if (tab === "website") await loadSitePages();
       else if (tab === "quotas") await loadQuotas();
       else if (tab === "billing") { await loadBillingPlans(); await loadRefundRequests(); }
-      else if(tab === "beta") await loadBeta();
+      else if(tab === "registration") await loadInvites();\n      else if(tab === "beta") await loadBeta();
       else if(tab === "feedback") { const d=await betaApi("admin_feedback"); $("feedback-content").innerHTML=(d.feedback||[]).map(f=>row(f.title,f.category+" · "+f.app_version+" · "+f.created_at,f.body)).join("")||"<p>No feedback received.</p>"; }
     } catch (error) { status(error.message,true); if (/authorized|admin|token|sign/i.test(error.message)) { accessToken=null; $("dashboard").hidden=true; $("login").hidden=false; } }
   }
@@ -432,6 +432,61 @@
     const d=await api("quota_list");
     $("quota-content").innerHTML='<p class="muted">Public API default: '+d.defaults.dailyRequestLimit+' requests/day and '+Number(d.defaults.monthlyTokenLimit).toLocaleString()+' tokens/month. Cloud AI default without an override: 20 requests/day and 20,000 tokens/month. Per-user overrides below apply to both services.</p>'+(d.policies||[]).map(p=>row(p.owner_user_id,"Daily "+p.daily_request_limit+" requests · Monthly "+Number(p.monthly_token_limit).toLocaleString()+" tokens · "+p.updated_at,p.enabled?"enforced":"disabled")).join("")||"<p>No per-user quota overrides. Default policy applies.</p>";
   }
+  async function loadInvites() {
+    const d = await betaApi("registration_invite_list");
+    const now = Date.now();
+    $("invite-content").innerHTML = (d.invites || []).map(invite => {
+      const expired = Date.parse(invite.expires_at) <= now;
+      const state = invite.revoked_at ? "revoked" : invite.redeemed_at ? "used" : expired ? "expired" : "active";
+      const revoke = state === "active" ? '<button type="button" data-invite-revoke="' + esc(invite.id) + '" class="danger">Revoke</button>' : "";
+      return '<article class="item invite-row"><div><b>' + esc(invite.label || "Discord registration") + '</b><small>Created ' + esc(invite.created_at) + ' · expires ' + esc(invite.expires_at) + '</small><small>' + (invite.redeemed_at ? 'Redeemed ' + esc(invite.redeemed_at) : 'Single-use invitation') + '</small></div><div class="invite-state"><span class="pill">' + state + '</span>' + revoke + '</div></article>';
+    }).join("") || "<p>No invitations generated yet.</p>";
+  }
+  $("invite-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const result = await betaApi("registration_invite_create", {
+        label: $("invite-label").value.trim(),
+        expiresInHours: Number($("invite-expiry").value)
+      });
+      const link = new URL("/register?invite=" + encodeURIComponent(result.token), window.location.origin).toString();
+      $("invite-url").href = link;
+      $("invite-url").textContent = link;
+      $("invite-created").hidden = false;
+      $("invite-label").value = "";
+      status("A unique single-use Discord registration link was generated. Copy it now; the server stores only its hash.");
+      await loadInvites();
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $("invite-copy")?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("invite-url").href);
+      status("Registration link copied. Share it only with the intended person.");
+    } catch {
+      status("Clipboard access unavailable. Select and copy the displayed link manually.", true);
+    }
+  });
+  $("invite-refresh")?.addEventListener("click", () => loadInvites().catch(error => status(error.message, true)));
+  $("invite-content")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-invite-revoke]");
+    if (!button) return;
+    if (!confirm("Revoke this registration link immediately? Anyone holding it will no longer be able to redeem it.")) return;
+    button.disabled = true;
+    try {
+      await betaApi("registration_invite_revoke", { id: button.dataset.inviteRevoke });
+      status("Registration invitation revoked and audited.");
+      await loadInvites();
+    } catch (error) {
+      status(error.message, true);
+      button.disabled = false;
+    }
+  });
   async function loadBeta(){const d=await betaApi("admin_list",{status:$("beta-filter").value});$("beta-content").innerHTML=(d.applications||[]).map(a=>'<article class="item beta-item"><div><b>'+esc(a.display_name)+' · '+esc(a.email)+'</b><small>'+esc(a.status)+' · '+esc(a.experience)+' · '+esc(a.created_at)+'</small><p>'+esc(a.motivation)+'</p><small>Review note: '+esc(a.reviewer_note||"—")+'</small></div><div class="beta-actions" data-id="'+esc(a.id)+'">'+(a.status!=="approved"?'<button data-review="approved">Approve</button>':"")+(a.status!=="rejected"?'<button data-review="rejected">Reject</button>':"")+(a.status==="approved"?'<button data-review="revoked">Revoke</button>':"")+'</div></article>').join("")||"<p>No applications in this filter.</p>";}
   $("beta-filter")?.addEventListener("change",()=>loadBeta().catch(e=>status(e.message,true)));
   $("beta-refresh")?.addEventListener("click",()=>loadBeta().catch(e=>status(e.message,true)));
