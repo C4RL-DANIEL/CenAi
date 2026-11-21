@@ -93,6 +93,7 @@ pub struct WgpuRenderer {
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     started_at: std::time::Instant,
+    last_guardian_sample: std::time::Instant,
     egui_context: egui::Context,
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
@@ -253,6 +254,7 @@ impl WgpuRenderer {
             uniform_buffer,
             bind_group,
             started_at: std::time::Instant::now(),
+            last_guardian_sample: std::time::Instant::now(),
             egui_context,
             egui_state,
             egui_renderer,
@@ -541,6 +543,10 @@ impl WgpuRenderer {
     }
 
     pub fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        if self.last_guardian_sample.elapsed() >= std::time::Duration::from_secs(5) {
+            self.app_state.guardian_snapshot = Some(self.guardian.sample_system(&self.workspace_root));
+            self.last_guardian_sample = std::time::Instant::now();
+        }
         let frame = self.surface.get_current_texture()?;
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let time = if self.app_state.reduced_motion { 0.0 } else { self.started_at.elapsed().as_secs_f32() };
