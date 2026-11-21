@@ -235,6 +235,7 @@ pub struct AppState {
     pub voice_status: String,
     pub pending_speech_text: Option<String>,
     pub pending_speech_stop: bool,
+    pub speech_cancelled: bool,
     pub speech_status: String,
 }
 
@@ -333,6 +334,7 @@ impl Default for AppState {
             voice_status: String::new(),
             pending_speech_text: None,
             pending_speech_stop: false,
+            speech_cancelled: false,
             speech_status: String::new(),
                     }
     }
