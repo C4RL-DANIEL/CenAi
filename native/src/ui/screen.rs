@@ -195,7 +195,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read last response aloud")).clicked() {
+                if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Read aloud · CenAI Voice")).clicked() {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
@@ -206,7 +206,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             if !state.speech_status.is_empty() {
                 ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
             }
-            ui.label(text("Read-aloud sends the selected response text to Google Gemini for speech synthesis.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+            ui.label(text("Read-aloud will use CenAI Voice. Google speech synthesis is disabled; the custom engine is not connected yet.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
     }
     ui.add_space(10.0);
