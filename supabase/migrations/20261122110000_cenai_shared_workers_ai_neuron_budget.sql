@@ -88,7 +88,7 @@ begin
     where owner_user_id=p_user_id and source='web' and event_type='chat.completion' and created_at>=v_month_start;
   select count(*)::integer into v_rate_used from public.usage_events
     where owner_user_id=p_user_id and source='web' and event_type='chat.completion' and created_at>=now()-interval '1 minute';
-  select coalesce(reserved_neurons,0)::numeric into v_global_used from public.cenai_ai_daily_budget where day_utc=v_day;
+  select coalesce(max(reserved_neurons),0)::numeric into v_global_used from public.cenai_ai_daily_budget where day_utc=v_day;
   if v_daily_used>=v_daily_limit then return query select false,null::bigint,'daily_request_limit',v_daily_used,v_monthly_tokens,v_global_used; return; end if;
   if v_rate_used>=20 then return query select false,null::bigint,'rate_limit',v_daily_used,v_monthly_tokens,v_global_used; return; end if;
   if v_monthly_tokens+p_input_tokens+p_max_output_tokens>v_monthly_limit then return query select false,null::bigint,'monthly_token_limit',v_daily_used,v_monthly_tokens,v_global_used; return; end if;
@@ -97,9 +97,9 @@ begin
     values(p_user_id,'web','chat.completion','cloudflare',p_model_id,p_input_tokens,0,0,'success',
       pg_catalog.jsonb_build_object('model_slug',p_model_slug,'reservation',true,'reserved_output_tokens',p_max_output_tokens,'reserved_neurons',p_estimated_neurons))
     returning id into v_new_id;
-  insert into public.cenai_ai_daily_budget(day_utc,reserved_neurons,updated_at)
+  insert into public.cenai_ai_daily_budget as budget(day_utc,reserved_neurons,updated_at)
     values(v_day,p_estimated_neurons,now())
-    on conflict(day_utc) do update set reserved_neurons=public.cenai_ai_daily_budget.reserved_neurons+excluded.reserved_neurons,updated_at=now();
+    on conflict(day_utc) do update set reserved_neurons=budget.reserved_neurons+excluded.reserved_neurons,updated_at=now();
   return query select true,v_new_id,null::text,v_daily_used+1,v_monthly_tokens+p_input_tokens,v_global_used+p_estimated_neurons;
 end
 $function$;
