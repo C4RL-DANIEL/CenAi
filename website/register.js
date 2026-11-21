@@ -152,7 +152,7 @@
     if (password !== confirmation) { note("The passwords do not match.", "error"); return; }
     const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
     if (!saved?.access_token) { note("Your registration session expired. Reopen the invitation link and sign in again.", "error"); return; }
-    const button = event.currentTarget.querySelector("button[type=submit>");
+    const button = event.currentTarget.querySelector("button[type=submit]");
     button.disabled = true;
     try {
       const response = await fetch(config.supabaseUrl.replace(/\/$/, "") + "/auth/v1/user", {
