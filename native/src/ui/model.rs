@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::workspace::Project;
 use crate::core::agents::TaskPlan;
 use crate::core::guardian::GuardianSnapshot;
+use crate::core::multimodal::AttachmentMetadata;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
@@ -151,6 +152,13 @@ pub struct MfaFactor {
 pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
+    pub attachments: Vec<AttachmentMetadata>,
+    pub attachment_status: String,
+    pub attachment_prompt_draft: String,
+    pub pending_attachment_picker: bool,
+    pub pending_attachment_analysis: Option<(String, String)>,
+    pub pending_attachment_delete: Option<String>,
+    pub pending_backup_file_picker: bool,
     pub reduced_motion: bool,
     pub light_mode: bool,
     pub guardian_snapshot: Option<GuardianSnapshot>,
@@ -275,6 +283,13 @@ impl Default for AppState {
         Self {
             destination: Destination::Conversation,
             conversation: ConversationState::default(),
+            attachments: Vec::new(),
+            attachment_status: String::new(),
+            attachment_prompt_draft: "Describe this file and extract its key information.".into(),
+            pending_attachment_picker: false,
+            pending_attachment_analysis: None,
+            pending_attachment_delete: None,
+            pending_backup_file_picker: false,
             reduced_motion: false,
             light_mode: false,
             guardian_snapshot: None,
