@@ -122,6 +122,7 @@ impl CenAiApi {
         if data.get("verified").and_then(Value::as_bool) != Some(true) {
             return Err("Email verification was not confirmed.".into());
         }
+        let _session_guard = self.session_lock.lock().await;
         if self.vault.account_id()? != account_id {
             return Err("The active account changed before verification completed.".into());
         }
