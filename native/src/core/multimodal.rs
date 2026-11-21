@@ -103,12 +103,29 @@ pub enum RichBlock {
 
 impl RichBlock {
     pub fn validate(&self) -> Result<(), &'static str> {
+        let valid_attachment_id = |id: &str| !id.is_empty() && id.len() <= 80
+            && id.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_');
         match self {
             Self::Markdown { text } if text.len() > 200_000 => Err("Markdown block is too large"),
-            Self::Code { source, .. } if source.len() > 200_000 => Err("Code block is too large"),
+            Self::Code { language, source } if language.len() > 64 || source.len() > 200_000
+                || language.chars().any(char::is_control) => Err("Code block exceeds supported limits"),
             Self::Table { headers, rows } if headers.len() > 32 || rows.len() > 500
-                || rows.iter().any(|row| row.len() > 32) => Err("Table exceeds supported dimensions"),
-            Self::Citation { citation } if !citation.url.starts_with("https://") => Err("Citation URL must use HTTPS"),
+                || rows.iter().any(|row| row.len() > 32)
+                || headers.iter().chain(rows.iter().flatten()).any(|cell| cell.len() > 20_000) =>
+                Err("Table exceeds supported dimensions or cell limits"),
+            Self::Image { attachment_id, alt } if !valid_attachment_id(attachment_id) || alt.len() > 1000 =>
+                Err("Image block has an invalid attachment reference or alt text"),
+            Self::Audio { attachment_id, transcript } if !valid_attachment_id(attachment_id)
+                || transcript.as_ref().is_some_and(|value| value.len() > 50_000) =>
+                Err("Audio block has an invalid attachment reference or transcript"),
+            Self::Video { attachment_id, summary } if !valid_attachment_id(attachment_id)
+                || summary.as_ref().is_some_and(|value| value.len() > 50_000) =>
+                Err("Video block has an invalid attachment reference or summary"),
+            Self::Citation { citation } if !citation.url.starts_with("https://")
+                || citation.url.len() > 2048 || citation.title.len() > 512
+                || citation.publisher.as_ref().is_some_and(|value| value.len() > 256)
+                || citation.url.chars().any(char::is_control) =>
+                Err("Citation metadata is invalid or URL is not HTTPS"),
             _ => Ok(()),
         }
     }
