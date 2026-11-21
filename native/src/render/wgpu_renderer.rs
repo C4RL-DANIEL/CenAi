@@ -25,6 +25,7 @@ enum ChatEvent {
     PlanFinished(u64, Result<TaskPlan, String>),
     McpConnected(Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
     McpCallFinished(Result<serde_json::Value, String>),
+    CheckoutReady(Result<String, String>),
 }
 
 pub struct WgpuRenderer {
@@ -278,6 +279,10 @@ impl WgpuRenderer {
         }
     }
 
+    pub fn take_open_url(&mut self) -> Option<String> {
+        self.app_state.pending_open_url.take()
+    }
+
     pub fn record_diagnostic(&mut self, kind: DiagnosticKind, component: &str, code: &str) {
         let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default().as_millis() as u64;
@@ -309,6 +314,12 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        if let Some(plan) = self.app_state.pending_checkout_plan.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                self.runtime.spawn(async move { let _ = sender.send(ChatEvent::CheckoutReady(api.billing_checkout(&plan).await)); });
+            } else { self.app_state.checkout_status = "Sign in before purchasing a membership.".into(); }
+        }
         if let Some((email, password)) = self.app_state.pending_sign_in.take() {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
@@ -471,6 +482,12 @@ impl WgpuRenderer {
                         Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
+                }
+                ChatEvent::CheckoutReady(result) => {
+                    match result {
+                        Ok(url) => { self.app_state.pending_open_url = Some(url); self.app_state.checkout_status = "Opening Stripe checkout…".into(); }
+                        Err(error) => self.app_state.checkout_status = format!("Checkout unavailable: {error}"),
+                    }
                 }
                 ChatEvent::McpCallFinished(result) => {
                     match result {
