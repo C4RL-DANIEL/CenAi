@@ -151,6 +151,7 @@ impl AndroidAudioCapture {
                             .map_err(str::to_owned)?;
                         if sender.try_send(Ok(frame)).is_err() { /* Drop stale frames rather than growing an unbounded audio queue. */ }
                     } else if count < 0 {
+                        if stop_flag.load(Ordering::Acquire) { break; }
                         return Err(format!("Android microphone read failed with code {count}"));
                     }
                 }
@@ -290,11 +291,16 @@ impl AndroidAudioPlayback {
                     if stop_flag.load(Ordering::Acquire) { break; }
                     let bytes = env.byte_array_from_slice(chunk).map_err(|error| error.to_string())?;
                     let bytes_object = JObject::from(bytes);
-                    let written = env.call_method(
-                        &track, "write", "([BII)I",
-                        &[JValue::Object(&bytes_object), JValue::Int(0), JValue::Int(chunk.len() as i32)],
-                    ).map_err(|error| error.to_string())?.i().map_err(|error| error.to_string())?;
-                    if written < 0 { return Err(format!("Android audio output failed with code {written}")); }
+                    let mut offset = 0usize;
+                    while offset < chunk.len() && !stop_flag.load(Ordering::Acquire) {
+                        let written = env.call_method(
+                            &track, "write", "([BII)I",
+                            &[JValue::Object(&bytes_object), JValue::Int(offset as i32), JValue::Int((chunk.len() - offset) as i32)],
+                        ).map_err(|error| error.to_string())?.i().map_err(|error| error.to_string())?;
+                        if written < 0 { return Err(format!("Android audio output failed with code {written}")); }
+                        if written == 0 { return Err("Android audio output stopped accepting PCM data".into()); }
+                        offset += written as usize;
+                    }
                 }
                 let _ = env.call_method(&track, "stop", "()V", &[]);
                 let _ = env.call_method(&track, "release", "()V", &[]);
