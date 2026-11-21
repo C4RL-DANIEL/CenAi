@@ -638,7 +638,7 @@ mod tests {
         use crate::core::agents::{AgentRole, StepStatus, TaskStep};
         let root = temp_root();
         let _ = fs::remove_dir_all(&root);
-        let store = WorkspaceStore::new(&root, USER_A).unwrap();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440010").unwrap();
         let project_store = store.clone();
         let task_store = store.clone();
 
