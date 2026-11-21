@@ -71,7 +71,7 @@ impl TaskPlan {
             return Err("Stopped task plans cannot contain active steps");
         }
         for step in &self.steps {
-            if step.status != StepStatus::Pending
+            if !matches!(step.status, StepStatus::Pending | StepStatus::Cancelled)
                 && !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)) {
                 return Err("A task step cannot advance before all dependencies complete");
             }
