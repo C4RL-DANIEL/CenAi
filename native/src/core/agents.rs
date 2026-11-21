@@ -61,10 +61,55 @@ impl TaskPlan {
         Ok(())
     }
 
+    pub fn begin_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let ready = self.steps.iter().find(|step| step.id == step_id)
+            .is_some_and(|step| step.status == StepStatus::Pending
+                && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
+        if !ready { return Err("Task step is not ready to run"); }
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        step.status = StepStatus::Running;
+        Ok(())
+    }
+
+    pub fn request_step_approval(&mut self, step_id: u64) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let ready = self.steps.iter().find(|step| step.id == step_id)
+            .is_some_and(|step| step.status == StepStatus::Pending
+                && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
+        if !ready { return Err("Task step is not ready for approval"); }
+        self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?.status = StepStatus::WaitingForApproval;
+        Ok(())
+    }
+
+    pub fn resolve_step_approval(&mut self, step_id: u64, approved: bool) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        if step.status != StepStatus::WaitingForApproval {
+            return Err("Task step is not waiting for approval");
+        }
+        step.status = if approved { StepStatus::Pending } else { StepStatus::Cancelled };
+        Ok(())
+    }
+
+    pub fn complete_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        if step.status != StepStatus::Running { return Err("Only a running task step can complete"); }
+        step.status = StepStatus::Completed;
+        Ok(())
+    }
+
+    pub fn fail_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        if step.status != StepStatus::Running { return Err("Only a running task step can fail"); }
+        step.status = StepStatus::Failed;
+        Ok(())
+    }
+
     pub fn stop(&mut self) {
         self.stopped = true;
         for step in &mut self.steps {
-            if matches!(step.status, StepStatus::Pending | StepStatus::Running) {
+            if matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval) {
                 step.status = StepStatus::Cancelled;
             }
         }
@@ -116,6 +161,48 @@ mod tests {
         plan.steps[0].depends_on.clear();
         plan.steps[1].depends_on = vec![1, 1];
         assert!(plan.validate().is_err());
+    }
+
+    #[test]
+    fn execution_state_machine_enforces_dependencies_and_approval() {
+        let mut plan = TaskPlan {
+            id: "task-2".into(), goal: "Run a protected workflow".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![] },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Run external action".into(), status: StepStatus::Pending, depends_on: vec![1] },
+            ],
+        };
+        assert!(plan.begin_step(2).is_err());
+        plan.begin_step(1).unwrap();
+        assert!(plan.complete_step(2).is_err());
+        plan.complete_step(1).unwrap();
+        plan.request_step_approval(2).unwrap();
+        assert_eq!(plan.ready_steps(), Vec::<u64>::new());
+        plan.resolve_step_approval(2, true).unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+        plan.begin_step(2).unwrap();
+        plan.complete_step(2).unwrap();
+        assert_eq!(plan.steps[1].status, StepStatus::Completed);
+    }
+
+    #[test]
+    fn denied_approval_and_failed_dependencies_block_downstream_steps() {
+        let mut plan = TaskPlan {
+            id: "task-3".into(), goal: "Test denied work".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![] },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "External action".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 3, role: AgentRole::QualityReviewer, title: "Review".into(), status: StepStatus::Pending, depends_on: vec![2] },
+            ],
+        };
+        plan.request_step_approval(1).unwrap();
+        plan.resolve_step_approval(1, false).unwrap();
+        assert!(plan.ready_steps().is_empty());
+        assert!(plan.begin_step(2).is_err());
+        plan.steps[0].status = StepStatus::Pending;
+        plan.begin_step(1).unwrap();
+        plan.fail_step(1).unwrap();
+        assert!(plan.ready_steps().is_empty());
     }
 
     #[test]
