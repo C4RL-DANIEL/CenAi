@@ -515,6 +515,14 @@ impl CenAiApi {
         self.post_authenticated(config::CONTROL_PLANE_URL, &payload).await
     }
 
+    /// Confirms that the authenticated account is eligible under the Discord invitation policy.
+    /// A failed check is not treated as permission to continue.
+    pub async fn registration_status(&self) -> Result<bool, String> {
+        let status = self.control_plane("registration_status", json!({})).await?;
+        status.get("registered").and_then(Value::as_bool)
+            .ok_or_else(|| "CenAI registration status response was invalid.".to_owned())
+    }
+
     /// Calls the per-user Ecosystem Engine. The server derives the account identity from the JWT.
     pub async fn ecosystem_action(&self, action: &str, mut payload: Value) -> Result<Value, String> {
         if !matches!(action, "list" | "register" | "grant" | "revoke" | "authorize") {
