@@ -366,15 +366,24 @@ impl WgpuRenderer {
                         }
                     }
                     match selected_provider.as_str() {
-                        "anthropic" => api.stream_anthropic(&request, &key, move |delta| {
-                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
-                        }).await,
-                        "gemini" => api.stream_gemini(&request, &key, move |delta| {
-                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
-                        }).await,
-                        _ => api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
-                            let _ = sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
-                        }).await,
+                        "anthropic" => {
+                            let delta_sender = sender.clone();
+                            api.stream_anthropic(&request, &key, move |delta| {
+                                let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                            }).await
+                        }
+                        "gemini" => {
+                            let delta_sender = sender.clone();
+                            api.stream_gemini(&request, &key, move |delta| {
+                                let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                            }).await
+                        }
+                        _ => {
+                            let delta_sender = sender.clone();
+                            api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
+                                let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                            }).await
+                        },
                     }
                 }.await;
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
