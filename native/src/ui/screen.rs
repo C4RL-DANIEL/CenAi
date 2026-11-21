@@ -436,7 +436,19 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
             ui.label(text(format!("Network totals · RX {:.1} MB · TX {:.1} MB", snapshot.network_rx_bytes as f64 / 1_048_576.0, snapshot.network_tx_bytes as f64 / 1_048_576.0), 10.0, egui::Color32::from_rgb(163, 174, 203)));
-            ui.label(text("System metrics are sampled locally and are never uploaded as Guardian telemetry.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
+                        let low_memory = snapshot.ram_available_kb > 0 && snapshot.ram_available_kb < 256 * 1024;
+            let low_storage = snapshot.storage_available_bytes > 0 && snapshot.storage_available_bytes < 512 * 1_048_576;
+            let low_battery = snapshot.battery_percent.is_some_and(|value| value < 15)
+                && !snapshot.battery_status.as_deref().is_some_and(|status| status.eq_ignore_ascii_case("charging"));
+            let high_cpu = snapshot.cpu_usage_percent.is_some_and(|value| value >= 90);
+            if low_memory || low_storage || low_battery || high_cpu {
+                ui.label(text("Guardian noticed a device resource warning:", 10.0, egui::Color32::from_rgb(240, 178, 126)).strong());
+                if low_memory { ui.label(text("Available memory is low.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
+                if low_storage { ui.label(text("Device storage is nearly full.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
+                if low_battery { ui.label(text("Battery is critically low.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
+                if high_cpu { ui.label(text("CPU usage is unusually high.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
+            }
+ui.label(text("System metrics are sampled locally and are never uploaded as Guardian telemetry.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
         }
         ui.separator();
         ui.label(text("Central Brain memory", 15.0, egui::Color32::WHITE).strong());
