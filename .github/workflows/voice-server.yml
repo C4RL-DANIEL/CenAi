@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Validate Python syntax
-        run: python -m py_compile voice-server/main.py
+        run: python -m py_compile voice-server/main.py voice-server/prepare_voice.py
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
