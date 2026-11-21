@@ -58,6 +58,10 @@ jobs:
           grep -q 'issue_admin' website/api/email-otp.js
           grep -q 'verify_admin' website/api/email-otp.js
           grep -q 'email MFA fallback' website/admin/admin.js
+          grep -q 'registration_invite_create' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'registration_redeem' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'code_challenge_method' website/register.js
+          grep -q 'registration_invites' supabase/migrations/20261121100000_discord_registration_invites.sql
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");
@@ -111,7 +115,7 @@ jobs:
             exit 1
           fi
           node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
-          for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html /about.html /privacy.html /terms.html /contact.html /guides/ /guides/choosing-ai-models.html /guides/approval-first-agents.html /guides/organizing-ai-projects.html /guides/local-vs-cloud-ai.html /guides/checking-ai-answers.html /robots.txt /sitemap.xml; do
+          for route in / /admin /beta /register /register/complete /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html /about.html /privacy.html /terms.html /contact.html /guides/ /guides/choosing-ai-models.html /guides/approval-first-agents.html /guides/organizing-ai-projects.html /guides/local-vs-cloud-ai.html /guides/checking-ai-answers.html /robots.txt /sitemap.xml; do
             code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
             if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi
           done
@@ -125,6 +129,9 @@ jobs:
           grep -q 'Request a refund' /tmp/cenai-account.html
           curl -fsS "$BASE/admin" -o /tmp/cenai-admin.html
           grep -q 'Customer refund requests' /tmp/cenai-admin.html
+          grep -q 'Registration links' /tmp/cenai-admin.html
+          curl -fsS "$BASE/register" -o /tmp/cenai-register.html
+          grep -q 'Continue with Discord' /tmp/cenai-register.html
           curl -fsS "$BASE/api/admin-config" -o /tmp/cenai-admin-config.json
           grep -q "bqkzehozezvepbthglyj.supabase.co" /tmp/cenai-admin-config.json
           curl -fsS "$BASE/api/site-pages" >/tmp/cenai-pages.json
