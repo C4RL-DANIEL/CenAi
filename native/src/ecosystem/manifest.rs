@@ -15,6 +15,7 @@ pub struct AppManifest {
 pub enum ManifestError {
     EmptyAppId,
     EmptyPublisher,
+    UntrustedPublisher,
     EmptyVersion,
     UnsupportedProtocol,
     EmptyCapability,
@@ -58,7 +59,7 @@ impl CapabilityRegistry {
     pub fn register(&mut self, manifest: AppManifest, supported_protocol: u16) -> Result<(), ManifestError> {
         manifest.validate(supported_protocol)?;
         if !self.trusted_publishers.contains(&manifest.publisher_id) {
-            return Err(ManifestError::EmptyPublisher);
+            return Err(ManifestError::UntrustedPublisher);
         }
         self.manifests.insert(manifest.app_id.clone(), manifest);
         Ok(())
@@ -102,7 +103,7 @@ mod tests {
     #[test]
     fn untrusted_publishers_cannot_register() {
         let mut registry = CapabilityRegistry::new(Vec::new());
-        assert_eq!(registry.register(manifest(), 1), Err(ManifestError::EmptyPublisher));
+        assert_eq!(registry.register(manifest(), 1), Err(ManifestError::UntrustedPublisher));
     }
 
     #[test]
