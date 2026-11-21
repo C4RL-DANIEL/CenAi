@@ -53,6 +53,30 @@ fn contains_credential_material(value: &str) -> bool {
         || (lower.contains("eyj") && value.matches('.').count() >= 2)
 }
 
+fn safe_public_host(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 || host != host.to_ascii_lowercase()
+        || host == "localhost" || host.ends_with(".localhost")
+        || host.ends_with(".local") || host.ends_with(".internal")
+    {
+        return false;
+    }
+    if let Ok(address) = host.parse::<std::net::IpAddr>() {
+        return match address {
+            std::net::IpAddr::V4(ip) => !(ip.is_private() || ip.is_loopback() || ip.is_link_local()
+                || ip.is_unspecified() || ip.is_multicast() || ip.is_broadcast()),
+            std::net::IpAddr::V6(ip) => !(ip.is_loopback() || ip.is_unique_local()
+                || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast()),
+        };
+    }
+    let labels = host.split('.').collect::<Vec<_>>();
+    labels.len() >= 2 && labels.iter().all(|label| {
+        !label.is_empty() && label.len() <= 63
+            && label.as_bytes().first().is_some_and(|byte| byte.is_ascii_alphanumeric())
+            && label.as_bytes().last().is_some_and(|byte| byte.is_ascii_alphanumeric())
+            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
+}
+
 impl SandboxRequest {
     pub fn validate(&self, allowed_commands: &HashSet<String>, allowed_hosts: &HashSet<String>) -> Result<(), &'static str> {
         if !valid_user_uuid(&self.user_scope) || !safe_project_id(&self.project_id) {
@@ -91,8 +115,7 @@ impl SandboxRequest {
             }
         }
         if self.network_hosts.len() > 32 || self.network_hosts.iter().any(|host| {
-            host.is_empty() || host.len() > 253 || host != &host.to_ascii_lowercase()
-                || host.contains('/') || host.contains(':') || !allowed_hosts.contains(host)
+            !safe_public_host(host) || !allowed_hosts.contains(host)
         }) {
             return Err("Sandbox network host is not allowlisted");
         }
@@ -208,6 +231,16 @@ mod tests {
         let mut job = request();
         job.network_hosts.push("example.org".into());
         assert_eq!(job.validate(&commands, &hosts), Err("Sandbox network host is not allowlisted"));
+        let mut job = request();
+        job.network_hosts = vec!["127.0.0.1".into()];
+        let mut unsafe_hosts = hosts.clone();
+        unsafe_hosts.insert("127.0.0.1".into());
+        assert!(job.validate(&commands, &unsafe_hosts).is_err());
+        let mut job = request();
+        job.network_hosts = vec!["localhost".into()];
+        let mut unsafe_hosts = hosts.clone();
+        unsafe_hosts.insert("localhost".into());
+        assert!(job.validate(&commands, &unsafe_hosts).is_err());
     }
 
     #[test]
