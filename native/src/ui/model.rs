@@ -1,6 +1,7 @@
 //! UI state model shared by the GPU scene graph and input system.
 use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
+use crate::core::workspace::Project;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
@@ -96,6 +97,11 @@ pub struct AppState {
     pub provider_key_draft: String,
     pub provider_key_status: String,
     pub pending_provider_key: Option<(String, String)>,
+    pub projects: Vec<Project>,
+    pub project_name_draft: String,
+    pub project_description_draft: String,
+    pub project_status: String,
+    pub pending_project_create: Option<(String, String)>,
 }
 
 impl Default for AppState {
