@@ -48,7 +48,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 ## Implemented in this branch
 
 - Four primary destinations: Conversation, Your Work, Connections and Settings.
-- Responsive centered content, animated GPU ambient gradient, custom dark surfaces, custom composer and button states.
+- Responsive centered content, animated GPU ambient gradient, custom dark/light surfaces, account-scoped appearance and reduced-motion preferences, custom composer and button states.
 - Conversation message model, Markdown headings/lists/code fences, local per-account conversation autosave.
 - Existing-account sign-in against the existing Supabase/CenAI identity system; no open in-app registration. Any account creation must originate from the authorized Discord onboarding path. Email OTP is an existing-account verification step, not a substitute registration path.
 - Supabase token refresh and account-bound API requests. Session mutations are serialized; a request that resumes after an account switch cannot refresh into or return data for the new account.
@@ -56,8 +56,10 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore. Provider authorization remains separate from CenAI account authentication.
 - Per-account project creation, archived-project state, artifact metadata and local artifact storage with SHA-256 integrity verification, safe IDs and a 25 MB per-artifact limit.
 - Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
-- MCP HTTPS/protocol/publisher/license/capability checks and explicit approval for sensitive reads and external writes.
+- MCP HTTPS/protocol/publisher/license/capability checks, rejection of URL credentials/query tokens/private IP literals, redirects disabled, bounded tool/response sizes, JSON-schema validation of discovered tools and arguments, and explicit approval for sensitive reads and external writes.
 - Guardian diagnostic redaction, deduplication, bounded local buffering and consent gating; pre-consent diagnostics are not retroactively uploaded and opt-out clears the upload queue.
+- Account-owned background tasks are tracked and aborted on identity changes; stale asynchronous results are rejected by account generation.
+- Connections screens report current account/provider/MCP state rather than showing false “integration pending” labels; empty activity/file placeholder panels have been removed.
 - Private ecosystem manifest and per-user authorization contract; public docs expose only the approved integration surface while private orchestration stays behind authenticated/encrypted boundaries.
 - Rust workspace formatting, unit-test and Clippy CI; Android arm64/x86_64 debug APK packaging workflow.
 
