@@ -644,7 +644,7 @@ fn parse_gemini_sse_event(line: &str) -> Result<Option<String>, String> {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::{parse_anthropic_sse_event, parse_gemini_sse_event, valid_supabase_user_id};
+    use super::{parse_anthropic_sse_event, parse_gemini_sse_event, valid_supabase_user_id, CenAiApi};
 
     #[test]
     fn anthropic_stream_parser_extracts_only_text_deltas() {
@@ -670,6 +670,16 @@ mod identity_tests {
             None
         );
         assert!(parse_gemini_sse_event(r#"data: {"error":{"message":"quota exceeded"}}"#).is_err());
+    }
+
+    #[test]
+    fn mcp_token_slots_are_stable_and_do_not_expose_server_ids() {
+        let first = CenAiApi::mcp_token_slot("org.example.private-tools").unwrap();
+        let second = CenAiApi::mcp_token_slot("org.example.private-tools").unwrap();
+        assert_eq!(first, second);
+        assert!(first.starts_with("mcp_"));
+        assert!(!first.contains("private-tools"));
+        assert!(CenAiApi::mcp_token_slot("").is_err());
     }
 
     #[test]
