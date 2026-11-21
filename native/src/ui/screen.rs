@@ -1,11 +1,25 @@
 //! Native CenAI screens. No WebView or Compose UI is used in this module.
 use crate::ui::model::{AppState, Destination, MessageRole};
+use std::cell::Cell;
+
+thread_local! { static LIGHT_MODE: Cell<bool> = const { Cell::new(false) }; }
 
 fn accent() -> egui::Color32 {
     egui::Color32::from_rgb(139, 155, 255)
 }
 
 fn text(value: impl Into<String>, size: f32, color: egui::Color32) -> egui::RichText {
+    let color = LIGHT_MODE.with(|light| {
+        if !light.get() { return color; }
+        let spread = color.r().max(color.g()).max(color.b()) - color.r().min(color.g()).min(color.b());
+        if spread < 65 && color.r() > 145 {
+            egui::Color32::from_rgb(65, 75, 98)
+        } else if color == egui::Color32::WHITE {
+            egui::Color32::from_rgb(27, 35, 55)
+        } else {
+            color
+        }
+    });
     egui::RichText::new(value).size(size).color(color)
 }
 
@@ -21,13 +35,14 @@ fn surface<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::
 fn background(ctx: &egui::Context, time: f32) {
     let painter = ctx.layer_painter(egui::LayerId::background());
     let rect = ctx.input(|input| input.screen_rect());
-    painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(8, 11, 22));
+    let light = LIGHT_MODE.with(Cell::get);
+    painter.rect_filled(rect, 0.0, if light { egui::Color32::from_rgb(241, 245, 253) } else { egui::Color32::from_rgb(8, 11, 22) });
     let drift = (time * 0.16).sin();
     let glow_a = egui::pos2(rect.width() * (0.22 + drift * 0.06), rect.height() * 0.22);
     let glow_b = egui::pos2(rect.width() * 0.84, rect.height() * (0.65 + drift * 0.04));
     for (center, color) in [
-        (glow_a, egui::Color32::from_rgba_unmultiplied(73, 94, 226, 20)),
-        (glow_b, egui::Color32::from_rgba_unmultiplied(142, 65, 210, 18)),
+        (glow_a, if light { egui::Color32::from_rgba_unmultiplied(115, 137, 240, 24) } else { egui::Color32::from_rgba_unmultiplied(73, 94, 226, 20) }),
+        (glow_b, if light { egui::Color32::from_rgba_unmultiplied(185, 123, 220, 20) } else { egui::Color32::from_rgba_unmultiplied(142, 65, 210, 18) }),
     ] {
         for layer in (1..=8).rev() {
             let radius = rect.width().min(rect.height()) * (0.06 + layer as f32 * 0.035);
@@ -354,11 +369,12 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
-    ctx.set_visuals(egui::Visuals::dark());
+    LIGHT_MODE.with(|light| light.set(state.light_mode));
+    ctx.set_visuals(if state.light_mode { egui::Visuals::light() } else { egui::Visuals::dark() });
     ctx.style_mut(|style| {
         style.spacing.item_spacing = egui::vec2(10.0, 8.0);
         style.visuals.panel_fill = egui::Color32::TRANSPARENT;
-        style.visuals.window_fill = egui::Color32::from_rgb(18, 23, 40);
+        style.visuals.window_fill = if state.light_mode { egui::Color32::from_rgb(247, 249, 255) } else { egui::Color32::from_rgb(18, 23, 40) };
         style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(31, 38, 62);
         style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(53, 64, 104);
         style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(76, 91, 157);
