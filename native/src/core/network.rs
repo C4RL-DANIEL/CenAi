@@ -692,7 +692,7 @@ impl CenAiApi {
                 "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": "Kore" } } }
             }
         });
-        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent")
+        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent")
             .header("x-goog-api-key", api_key)
             .json(&payload)
             .send().await.map_err(|error| format!("Gemini speech request failed: {error}"))?;
