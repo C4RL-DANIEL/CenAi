@@ -223,4 +223,17 @@ impl SessionVault for AndroidSecretVault {
         self.put_secret("supabase_refresh_token", "")?;
         self.put_secret("supabase_account_email", "")
     }
+    fn provider_key(&self, provider: &str) -> Result<String, String> {
+        if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+            return Err("Provider identifier is invalid".into());
+        }
+        self.get_secret(&format!("provider_api_key_{provider}"))
+    }
+
+    fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
+        if !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+            return Err("Provider identifier is invalid".into());
+        }
+        self.put_secret(&format!("provider_api_key_{provider}"), key)
+    }
 }
