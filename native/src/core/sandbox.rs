@@ -47,6 +47,9 @@ fn contains_credential_material(value: &str) -> bool {
         || lower.contains("-----begin ")
         || lower.contains("sk-")
         || lower.contains("sb_secret_")
+        || lower.contains("api_key=") || lower.contains("api-key=")
+        || lower.contains("access_token=") || lower.contains("refresh_token=")
+        || lower.contains("password=") || lower.contains("secret=")
         || (lower.contains("eyj") && value.matches('.').count() >= 2)
 }
 
@@ -58,7 +61,8 @@ impl SandboxRequest {
         if !allowed_commands.contains(&self.command) {
             return Err("Command is not in the sandbox allowlist");
         }
-        if self.arguments.len() > 128 || self.arguments.iter().any(|argument| argument.len() > 4096 || argument.contains('\0')) {
+        if self.arguments.len() > 128 || self.arguments.iter().any(|argument| argument.len() > 4096
+            || argument.contains('\0') || contains_credential_material(argument)) {
             return Err("Sandbox arguments exceed the allowed limits");
         }
         let path = Path::new(&self.working_directory);
@@ -218,6 +222,9 @@ mod tests {
         assert!(job.validate(&commands, &hosts).is_err());
         let mut job = request();
         job.environment.push(("SERVICE".into(), "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature".into()));
+        assert!(job.validate(&commands, &hosts).is_err());
+        let mut job = request();
+        job.arguments.push("--api-key=private-value".into());
         assert!(job.validate(&commands, &hosts).is_err());
     }
 
