@@ -352,6 +352,10 @@ impl WgpuRenderer {
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
+        if !app_state.account_email.is_empty() {
+            app_state.pending_mfa_refresh = true;
+            app_state.mfa_status = "Checking account authenticator status…".into();
+        }
         let automation_scheduler = workspace.as_ref().and_then(|store| AutomationScheduler::from_workspace(store).ok());
         app_state.automations = automation_scheduler.as_ref().map(|scheduler| scheduler.snapshot(&active_user_id)).unwrap_or_default();
         app_state.guardian_consent = api.as_ref().is_some_and(CenAiApi::guardian_consent);
@@ -1832,19 +1836,17 @@ impl WgpuRenderer {
                     match result {
                         Ok(factors) => {
                             self.app_state.mfa_factors = factors;
-                            if self.app_state.mfa_login_required {
-                                if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
-                                    if self.app_state.mfa_enrollment_factor_id.is_empty() {
-                                        self.app_state.mfa_enrollment_factor_id = factor.id.clone();
-                                    }
-                                    self.app_state.mfa_status = "Enter a current authenticator code to continue.".into();
-                                } else {
-                                    self.app_state.mfa_login_required = false;
-                                    self.app_state.destination = crate::ui::model::Destination::Conversation;
-                                    self.app_state.mfa_status = "No verified authenticator is required for this account.".into();
+                            if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
+                                self.app_state.mfa_login_required = true;
+                                if self.app_state.mfa_enrollment_factor_id.is_empty() {
+                                    self.app_state.mfa_enrollment_factor_id = factor.id.clone();
                                 }
+                                self.app_state.mfa_status = "Enter a current authenticator code to continue.".into();
+                                self.app_state.destination = crate::ui::model::Destination::Settings;
                             } else {
-                                self.app_state.mfa_status = "Authenticator status refreshed.".into();
+                                self.app_state.mfa_login_required = false;
+                                self.app_state.destination = crate::ui::model::Destination::Conversation;
+                                self.app_state.mfa_status = "No verified authenticator is required for this account.".into();
                             }
                         }
                         Err(error) => self.app_state.mfa_status = format!("Could not load authenticator status: {error}"),
@@ -1869,8 +1871,14 @@ impl WgpuRenderer {
                             self.app_state.mfa_enrollment_qr.clear();
                             self.app_state.mfa_login_required = false;
                             self.app_state.destination = crate::ui::model::Destination::Conversation;
+                            if !self.app_state.mfa_factors.iter().any(|factor| factor.id == self.app_state.mfa_enrollment_factor_id) {
+                                self.app_state.mfa_factors.push(crate::ui::model::MfaFactor {
+                                    id: self.app_state.mfa_enrollment_factor_id.clone(),
+                                    friendly_name: "CenAI authenticator".into(),
+                                    status: "verified".into(),
+                                });
+                            }
                             self.app_state.mfa_status = "Authenticator verified. Multi-factor authentication is active.".into();
-                            self.app_state.pending_mfa_refresh = true;
                         }
                         Err(error) => self.app_state.mfa_status = format!("Authenticator verification failed: {error}"),
                     }
