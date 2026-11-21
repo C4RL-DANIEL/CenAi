@@ -52,11 +52,12 @@ Deno.serve(async (req: Request) => {
       const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
       const { data: userRows, error: userError } = await adminDb.from("cenai_voice_usage_events").select("characters").eq("owner_user_id", user.id).gte("created_at", dayStart.toISOString());
       if (userError) throw userError;
-      const { data: globalRows, error: globalError } = await adminDb.from("cenai_voice_usage_events").select("neurons").gte("created_at", dayStart.toISOString());
+      const dayKey = dayStart.toISOString().slice(0, 10);
+      const { data: globalRow, error: globalError } = await adminDb.from("cenai_ai_daily_budget").select("reserved_neurons").eq("day_utc", dayKey).maybeSingle();
       if (globalError) throw globalError;
       const userUsed = (userRows || []).reduce((sum: number, row: any) => sum + Number(row.characters || 0), 0);
-      const globalUsed = (globalRows || []).reduce((sum: number, row: any) => sum + Number(row.neurons || 0), 0);
-      return reply(200, { ok: true, quota: { dailyCharacterLimit: 1000, dailyCharactersUsed: userUsed, globalNeuronLimit: 4000, globalNeuronsUsed: Number(globalUsed.toFixed(2)), resetsAt: new Date(dayStart.getTime() + 86400000).toISOString() } });
+      const globalUsed = Number(globalRow?.reserved_neurons || 0);
+      return reply(200, { ok: true, quota: { dailyCharacterLimit: 1000, dailyCharactersUsed: userUsed, voiceNeuronAllocation: 4000, globalNeuronLimit: 8000, globalNeuronsUsed: Number(globalUsed.toFixed(2)), resetsAt: new Date(dayStart.getTime() + 86400000).toISOString() } });
     }
     if (action === "voice_authorize") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
@@ -92,10 +93,18 @@ Deno.serve(async (req: Request) => {
       const { data: policy } = await adminDb.from("ai_quota_policies").select("daily_request_limit,monthly_token_limit,enabled").eq("owner_user_id",user.id).maybeSingle();
       const dailyLimit = policy?.daily_request_limit ?? 20;
       const monthlyTokenLimit = policy?.monthly_token_limit ?? 20000;
-      const { data: reservation, error: reserveError } = await adminDb.rpc("cenai_reserve_ai_request", {
+      const neuronRates: Record<string, { input: number; output: number }> = {
+        "@cf/google/gemma-4-26b-a4b-it": { input: 9091 / 1_000_000, output: 27273 / 1_000_000 }
+      };
+      const rates = neuronRates[model.model_id];
+      if (!rates) return reply(503, { error: "No safe Neuron cost estimate is configured for this model.", code: "MODEL_NEURON_PRICE_MISSING" });
+      const estimatedNeurons = Math.ceil((inputTokens * rates.input + maxOutputTokens * rates.output) * 1.25 * 100) / 100;
+      const { data: reservation, error: reserveError } = await adminDb.rpc("cenai_reserve_ai_request_v2", {
         p_user_id: user.id, p_model_id: model.model_id, p_model_slug: model.slug,
         p_input_tokens: inputTokens, p_max_output_tokens: maxOutputTokens,
-        p_default_daily_limit: 20, p_default_monthly_token_limit: 20000
+        p_estimated_neurons: Math.max(0.01, estimatedNeurons),
+        p_default_daily_limit: 20, p_default_monthly_token_limit: 20000,
+        p_global_daily_neuron_limit: 8000
       });
       if (reserveError) {
         console.error("Cloud AI quota reservation failed", reserveError.message);
@@ -105,12 +114,12 @@ Deno.serve(async (req: Request) => {
       if (!row?.allowed) {
         const status = row?.reason === "quota_disabled" ? 403 : row?.reason === "invalid_request" || row?.reason === "invalid_token_budget" ? 400 : 429;
         return reply(status, {
-          error: row?.reason === "daily_request_limit" ? "Daily AI request quota exceeded." : row?.reason === "monthly_token_limit" ? "Monthly AI token quota exceeded." : row?.reason === "rate_limit" ? "AI rate limit exceeded. Try again shortly." : row?.reason === "quota_disabled" ? "Cloud AI quota is disabled for this account." : "AI request could not be authorized.",
+          error: row?.reason === "daily_request_limit" ? "Daily AI request quota exceeded." : row?.reason === "monthly_token_limit" ? "Monthly AI token quota exceeded." : row?.reason === "rate_limit" ? "AI rate limit exceeded. Try again shortly." : row?.reason === "quota_disabled" ? "Cloud AI quota is disabled for this account." : row?.reason === "shared_global_daily_neuron_limit" ? "CenAI has reached its shared daily AI allowance. Try again after the UTC reset." : "AI request could not be authorized.",
           code: row?.reason || "QUOTA_BLOCKED",
-          quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row?.daily_used || 0, monthlyTokens: row?.monthly_tokens || 0 }
+          quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row?.daily_used || 0, monthlyTokens: row?.monthly_tokens || 0, globalNeuronLimit: 8000, globalNeuronsUsed: Number(row?.global_neurons_used || 0) }
         });
       }
-      return reply(200, { ok: true, eventId: row.event_id, model: model.slug, modelId: model.model_id, displayName: model.display_name, quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row.daily_used, monthlyTokens: row.monthly_tokens } });
+      return reply(200, { ok: true, eventId: row.event_id, model: model.slug, modelId: model.model_id, displayName: model.display_name, quota: { dailyLimit, monthlyTokenLimit, dailyUsed: row.daily_used, monthlyTokens: row.monthly_tokens, globalNeuronLimit: 8000, globalNeuronsUsed: Number(row.global_neurons_used || 0) } });
     }
     if (action === "record") {
       const eventId = Number(body.eventId);
