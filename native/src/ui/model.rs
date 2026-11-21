@@ -246,12 +246,10 @@ pub struct AppState {
     pub automation_id_draft: String,
     pub automation_title_draft: String,
     pub automation_schedule_draft: String,
-    pub automation_requires_approval: bool,
     pub automation_status: String,
     pub pending_automation_save: bool,
     pub pending_automation_toggle: Option<(String, bool)>,
     pub pending_automation_delete: Option<String>,
-    pub pending_automation_run: Option<String>,
 }
 
 impl Default for AppState {
