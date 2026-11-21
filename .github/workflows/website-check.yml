@@ -45,7 +45,7 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-paypal-billing cenai-public-api cenai-telemetry; do
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-paypal-billing cenai-public-api cenai-telemetry; do
             deno check --no-lock "supabase/functions/$function/index.ts"
           done
 
