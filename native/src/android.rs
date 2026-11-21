@@ -135,12 +135,12 @@ pub fn android_main(app: AndroidApp) {
         Ok(vault) => Arc::new(vault),
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
-    let email = vault.account_email().unwrap_or_default();
+    let account_id = vault.account_id().unwrap_or_default();
     let workspace_root = app.internal_data_path().unwrap_or_default();
-    let workspace = if email.is_empty() {
+    let workspace = if account_id.is_empty() {
         None
     } else {
-        app.internal_data_path().and_then(|root| WorkspaceStore::new(root.join("cenai-workspace"), &email).ok())
+        app.internal_data_path().and_then(|root| WorkspaceStore::new(root.join("cenai-workspace"), &account_id).ok())
     };
     let api = CenAiApi::new(vault).ok();
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
