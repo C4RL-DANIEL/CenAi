@@ -708,7 +708,7 @@ mod tests {
         }, 10).unwrap();
         source.save_automation(Automation {
             id: "backup-automation".into(), owner_scope: owner.into(), title: "Daily report".into(),
-            schedule: "0 9 * * *".into(), enabled: true, requires_approval: true, last_scheduled_at: None,
+            schedule: "0 9 * * *".into(), enabled: true, requires_approval: true, last_scheduled_at: None, pending_scheduled_at: None,
         }).unwrap();
 
         let encrypted = source.export_encrypted_backup("a much stronger backup passphrase").unwrap();
@@ -735,7 +735,7 @@ mod tests {
         let automation = Automation {
             id: "daily-report".into(), owner_scope: owner.into(), title: "Daily report".into(),
             schedule: "0 9 * * *".into(), enabled: true, requires_approval: true,
-            last_scheduled_at: Some(1_800_000_000),
+            last_scheduled_at: Some(1_800_000_000), pending_scheduled_at: None,
         };
         alice.save_automation(automation.clone()).unwrap();
         assert_eq!(alice.automations().unwrap(), vec![automation]);
