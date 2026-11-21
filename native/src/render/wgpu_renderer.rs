@@ -1526,11 +1526,17 @@ impl WgpuRenderer {
                             match outcome.mfa_factors {
                                 Ok(factors) => {
                                     self.app_state.mfa_factors = factors;
+                                    let already_stepped_up = self.api.as_ref().is_some_and(CenAiApi::session_has_aal2);
                                     if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
-                                        self.app_state.mfa_login_required = true;
-                                        self.app_state.mfa_enrollment_factor_id = factor.id.clone();
-                                        self.app_state.mfa_status = "This account requires an authenticator code before CenAI can be used.".into();
-                                        self.app_state.destination = crate::ui::model::Destination::Settings;
+                                        if !already_stepped_up {
+                                            self.app_state.mfa_login_required = true;
+                                            self.app_state.mfa_enrollment_factor_id = factor.id.clone();
+                                            self.app_state.mfa_status = "This account requires an authenticator code before CenAI can be used.".into();
+                                            self.app_state.destination = crate::ui::model::Destination::Settings;
+                                        } else {
+                                            self.app_state.mfa_login_required = false;
+                                            self.app_state.mfa_status = "Authenticator step-up is already valid for this session.".into();
+                                        }
                                     } else {
                                         self.app_state.mfa_status = "No verified authenticator challenge is required.".into();
                                     }
@@ -1843,13 +1849,20 @@ impl WgpuRenderer {
                     match result {
                         Ok(factors) => {
                             self.app_state.mfa_factors = factors;
+                            let already_stepped_up = self.api.as_ref().is_some_and(CenAiApi::session_has_aal2);
                             if let Some(factor) = self.app_state.mfa_factors.iter().find(|factor| factor.status == "verified") {
-                                self.app_state.mfa_login_required = true;
-                                if self.app_state.mfa_enrollment_factor_id.is_empty() {
-                                    self.app_state.mfa_enrollment_factor_id = factor.id.clone();
+                                if already_stepped_up {
+                                    self.app_state.mfa_login_required = false;
+                                    self.app_state.mfa_status = "Authenticator step-up is valid for this session.".into();
+                                    self.app_state.destination = crate::ui::model::Destination::Conversation;
+                                } else {
+                                    self.app_state.mfa_login_required = true;
+                                    if self.app_state.mfa_enrollment_factor_id.is_empty() {
+                                        self.app_state.mfa_enrollment_factor_id = factor.id.clone();
+                                    }
+                                    self.app_state.mfa_status = "Enter a current authenticator code to continue.".into();
+                                    self.app_state.destination = crate::ui::model::Destination::Settings;
                                 }
-                                self.app_state.mfa_status = "Enter a current authenticator code to continue.".into();
-                                self.app_state.destination = crate::ui::model::Destination::Settings;
                             } else {
                                 self.app_state.mfa_login_required = false;
                                 self.app_state.destination = crate::ui::model::Destination::Conversation;
