@@ -11,7 +11,9 @@ pub trait SessionVault: Send + Sync {
     fn access_token(&self) -> Result<String, String>;
     fn refresh_token(&self) -> Result<String, String>;
     fn account_email(&self) -> Result<String, String>;
-    fn save_session(&self, access: &str, refresh: &str, email: &str) -> Result<(), String>;
+    /// Immutable Supabase user UUID from the verified auth response.
+    fn account_id(&self) -> Result<String, String>;
+    fn save_session(&self, access: &str, refresh: &str, user_id: &str, email: &str) -> Result<(), String>;
     fn clear_session(&self) -> Result<(), String>;
     fn provider_key(&self, provider: &str) -> Result<String, String>;
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String>;
@@ -41,6 +43,11 @@ impl CenAiApi {
         self.vault.account_email()
     }
 
+    /// Returns the immutable account UUID received from Supabase, never an email-derived identity.
+    pub fn account_id(&self) -> Result<String, String> {
+        self.vault.account_id()
+    }
+
     pub fn has_session(&self) -> bool {
         self.vault.access_token().map(|token| !token.is_empty()).unwrap_or(false)
     }
@@ -57,10 +64,11 @@ impl CenAiApi {
         let access = data.get("access_token").and_then(Value::as_str).unwrap_or_default();
         let refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
         let account_email = data.pointer("/user/email").and_then(Value::as_str).unwrap_or(email).to_owned();
-        if access.is_empty() || refresh.is_empty() {
-            return Err("The identity service returned an incomplete session.".into());
+        let user_id = data.pointer("/user/id").and_then(Value::as_str).unwrap_or_default();
+        if access.is_empty() || refresh.is_empty() || user_id.is_empty() {
+            return Err("The identity service returned an incomplete session identity.".into());
         }
-        self.vault.save_session(access, refresh, &account_email)?;
+        self.vault.save_session(access, refresh, user_id, &account_email)?;
         Ok(account_email)
     }
 
@@ -132,10 +140,12 @@ impl CenAiApi {
         let next_refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
         let email = data.pointer("/user/email").and_then(Value::as_str)
             .map(str::to_owned).unwrap_or(self.vault.account_email()?);
-        if access.is_empty() || next_refresh.is_empty() {
-            return Err("The identity service returned an incomplete session.".into());
+        let user_id = data.pointer("/user/id").and_then(Value::as_str)
+            .map(str::to_owned).unwrap_or(self.vault.account_id()?);
+        if access.is_empty() || next_refresh.is_empty() || user_id.is_empty() {
+            return Err("The identity service returned an incomplete session identity.".into());
         }
-        self.vault.save_session(access, next_refresh, &email)
+        self.vault.save_session(access, next_refresh, &user_id, &email)
     }
 
     async fn post_authenticated(&self, url: &str, body: &Value) -> Result<Value, String> {
