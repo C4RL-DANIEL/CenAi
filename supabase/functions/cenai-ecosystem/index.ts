@@ -23,7 +23,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers });
   if (req.method !== "POST") return fail(405, "Method not allowed");
   try {
-    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\\s+/i, "");
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     if (!token) return fail(401, "Sign in required");
     const { data: { user }, error: authError } = await authDb.auth.getUser(token);
     if (authError || !user || user.is_anonymous) return fail(401, "Invalid or expired session");
