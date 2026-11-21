@@ -33,6 +33,47 @@ impl CenAiApi {
         Ok(Self { client, vault })
     }
 
+    pub fn session_email(&self) -> Result<String, String> {
+        self.vault.account_email()
+    }
+
+    pub fn has_session(&self) -> bool {
+        self.vault.access_token().map(|token| !token.is_empty()).unwrap_or(false)
+    }
+
+    pub async fn sign_in(&self, email: &str, password: &str) -> Result<String, String> {
+        if !email.contains('@') || password.is_empty() {
+            return Err("Enter your existing CenAI account email and password.".into());
+        }
+        let response = self.client.post(format!("{}/auth/v1/token?grant_type=password", config::SUPABASE_URL))
+            .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+            .json(&json!({ "email": email.trim(), "password": password }))
+            .send().await.map_err(|error| error.to_string())?;
+        let data = Self::decode_response(response).await?;
+        let access = data.get("access_token").and_then(Value::as_str).unwrap_or_default();
+        let refresh = data.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
+        let account_email = data.pointer("/user/email").and_then(Value::as_str).unwrap_or(email).to_owned();
+        if access.is_empty() || refresh.is_empty() {
+            return Err("The identity service returned an incomplete session.".into());
+        }
+        self.vault.save_session(access, refresh, &account_email)?;
+        Ok(account_email)
+    }
+
+    pub async fn sign_out(&self) -> Result<(), String> {
+        let token = self.vault.access_token()?;
+        if !token.is_empty() {
+            let response = self.client.post(format!("{}/auth/v1/logout", config::SUPABASE_URL))
+                .header("apikey", config::SUPABASE_PUBLISHABLE_KEY)
+                .bearer_auth(token)
+                .send().await.map_err(|error| error.to_string())?;
+            if !response.status().is_success() {
+                log::warn!("Supabase logout returned HTTP {}", response.status());
+            }
+        }
+        self.vault.clear_session()
+    }
+
     async fn refresh_session(&self) -> Result<(), String> {
         let refresh = self.vault.refresh_token()?;
         if refresh.is_empty() { return Err("Your session has expired. Sign in again.".into()); }
