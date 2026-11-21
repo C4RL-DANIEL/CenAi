@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 use crate::core::workspace::Project;
 use crate::core::agents::TaskPlan;
+use crate::core::guardian::GuardianSnapshot;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
@@ -102,6 +103,7 @@ pub struct AppState {
     pub conversation: ConversationState,
     pub reduced_motion: bool,
     pub light_mode: bool,
+    pub guardian_snapshot: Option<GuardianSnapshot>,
     pub guardian_consent: bool,
     pub pending_guardian_consent: Option<bool>,
     pub personal_memory_enabled: bool,
@@ -168,6 +170,7 @@ impl Default for AppState {
             conversation: ConversationState::default(),
             reduced_motion: false,
             light_mode: false,
+            guardian_snapshot: None,
             guardian_consent: false,
             pending_guardian_consent: None,
             personal_memory_enabled: false,
