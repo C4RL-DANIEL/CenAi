@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 use super::RenderBackend;
@@ -170,6 +170,8 @@ pub struct WgpuRenderer {
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
     mcp_clients: HashMap<String, Arc<McpHttpClient>>,
+    automation_scheduler: Option<AutomationScheduler>,
+    last_automation_poll: std::time::Instant,
     voice_pipeline: Option<VoicePipeline>,
     #[cfg(target_os = "android")]
     audio_capture: Option<AndroidAudioCapture>,
@@ -317,6 +319,8 @@ impl WgpuRenderer {
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
+        let automation_scheduler = workspace.as_ref().and_then(|store| AutomationScheduler::from_workspace(store).ok());
+        app_state.automations = automation_scheduler.as_ref().map(|scheduler| scheduler.snapshot(&active_user_id)).unwrap_or_default();
         app_state.guardian_consent = api.as_ref().is_some_and(CenAiApi::guardian_consent);
         let mut guardian = GuardianMonitor::default();
         guardian.set_telemetry_consent(app_state.guardian_consent);
@@ -351,6 +355,8 @@ impl WgpuRenderer {
             workspace_root,
             guardian,
             mcp_clients: HashMap::new(),
+            automation_scheduler,
+            last_automation_poll: std::time::Instant::now(),
             voice_pipeline: None,
             #[cfg(target_os = "android")]
             audio_capture: None,
@@ -708,6 +714,13 @@ impl WgpuRenderer {
         self.app_state.pending_backup_upload = false;
         self.app_state.pending_backup_download = false;
         self.app_state.backup_status.clear();
+        self.app_state.automations.clear();
+        self.app_state.automation_status.clear();
+        self.app_state.pending_automation_save = false;
+        self.app_state.pending_automation_toggle = None;
+        self.app_state.pending_automation_delete = None;
+        self.app_state.pending_automation_run = None;
+        self.automation_scheduler = None;
         self.app_state.voice_active = false;
         self.app_state.pending_voice_start = false;
         self.app_state.pending_voice_stop = false;
@@ -981,6 +994,77 @@ impl WgpuRenderer {
                     let _ = api.telemetry(serde_json::json!({ "action": "consent", "usageAnalytics": false, "guardian": enabled })).await;
                 });
                 self.track_task(task);
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_automation_save) {
+            if !self.active_user_id.is_empty() {
+                if let Some(store) = self.workspace.as_ref() {
+                    let automation = Automation {
+                        id: self.app_state.automation_id_draft.trim().to_owned(),
+                        owner_scope: self.active_user_id.clone(),
+                        title: self.app_state.automation_title_draft.trim().to_owned(),
+                        schedule: self.app_state.automation_schedule_draft.trim().to_owned(),
+                        enabled: true,
+                        requires_approval: true,
+                        last_scheduled_at: None,
+                    };
+                    let scheduler = self.automation_scheduler.get_or_insert_with(|| AutomationScheduler::from_workspace(store).unwrap_or_default());
+                    match scheduler.upsert_and_persist(automation, store) {
+                        Ok(()) => {
+                            self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                            self.app_state.automation_status = "Automation saved. It will notify you when due while CenAI is running; task actions still require your approval.".into();
+                            self.app_state.automation_id_draft.clear();
+                            self.app_state.automation_title_draft.clear();
+                        }
+                        Err(error) => self.app_state.automation_status = format!("Could not save automation: {error}"),
+                    }
+                } else {
+                    self.app_state.automation_status = "Open a signed-in workspace before saving automations.".into();
+                }
+            } else {
+                self.app_state.automation_status = "Sign in before saving automations.".into();
+            }
+        }
+        if let Some((automation_id, enabled)) = self.app_state.pending_automation_toggle.take() {
+            if let (Some(scheduler), Some(store)) = (self.automation_scheduler.as_mut(), self.workspace.as_ref()) {
+                match scheduler.set_enabled_and_persist(&self.active_user_id, &automation_id, enabled, store) {
+                    Ok(true) => {
+                        self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                        self.app_state.automation_status = if enabled { "Automation resumed.".into() } else { "Automation paused.".into() };
+                    }
+                    Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
+                    Err(error) => self.app_state.automation_status = format!("Could not update automation: {error}"),
+                }
+            }
+        }
+        if let Some(automation_id) = self.app_state.pending_automation_delete.take() {
+            if let (Some(scheduler), Some(store)) = (self.automation_scheduler.as_mut(), self.workspace.as_ref()) {
+                match scheduler.remove_and_persist(&self.active_user_id, &automation_id, store) {
+                    Ok(true) => {
+                        self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                        self.app_state.automation_status = "Automation deleted.".into();
+                    }
+                    Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
+                    Err(error) => self.app_state.automation_status = format!("Could not delete automation: {error}"),
+                }
+            }
+        }
+        if self.last_automation_poll.elapsed() >= std::time::Duration::from_secs(5) {
+            self.last_automation_poll = std::time::Instant::now();
+            if let (Some(scheduler), Some(store)) = (self.automation_scheduler.as_mut(), self.workspace.as_ref()) {
+                match scheduler.poll_due_and_persist(chrono::Utc::now(), store) {
+                    Ok(due) if !due.is_empty() => {
+                        for trigger in due {
+                            if let Some(automation) = self.app_state.automations.iter().find(|item| item.id == trigger.automation_id) {
+                                self.app_state.conversation.draft = format!("Please prepare this scheduled task for my review: {}", automation.title);
+                                self.app_state.automation_status = format!("{} is due. Review the prepared task in Conversation; no action is executed automatically.", automation.title);
+                            }
+                        }
+                        self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                    }
+                    Ok(_) => {}
+                    Err(error) => self.app_state.automation_status = format!("Automation scheduler could not persist its run cursor: {error}"),
+                }
             }
         }
         if std::mem::take(&mut self.app_state.pending_backup_upload) {
@@ -1278,6 +1362,9 @@ impl WgpuRenderer {
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
                                     self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().map(|record| record.plan).collect();
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
+                                    self.automation_scheduler = AutomationScheduler::from_workspace(&store).ok();
+                                    self.app_state.automations = self.automation_scheduler.as_ref()
+                                        .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
                                     self.workspace = Some(store);
                                 }
                                 Err(error) => self.app_state.auth_status = format!("Signed in, but workspace could not open: {error}"),
