@@ -859,7 +859,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                     state.pending_mfa_refresh = true;
                     state.mfa_status = "Loading authenticator status…".into();
                 }
-                if ui.button("Enroll authenticator").clicked() {
+                if ui.add_enabled(!state.mfa_login_required, egui::Button::new("Enroll authenticator")).clicked() {
                     state.pending_mfa_enroll = true;
                     state.mfa_status = "Creating authenticator setup…".into();
                 }
@@ -883,7 +883,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                     ui.horizontal(|ui| {
                         ui.label(text(format!("{} · {}", factor.friendly_name, factor.status), 10.0, egui::Color32::from_rgb(190, 201, 224)));
                         if ui.small_button("Use").clicked() { selected_factor = Some(factor.id.clone()); }
-                        if ui.small_button("Remove").clicked() { removed_factor = Some(factor.id.clone()); }
+                        if ui.add_enabled(!state.mfa_login_required, egui::Button::new("Remove")).clicked() { removed_factor = Some(factor.id.clone()); }
                     });
                 }
                 if let Some(factor_id) = selected_factor {
