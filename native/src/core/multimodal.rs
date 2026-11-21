@@ -148,7 +148,62 @@ impl AttachmentStore {
         })();
         if write_result.is_err() { let _ = fs::remove_file(&temporary); }
         write_result?;
+        let metadata_path = path.with_extension("json");
+        let metadata_temp = metadata_path.with_extension(format!("json.tmp-{}", std::process::id()));
+        let metadata_bytes = serde_json::to_vec(metadata).map_err(|error| error.to_string())?;
+        let metadata_result = (|| -> Result<(), String> {
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&metadata_temp)
+                .map_err(|error| error.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                file.set_permissions(fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
+            }
+            file.write_all(&metadata_bytes).map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+            drop(file);
+            fs::rename(&metadata_temp, &metadata_path).map_err(|error| error.to_string())?;
+            Ok(())
+        })();
+        if let Err(error) = metadata_result {
+            let _ = fs::remove_file(&metadata_temp);
+            let _ = fs::remove_file(&path);
+            return Err(error);
+        }
         Ok(path)
+    }
+
+    pub fn list(&self) -> Result<Vec<AttachmentMetadata>, String> {
+        let directory = self.root.join(&self.user_id).join("attachments");
+        if !directory.exists() { return Ok(Vec::new()); }
+        let mut items = Vec::new();
+        for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = fs::read(path).map_err(|error| error.to_string())?;
+            let metadata: AttachmentMetadata = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+            metadata.validate().map_err(str::to_owned)?;
+            let stored = self.path_for(&metadata.id).map_err(str::to_owned)?;
+            if fs::metadata(stored).map_err(|error| error.to_string())?.len() != metadata.byte_length {
+                continue;
+            }
+            items.push(metadata);
+        }
+        items.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+        Ok(items)
+    }
+
+    pub fn delete(&self, attachment_id: &str) -> Result<bool, String> {
+        let bytes_path = self.path_for(attachment_id).map_err(str::to_owned)?;
+        let metadata_path = bytes_path.with_extension("json");
+        let existed = bytes_path.exists() || metadata_path.exists();
+        if !existed { return Ok(false); }
+        if bytes_path.exists() { fs::remove_file(bytes_path).map_err(|error| error.to_string())?; }
+        if metadata_path.exists() { fs::remove_file(metadata_path).map_err(|error| error.to_string())?; }
+        Ok(true)
     }
 
     pub fn load(&self, metadata: &AttachmentMetadata) -> Result<Vec<u8>, String> {
