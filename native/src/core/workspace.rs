@@ -410,7 +410,7 @@ impl WorkspaceStore {
                 let path = staging.join(format!("{id}.bin"));
                 let stored = self.encode_storage_bytes(&format!("artifacts/{id}.bin"), bytes)?;
                 let mut file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|error| error.to_string())?;
-                file.write_all(&stored).map_err(|error| error.to_string())?
+                file.write_all(&stored).map_err(|error| error.to_string())?;
                 file.sync_all().map_err(|error| error.to_string())?;
             }
             for conversation in &payload.conversations {
@@ -418,7 +418,7 @@ impl WorkspaceStore {
                 let path = conversation_staging.join(format!("{}.json", conversation.id));
                 let stored = self.encode_storage_bytes(&format!("conversations/{}.json", conversation.id), &bytes)?;
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|error| error.to_string())?;
-                file.write_all(&stored).map_err(|error| error.to_string())?
+                file.write_all(&stored).map_err(|error| error.to_string())?;
                 file.sync_all().map_err(|error| error.to_string())?;
             }
             Ok(())
