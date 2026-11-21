@@ -73,6 +73,7 @@ struct BackupArtifact {
     bytes_base64: String,
 }
 
+#[derive(Clone)]
 pub struct WorkspaceStore {
     user_root: PathBuf,
     user_identity: String,
