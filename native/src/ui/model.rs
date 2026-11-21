@@ -118,7 +118,32 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        Self { destination: Destination::Conversation, conversation: ConversationState::default(), reduced_motion: false }
+        Self {
+            destination: Destination::Conversation,
+            conversation: ConversationState::default(),
+            reduced_motion: false,
+            planning_mode: false,
+            provider_key_provider: "openai".into(),
+            provider_key_draft: String::new(),
+            provider_key_status: String::new(),
+            pending_provider_key: None,
+            projects: Vec::new(),
+            project_name_draft: String::new(),
+            project_description_draft: String::new(),
+            project_status: String::new(),
+            pending_project_create: None,
+            account_email: String::new(),
+            email_verified: false,
+            otp_draft: String::new(),
+            otp_status: String::new(),
+            pending_send_otp: false,
+            pending_verify_otp: None,
+            auth_email_draft: String::new(),
+            auth_password_draft: String::new(),
+            auth_status: String::new(),
+            pending_sign_in: None,
+            pending_sign_out: false,
+        }
     }
 }
 
