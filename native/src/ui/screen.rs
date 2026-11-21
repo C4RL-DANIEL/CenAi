@@ -202,6 +202,25 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
         ui.horizontal(|ui| {
+            if state.voice_active {
+                if ui.button("Stop & transcribe").clicked() {
+                    state.pending_voice_stop = true;
+                    state.voice_status = "Finishing your recording…".into();
+                }
+            } else if state.pending_voice_start {
+                if ui.button("Cancel microphone request").clicked() {
+                    state.pending_voice_stop = true;
+                    state.voice_status = "Cancelling voice input…".into();
+                }
+            } else if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("🎙 Voice input")).clicked() {
+                state.pending_voice_start = true;
+                state.voice_status = "Requesting microphone access…".into();
+            }
+            if !state.voice_status.is_empty() {
+                ui.label(text(&state.voice_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            }
+        });
+        ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
             ui.add_enabled_ui(state.personal_memory_enabled, |ui| {
                 ui.checkbox(&mut state.include_memory_for_request, "Use my private memory for this message");
