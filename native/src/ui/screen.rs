@@ -1012,6 +1012,16 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                     state.backup_status = "Downloading encrypted backup…".into();
                 }
             }
+            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from file")).clicked() {
+                if state.backup_passphrase_draft.as_bytes().len() < 12 {
+                    state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
+                } else if !state.backup_restore_confirmed {
+                    state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
+                } else {
+                    state.pending_backup_file_picker = true;
+                    state.backup_status = "Choose your encrypted CenAI backup file…".into();
+                }
+            }
         });
         ui.checkbox(&mut state.backup_restore_confirmed, "I understand restore replaces this account's current local workspace");
         if !state.backup_status.is_empty() {
