@@ -112,6 +112,48 @@ impl ContextRecord {
     }
 }
 
+
+/// Selects a bounded set of private memories most relevant to the current goal.
+/// Memory text is treated as untrusted data; this function only ranks content and
+/// never grants access to records owned by another account.
+pub fn rank_personal_memories<'a>(
+    goal: &str,
+    records: &'a [ContextRecord],
+    max_items: usize,
+    max_chars: usize,
+) -> Vec<&'a ContextRecord> {
+    fn terms(value: &str) -> std::collections::HashSet<String> {
+        value.split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|term| term.len() >= 3)
+            .map(str::to_ascii_lowercase)
+            .collect()
+    }
+
+    let goal_terms = terms(goal);
+    let mut ranked = records.iter().enumerate()
+        .filter(|(_, record)| record.kind == ContextKind::PersonalMemory)
+        .map(|(index, record)| {
+            let memory_terms = terms(&record.content);
+            let overlap = goal_terms.intersection(&memory_terms).count();
+            let phrase_bonus = if !goal.trim().is_empty()
+                && record.content.to_ascii_lowercase().contains(&goal.trim().to_ascii_lowercase()) { 8 } else { 0 };
+            (index, record, overlap.saturating_mul(3) + phrase_bonus)
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(&right.0)));
+
+    let mut selected = Vec::new();
+    let mut used_chars = 0usize;
+    for (_, record, _) in ranked {
+        if selected.len() >= max_items { break; }
+        let next = record.content.chars().count();
+        if next == 0 || used_chars.saturating_add(next) > max_chars { continue; }
+        used_chars += next;
+        selected.push(record);
+    }
+    selected
+}
+
 /// Returns only records authorized for this exact user/feature/session request.
 pub fn collect_authorized_context<'a>(
     request: &ContextRequest,
@@ -194,6 +236,32 @@ mod tests {
             record("550e8400-e29b-41d4-a716-446655440000", "research", None, ContextKind::FeatureData, "Visible note"),
         ];
         assert_eq!(collect_authorized_context(&request(), &records).unwrap(), vec!["Visible note"]);
+    }
+
+
+    #[test]
+    fn personal_memory_ranking_prioritizes_goal_relevance_and_enforces_limits() {
+        let owner = "550e8400-e29b-41d4-a716-446655440000";
+        let records = vec![
+            record(owner, "memory", None, ContextKind::PersonalMemory, "Prefers concise responses"),
+            record(owner, "memory", None, ContextKind::PersonalMemory, "CenAI Android Rust renderer project"),
+            record(owner, "memory", None, ContextKind::PersonalMemory, "Uses a tablet for Android development"),
+            record(owner, "research", None, ContextKind::FeatureData, "Feature data is not personal memory"),
+        ];
+        let ranked = rank_personal_memories("Continue the CenAI Android Rust project", &records, 2, 100);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].content, "CenAI Android Rust renderer project");
+        assert!(ranked.iter().all(|record| record.kind == ContextKind::PersonalMemory));
+    }
+
+    #[test]
+    fn personal_memory_ranking_respects_zero_limits() {
+        let records = vec![record(
+            "550e8400-e29b-41d4-a716-446655440000",
+            "memory", None, ContextKind::PersonalMemory, "Private preference",
+        )];
+        assert!(rank_personal_memories("preference", &records, 0, 100).is_empty());
+        assert!(rank_personal_memories("preference", &records, 5, 0).is_empty());
     }
 
     #[test]
