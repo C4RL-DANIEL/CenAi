@@ -84,7 +84,7 @@ fn navigation(ui: &mut egui::Ui, state: &mut AppState) {
             let color = if selected { egui::Color32::WHITE } else { egui::Color32::from_rgb(145, 154, 180) };
             if ui.add_sized(
                 [ui.available_width() / 4.0, 54.0],
-                egui::Button::new(egui::RichText::new(format!("{glyph}\n{label}")).size(11.0).color(color))
+                egui::Button::new(text(format!("{glyph}\n{label}"), 11.0, color))
                     .fill(fill)
                     .stroke(egui::Stroke::NONE),
             ).clicked() {
@@ -375,19 +375,19 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
         style.spacing.item_spacing = egui::vec2(10.0, 8.0);
         style.visuals.panel_fill = egui::Color32::TRANSPARENT;
         style.visuals.window_fill = if state.light_mode { egui::Color32::from_rgb(247, 249, 255) } else { egui::Color32::from_rgb(18, 23, 40) };
-        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(31, 38, 62);
-        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(53, 64, 104);
-        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(76, 91, 157);
+        style.visuals.widgets.inactive.bg_fill = if state.light_mode { egui::Color32::from_rgb(232, 237, 249) } else { egui::Color32::from_rgb(31, 38, 62) };
+        style.visuals.widgets.hovered.bg_fill = if state.light_mode { egui::Color32::from_rgb(218, 226, 249) } else { egui::Color32::from_rgb(53, 64, 104) };
+        style.visuals.widgets.active.bg_fill = if state.light_mode { egui::Color32::from_rgb(202, 214, 248) } else { egui::Color32::from_rgb(76, 91, 157) };
         style.visuals.selection.bg_fill = egui::Color32::from_rgb(76, 91, 157);
     });
     background(ctx, time_seconds);
 
     egui::TopBottomPanel::top("cenai_header")
-        .frame(egui::Frame::new().fill(egui::Color32::from_rgba_unmultiplied(12, 16, 30, 224)).inner_margin(egui::Margin::symmetric(18, 14)))
+        .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 236) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 224) }).inner_margin(egui::Margin::symmetric(18, 14)))
         .show(ctx, |ui| top_bar(ui));
 
     egui::TopBottomPanel::bottom("cenai_navigation")
-        .frame(egui::Frame::new().fill(egui::Color32::from_rgba_unmultiplied(12, 16, 30, 240)).inner_margin(egui::Margin::symmetric(8, 8)))
+        .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 242) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 240) }).inner_margin(egui::Margin::symmetric(8, 8)))
         .show(ctx, |ui| navigation(ui, state));
 
     egui::CentralPanel::default()
