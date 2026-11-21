@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 use super::RenderBackend;
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
@@ -29,6 +29,42 @@ fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user
         context.push_str(&record.content);
     }
     context
+}
+
+
+fn ecosystem_apps_from_response(value: serde_json::Value) -> Result<Vec<EcosystemAppItem>, String> {
+    let apps = value.get("apps").and_then(serde_json::Value::as_array)
+        .ok_or("Ecosystem service returned no app catalog")?;
+    let grants = value.get("grants").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    let grant_map = grants.into_iter().filter_map(|grant| {
+        let app_id = grant.get("app_id").and_then(serde_json::Value::as_str)?.to_owned();
+        let scopes = grant.get("granted_scopes").and_then(serde_json::Value::as_array)
+            .map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default();
+        let revoked = grant.get("revoked").and_then(serde_json::Value::as_bool).unwrap_or(true);
+        Some((app_id, (scopes, revoked)))
+    }).collect::<HashMap<_, _>>();
+    Ok(apps.iter().filter_map(|app| {
+        let app_id = app.get("app_id").and_then(serde_json::Value::as_str)?.to_owned();
+        let strings = |key: &str| app.get(key).and_then(serde_json::Value::as_array)
+            .map(|items| items.iter().filter_map(serde_json::Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default();
+        let (granted_scopes, revoked) = grant_map.get(&app_id).cloned().unwrap_or_default();
+        Some(EcosystemAppItem {
+            app_id,
+            publisher_id: app.get("publisher_id").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+            version: app.get("version").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+            description: app.get("description").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+            capabilities: strings("capabilities"),
+            requested_scopes: strings("requested_scopes"),
+            granted_scopes,
+            revoked,
+        })
+    }).collect())
+}
+
+async fn reload_ecosystem(api: &CenAiApi) -> Result<Vec<EcosystemAppItem>, String> {
+    ecosystem_apps_from_response(api.ecosystem_list().await?)
 }
 
 fn new_session_id() -> String {
@@ -64,6 +100,7 @@ enum ChatEvent {
     MemoryListLoaded(u64, Result<Vec<crate::ui::model::PersonalMemoryItem>, String>),
     MemoryDeleted(u64, String, Result<(), String>),
     MemoryCleared(u64, Result<(), String>),
+    EcosystemUpdated(u64, String, Result<Vec<EcosystemAppItem>, String>),
 }
 
 impl ChatEvent {
@@ -84,7 +121,8 @@ impl ChatEvent {
             | Self::MemorySaved(generation, ..)
             | Self::MemoryListLoaded(generation, ..)
             | Self::MemoryDeleted(generation, ..)
-            | Self::MemoryCleared(generation, ..) => *generation,
+            | Self::MemoryCleared(generation, ..)
+            | Self::EcosystemUpdated(generation, ..) => *generation,
         }
     }
 }
@@ -485,6 +523,19 @@ impl WgpuRenderer {
         self.app_state.mcp_reviewed = false;
         self.app_state.mcp_status.clear();
         self.app_state.mcp_call_result.clear();
+        self.app_state.ecosystem_apps.clear();
+        self.app_state.ecosystem_status.clear();
+        self.app_state.ecosystem_app_id_draft.clear();
+        self.app_state.ecosystem_publisher_id_draft.clear();
+        self.app_state.ecosystem_description_draft.clear();
+        self.app_state.ecosystem_capabilities_draft.clear();
+        self.app_state.ecosystem_scopes_draft.clear();
+        self.app_state.ecosystem_selected_app.clear();
+        self.app_state.ecosystem_grant_scopes_draft.clear();
+        self.app_state.pending_ecosystem_refresh = false;
+        self.app_state.pending_ecosystem_register = None;
+        self.app_state.pending_ecosystem_grant = None;
+        self.app_state.pending_ecosystem_revoke = None;
         self.app_state.mcp_call_arguments_draft.clear();
         self.app_state.pending_checkout_plan = None;
         self.app_state.pending_send_otp = false;
@@ -688,6 +739,68 @@ impl WgpuRenderer {
                     let _ = api.telemetry(serde_json::json!({ "action": "consent", "usageAnalytics": false, "guardian": enabled })).await;
                 });
                 self.track_task(task);
+            }
+        }
+        if self.app_state.pending_ecosystem_refresh {
+            self.app_state.pending_ecosystem_refresh = false;
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = reload_ecosystem(&api).await;
+                    let _ = sender.send(ChatEvent::EcosystemUpdated(generation, "Ecosystem catalog refreshed.".into(), result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.ecosystem_status = "Sign in to use the Ecosystem Engine.".into();
+            }
+        }
+        if let Some(manifest) = self.app_state.pending_ecosystem_register.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        api.ecosystem_register_app(manifest).await?;
+                        reload_ecosystem(&api).await
+                    }.await;
+                    let _ = sender.send(ChatEvent::EcosystemUpdated(generation, "App manifest registered.".into(), result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.ecosystem_status = "Sign in before registering an app.".into();
+            }
+        }
+        if let Some((app_id, scopes)) = self.app_state.pending_ecosystem_grant.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        api.ecosystem_grant(&app_id, &scopes).await?;
+                        reload_ecosystem(&api).await
+                    }.await;
+                    let _ = sender.send(ChatEvent::EcosystemUpdated(generation, "App permissions updated.".into(), result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.ecosystem_status = "Sign in before changing app permissions.".into();
+            }
+        }
+        if let Some(app_id) = self.app_state.pending_ecosystem_revoke.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = async {
+                        api.ecosystem_revoke(&app_id).await?;
+                        reload_ecosystem(&api).await
+                    }.await;
+                    let _ = sender.send(ChatEvent::EcosystemUpdated(generation, "App access revoked.".into(), result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.ecosystem_status = "Sign in before revoking app access.".into();
             }
         }
         if let Some((server_id, tool_name, raw_arguments)) = self.app_state.pending_mcp_call.take() {
@@ -1027,6 +1140,15 @@ impl WgpuRenderer {
                             self.app_state.personal_memory_status = "Memory deleted from your account.".into();
                         }
                         Err(error) => self.app_state.personal_memory_status = format!("Could not delete memory: {error}"),
+                    }
+                }
+                ChatEvent::EcosystemUpdated(_, message, result) => {
+                    match result {
+                        Ok(apps) => {
+                            self.app_state.ecosystem_apps = apps;
+                            self.app_state.ecosystem_status = message;
+                        }
+                        Err(error) => self.app_state.ecosystem_status = format!("Ecosystem Engine: {error}"),
                     }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
