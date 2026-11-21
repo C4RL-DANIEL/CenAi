@@ -40,8 +40,9 @@ impl Automation {
         if self.id.trim().is_empty() || self.id.len() > 128
             || !self.id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
             || !valid_user_uuid(&self.owner_scope) || self.title.trim().is_empty()
-            || self.title.len() > 160 || self.title.chars().any(char::is_control) {
-            return Err("Automation requires a safe identity, authenticated owner UUID and title");
+            || self.title.len() > 160 || self.title.chars().any(char::is_control)
+            || !self.requires_approval {
+            return Err("Automation requires a safe identity, authenticated owner UUID, title and explicit approval");
         }
         if self.schedule.len() > 120 || self.schedule.parse::<Schedule>().is_err() {
             return Err("Automation schedule must be a valid five-field cron expression");
@@ -222,6 +223,9 @@ mod tests {
         assert!(automation.validate().is_err());
         automation.owner_scope = OWNER.into();
         assert!(automation.validate().is_ok());
+        automation.requires_approval = false;
+        assert!(automation.validate().is_err());
+        automation.requires_approval = true;
         automation.schedule = "90 25 * * *".into();
         assert!(automation.validate().is_err());
         automation.schedule = "*/15 9-17 * * 1-5".into();
