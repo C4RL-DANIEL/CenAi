@@ -306,6 +306,10 @@ impl AndroidAudioPlayback {
         Ok(())
     }
 
+    pub fn is_playing(&self) -> bool {
+        self.worker.as_ref().is_some_and(|worker| !worker.is_finished())
+    }
+
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::Release);
         let track = self.track.lock().ok().and_then(|slot| slot.as_ref().cloned());
