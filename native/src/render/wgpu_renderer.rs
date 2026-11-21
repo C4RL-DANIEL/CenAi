@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
 #[repr(C)]
@@ -20,6 +20,7 @@ enum ChatEvent {
     Finished(u64, Result<String, String>),
     SignedIn(Result<String, String>),
     SignedOut(Result<(), String>),
+    PlanFinished(u64, Result<TaskPlan, String>),
 }
 
 pub struct WgpuRenderer {
@@ -203,6 +204,22 @@ impl WgpuRenderer {
             let _ = self.response_tx.send(ChatEvent::Finished(message_id, Err("The account service is not initialized.".into())));
             return;
         };
+        let latest_goal = self.app_state.conversation.messages()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.body.clone()).last().unwrap_or_default();
+        if self.app_state.planning_mode {
+            let context = self.app_state.conversation.messages()
+                .filter(|message| message.role != MessageRole::System)
+                .map(|message| format!("{}: {}", if message.role == MessageRole::User { "User" } else { "Assistant" }, message.body))
+                .collect::<Vec<_>>().join("\n");
+            let brain = CentralBrain::new(api);
+            let sender = self.response_tx.clone();
+            self.runtime.spawn(async move {
+                let result = brain.plan(&latest_goal, &context).await;
+                let _ = sender.send(ChatEvent::PlanFinished(message_id, result));
+            });
+            return;
+        }
         let messages: Vec<ChatMessage> = self.app_state.conversation.messages()
             .map(|message| ChatMessage {
                 role: match message.role {
@@ -360,6 +377,20 @@ impl WgpuRenderer {
                         }
                         Err(error) => self.app_state.auth_status = format!("Sign-out failed: {error}"),
                     }
+                }
+                ChatEvent::PlanFinished(message_id, result) => {
+                    match result {
+                        Ok(plan) => {
+                            let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
+                            for step in &plan.steps {
+                                summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
+                            }
+                            summary.push_str("\nNothing has been executed. Review this plan before authorizing any actions.");
+                            self.app_state.conversation.push(MessageRole::Assistant, summary);
+                        }
+                        Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
+                    }
+                    log::debug!("Central Brain plan completed for message {message_id}");
                 }
                 ChatEvent::Finished(message_id, result) => {
                     match result {
