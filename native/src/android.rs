@@ -1,6 +1,6 @@
 //! Android NativeActivity entrypoint. All application UI and rendering live in Rust.
-use std::sync::Arc;
-use jni::{objects::{JObject, JValue}, JavaVM};
+use std::{collections::VecDeque, sync::{Arc, Mutex, OnceLock}};
+use jni::{objects::{JClass, JObject, JString, JValue}, sys::jint, JNIEnv, JavaVM};
 
 mod vault;
 pub(crate) mod audio;
@@ -16,6 +16,54 @@ use winit::{
 };
 
 use crate::render::wgpu_renderer::WgpuRenderer;
+
+#[derive(Debug)]
+enum AndroidPlatformEvent {
+    FilePicked { request_code: i32, path: String, mime_type: String, display_name: String, error: String },
+    DocumentCreated { request_code: i32, uri: String },
+}
+
+static PLATFORM_EVENTS: OnceLock<Mutex<VecDeque<AndroidPlatformEvent>>> = OnceLock::new();
+
+fn push_platform_event(event: AndroidPlatformEvent) {
+    let queue = PLATFORM_EVENTS.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Ok(mut queue) = queue.lock() {
+        if queue.len() < 8 { queue.push_back(event); }
+    }
+}
+
+fn pop_platform_event() -> Option<AndroidPlatformEvent> {
+    PLATFORM_EVENTS.get()?.lock().ok()?.pop_front()
+}
+
+fn java_string(env: &mut JNIEnv<'_>, value: JString<'_>) -> String {
+    env.get_string(&value).map(|value| value.into()).unwrap_or_default()
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint,
+    path: JString<'_>, mime_type: JString<'_>, display_name: JString<'_>, error: JString<'_>,
+) {
+    push_platform_event(AndroidPlatformEvent::FilePicked {
+        request_code,
+        path: java_string(&mut env, path),
+        mime_type: java_string(&mut env, mime_type),
+        display_name: java_string(&mut env, display_name),
+        error: java_string(&mut env, error),
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnDocumentCreated(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint, uri: JString<'_>,
+) {
+    push_platform_event(AndroidPlatformEvent::DocumentCreated {
+        request_code,
+        uri: java_string(&mut env, uri),
+    });
+}
+
 
 struct CenAiApplication {
     api: Option<CenAiApi>,
