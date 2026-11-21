@@ -4,7 +4,9 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, voice::{AudioChunk, VoiceMode, VoicePipeline}, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+#[cfg(target_os = "android")]
+use crate::android::audio::AndroidAudioCapture;
 use super::RenderBackend;
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
@@ -158,11 +160,28 @@ pub struct WgpuRenderer {
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
     mcp_clients: HashMap<String, Arc<McpHttpClient>>,
+    voice_pipeline: Option<VoicePipeline>,
+    #[cfg(target_os = "android")]
+    audio_capture: Option<AndroidAudioCapture>,
 }
 
 impl WgpuRenderer {
     pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn new_android(
+        window: Arc<Window>,
+        api: Option<CenAiApi>,
+        runtime: Handle,
+        workspace: Option<WorkspaceStore>,
+        workspace_root: PathBuf,
+        android_app: winit::platform::android::activity::AndroidApp,
+    ) -> anyhow::Result<Self> {
+        let mut renderer = pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))?;
+        renderer.audio_capture = Some(AndroidAudioCapture::new(android_app));
+        Ok(renderer)
     }
 
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
@@ -319,6 +338,9 @@ impl WgpuRenderer {
             workspace_root,
             guardian,
             mcp_clients: HashMap::new(),
+            voice_pipeline: None,
+            #[cfg(target_os = "android")]
+            audio_capture: None,
         })
     }
 
