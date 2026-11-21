@@ -244,6 +244,28 @@ mod tests {
     }
 
     #[test]
+    fn attachment_store_is_atomic_account_scoped_and_revalidates_content() {
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("cenai-attachments-{}-{unique}", std::process::id()));
+        let owner = "550e8400-e29b-41d4-a716-446655440010";
+        let other = "550e8400-e29b-41d4-a716-446655440011";
+        let bytes = b"\\x89PNG\\r\\n\\x1a\\nattachment-payload";
+        let digest = Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let metadata = AttachmentMetadata {
+            id: "image_1".into(), file_name: "photo.png".into(), mime_type: "image/png".into(),
+            kind: AttachmentKind::Image, byte_length: bytes.len() as u64, sha256: digest,
+        };
+        let store = AttachmentStore::new(&root, owner).unwrap();
+        store.save(&metadata, bytes).unwrap();
+        assert_eq!(store.load(&metadata).unwrap(), bytes);
+        let other_store = AttachmentStore::new(&root, other).unwrap();
+        assert!(other_store.load(&metadata).is_err());
+        store.delete(&metadata.id).unwrap();
+        assert!(store.load(&metadata).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn rich_content_rejects_insecure_citations_and_oversized_tables() {
         let citation = RichBlock::Citation { citation: Citation { title: "Source".into(), url: "http://example.com".into(), publisher: None } };
         assert_eq!(citation.validate(), Err("Citation URL must use HTTPS"));
