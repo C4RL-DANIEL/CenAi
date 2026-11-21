@@ -7,7 +7,7 @@ CenAI Voice is CenAI's branded speech product built on the open-source Qwen3-TTS
 - Product name: **CenAI Voice**
 - Upstream model family: Qwen3-TTS
 - Upstream source: https://github.com/QwenLM/Qwen3-TTS
-- Upstream project licence: Apache-2.0. Retain required copyright, licence and NOTICE material when redistributing upstream code or model artifacts.
+- Upstream model and tokenizer licence: Apache-2.0. The GGUF conversion/tooling runtime is MIT-licensed. Retain required copyright, licence and NOTICE material when redistributing upstream code or model artifacts.
 - CenAI owns its app experience, voice profile names, pronunciation policy, local model management and integration code. CenAI does not claim authorship of Qwen's model architecture or pretrained weights.
 - Verify the licence and terms of each exact checkpoint and tokenizer artifact before bundling or distributing it. Do not remove upstream attribution.
 
@@ -35,7 +35,11 @@ The product requirement is offline-only synthesis after model installation:
 - users can remove a model pack and see its disk usage;
 - voice playback is cancelled on user request, app lifecycle shutdown, or account/session invalidation.
 
-**Runtime status:** the Rust contract and product selection are implemented, but a Qwen-compatible Android ARM64 inference backend is not yet integrated. Qwen's upstream quickstart uses a Python/PyTorch runtime and its documented local deployment paths are not an Android NativeActivity runtime. Do not mark offline playback as working until a supported export/backend has been proven on Android. The implementation must benchmark cold start, peak RAM, real-time factor, audio quality, thermal load and sustained playback on the REDMI Pad 2 Pro class of hardware. No cloud service may be used as a substitute.
+**Runtime implementation:** CenAI now includes an Android NDK build for the MIT-licensed `qwen3-tts.cpp` GGML runtime and a small CenAI C ABI bridge. Rust loads `libcenai_qwen_bridge.so` and invokes synthesis locally. The APK packages the native runtime; model weights are not bundled.
+
+The explicit model installer downloads two pinned Q8_0 GGUF artifacts from [Serveurperso/Qwen3-TTS-GGUF](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF) at revision `b7ee2e8c7459c3bea99da23e3d178125a7d1713c`: the 0.6B Base talker (about 993 MB) and the shared 12Hz tokenizer (about 291 MB). Both files are SHA-256 checked before installation. The download is a one-time, user-initiated step; once installed, synthesis uses the local model only. No Google TTS, Android system TTS, Gemini TTS, DashScope API, or cloud fallback is permitted.
+
+**Validation status:** source integration is in place, but the Android NDK build, APK packaging, actual model load and real-device synthesis still need successful CI/device verification. Do not claim offline playback is release-ready until those checks pass. Benchmark cold start, peak RAM, real-time factor, audio quality, thermal load and sustained playback on the REDMI Pad 2 Pro class of hardware.
 
 ## Voice identity and fine-tuning
 
@@ -95,7 +99,10 @@ Keep the reference text set and scoring scripts versioned. Publish per-language 
 - [x] Fine-tuning workflow documentation.
 - [ ] Acquire/record licensed English voice dataset and signed consent.
 - [ ] Train and evaluate the CenAI English voice checkpoint.
-- [ ] Select and validate a compatible ARM64 inference backend/export.
-- [ ] Implement verified model-pack download, integrity checking, storage and deletion.
-- [ ] Integrate native inference and PCM playback.
-- [ ] Pass offline and performance tests on physical Android hardware.
+- [x] Add Android NDK build and CenAI C ABI bridge for the native GGML inference runtime.
+- [x] Add explicit Q8_0 model-pack download with pinned revision and SHA-256 checks.
+- [x] Connect Rust read-aloud to local inference and Android PCM playback.
+- [ ] Pass Rust/Android CI, model-load and synthesis tests.
+- [ ] Add voice-profile recording and consent workflow.
+- [ ] Fine-tune the English Base checkpoint on licensed voice-actor recordings and convert the result to GGUF.
+- [ ] Benchmark offline quality, speed, memory and thermal performance on physical Android hardware.
