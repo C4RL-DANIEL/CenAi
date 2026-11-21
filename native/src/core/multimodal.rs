@@ -1,5 +1,6 @@
 //! Validated multimodal metadata and rich response blocks.
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -20,20 +21,63 @@ impl AttachmentMetadata {
         if self.id.is_empty() || self.id.len() > 80 || !self.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return Err("Attachment identifier is invalid");
         }
-        if self.file_name.is_empty() || self.file_name.len() > 240 || self.file_name.contains('/') || self.file_name.contains('\\') {
+        if self.file_name.is_empty() || self.file_name.len() > 240 || self.file_name == "." || self.file_name == ".."
+            || self.file_name.contains('/') || self.file_name.contains('\\')
+            || self.file_name.chars().any(char::is_control) {
             return Err("Attachment filename is invalid");
         }
-        let (prefix, max_bytes) = match self.kind {
-            AttachmentKind::Image => ("image/", 20 * 1024 * 1024),
-            AttachmentKind::Document => ("application/", 50 * 1024 * 1024),
-            AttachmentKind::Audio => ("audio/", 50 * 1024 * 1024),
-            AttachmentKind::Video => ("video/", 100 * 1024 * 1024),
+        let mime = self.mime_type.to_ascii_lowercase();
+        let (allowed, max_bytes): (&[&str], u64) = match self.kind {
+            AttachmentKind::Image => (&["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif", "image/heic"], 20 * 1024 * 1024),
+            AttachmentKind::Document => (&["application/pdf", "application/msword", "application/rtf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "text/plain", "text/markdown", "text/csv"], 50 * 1024 * 1024),
+            AttachmentKind::Audio => (&["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac",
+                "audio/ogg", "audio/flac", "audio/webm"], 50 * 1024 * 1024),
+            AttachmentKind::Video => (&["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"], 100 * 1024 * 1024),
         };
-        if !self.mime_type.starts_with(prefix) { return Err("Attachment MIME type does not match its kind"); }
+        if !allowed.contains(&mime.as_str()) { return Err("Attachment MIME type is not supported for its kind"); }
         if self.byte_length == 0 || self.byte_length > max_bytes { return Err("Attachment size is outside the supported limit"); }
         if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err("Attachment checksum must be a SHA-256 hex digest");
         }
+        Ok(())
+    }
+
+    /// Validates bytes against declared size, SHA-256 and file signatures.
+    pub fn validate_content(&self, bytes: &[u8]) -> Result<(), &'static str> {
+        self.validate()?;
+        if bytes.len() as u64 != self.byte_length { return Err("Attachment byte length does not match metadata"); }
+        let digest = Sha256::digest(bytes);
+        let actual = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        if !actual.eq_ignore_ascii_case(&self.sha256) { return Err("Attachment checksum does not match its content"); }
+        let valid_signature = match self.mime_type.to_ascii_lowercase().as_str() {
+            "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+            "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+            "image/webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+            "image/avif" | "image/heic" | "video/mp4" | "video/quicktime" | "audio/mp4" =>
+                bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
+            "application/pdf" => bytes.starts_with(b"%PDF-"),
+            "application/rtf" => bytes.starts_with(b"{\\rtf"),
+            "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "application/vnd.openxmlformats-officedocument.presentationml.presentation" =>
+                bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+            "audio/wav" | "audio/x-wav" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE",
+            "audio/mpeg" => bytes.starts_with(b"ID3") || bytes.get(0).is_some_and(|byte| *byte == 0xff)
+                && bytes.get(1).is_some_and(|byte| byte & 0xe0 == 0xe0),
+            "audio/aac" => bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] & 0xf6 == 0xf0,
+            "audio/ogg" => bytes.starts_with(b"OggS"),
+            "audio/flac" => bytes.starts_with(b"fLaC"),
+            "audio/webm" | "video/webm" | "video/x-matroska" => bytes.starts_with(b"\x1a\x45\xdf\xa3"),
+            "text/plain" | "text/markdown" | "text/csv" => std::str::from_utf8(bytes).is_ok(),
+            _ => false,
+        };
+        if !valid_signature { return Err("Attachment content does not match its declared MIME type"); }
         Ok(())
     }
 }
