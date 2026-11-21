@@ -371,21 +371,24 @@ impl WgpuRenderer {
             if self.app_state.pending_voice_stop {
                 self.app_state.pending_voice_stop = false;
                 self.app_state.pending_voice_start = false;
-                if let Some(capture) = self.audio_capture.as_mut() {
+                let remaining_frames = if let Some(capture) = self.audio_capture.as_mut() {
                     capture.stop();
-                    while let Some(frame) = capture.try_recv() {
-                        match frame {
-                            Ok(frame) => {
-                                if let Some(pipeline) = self.voice_pipeline.as_mut() {
-                                    match pipeline.ingest_frame(frame) {
-                                        Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
-                                        Ok(None) => {},
-                                        Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
-                                    }
+                    let mut frames = Vec::new();
+                    while let Some(frame) = capture.try_recv() { frames.push(frame); }
+                    frames
+                } else { Vec::new() };
+                for frame in remaining_frames {
+                    match frame {
+                        Ok(frame) => {
+                            if let Some(pipeline) = self.voice_pipeline.as_mut() {
+                                match pipeline.ingest_frame(frame) {
+                                    Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                                    Ok(None) => {},
+                                    Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
                                 }
                             }
-                            Err(error) => self.app_state.voice_status = format!("Microphone error: {error}"),
                         }
+                        Err(error) => self.app_state.voice_status = format!("Microphone error: {error}"),
                     }
                 }
                 if let Some(mut pipeline) = self.voice_pipeline.take() {
