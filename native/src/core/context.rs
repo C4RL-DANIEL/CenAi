@@ -12,15 +12,31 @@ pub enum ContextKind {
     SessionState,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ContextGrants {
+    allow_cross_feature: bool,
+    include_personal_memory: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContextRequest {
     pub user_id: String,
     pub feature_id: String,
     pub session_id: String,
-    /// Must be derived from a user-approved grant, never inferred or self-issued by the model.
-    pub allow_cross_feature: bool,
-    /// Must reflect the user's personal-memory setting and request-level permission.
-    pub include_personal_memory: bool,
+    /// Private grant bits cannot be populated by model output or deserialized context.
+    grants: ContextGrants,
+}
+
+impl ContextRequest {
+    pub fn new(user_id: impl Into<String>, feature_id: impl Into<String>, session_id: impl Into<String>) -> Self {
+        Self { user_id: user_id.into(), feature_id: feature_id.into(), session_id: session_id.into(), grants: ContextGrants::default() }
+    }
+
+    /// Called only after the application has recorded the user's explicit approval/settings.
+    pub(crate) fn apply_user_approved_grants(&mut self, cross_feature: bool, personal_memory: bool) {
+        self.grants.allow_cross_feature = cross_feature;
+        self.grants.include_personal_memory = personal_memory;
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -63,8 +79,8 @@ impl ContextRecord {
             return false;
         }
         match self.kind {
-            ContextKind::PersonalMemory => request.include_personal_memory,
-            ContextKind::FeatureData => self.feature_id == request.feature_id || request.allow_cross_feature,
+            ContextKind::PersonalMemory => request.grants.include_personal_memory,
+            ContextKind::FeatureData => self.feature_id == request.feature_id || request.grants.allow_cross_feature,
             ContextKind::SessionState => {
                 self.feature_id == request.feature_id
                     && self.session_id.as_deref() == Some(request.session_id.as_str())
@@ -81,6 +97,10 @@ pub fn collect_authorized_context<'a>(
     request.validate()?;
     let mut visible = Vec::new();
     for record in records {
+        // Ignore foreign-user records before inspecting their contents; they must not influence this request.
+        if record.owner_user_id != request.user_id {
+            continue;
+        }
         record.validate()?;
         if record.visible_to(request) {
             visible.push(record.content.as_str());
@@ -94,13 +114,7 @@ mod tests {
     use super::*;
 
     fn request() -> ContextRequest {
-        ContextRequest {
-            user_id: "user-a".into(),
-            feature_id: "research".into(),
-            session_id: "session-1".into(),
-            allow_cross_feature: false,
-            include_personal_memory: false,
-        }
+        ContextRequest::new("user-a", "research", "session-1")
     }
 
     fn record(owner: &str, feature: &str, session: Option<&str>, kind: ContextKind, content: &str) -> ContextRecord {
@@ -127,7 +141,7 @@ mod tests {
         let records = vec![record("user-a", "coding", None, ContextKind::FeatureData, "Code workspace")];
         assert!(collect_authorized_context(&request(), &records).unwrap().is_empty());
         let mut granted = request();
-        granted.allow_cross_feature = true;
+        granted.apply_user_approved_grants(true, false);
         assert_eq!(collect_authorized_context(&granted, &records).unwrap(), vec!["Code workspace"]);
     }
 
@@ -146,7 +160,7 @@ mod tests {
         let records = vec![record("user-a", "memory", None, ContextKind::PersonalMemory, "Saved preference")];
         assert!(collect_authorized_context(&request(), &records).unwrap().is_empty());
         let mut enabled = request();
-        enabled.include_personal_memory = true;
+        enabled.apply_user_approved_grants(false, true);
         assert_eq!(collect_authorized_context(&enabled, &records).unwrap(), vec!["Saved preference"]);
     }
 
