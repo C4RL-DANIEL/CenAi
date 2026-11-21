@@ -1,10 +1,10 @@
 //! WGPU renderer hosting CenAI's native egui screens over the animated GPU background.
-use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc}};
+use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc, Mutex}};
 use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, qwen_runtime::{QwenRuntime, validate_synthesis_text, PRIMARY_GGUF_MODEL, TOKENIZER_GGUF_MODEL}, qwen_voice::QwenLanguage, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
 #[cfg(target_os = "android")]
@@ -255,6 +255,7 @@ pub struct WgpuRenderer {
     automation_scheduler: Option<AutomationScheduler>,
     last_automation_poll: std::time::Instant,
     voice_pipeline: Option<VoicePipeline>,
+    qwen_runtime: Arc<Mutex<Option<QwenRuntime>>>,
     #[cfg(target_os = "android")]
     audio_capture: Option<AndroidAudioCapture>,
     #[cfg(target_os = "android")]
@@ -460,6 +461,7 @@ impl WgpuRenderer {
             automation_scheduler,
             last_automation_poll: std::time::Instant::now(),
             voice_pipeline: None,
+            qwen_runtime: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "android")]
             audio_capture: None,
             #[cfg(target_os = "android")]
@@ -587,15 +589,39 @@ impl WgpuRenderer {
             if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
             self.app_state.speech_status = "Speech playback stopped.".into();
         }
-        if self.app_state.pending_speech_text.take().is_some() {
+        if let Some(text) = self.app_state.pending_speech_text.take() {
             self.app_state.speech_cancelled = false;
-            let reason = crate::core::qwen_voice::offline_unavailable_reason(
-                &crate::core::qwen_voice::VoiceEngineStatus::default(),
-            ).unwrap_or("CenAI Voice offline synthesis is unavailable.").to_owned();
-            let _ = self.response_tx.send(ChatEvent::SpeechSynthesized(
-                self.account_generation,
-                Err(reason),
-            ));
+            let model_directory = self.workspace_root.join("models").join("cenai-voice");
+            let speaker_embedding = self.workspace_root.join("voice_profiles").join("cenai_voice_en_v1.speaker.json");
+            let runtime = self.qwen_runtime.clone();
+            let sender = self.response_tx.clone();
+            let generation = self.account_generation;
+            self.app_state.speech_status = "Preparing local CenAI Voice model…".into();
+            let task = self.runtime.spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let talker = model_directory.join(PRIMARY_GGUF_MODEL);
+                    let tokenizer = model_directory.join(TOKENIZER_GGUF_MODEL);
+                    if !talker.is_file() || !tokenizer.is_file() {
+                        return Err("CenAI Voice model pack is not installed. Download the offline Qwen3-TTS 0.6B model pack in Voice settings.".to_owned());
+                    }
+                    let request = validate_synthesis_text(&text, QwenLanguage::English)
+                        .map_err(str::to_owned)?;
+                    let mut guard = runtime.lock()
+                        .map_err(|_| "CenAI Voice runtime lock was poisoned".to_owned())?;
+                    if guard.is_none() {
+                        *guard = Some(QwenRuntime::load(&model_directory, 4)?);
+                    }
+                    let embedding = speaker_embedding.is_file().then_some(speaker_embedding.as_path());
+                    guard.as_mut().expect("runtime initialized").synthesize_wav(
+                        &request.text,
+                        request.language,
+                        embedding,
+                        4,
+                    ).map(|(wav, _elapsed_ms)| wav)
+                }).await.unwrap_or_else(|error| Err(format!("CenAI Voice worker failed: {error}")));
+                let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
+            });
+            self.track_task(task);
         }
     }
 
