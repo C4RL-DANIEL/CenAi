@@ -7,6 +7,14 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 use crate::{core::{agents::TaskPlan, brain::CentralBrain, context::{ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, providers::{ChatMessage, ChatRequest}, workspace::WorkspaceStore}, ui::{model::{AppState, MessageRole}, screen}};
 use super::RenderBackend;
 
+fn new_session_id() -> String {
+    format!(
+        "session-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
+    )
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct ShaderUniforms {
@@ -46,6 +54,7 @@ pub struct WgpuRenderer {
     runtime: Handle,
     last_dispatched_message_id: u64,
     session_id: String,
+    active_user_id: String,
     response_tx: mpsc::Sender<ChatEvent>,
     response_rx: mpsc::Receiver<ChatEvent>,
     active_streams: HashMap<u64, u64>,
@@ -172,11 +181,8 @@ impl WgpuRenderer {
             app_state.projects = store.projects(false).unwrap_or_default();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
-        let session_id = format!(
-            "session-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
-        );
+        let session_id = new_session_id();
+        let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         app_state.account_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
         app_state.guardian_consent = api.as_ref().is_some_and(CenAiApi::guardian_consent);
         let mut guardian = GuardianMonitor::default();
@@ -199,6 +205,7 @@ impl WgpuRenderer {
             runtime,
             last_dispatched_message_id: 0,
             session_id,
+            active_user_id,
             response_tx,
             response_rx,
             active_streams: HashMap::new(),
@@ -302,6 +309,24 @@ impl WgpuRenderer {
                 let _ = sender.send(ChatEvent::Finished(message_id, result));
             });
         }
+    }
+
+    fn reset_user_scoped_state(&mut self) {
+        self.workspace = None;
+        self.app_state.conversation.restore_messages(Vec::new());
+        self.app_state.projects.clear();
+        self.app_state.provider_key_draft.clear();
+        self.app_state.provider_key_status.clear();
+        self.app_state.guardian_consent = false;
+        self.app_state.mcp_tools.clear();
+        self.app_state.mcp_reviewed = false;
+        self.app_state.mcp_status.clear();
+        self.app_state.mcp_call_result.clear();
+        self.last_saved_message_count = 0;
+        self.active_streams.clear();
+        self.mcp_clients.clear();
+        self.guardian = GuardianMonitor::default();
+        self.session_id = new_session_id();
     }
 
     pub fn take_open_url(&mut self) -> Option<String> {
@@ -463,10 +488,23 @@ impl WgpuRenderer {
                 ChatEvent::SignedIn(result) => {
                     match result {
                         Ok(email) => {
+                            let account_id = self.api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
+                            if account_id.is_empty() {
+                                self.reset_user_scoped_state();
+                                self.active_user_id.clear();
+                                self.app_state.auth_status = "Sign-in succeeded but the verified account identity is unavailable.".into();
+                                continue;
+                            }
+                            if self.active_user_id != account_id {
+                                self.reset_user_scoped_state();
+                            }
+                            self.active_user_id = account_id.clone();
                             self.app_state.account_email = email.clone();
                             self.app_state.email_verified = self.api.as_ref().is_some_and(CenAiApi::email_verified);
+                            self.app_state.guardian_consent = self.api.as_ref().is_some_and(CenAiApi::guardian_consent);
+                            self.guardian.set_telemetry_consent(self.app_state.guardian_consent);
                             self.app_state.auth_status = "Signed in successfully.".into();
-                            match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &email) {
+                            match WorkspaceStore::new(self.workspace_root.join("cenai-workspace"), &account_id) {
                                 Ok(store) => {
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
@@ -482,14 +520,13 @@ impl WgpuRenderer {
                 ChatEvent::SignedOut(result) => {
                     match result {
                         Ok(()) => {
+                            self.reset_user_scoped_state();
+                            self.active_user_id.clear();
                             self.app_state.account_email.clear();
                             self.app_state.email_verified = false;
                             self.app_state.otp_status.clear();
                             self.app_state.auth_status = "Signed out.".into();
                             self.workspace = None;
-                            self.app_state.projects.clear();
-                            self.app_state.conversation.restore_messages(Vec::new());
-                            self.last_saved_message_count = 0;
                         }
                         Err(error) => self.app_state.auth_status = format!("Sign-out failed: {error}"),
                     }
