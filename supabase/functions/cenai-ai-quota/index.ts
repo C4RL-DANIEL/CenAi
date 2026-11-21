@@ -35,7 +35,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     if (!await registrationAllowed(user)) return reply(403, { error: "Complete Discord invitation registration before using CenAI.", code: "REGISTRATION_REQUIRED" });
     const action = String(body.action || "");
-    if (["authorize", "record", "voice_authorize", "voice_record"].includes(action)) {
+    if (["authorize", "record", "voice_authorize", "voice_record", "voice_status"].includes(action)) {
       const { data: hasVerifiedMfa, error: mfaError } = await adminDb.rpc("cenai_user_has_verified_mfa", { p_user_id: user.id });
       if (mfaError) throw mfaError;
       const encodedClaims = token.split(".")[1] ?? "";
@@ -44,6 +44,19 @@ Deno.serve(async (req: Request) => {
       if (hasVerifiedMfa === true && claims.aal !== "aal2") {
         return reply(403, { error: "Complete authenticator verification before using managed AI services.", code: "MFA_REQUIRED" });
       }
+    }
+    if (action === "voice_status") {
+      const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
+      if (flagError) throw flagError;
+      if (flag?.enabled !== true) return reply(503, { error: "CenAI Voice is not enabled by the administrator yet.", code: "VOICE_CLOUD_DISABLED" });
+      const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+      const { data: userRows, error: userError } = await adminDb.from("cenai_voice_usage_events").select("characters").eq("owner_user_id", user.id).gte("created_at", dayStart.toISOString());
+      if (userError) throw userError;
+      const { data: globalRows, error: globalError } = await adminDb.from("cenai_voice_usage_events").select("neurons").gte("created_at", dayStart.toISOString());
+      if (globalError) throw globalError;
+      const userUsed = (userRows || []).reduce((sum: number, row: any) => sum + Number(row.characters || 0), 0);
+      const globalUsed = (globalRows || []).reduce((sum: number, row: any) => sum + Number(row.neurons || 0), 0);
+      return reply(200, { ok: true, quota: { dailyCharacterLimit: 1000, dailyCharactersUsed: userUsed, globalNeuronLimit: 4000, globalNeuronsUsed: Number(globalUsed.toFixed(2)), resetsAt: new Date(dayStart.getTime() + 86400000).toISOString() } });
     }
     if (action === "voice_authorize") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
