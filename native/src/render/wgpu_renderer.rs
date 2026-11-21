@@ -282,7 +282,14 @@ impl WgpuRenderer {
         while let Ok(event) = self.response_rx.try_recv() {
             match event {
                 ChatEvent::Delta(message_id, delta) => {
-                    let stream_id = *self.active_streams.entry(message_id).or_insert_with(|| self.app_state.conversation.begin_stream());
+                    let stream_id = match self.active_streams.get(&message_id) {
+                        Some(stream_id) => *stream_id,
+                        None => {
+                            let stream_id = self.app_state.conversation.begin_stream();
+                            self.active_streams.insert(message_id, stream_id);
+                            stream_id
+                        }
+                    };
                     self.app_state.conversation.append_stream(stream_id, &delta);
                 }
                 ChatEvent::Finished(message_id, result) => {
@@ -297,7 +304,9 @@ impl WgpuRenderer {
                             }
                         }
                         Err(error) => {
-                            self.active_streams.remove(&message_id);
+                            if let Some(stream_id) = self.active_streams.remove(&message_id) {
+                                self.app_state.conversation.finish_stream(stream_id);
+                            }
                             self.app_state.conversation.push(MessageRole::Assistant, format!("I could not complete that request: {error}"));
                         }
                     }
