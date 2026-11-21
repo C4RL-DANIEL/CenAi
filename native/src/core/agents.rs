@@ -29,6 +29,7 @@ pub struct TaskPlan {
 impl TaskPlan {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.id.trim().is_empty() || self.goal.trim().is_empty() { return Err("Task identity and goal are required"); }
+        if self.steps.is_empty() || self.steps.len() > 12 { return Err("Task plan must contain between 1 and 12 steps"); }
         let ids: std::collections::HashSet<u64> = self.steps.iter().map(|step| step.id).collect();
         if ids.len() != self.steps.len() { return Err("Task step identifiers must be unique"); }
         if self.steps.iter().any(|step| step.title.trim().is_empty() || step.depends_on.iter().any(|id| !ids.contains(id) || *id == step.id)) {
