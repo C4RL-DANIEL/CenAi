@@ -377,12 +377,13 @@ impl WgpuRenderer {
                     while let Some(frame) = capture.try_recv() { frames.push(frame); }
                     frames
                 } else { Vec::new() };
+                let mut completed_chunks = Vec::new();
                 for frame in remaining_frames {
                     match frame {
                         Ok(frame) => {
                             if let Some(pipeline) = self.voice_pipeline.as_mut() {
                                 match pipeline.ingest_frame(frame) {
-                                    Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                                    Ok(Some(chunk)) => completed_chunks.push(chunk),
                                     Ok(None) => {},
                                     Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
                                 }
@@ -391,6 +392,7 @@ impl WgpuRenderer {
                         Err(error) => self.app_state.voice_status = format!("Microphone error: {error}"),
                     }
                 }
+                for chunk in completed_chunks { self.dispatch_voice_chunk(chunk); }
                 if let Some(mut pipeline) = self.voice_pipeline.take() {
                     match pipeline.finish_capture() {
                         Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
@@ -454,12 +456,13 @@ impl WgpuRenderer {
                 while let Some(frame) = capture.try_recv() { frames.push(frame); }
                 frames
             } else { Vec::new() };
+            let mut completed_chunks = Vec::new();
             for frame in frames {
                 match frame {
                     Ok(frame) => {
                         if let Some(pipeline) = self.voice_pipeline.as_mut() {
                             match pipeline.ingest_frame(frame) {
-                                Ok(Some(chunk)) => self.dispatch_voice_chunk(chunk),
+                                Ok(Some(chunk)) => completed_chunks.push(chunk),
                                 Ok(None) => {},
                                 Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
                             }
@@ -471,6 +474,7 @@ impl WgpuRenderer {
                     }
                 }
             }
+            for chunk in completed_chunks { self.dispatch_voice_chunk(chunk); }
         }
         #[cfg(not(target_os = "android"))]
         {
