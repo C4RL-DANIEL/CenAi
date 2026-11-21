@@ -19,7 +19,7 @@ concurrency:
   # New commits on the same branch supersede stale checks; the newest snapshot
   # is always allowed to run instead of waiting behind obsolete builds.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -27,7 +27,7 @@ permissions:
 jobs:
   rust:
     name: Rust workspace checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
