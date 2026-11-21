@@ -1,54 +1,61 @@
 # CenAI Rust-native rewrite
 
-## Decision
+## Non-negotiable migration rule
 
-CenAI is being migrated to a Rust-owned Android application. Rust owns the app runtime, UI composition, rendering, input, navigation, local persistence, networking adapters, agent execution boundary, and diagnostics. The Android deliverable must not use Jetpack Compose, Kotlin application logic, a WebView shell, or a hidden Kotlin UI with Rust underneath.
+The replacement application UI, state, networking orchestration and feature logic are Rust-owned. Android's NativeActivity is only the lifecycle host. No Compose UI or WebView is used by `:app-rust`. The existing Kotlin application remains in `:app` as a rollback/reference until feature parity, device testing and release verification are complete.
 
-The existing Kotlin app remains available during migration as a reference and rollback baseline. It is not the target architecture. Existing Cloudflare/Supabase services, account isolation, billing authority, provider integrations, and user data contracts are preserved and adapted behind Rust interfaces rather than replaced blindly.
+## Current architecture
 
-## Rendering architecture
+- `native/`: Rust application runtime and shared service/domain code.
+- `app-rust/`: Android NativeActivity packaging module; packages `libcenai_native.so`.
+- `winit 0.30`: Android native window, lifecycle and input.
+- `wgpu 24`: GPU rendering and animated ambient shader.
+- `egui 0.31`: Rust-owned custom screen composition, controls, text input and Markdown/code display.
+- `native/src/android/vault.rs`: AES-GCM secrets encrypted with an Android Keystore-managed key; the encrypted records live in the app-private directory.
+- `native/src/core/network.rs`: Supabase auth, refresh, control-plane, billing, telemetry, CenAI Cloud, provider streaming and email OTP.
+- `native/src/core/workspace.rs`: per-account workspace metadata, conversation snapshots and path-safe artifacts.
+- `native/src/core/brain.rs`: Central Brain plan generation; every returned plan is validated before any action.
+- `native/src/core/mcp.rs`: MCP manifest validation and security review; discovery is not permission.
+- `native/src/core/guardian.rs`: bounded, sanitized diagnostics queue; upload is disabled until consent is granted.
+- `native/src/ecosystem/manifest.rs`: trusted first-party registration and per-user capability grants.
 
-- winit provides the Android window, lifecycle, and input event boundary.
-- wgpu provides the GPU rendering abstraction, using Vulkan where available and a supported GLES fallback where required by device compatibility.
-- A Rust-owned retained scene graph and component system provides layout, typography, controls, transitions, accessibility semantics, and responsive phone/tablet composition.
-- GPU work is batched; text and vector assets are cached; animations are time-based and interruptible; frame pacing follows display refresh and Android lifecycle state.
-- Reduced-motion, low-memory, and lower-power modes are first-class. No continuous GPU loop while the app is backgrounded.
-- The visual language uses animated lighting on selected surfaces, layered depth, precise typography, fluid transitions, and restrained glow. Effects must not compromise legibility, thermals, battery, or touch latency.
+## Implemented in this branch
 
-## Rust workspace boundaries
+- Four primary destinations: Conversation, Your Work, Connections and Settings.
+- Responsive centered content, animated GPU ambient gradient, custom dark surfaces, custom composer and button states.
+- Conversation message model, Markdown headings/lists/code fences, local per-account conversation autosave.
+- Existing-account Supabase sign-in and sign-out; no in-app registration flow. Email OTP verification is wired to the existing CenAI worker endpoint.
+- Supabase token refresh and account-scoped API requests.
+- CenAI Cloud chat endpoint integration.
+- OpenAI-compatible and DeepSeek BYOK streaming, with API keys encrypted through Android Keystore.
+- Per-account project creation, archived-project state, artifact metadata and local artifact storage.
+- Central Brain plan-first flow, agent roles, dependency validation and stop semantics.
+- MCP HTTPS/protocol/publisher/license/capability checks and explicit approval for sensitive reads and external writes.
+- Guardian diagnostic redaction, deduplication, bounded buffering and consent gating.
+- Private ecosystem manifest and per-user authorization contract.
+- Rust workspace formatting, unit-test and Clippy CI; Android arm64 debug APK packaging workflow.
 
-- cenai-native: Android entry point, lifecycle, app state, and native runtime.
-- render: GPU device/surface, render graph, scene graph, typography, transitions, and adaptive quality.
-- ui: four primary destinations (Conversation, Your Work, Connections, Settings) and reusable original components.
-- core: typed domain models, task planning, permissions, and orchestration contracts.
-- providers: default Cloudflare AI, subscription entitlement, BYOK provider adapters, and streaming.
-- workspace: per-user durable files, projects, autosave, checkpoints, and recovery.
-- mcp: discovery metadata, manifest validation, scoped execution, and approvals.
-- sandbox: isolated remote execution client; never run arbitrary untrusted code in the app process.
-- voice: speech input and real-time voice transport adapters with platform permission boundaries.
-- guardian: deterministic monitoring, privacy-safe telemetry, and bounded recovery.
-- ecosystem: private first-party app identity, capability registry, service-to-service auth, event routing, version compatibility, audit, and revocation.
+## Still required before release
 
-These boundaries may initially be implemented as modules in a small number of crates. They must not become separate user-facing hubs.
+- Verify latest Rust host tests and Clippy on the current branch head.
+- Verify Android arm64 cross-compilation, Gradle packaging, APK install and NativeActivity startup.
+- Test the actual Android Keystore path, login/refresh/logout, email OTP and provider requests on device.
+- Add the remaining provider adapters and model catalog, MFA, subscription status/checkout UI, billing lifecycle and entitlement enforcement.
+- Finish project artifact UI, workspace backup/sync and cross-device restore.
+- Implement real MCP registry discovery, remote MCP transport, sandbox execution and isolated coding-agent workflows.
+- Implement voice input/output, multimodal attachment picker and processing, computer-use approval flow.
+- Connect Guardian to real lifecycle/performance/network events and user-consented telemetry.
+- Complete Ecosystem Engine service authentication, server-side registration, revocation, compatibility and audit integration.
+- Run API 35+ emulator and REDMI Pad 2 Pro physical-device checks; record animation smoothness, lifecycle recovery, battery, memory, network failure and accessibility results.
+- Produce release APK, SHA-256 checksum, commit identifier, test report and known-limitations report.
 
-## Migration rules
+## Security and release rules
 
-1. Preserve existing backend contracts and account-scoped data boundaries.
-2. Port one vertical slice at a time behind stable Rust traits; do not remove the Kotlin reference implementation until the Rust equivalent passes parity and release checks.
-3. No hardcoded credentials, signing secrets, provider keys, or cross-user context in the APK.
-4. All sensitive/destructive operations require explicit approval and server-side authorization.
-5. The private ecosystem registry is not a public API. Hidden routes are not treated as security; service identity, scoped credentials, authorization, and audit are mandatory.
-6. Keep the existing GitHub Actions build as the only user-facing APK build route. Add Rust Android checks and packaging there; do not require local Android builds.
-
-## Release gates
-
-- Rust formatting, linting, unit and integration tests.
-- Android arm64 build and APK packaging through GitHub Actions.
-- API 35+ emulator tests and physical Redmi Pad 2 Pro tests.
-- GPU backend/device-loss fallback, frame pacing, animation interruption, touch responsiveness, and memory/thermal profiling.
-- Account isolation, auth, billing entitlement, BYOK, workspace durability, MCP permission checks, sandbox isolation, voice permissions, Guardian consent, and ecosystem revocation tests.
-- APK artifact, SHA-256, commit SHA, test report, and explicit known limitations.
-
-## Current status
-
-This commit establishes the Rust workspace and rendering direction only. It does not claim that the Android app has already been ported, that the renderer is complete, or that an APK has been built. Android runtime bootstrap, GPU surface, UI components, feature ports, and CI packaging remain implementation work.
+- Never place Supabase service-role secrets or provider API keys in the APK.
+- Use only the Supabase publishable key in the client; enforce account and capability authorization server-side.
+- Credentials are encrypted with Android Keystore; app-private data remains account-scoped.
+- Do not transmit prompts, conversation text, filenames, file content or credentials in Guardian telemetry.
+- Sensitive reads, external writes, purchases, account changes and destructive operations require explicit approval.
+- Never execute an AI-generated plan just because it parsed successfully.
+- Do not remove the old Kotlin app until Rust parity and release tests pass.
+- Do not describe the app as release-ready or provide an APK link unless the exact artifact exists and the install/runtime tests have passed.
