@@ -249,6 +249,7 @@ pub struct WgpuRenderer {
     attachment_store: Option<AttachmentStore>,
     last_saved_message_count: usize,
     last_saved_preferences: (bool, bool),
+    last_saved_voice_language: String,
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
     mcp_clients: HashMap<String, Arc<McpHttpClient>>,
@@ -388,6 +389,11 @@ impl WgpuRenderer {
         if let Some(service) = &api {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
+            if let Ok(language) = service.user_setting("voice_language") {
+                if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language) {
+                    app_state.voice_language = language;
+                }
+            }
         }
         if let Some(store) = &workspace {
             if let Ok(messages) = store.load_conversation("primary") {
@@ -398,6 +404,7 @@ impl WgpuRenderer {
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
+        let last_saved_voice_language = app_state.voice_language.clone();
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
         let attachment_store = if active_user_id.is_empty() {
@@ -454,6 +461,7 @@ impl WgpuRenderer {
             attachment_store,
             last_saved_message_count,
             last_saved_preferences,
+            last_saved_voice_language,
             workspace_root,
             guardian,
             mcp_clients: HashMap::new(),
@@ -592,9 +600,10 @@ impl WgpuRenderer {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
                 let generation = self.account_generation;
-                self.app_state.speech_status = "Connecting to CenAI Voice cloud…".into();
+                let language = self.app_state.voice_language.clone();
+                self.app_state.speech_status = format!("Connecting to CenAI Voice cloud · {language}…");
                 let task = self.runtime.spawn(async move {
-                    let result = api.synthesize_voice_cloud(&text, "English", "cenai-en-v1").await;
+                    let result = api.synthesize_voice_cloud(&text, &language, "cenai-en-v1").await;
                     let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
                 });
                 self.track_task(task);
@@ -953,6 +962,8 @@ impl WgpuRenderer {
         self.app_state.light_mode = false;
         self.app_state.reduced_motion = false;
         self.last_saved_preferences = (false, false);
+        self.app_state.voice_language = "English".into();
+        self.last_saved_voice_language = "English".into();
         self.app_state.account_email.clear();
         self.app_state.email_verified = false;
         self.app_state.mfa_factors.clear();
@@ -1104,6 +1115,13 @@ impl WgpuRenderer {
                 let motion_saved = service.save_user_setting("reduced_motion", if preferences.1 { "true" } else { "false" }).is_ok();
                 if light_saved && motion_saved {
                     self.last_saved_preferences = preferences;
+                }
+            }
+        }
+        if self.app_state.voice_language != self.last_saved_voice_language {
+            if let Some(service) = &self.api {
+                if service.save_user_setting("voice_language", &self.app_state.voice_language).is_ok() {
+                    self.last_saved_voice_language = self.app_state.voice_language.clone();
                 }
             }
         }
@@ -1753,6 +1771,12 @@ impl WgpuRenderer {
                                 self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
                                 self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
+                                if let Ok(language) = service.user_setting("voice_language") {
+                                    if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language) {
+                                        self.app_state.voice_language = language;
+                                    }
+                                }
+                                self.last_saved_voice_language = self.app_state.voice_language.clone();
                             }
                             self.guardian.set_telemetry_consent(self.app_state.guardian_consent);
                             self.app_state.auth_status = "Signed in successfully.".into();
