@@ -98,7 +98,7 @@ impl WorkspaceStore {
     pub fn projects(&self, include_archived: bool) -> Result<Vec<Project>, String> {
         let mut projects = self.read_index()?.projects;
         if !include_archived { projects.retain(|project| !project.archived); }
-        projects.sort_by(|left, right| right.updated_at_unix_ms.cmp(&left.updated_at_unix_ms));
+        projects.sort_by_key(|project| std::cmp::Reverse(project.updated_at_unix_ms));
         Ok(projects)
     }
 
