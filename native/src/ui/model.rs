@@ -42,10 +42,32 @@ impl Default for ConversationState {
     }
 }
 
+const MAX_CONVERSATION_MESSAGES: usize = 500;
+const MAX_MESSAGE_BYTES: usize = 200_000;
+
+fn truncate_utf8(value: &mut String, max_bytes: usize) {
+    if value.len() <= max_bytes { return; }
+    let mut boundary = max_bytes;
+    while !value.is_char_boundary(boundary) { boundary -= 1; }
+    value.truncate(boundary);
+}
+
 impl ConversationState {
+    fn enforce_message_limit(&mut self) {
+        while self.messages.len() > MAX_CONVERSATION_MESSAGES {
+            self.messages.pop_front();
+        }
+    }
     pub fn restore_messages(&mut self, messages: Vec<Message>) {
         self.next_id = messages.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1).max(1);
-        self.messages = messages.into_iter().map(|mut message| { message.streaming = false; message }).collect();
+        self.messages = messages.into_iter().map(|mut message| {
+            message.streaming = false;
+            truncate_utf8(&mut message.body, MAX_MESSAGE_BYTES);
+            message
+        }).collect();
+        while self.messages.len() > MAX_CONVERSATION_MESSAGES {
+            self.messages.pop_front();
+        }
         self.sending = false;
     }
 
@@ -56,7 +78,10 @@ impl ConversationState {
     pub fn push(&mut self, role: MessageRole, body: impl Into<String>) -> u64 {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
-        self.messages.push_back(Message { id, role, body: body.into(), streaming: false });
+        let mut body = body.into();
+        truncate_utf8(&mut body, MAX_MESSAGE_BYTES);
+        self.messages.push_back(Message { id, role, body, streaming: false });
+        self.enforce_message_limit();
         id
     }
 
@@ -64,12 +89,19 @@ impl ConversationState {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         self.messages.push_back(Message { id, role: MessageRole::Assistant, body: String::new(), streaming: true });
+        self.enforce_message_limit();
         id
     }
 
     pub fn append_stream(&mut self, id: u64, chunk: &str) -> bool {
         match self.messages.iter_mut().find(|message| message.id == id && message.streaming) {
-            Some(message) => { message.body.push_str(chunk); true }
+            Some(message) => {
+                let remaining = MAX_MESSAGE_BYTES.saturating_sub(message.body.len());
+                let mut bounded = chunk.to_owned();
+                truncate_utf8(&mut bounded, remaining);
+                message.body.push_str(&bounded);
+                true
+            }
             None => false,
         }
     }
@@ -261,6 +293,33 @@ mod tests {
         state.sending = true;
         assert_eq!(state.submit_draft(), None);
         assert_eq!(state.draft, "work");
+    }
+
+    #[test]
+    fn conversation_history_and_streamed_output_are_bounded() {
+        let mut state = ConversationState::default();
+        for index in 0..(MAX_CONVERSATION_MESSAGES + 25) {
+            state.push(MessageRole::User, format!("message {index}"));
+        }
+        assert_eq!(state.messages().count(), MAX_CONVERSATION_MESSAGES);
+        let stream = state.begin_stream();
+        assert!(state.append_stream(stream, &"x".repeat(MAX_MESSAGE_BYTES + 10)));
+        let body = &state.messages().last().unwrap().body;
+        assert_eq!(body.len(), MAX_MESSAGE_BYTES);
+    }
+
+    #[test]
+    fn restored_history_truncates_oversized_messages_and_limits_count() {
+        let mut state = ConversationState::default();
+        let messages = (0..(MAX_CONVERSATION_MESSAGES + 1)).map(|id| Message {
+            id: id as u64 + 1,
+            role: MessageRole::Assistant,
+            body: "🙂".repeat(MAX_MESSAGE_BYTES),
+            streaming: true,
+        }).collect();
+        state.restore_messages(messages);
+        assert_eq!(state.messages().count(), MAX_CONVERSATION_MESSAGES);
+        assert!(state.messages().all(|message| !message.streaming && message.body.len() <= MAX_MESSAGE_BYTES));
     }
 
     #[test]
