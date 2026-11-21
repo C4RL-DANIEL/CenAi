@@ -37,6 +37,8 @@ enum ChatEvent {
     MemoryStatusLoaded(u64, Result<bool, String>),
     MemorySettingUpdated(u64, bool, Result<(), String>),
     MemorySaved(u64, Result<serde_json::Value, String>),
+    MemoryListLoaded(u64, Result<Vec<crate::ui::model::PersonalMemoryItem>, String>),
+    MemoryDeleted(u64, String, Result<(), String>),
 }
 
 impl ChatEvent {
@@ -54,7 +56,9 @@ impl ChatEvent {
             | Self::CheckoutReady(generation, ..)
             | Self::MemoryStatusLoaded(generation, ..)
             | Self::MemorySettingUpdated(generation, ..)
-            | Self::MemorySaved(generation, ..) => *generation,
+            | Self::MemorySaved(generation, ..)
+            | Self::MemoryListLoaded(generation, ..)
+            | Self::MemoryDeleted(generation, ..) => *generation,
         }
     }
 }
@@ -372,7 +376,9 @@ impl WgpuRenderer {
         self.app_state.personal_memory_status.clear();
         self.app_state.pending_memory_enabled = None;
         self.app_state.memory_content_draft.clear();
+        self.app_state.personal_memories.clear();
         self.app_state.pending_memory_save = None;
+        self.app_state.pending_memory_delete = None;
         self.app_state.light_mode = false;
         self.app_state.reduced_motion = false;
         self.last_saved_preferences = (false, false);
@@ -542,6 +548,19 @@ impl WgpuRenderer {
             } else {
                 self.app_state.personal_memory_enabled = !enabled;
                 self.app_state.personal_memory_status = "Sign in before changing personal-memory settings.".into();
+            }
+        }
+        if let Some(memory_id) = self.app_state.pending_memory_delete.take() {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                let task = self.runtime.spawn(async move {
+                    let result = api.delete_personal_memory(&memory_id).await;
+                    let _ = sender.send(ChatEvent::MemoryDeleted(generation, memory_id, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.personal_memory_status = "Sign in before deleting personal memories.".into();
             }
         }
         if let Some((category, content)) = self.app_state.pending_memory_save.take() {
@@ -751,8 +770,26 @@ impl WgpuRenderer {
                             self.app_state.personal_memory_status = if enabled {
                                 "Private personal memory is enabled for this account.".into()
                             } else {
+                                self.app_state.personal_memories.clear();
                                 "Personal memory is off. Your saved records are not retrieved.".into()
                             };
+                            if enabled {
+                                if let Some(api) = self.api.clone() {
+                                    let sender = self.response_tx.clone();
+                                    let generation = self.account_generation;
+                                    let task = self.runtime.spawn(async move {
+                                        let result = api.personal_memories().await.map(|values| values.into_iter().filter_map(|value| {
+                                            Some(crate::ui::model::PersonalMemoryItem {
+                                                id: value.get("id")?.as_str()?.to_owned(),
+                                                category: value.get("category")?.as_str()?.to_owned(),
+                                                content: value.get("content")?.as_str()?.to_owned(),
+                                            })
+                                        }).collect());
+                                        let _ = sender.send(ChatEvent::MemoryListLoaded(generation, result));
+                                    });
+                                    self.track_task(task);
+                                }
+                            }
                         }
                         Err(error) => {
                             self.app_state.personal_memory_enabled = false;
@@ -767,8 +804,27 @@ impl WgpuRenderer {
                             self.app_state.personal_memory_status = if enabled {
                                 "Private personal memory enabled.".into()
                             } else {
+                                self.app_state.personal_memories.clear();
+                                self.app_state.include_memory_for_request = false;
                                 "Personal memory disabled. Existing records are retained but not retrieved.".into()
                             };
+                            if enabled {
+                                if let Some(api) = self.api.clone() {
+                                    let sender = self.response_tx.clone();
+                                    let generation = self.account_generation;
+                                    let task = self.runtime.spawn(async move {
+                                        let result = api.personal_memories().await.map(|values| values.into_iter().filter_map(|value| {
+                                            Some(crate::ui::model::PersonalMemoryItem {
+                                                id: value.get("id")?.as_str()?.to_owned(),
+                                                category: value.get("category")?.as_str()?.to_owned(),
+                                                content: value.get("content")?.as_str()?.to_owned(),
+                                            })
+                                        }).collect());
+                                        let _ = sender.send(ChatEvent::MemoryListLoaded(generation, result));
+                                    });
+                                    self.track_task(task);
+                                }
+                            }
                         }
                         Err(error) => {
                             self.app_state.personal_memory_enabled = !enabled;
@@ -778,11 +834,40 @@ impl WgpuRenderer {
                 }
                 ChatEvent::MemorySaved(_, result) => {
                     match result {
-                        Ok(_) => {
+                        Ok(value) => {
                             self.app_state.memory_content_draft.clear();
+                            if let Some(memory) = value.get("memory") {
+                                if let (Some(id), Some(category), Some(content)) = (
+                                    memory.get("id").and_then(serde_json::Value::as_str),
+                                    memory.get("category").and_then(serde_json::Value::as_str),
+                                    memory.get("content").and_then(serde_json::Value::as_str),
+                                ) {
+                                    self.app_state.personal_memories.insert(0, crate::ui::model::PersonalMemoryItem {
+                                        id: id.to_owned(), category: category.to_owned(), content: content.to_owned()
+                                    });
+                                }
+                            }
                             self.app_state.personal_memory_status = "Memory saved to your private account.".into();
                         }
                         Err(error) => self.app_state.personal_memory_status = format!("Could not save memory: {error}"),
+                    }
+                }
+                ChatEvent::MemoryListLoaded(_, result) => {
+                    match result {
+                        Ok(memories) => {
+                            self.app_state.personal_memories = memories;
+                            self.app_state.personal_memory_status = format!("{} private memories loaded.", self.app_state.personal_memories.len());
+                        }
+                        Err(error) => self.app_state.personal_memory_status = format!("Could not load private memories: {error}"),
+                    }
+                }
+                ChatEvent::MemoryDeleted(_, memory_id, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.personal_memories.retain(|memory| memory.id != memory_id);
+                            self.app_state.personal_memory_status = "Memory deleted from your account.".into();
+                        }
+                        Err(error) => self.app_state.personal_memory_status = format!("Could not delete memory: {error}"),
                     }
                 }
                 ChatEvent::CheckoutReady(_, result) => {
