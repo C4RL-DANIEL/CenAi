@@ -92,6 +92,10 @@ pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
     pub reduced_motion: bool,
+    pub provider_key_provider: String,
+    pub provider_key_draft: String,
+    pub provider_key_status: String,
+    pub pending_provider_key: Option<(String, String)>,
 }
 
 impl Default for AppState {
