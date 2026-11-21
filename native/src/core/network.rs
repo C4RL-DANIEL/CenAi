@@ -418,6 +418,11 @@ impl CenAiApi {
         Ok(data)
     }
 
+    /// Checks the authenticated CenAI cloud voice service and GPU model readiness.
+    pub async fn cloud_voice_status(&self) -> Result<Value, String> {
+        self.post_authenticated(config::CLOUD_VOICE_STATUS_URL, &json!({})).await
+    }
+
     /// Synthesizes speech through CenAI's authenticated cloud voice gateway.
     /// The model and voice reference remain on the server; no model weights are downloaded to Android.
     pub async fn synthesize_voice_cloud(
