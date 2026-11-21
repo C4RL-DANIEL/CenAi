@@ -398,10 +398,10 @@ async function cloudVoiceStatus(request, env) {
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "CENAI_TTS_BACKEND_URL", "CENAI_TTS_BACKEND_TOKEN"])) {
     return json(503, { error: "CenAI Voice cloud inference is not provisioned yet." });
   }
-  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in to CenAI before checking cloud voice." });
   try {
-    const base = env.SUPABASE_URL.replace(/\\/$/, "");
+    const base = env.SUPABASE_URL.replace(/\/$/, "");
     const identity = await fetch(base + "/auth/v1/user", {
       method: "GET",
       headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
