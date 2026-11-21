@@ -15,10 +15,10 @@ async function sha256Hex(value: string) {
 }
 function containsCredentialMaterial(value: string) {
   return /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i.test(value)
-    || /\\bBearer\\s+[A-Za-z0-9._~+/-]{20,}/i.test(value)
-    || /\\b(?:sk-[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9_-]{20,})\\b/.test(value)
-    || /\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b/.test(value)
-    || /\\b(password|passphrase|api[ _-]?key|access[ _-]?token|refresh[ _-]?token)\\s*[:=]/i.test(value);
+    || /\bBearer\s+[A-Za-z0-9._~+/-]{20,}/i.test(value)
+    || /\b(?:sk-[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9_-]{20,})\b/.test(value)
+    || /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/.test(value)
+    || /\b(password|passphrase|api[ _-]?key|access[ _-]?token|refresh[ _-]?token)\s*[:=]/i.test(value);
 }
 function createInviteToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
