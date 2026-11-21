@@ -48,6 +48,30 @@ impl AudioChunk {
     pub fn duration_ms(&self) -> u64 {
         self.samples.len() as u64 * 1000 / self.sample_rate_hz.max(1) as u64
     }
+
+    pub fn to_wav_bytes(&self) -> Result<Vec<u8>, &'static str> {
+        if !matches!(self.sample_rate_hz, 16_000 | 24_000 | 48_000) || self.samples.is_empty() {
+            return Err("Audio chunk format is invalid");
+        }
+        let data_length = self.samples.len().checked_mul(2).ok_or("Audio chunk is too large")?;
+        if data_length > u32::MAX as usize - 36 { return Err("Audio chunk exceeds WAV limits"); }
+        let data_length = data_length as u32;
+        let mut wav = Vec::with_capacity(44 + data_length as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36u32 + data_length).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&self.sample_rate_hz.to_le_bytes());
+        wav.extend_from_slice(&(self.sample_rate_hz * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_length.to_le_bytes());
+        for sample in &self.samples { wav.extend_from_slice(&sample.to_le_bytes()); }
+        Ok(wav)
+    }
 }
 
 /// Provider-neutral PCM16 voice activity buffer. Platform adapters supply frames;
@@ -231,6 +255,18 @@ mod tests {
         assert_eq!(chunk.duration_ms(), 500);
         assert!(chunk.speech_detected);
         assert!(VoiceAudioBuffer::new(16_000, 100).is_err());
+    }
+
+    #[test]
+    fn audio_chunk_encodes_valid_pcm16_wav_header() {
+        let chunk = AudioChunk { sample_rate_hz: 16_000, samples: vec![1, -1, 300], speech_detected: true };
+        let wav = chunk.to_wav_bytes().unwrap();
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(&wav[12..16], b"fmt ");
+        assert_eq!(&wav[36..40], b"data");
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 6);
+        assert_eq!(wav.len(), 50);
     }
 
     #[test]
