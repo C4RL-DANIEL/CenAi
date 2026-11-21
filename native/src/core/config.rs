@@ -2,6 +2,7 @@
 pub const SUPABASE_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co";
 pub const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_l6YDudJWsFgUJ2YZc2Xq1Q_hNatLp3C";
 pub const CONTROL_PLANE_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-control-plane";
+pub const PERSONAL_MEMORY_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-memory";
 pub const BILLING_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-billing";
 pub const PAYPAL_BILLING_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-paypal-billing";
 pub const TELEMETRY_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functions/v1/cenai-telemetry";
