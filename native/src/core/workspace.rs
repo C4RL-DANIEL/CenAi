@@ -570,6 +570,40 @@ mod tests {
     }
 
     #[test]
+    fn encrypted_workspace_backup_restores_projects_tasks_automations_and_artifacts() {
+        use crate::core::agents::{AgentRole, StepStatus, TaskStep};
+        let source_root = temp_root();
+        let restored_root = temp_root();
+        let owner = "550e8400-e29b-41d4-a716-446655440040";
+        let source = WorkspaceStore::new(&source_root, owner).unwrap();
+        source.save_project(Project {
+            id: "backup-project".into(), name: "Backup project".into(), description: "private".into(),
+            created_at_unix_ms: 1, updated_at_unix_ms: 2, archived: false, artifacts: Vec::new(),
+        }).unwrap();
+        source.save_artifact("backup-project", "backup-artifact", "note.txt", "text/plain", b"secret workspace file").unwrap();
+        source.save_task_plan(TaskPlan {
+            id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
+            steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new() }],
+        }, 10).unwrap();
+        source.save_automation(Automation {
+            id: "backup-automation".into(), owner_scope: owner.into(), title: "Daily report".into(),
+            schedule: "0 9 * * *".into(), enabled: true, requires_approval: true, last_scheduled_at: None,
+        }).unwrap();
+
+        let encrypted = source.export_encrypted_backup("a much stronger backup passphrase").unwrap();
+        let restored = WorkspaceStore::new(&restored_root, owner).unwrap();
+        assert!(restored.restore_encrypted_backup(&encrypted, "wrong backup passphrase").is_err());
+        assert!(restored.projects(false).unwrap().is_empty());
+        restored.restore_encrypted_backup(&encrypted, "a much stronger backup passphrase").unwrap();
+        assert_eq!(restored.projects(false).unwrap(), source.projects(false).unwrap());
+        assert_eq!(restored.task_plans().unwrap(), source.task_plans().unwrap());
+        assert_eq!(restored.automations().unwrap(), source.automations().unwrap());
+        assert_eq!(restored.read_artifact("backup-artifact").unwrap(), b"secret workspace file");
+        let _ = fs::remove_dir_all(source_root);
+        let _ = fs::remove_dir_all(restored_root);
+    }
+
+    #[test]
     fn automation_schedules_persist_only_in_their_owner_workspace() {
         let root = temp_root();
         let owner = "550e8400-e29b-41d4-a716-446655440030";
