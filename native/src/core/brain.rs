@@ -36,7 +36,7 @@ impl CentralBrain {
                 .collect::<Vec<_>>();
             // Do not inject every saved fact into every task. Rank against the goal and
             // cap both count and total text before it enters the model context.
-            for memory in rank_personal_memories(goal, &memory_records, 8, 6_000) {
+            for memory in rank_personal_memories(&verified_user_id, goal, &memory_records, 8, 6_000) {
                 scoped_records.push(memory.clone());
             }
         }
