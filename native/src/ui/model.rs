@@ -237,6 +237,11 @@ pub struct AppState {
     pub pending_speech_stop: bool,
     pub speech_cancelled: bool,
     pub speech_status: String,
+    pub backup_passphrase_draft: String,
+    pub backup_restore_confirmed: bool,
+    pub pending_backup_upload: bool,
+    pub pending_backup_download: bool,
+    pub backup_status: String,
 }
 
 impl Default for AppState {
