@@ -1,5 +1,15 @@
 # CenAI engineering architecture
 
+> **Scope clarification:** This document describes the existing `main` production system and is retained as a reference for backend contracts and rollback. It is **not** the target Android client architecture for `rewrite/rust-native-core`. The replacement Android app is pure Rust (`:app-rust` + `native/`); NativeActivity is only its platform lifecycle host. Do not introduce Compose/Kotlin UI or WebView into the replacement. Keep the old `:app` isolated until Rust parity and device verification are complete.
+
+## Rust rewrite target boundaries
+
+- Rust owns all replacement screens, rendering, state, persistence orchestration, provider routing, agents, permissions and feature logic.
+- Android supplies only the NativeActivity lifecycle/package boundary and narrowly scoped platform services accessed through Rust JNI.
+- User content and workspace data are local-first; remote identity, entitlement, optional managed inference and explicitly enabled sync are separate services.
+- CenAI authentication and each model provider's API authorization are independent trust domains.
+- The private Ecosystem Engine exposes only its approved public integration contract; internal orchestration remains behind authenticated, encrypted and audited service boundaries.
+
 ## Current production boundaries
 
 - Android client (app/): Kotlin + Jetpack Compose UI, provider orchestration, encrypted credentials, local chat history, local knowledge, speech, agent approvals, and optional local inference.
