@@ -296,16 +296,23 @@ impl WorkspaceStore {
     }
 
     pub fn save_automation(&self, automation: Automation) -> Result<(), String> {
-        automation.validate().map_err(|error| format!("Invalid automation: {error}"))?;
-        if automation.owner_scope != self.user_identity {
-            return Err("Automation owner does not match the authenticated workspace account".into());
-        }
+        self.save_automations(std::slice::from_ref(&automation))
+    }
+
+    pub fn save_automations(&self, automations: &[Automation]) -> Result<(), String> {
+        if automations.len() > 1000 { return Err("Workspace automation limit reached".into()); }
         let mut index = self.read_index()?;
-        match index.automations.iter_mut().find(|item| item.id == automation.id && item.owner_scope == self.user_identity) {
-            Some(existing) => *existing = automation,
-            None => {
-                if index.automations.len() >= 1000 { return Err("Workspace automation limit reached".into()); }
-                index.automations.push(automation);
+        for automation in automations {
+            automation.validate().map_err(|error| format!("Invalid automation: {error}"))?;
+            if automation.owner_scope != self.user_identity {
+                return Err("Automation owner does not match the authenticated workspace account".into());
+            }
+            match index.automations.iter_mut().find(|item| item.id == automation.id && item.owner_scope == self.user_identity) {
+                Some(existing) => *existing = automation.clone(),
+                None => {
+                    if index.automations.len() >= 1000 { return Err("Workspace automation limit reached".into()); }
+                    index.automations.push(automation.clone());
+                }
             }
         }
         self.write_index(&index)
