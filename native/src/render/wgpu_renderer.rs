@@ -587,20 +587,10 @@ impl WgpuRenderer {
             if let Some(playback) = self.audio_playback.as_mut() { playback.stop(); }
             self.app_state.speech_status = "Speech playback stopped.".into();
         }
-        if let Some(text) = self.app_state.pending_speech_text.take() {
+        if self.app_state.pending_speech_text.take().is_some() {
             self.app_state.speech_cancelled = false;
-            let Some(api) = self.api.clone() else {
-                self.app_state.speech_status = "Sign in and configure a Gemini API key before speech playback.".into();
-                return;
-            };
-            let sender = self.response_tx.clone();
-            let generation = self.account_generation;
-            self.app_state.speech_status = "Generating speech…".into();
-            let task = self.runtime.spawn(async move {
-                let result = api.synthesize_speech_gemini(&text).await;
-                let _ = sender.send(ChatEvent::SpeechSynthesized(generation, result));
-            });
-            self.track_task(task);
+            self.app_state.speech_status =
+                "CenAI Voice is being integrated. Google speech synthesis is disabled.".into();
         }
     }
 
