@@ -48,7 +48,6 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
     local
 }
 
-#[no_mangle]
 /// Invoke the fixed, on-device Lightning runtime. This JNI adapter is called only
 /// from a blocking worker; the model policy and fallback decision remain in Rust.
 pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String, String> {
@@ -73,6 +72,7 @@ pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String
         .map_err(|error| format!("Lightning response conversion failed: {error}"))
 }
 
+#[no_mangle]
 pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked(
     mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint,
     path: JString<'_>, mime_type: JString<'_>, display_name: JString<'_>, error: JString<'_>,
