@@ -204,6 +204,7 @@ enum ChatEvent {
     OtpSent(u64, Result<String, String>),
     OtpVerified(u64, Result<String, String>),
     PlanFinished(u64, u64, Result<TaskPlan, String>),
+    StepExecuted(u64, String, u64, Result<String, String>),
     McpConnected(u64, Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
     McpCallFinished(u64, Result<serde_json::Value, String>),
     CheckoutReady(u64, Result<String, String>),
@@ -239,6 +240,7 @@ impl ChatEvent {
             | Self::OtpSent(generation, ..)
             | Self::OtpVerified(generation, ..)
             | Self::PlanFinished(generation, ..)
+            | Self::StepExecuted(generation, ..)
             | Self::McpConnected(generation, ..)
             | Self::McpCallFinished(generation, ..)
             | Self::CheckoutReady(generation, ..)
@@ -1326,7 +1328,38 @@ impl WgpuRenderer {
             }
         }
         if let Some((plan_id, step_id, action)) = self.app_state.pending_plan_action.take() {
-            if let Some(store) = self.workspace.as_ref() {
+            if action == "execute" {
+                let api = self.api.clone();
+                let store = self.workspace.clone();
+                let index = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id);
+                match (api, store, index) {
+                    (Some(api), Some(store), Some(index)) => {
+                        let mut running = self.app_state.task_plans[index].clone();
+                        match running.begin_step(step_id) {
+                            Err(error) => self.app_state.plan_status = format!("AI step could not start: {error}."),
+                            Ok(()) => {
+                                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                match store.save_task_plan(running.clone(), now) {
+                                    Err(error) => self.app_state.plan_status = format!("AI step could not be saved before execution: {error}."),
+                                    Ok(_) => {
+                                        self.app_state.task_plans[index] = running.clone();
+                                        self.app_state.plan_status = format!("CenAI is working on step {step_id}. No external actions will be performed.");
+                                        let sender = self.response_tx.clone();
+                                        let generation = self.account_generation;
+                                        let task_plan_id = plan_id.clone();
+                                        let task = self.runtime.spawn(async move {
+                                            let result = CentralBrain::new(api).execute_step(&running, step_id).await;
+                                            let _ = sender.send(ChatEvent::StepExecuted(generation, task_plan_id, step_id, result));
+                                        });
+                                        self.track_task(task);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => self.app_state.plan_status = "Sign in and open your private workspace before running AI steps.".into(),
+                }
+            } else if let Some(store) = self.workspace.as_ref() {
                 if let Some(index) = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id) {
                     let mut updated = self.app_state.task_plans[index].clone();
                     let transition = match action.as_str() {
@@ -2092,6 +2125,48 @@ impl WgpuRenderer {
                             self.workspace = None;
                         }
                         Err(error) => self.app_state.auth_status = format!("Sign-out failed: {error}"),
+                    }
+                }
+                ChatEvent::StepExecuted(_, plan_id, step_id, result) => {
+                    let Some(store) = self.workspace.as_ref() else {
+                        self.app_state.plan_status = "AI step finished, but the private workspace is no longer open; the result was not saved.".into();
+                        continue;
+                    };
+                    let Some(index) = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id) else {
+                        self.app_state.plan_status = "AI step finished, but its task plan is no longer available.".into();
+                        continue;
+                    };
+                    let mut updated = self.app_state.task_plans[index].clone();
+                    let transition = match result {
+                        Ok(output) => {
+                            if let Some(step) = updated.steps.iter_mut().find(|step| step.id == step_id) {
+                                step.output = Some(output);
+                            }
+                            updated.complete_step(step_id).map_err(str::to_owned)
+                        }
+                        Err(error) => {
+                            let failed = updated.fail_step(step_id).map_err(str::to_owned);
+                            if failed.is_ok() {
+                                self.app_state.plan_status = format!("AI step {step_id} failed: {error}. Its dependent steps remain blocked.");
+                            }
+                            failed
+                        }
+                    };
+                    match transition {
+                        Err(error) => self.app_state.plan_status = format!("AI step result could not be applied: {error}."),
+                        Ok(()) => {
+                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            match store.save_task_plan(updated.clone(), now) {
+                                Ok(_) => {
+                                    let completed = updated.steps.iter().find(|step| step.id == step_id).is_some_and(|step| step.status == crate::core::agents::StepStatus::Completed);
+                                    self.app_state.task_plans[index] = updated;
+                                    if completed {
+                                        self.app_state.plan_status = format!("AI step {step_id} completed and its result was saved to Your Work.");
+                                    }
+                                }
+                                Err(error) => self.app_state.plan_status = format!("AI step result could not be persisted: {error}. The step remains unfinished: {error}"),
+                            }
+                        }
                     }
                 }
                 ChatEvent::PlanFinished(_, message_id, result) => {
