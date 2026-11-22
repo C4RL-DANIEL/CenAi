@@ -163,6 +163,26 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     }
     ui.add_space(16.0);
 
+    let history_items: Vec<(String, String)> = state.conversation_history.iter()
+        .take(8)
+        .map(|item| (item.id.clone(), item.title.clone()))
+        .collect();
+    if !history_items.is_empty() {
+        surface(ui, |ui| {
+            ui.label(text("RECENT CONVERSATIONS", 9.0, egui::Color32::from_rgb(143, 154, 180)).strong());
+            ui.horizontal_wrapped(|ui| {
+                for (id, title) in &history_items {
+                    let label = if title.trim().is_empty() { "New chat" } else { title.as_str() };
+                    let selected = state.active_conversation_id == *id;
+                    if ui.selectable_label(selected, label).clicked() && !selected {
+                        state.pending_conversation_switch = Some(id.clone());
+                    }
+                }
+            });
+        });
+        ui.add_space(8.0);
+    }
+
     if state.conversation.messages().next().is_none() {
         surface(ui, |ui| {
             ui.label(text("What would you like to work on?", 17.0, egui::Color32::WHITE).strong());
