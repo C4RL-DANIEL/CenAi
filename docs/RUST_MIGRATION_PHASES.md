@@ -38,8 +38,8 @@ This document tracks implementation and verification. A phase is complete only w
 
 ### Not yet verified / still required
 
-- The new Rust-native Android workflow must complete successfully on the current branch head.
-- The LiteRT-LM instrumentation test must pass on the API 35 emulator.
+- The API 35 emulator workflow completed successfully on commit `0eb72f63b8a58031c06d1093da087590dad7a493`: the APK asset checks verified the exact 613,722,264-byte model and SHA-256, the NativeActivity launch check passed, and the workflow's network-disabled `connectedDebugAndroidTest` step exited successfully.
+- Re-run that complete Android workflow on the current branch head after subsequent Kotlin/Android adapter changes; the current branch head still needs a clean build and instrumentation pass.
 - Rust chat orchestration routes the no-account offline path, default cloud-chat failures, and configured provider failures to the Android LiteRT-LM adapter on a blocking worker; up to eight recent user/assistant turns are forwarded within a bounded prompt size.
 - The dedicated Android workflow no longer requests Google's retired SDK `tools` package; it installs platform-tools and pins the required platform/build-tools/NDK packages directly.
 - Verify generation on the user's Redmi Pad 2 Pro, including memory use, first-run copy time, cold start, repeat prompts and thermal behavior.
@@ -145,9 +145,9 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 
 ### Current evidence
 
-- Rust host CI has passed formatting, unit tests and Clippy on the recent migration revision.
-- Android Rust cross-compilation has passed on the earlier Phase 1 integration revision.
-- The pinned model download and SHA-256/size verification have passed in CI.
+- Rust host CI has passed formatting, unit tests and Clippy on the current migration revision (115 tests passed on commit `c4e54f26bd0d4e0fb668978a6aa1a06fe6078c33`).
+- Android Rust cross-compilation, NativeActivity launch and network-disabled model instrumentation workflow completed successfully on commit `0eb72f63b8a58031c06d1093da087590dad7a493`; repeat on the latest head before release.
+- The pinned model download, APK asset inclusion, exact byte-size and SHA-256 verification have passed in CI.
 
 ### Still required
 
