@@ -85,6 +85,8 @@ pub struct WorkspaceBackupPayload {
     pub automations: Vec<Automation>,
     #[serde(default)]
     pub conversations: Vec<BackupConversation>,
+    #[serde(default)]
+    pub conversation_catalog: Vec<ConversationMetadata>,
     artifacts: Vec<BackupArtifact>,
 }
 
@@ -375,6 +377,7 @@ impl WorkspaceStore {
             automations: index.automations.into_iter()
                 .filter(|automation| automation.owner_scope == self.user_identity).collect(),
             conversations,
+            conversation_catalog: self.list_conversations()?,
             artifacts,
         };
         let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -403,7 +406,7 @@ impl WorkspaceStore {
         let payload: WorkspaceBackupPayload = serde_json::from_slice(plaintext).map_err(|error| error.to_string())?;
         if payload.schema_version != 1 || payload.projects.len() > 200 || payload.tasks.len() > 200
             || payload.automations.len() > 1000 || payload.artifacts.len() > 2000
-            || payload.conversations.len() > 500 {
+            || payload.conversations.len() > 500 || payload.conversation_catalog.len() > 5000 {
             return Err("Workspace backup schema or item limits are invalid".into());
         }
         let mut project_ids = std::collections::HashSet::new();
@@ -430,6 +433,13 @@ impl WorkspaceStore {
         for task in &payload.tasks {
             if !task_ids.insert(task.id.clone()) || task.id != task.plan.id || task.plan.validate_persisted().is_err() {
                 return Err("Workspace backup contains an invalid task plan".into());
+            }
+        }
+        let mut catalog_ids = std::collections::HashSet::new();
+        for metadata in &payload.conversation_catalog {
+            if !safe_segment(&metadata.id) || !catalog_ids.insert(metadata.id.clone())
+                || metadata.title.len() > 512 {
+                return Err("Workspace backup contains invalid conversation metadata".into());
             }
         }
         let mut automation_ids = std::collections::HashSet::new();
@@ -483,6 +493,13 @@ impl WorkspaceStore {
             }
         }
         if referenced.len() != files.len() { return Err("Backup contains unreferenced artifact data".into()); }
+
+        let mut restored_catalog = payload.conversation_catalog.clone();
+        if restored_catalog.is_empty() {
+            restored_catalog = payload.conversations.iter().map(|conversation| ConversationMetadata {
+                id: conversation.id.clone(), title: "New chat".into(), updated_at_unix_ms: 0,
+            }).collect();
+        }
 
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT_RESTORE: AtomicU64 = AtomicU64::new(1);
@@ -556,6 +573,16 @@ impl WorkspaceStore {
             return Err(error.to_string());
         }
 
+        let catalog_path = self.conversation_catalog_path();
+        let previous_catalog = if catalog_path.exists() { Some(self.read_storage(&catalog_path)?) } else { None };
+        let catalog_bytes = serde_json::to_vec_pretty(&restored_catalog).map_err(|error| error.to_string())?;
+        if let Err(error) = self.write_atomic(&catalog_path, &catalog_bytes) {
+            let _ = fs::remove_dir_all(&current);
+            let _ = fs::remove_dir_all(&conversation_root);
+            if had_current { let _ = fs::rename(&previous, &current); }
+            if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
+            return Err(error);
+        }
         let index = WorkspaceIndex {
             schema_version: 1,
             projects: payload.projects,
@@ -567,6 +594,10 @@ impl WorkspaceStore {
             let _ = fs::remove_dir_all(&conversation_root);
             if had_current { let _ = fs::rename(&previous, &current); }
             if had_conversations { let _ = fs::rename(&conversation_previous, &conversation_root); }
+            match previous_catalog {
+                Some(bytes) => { let _ = self.write_atomic(&catalog_path, &bytes); }
+                None => { let _ = fs::remove_file(&catalog_path); }
+            }
             return Err(error);
         }
         if had_current { let _ = fs::remove_dir_all(previous); }
