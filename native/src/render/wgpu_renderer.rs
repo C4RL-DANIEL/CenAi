@@ -460,7 +460,7 @@ impl WgpuRenderer {
                 app_state.conversation.restore_messages(messages);
             }
             app_state.projects = store.projects(false).unwrap_or_default();
-            app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().map(|record| record.plan).collect();
+            app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
@@ -1999,7 +1999,7 @@ impl WgpuRenderer {
                                 Ok(store) => {
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
-                                    self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().map(|record| record.plan).collect();
+                                    self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
                                     self.automation_scheduler = AutomationScheduler::from_workspace(&store).ok();
                                     self.app_state.automations = self.automation_scheduler.as_ref()
@@ -2035,13 +2035,28 @@ impl WgpuRenderer {
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
                             // Model-generated IDs are not guaranteed unique across planning requests.
                             plan.id = format!("task-{now}-{message_id}");
-                            match self.workspace.as_ref().ok_or("The account workspace is not open".to_owned())
-                                .and_then(|store| store.save_task_plan(plan.clone(), now)) {
-                                Ok(_) => {
-                                    self.app_state.task_plans.retain(|existing| existing.id != plan.id);
-                                    self.app_state.task_plans.insert(0, plan.clone());
+                            if let Err(error) = plan.validate() {
+                                self.app_state.conversation.push(MessageRole::Assistant, format!("I rejected the generated task plan because it failed structural safety checks: {error}. Nothing was saved or executed."));
+                            } else {
+                                match self.workspace.as_ref().ok_or("The account workspace is not open".to_owned())
+                                    .and_then(|store| store.save_task_plan(plan.clone(), now)) {
+                                    Ok(_) => {
+                                        self.app_state.task_plans.retain(|existing| existing.id != plan.id);
+                                        self.app_state.task_plans.insert(0, plan.clone());
+                                        let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
+                                        for step in &plan.steps {
+                                            summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
+                                        }
+                                        summary.push_str("\nNothing has been executed. Review this plan before authorizing any actions.");
+                                        self.app_state.conversation.push(MessageRole::Assistant, summary);
+                                    }
+                                    Err(error) => {
+                                        self.app_state.conversation.push(MessageRole::Assistant, format!("The plan could not be saved to Your Work: {error}"));
+                                    }
                                 }
-                                Err(error) => {
+                            }
+                        }
+                        Err(error) => {
                                     self.app_state.conversation.push(MessageRole::Assistant, format!("The plan was created but could not be saved to Your Work: {error}"));
                                 }
                             }
