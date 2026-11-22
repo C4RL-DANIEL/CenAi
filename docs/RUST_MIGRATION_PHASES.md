@@ -40,7 +40,8 @@ This document tracks implementation and verification. A phase is complete only w
 
 - The new Rust-native Android workflow must complete successfully on the current branch head.
 - The LiteRT-LM instrumentation test must pass on the API 35 emulator.
-- Rust chat orchestration now routes the default cloud-chat failure path to the Android LiteRT-LM adapter on a blocking worker; provider-key-specific failure fallback and full history/context forwarding remain future refinements.
+- Rust chat orchestration routes the no-account offline path, default cloud-chat failures, and configured provider failures to the Android LiteRT-LM adapter on a blocking worker; up to eight recent user/assistant turns are forwarded within a bounded prompt size.
+- The dedicated Android workflow no longer requests Google's retired SDK `tools` package; it installs platform-tools and pins the required platform/build-tools/NDK packages directly.
 - Verify generation on the user's Redmi Pad 2 Pro, including memory use, first-run copy time, cold start, repeat prompts and thermal behavior.
 - The current model is about 585 MiB; the final APK will be correspondingly large. Verify installation/storage headroom on target hardware.
 
