@@ -34,6 +34,10 @@ class SecureKeyStore(context: Context) {
         return Base64.encodeToString(packed, Base64.NO_WRAP)
     }
 
+    fun encryptLocalData(value: String): String = encrypt(value)
+
+    fun decryptLocalData(value: String): String = decrypt(value)
+
     private fun decrypt(encoded: String?): String {
         if (encoded.isNullOrBlank()) return ""
         return runCatching {
