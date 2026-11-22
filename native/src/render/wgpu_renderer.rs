@@ -1576,7 +1576,10 @@ impl WgpuRenderer {
                     Ok(true) => {
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
                         #[cfg(target_os = "android")]
-                        if let Some(app) = self.android_app.as_ref() { schedule_android_automation_reminders(app, &self.app_state.automations); }
+                        if let Some(app) = self.android_app.as_ref() {
+                            cancel_automation_reminder(app.clone(), self.active_user_id.clone(), automation_id.clone());
+                            schedule_android_automation_reminders(app, &self.app_state.automations);
+                        }
                         self.app_state.automation_status = "Automation deleted.".into();
                     }
                     Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
