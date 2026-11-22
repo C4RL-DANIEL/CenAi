@@ -2548,10 +2548,10 @@ impl WgpuRenderer {
                     self.app_state.backup_restore_confirmed = false;
                     match result {
                         Ok(()) => {
+                            let mut recovered_steps = 0usize;
+                            let mut recovery_error = None;
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
-                                let mut recovered_steps = 0usize;
-                                let mut recovery_error = None;
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default().into_iter()
                                     .filter_map(|record| {
                                         let mut plan = record.plan;
