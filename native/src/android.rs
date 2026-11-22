@@ -293,6 +293,30 @@ pub(crate) fn open_google_oauth(app: AndroidApp, url: String) {
     }));
 }
 
+/// Ask Android to re-check package identity/signing certificate and show its
+/// system installer. The user must still approve the installation in Android.
+pub(crate) fn install_verified_update(app: AndroidApp, path: String) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        let Ok(path_string) = env.new_string(path) else { return; };
+        match env.call_method(
+            &activity, "installVerifiedUpdate", "(Ljava/lang/String;)Z",
+            &[JValue::Object(&path_string)],
+        ) {
+            Ok(result) => {
+                if !result.z().unwrap_or(false) {
+                    log::warn!("Android declined to open the verified update installer; check install-source permission and retry");
+                }
+            }
+            Err(error) => log::error!("Verified update installer bridge failed: {error}"),
+        }
+    }));
+}
+
 struct CenAiApplication {
     api: Option<CenAiApi>,
     runtime: tokio::runtime::Handle,
