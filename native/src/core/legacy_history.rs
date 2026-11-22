@@ -112,6 +112,6 @@ mod tests {
     fn rejects_path_traversal_and_oversized_messages() {
         assert!(parse_legacy_history(r#"[{"id":"../escape","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com").is_err());
         let json = format!(r#"[{{"id":"x","ownerEmail":"owner@example.com","messages":[{{"role":"user","content":"{}"}}]}}]"#, "x".repeat(200_001));
-        assert!(parse_legacy_history(&json).is_err());
+        assert!(parse_legacy_history(&json, "owner@example.com").is_err());
     }
 }
