@@ -60,6 +60,7 @@ class NativeCoreInstrumentedTest {
             "Hello",
             NativeCore.parseProviderDelta("OPENAI", """{"choices":[{"delta":{"content":"Hello"}}]}""")
         )
+        assertEquals("Invalid API key", NativeCore.parseProviderError("""{"error":{"message":"Invalid API key"}}"""))
 
         val conversation = Conversation(
             id = "local-memory",
