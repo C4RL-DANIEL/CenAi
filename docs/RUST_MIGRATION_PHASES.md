@@ -39,7 +39,8 @@ This document tracks implementation and verification. A phase is complete only w
 ### Not yet verified / still required
 
 - The API 35 emulator workflow completed successfully on commit `0eb72f63b8a58031c06d1093da087590dad7a493`: the APK asset checks verified the exact 613,722,264-byte model and SHA-256, the NativeActivity launch check passed, and the workflow's network-disabled `connectedDebugAndroidTest` step exited successfully.
-- Re-run that complete Android workflow on the current branch head after subsequent Kotlin/Android adapter changes; the current branch head still needs a clean build and instrumentation pass.
+- The current Android adapter changes include atomic replacement of the verified model file and cleanup of partial user-selected file imports.
+- Re-run that complete Android workflow on the current branch head; the current head still needs a clean build and instrumentation pass.
 - Rust chat orchestration routes the no-account offline path, default cloud-chat failures, and configured provider failures to the Android LiteRT-LM adapter on a blocking worker; up to eight recent user/assistant turns are forwarded within a bounded prompt size.
 - The dedicated Android workflow no longer requests Google's retired SDK `tools` package; it installs platform-tools and pins the required platform/build-tools/NDK packages directly.
 - Verify generation on the user's Redmi Pad 2 Pro, including memory use, first-run copy time, cold start, repeat prompts and thermal behavior.
@@ -98,12 +99,16 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 - Rust manifest validation pins the protocol version, publisher identity, app identity, declared capabilities and requested scopes.
 - The capability registry binds each app ID to its trusted publisher and rejects publisher takeovers.
 - Grants are keyed to an authenticated user UUID, limited to manifest-requested scopes, isolated between users and revocable.
+- Supabase stores the shared trusted-publisher/app catalog and per-user grants; the `cenai-ecosystem` Edge Function enforces MFA step-up for registration/grant/revoke and checks declared/requested scopes on authorization.
+- Rust workspace storage now persists a second account-scoped registry copy through the encrypted workspace adapter, validates it on load, and supports atomic scoped grant/revoke updates.
 - The native UI exposes per-app scope review, grant and revoke actions through the account API.
+- Rust tests cover trusted registration, grant creation, undeclared-scope rejection, account isolation, persistence and revocation.
 
 ### Still required
 
-- Durable registry and grant storage with server-side enforcement for every capability call.
-- A versioned app-to-CenAI request/response transport with authentication, replay protection and strict payload limits.
+- A versioned app-to-CenAI request/response transport with app authentication, replay protection, bounded payloads, delivery semantics and revocation checks at message time.
+- An external sample app and SDK/client contract that can obtain a user-approved app credential and exercise the transport end to end.
+- End-to-end tests using two accounts and multiple registered apps, including revocation during active sessions.
 - End-to-end tests using two accounts and multiple registered apps, including revocation during active sessions.
 - A real external sample app that integrates through the published protocol rather than a UI-only catalog record.
 
@@ -145,7 +150,7 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 
 ### Current evidence
 
-- Rust host CI has passed formatting, unit tests and Clippy on the current migration revision (115 tests passed on commit `c4e54f26bd0d4e0fb668978a6aa1a06fe6078c33`).
+- Rust host CI passed formatting, unit tests and Clippy with 120 tests on commit `73cd9f25749f105bf0019438459e89316177c74f`; the subsequent Android adapter-only changes are being rechecked on the current head.
 - Android Rust cross-compilation, NativeActivity launch and network-disabled model instrumentation workflow completed successfully on commit `0eb72f63b8a58031c06d1093da087590dad7a493`; repeat on the latest head before release.
 - The pinned model download, APK asset inclusion, exact byte-size and SHA-256 verification have passed in CI.
 
