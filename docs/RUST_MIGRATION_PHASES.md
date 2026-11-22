@@ -91,6 +91,74 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 - Sandboxed tool execution, resource quotas and failure recovery integrated with the task runner.
 - End-to-end tests proving model-generated tool calls cannot bypass allow-lists, owner scopes or approval gates.
 
+## Phase 4 — Ecosystem Engine
+
+### Implemented foundations
+
+- Rust manifest validation pins the protocol version, publisher identity, app identity, declared capabilities and requested scopes.
+- The capability registry binds each app ID to its trusted publisher and rejects publisher takeovers.
+- Grants are keyed to an authenticated user UUID, limited to manifest-requested scopes, isolated between users and revocable.
+- The native UI exposes per-app scope review, grant and revoke actions through the account API.
+
+### Still required
+
+- Durable registry and grant storage with server-side enforcement for every capability call.
+- A versioned app-to-CenAI request/response transport with authentication, replay protection and strict payload limits.
+- End-to-end tests using two accounts and multiple registered apps, including revocation during active sessions.
+- A real external sample app that integrates through the published protocol rather than a UI-only catalog record.
+
+## Phase 5 — Android services
+
+### Implemented foundations
+
+- Rust automation definitions use owner UUIDs, validated UTC cron schedules, persisted cursors, pause/resume and approval-required due occurrences.
+- Guardian diagnostics and procfs metric parsers are implemented in Rust and sampled while the native app is active.
+- Background task and Guardian policy is privacy-first; scheduled work is not allowed to silently execute external or destructive actions.
+
+### Still required
+
+- Android WorkManager/foreground-service adapters that wake the Rust runtime for bounded, user-approved work.
+- Notification channels, user-visible due-task approvals, cancellation, reboot recovery and durable retry semantics.
+- Lifecycle, memory, battery and network constraints tested on Android 15/16 and Xiaomi HyperOS.
+- No implementation can promise uninterrupted 24/7 execution: force-stop, Doze, OEM restrictions and Android background-start rules remain authoritative.
+
+## Phase 6 — Voice and multimodal
+
+### Implemented foundations
+
+- Rust voice session state, PCM validation, audio buffering, WAV encoding and voice activity handling.
+- Android AudioRecord/AudioTrack integration for microphone capture and playback.
+- Rust attachment metadata validation, content signatures, size limits, integrity hashes and encrypted account-scoped storage.
+- Rich-content, document and media request contracts plus the configured CenAI cloud speech synthesis profile.
+
+### Still required
+
+- End-to-end permission, capture, transcription, synthesis and playback tests on physical devices.
+- Explicit disclosure and controls for cloud transcription/synthesis; those services are not offline.
+- Verified image/document understanding and extraction across supported formats, including malformed and oversized inputs.
+- Accessibility, interruption, audio-route and battery/thermal tests on the target tablet.
+
+## Phase 7 — Integration and device testing
+
+### Current evidence
+
+- Rust host CI has passed formatting, unit tests and Clippy on the recent migration revision.
+- Android Rust cross-compilation has passed on the earlier Phase 1 integration revision.
+- The pinned model download and SHA-256/size verification have passed in CI.
+
+### Still required
+
+- A clean current-head Android APK build, package-content verification and API 35 emulator launch.
+- A passing instrumentation test that loads the packaged model and generates a non-empty response.
+- Offline-mode test with network unavailable, plus repeated prompts and app process restart.
+- Redmi Pad 2 Pro / HyperOS 3 validation for first-run model installation, RAM pressure, cold-start latency, thermal behavior, permissions and background restrictions.
+
+## Phase 8 — Production release
+
+- The release workflow is configured to require a stable keystore and four GitHub Actions secrets: CENAI_KEYSTORE_BASE64, CENAI_KEYSTORE_PASSWORD, CENAI_KEY_ALIAS and CENAI_KEY_PASSWORD.
+- The repository currently does not have those signing secrets configured. Branch CI reports this as a warning; a tagged production release remains blocked until the owner supplies the stable signing key.
+- Never generate a new signing key for every release: the same private key must be preserved to sign future updates to the installed application.
+- Still required: successful signed build, APK signature verification, checksum verification, clean installation/upgrade testing and publication of the signed APK.
 ## Global constraints
 
 - Keep the existing `main` branch unchanged during migration.
