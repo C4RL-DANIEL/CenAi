@@ -466,7 +466,10 @@ impl WgpuRenderer {
         }
         if let Some(store) = &workspace {
             app_state.conversation_history = store.list_conversations().unwrap_or_default();
-            if let Ok(messages) = store.load_conversation("primary") {
+            let initial_conversation_id = app_state.conversation_history.first()
+                .map(|item| item.id.clone()).unwrap_or_else(|| "primary".into());
+            app_state.active_conversation_id = initial_conversation_id.clone();
+            if let Ok(messages) = store.load_conversation(&initial_conversation_id) {
                 app_state.conversation.restore_messages(messages);
             }
             app_state.projects = store.projects(false).unwrap_or_default();
@@ -490,6 +493,9 @@ impl WgpuRenderer {
             }
         }
         let last_saved_message_count = app_state.conversation.messages().count();
+        let last_dispatched_message_id = app_state.conversation.messages()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.id).max().unwrap_or(0);
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion, app_state.offline_ai_enabled);
         let last_saved_voice_language = app_state.voice_language.clone();
         let session_id = new_session_id();
@@ -536,7 +542,7 @@ impl WgpuRenderer {
             app_state,
             api,
             runtime,
-            last_dispatched_message_id: 0,
+            last_dispatched_message_id,
             agent_tool_steps: 0,
             tool_followup_dispatch: false,
             session_id,
@@ -2335,8 +2341,16 @@ impl WgpuRenderer {
                                         }
                                     }
                                     self.app_state.conversation_history = store.list_conversations().unwrap_or_default();
-                                    self.app_state.active_conversation_id = "primary".into();
-                                    if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
+                                    let active_conversation_id = self.app_state.conversation_history.first()
+                                        .map(|item| item.id.clone()).unwrap_or_else(|| "primary".into());
+                                    self.app_state.active_conversation_id = active_conversation_id.clone();
+                                    if let Ok(messages) = store.load_conversation(&active_conversation_id) {
+                                        self.app_state.conversation.restore_messages(messages);
+                                        self.last_saved_message_count = self.app_state.conversation.messages().count();
+                                        self.last_dispatched_message_id = self.app_state.conversation.messages()
+                                            .filter(|message| message.role == MessageRole::User)
+                                            .map(|message| message.id).max().unwrap_or(0);
+                                    }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
                                     self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
@@ -2756,6 +2770,9 @@ impl WgpuRenderer {
                             let mut recovery_error = None;
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.conversation_history = workspace.list_conversations().unwrap_or_default();
+                                let active_conversation_id = self.app_state.conversation_history.first()
+                                    .map(|item| item.id.clone()).unwrap_or_else(|| "primary".into());
+                                self.app_state.active_conversation_id = active_conversation_id.clone();
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default().into_iter()
                                     .filter_map(|record| {
@@ -2777,7 +2794,7 @@ impl WgpuRenderer {
                                 self.automation_scheduler = AutomationScheduler::from_workspace(workspace).ok();
                                 self.app_state.automations = self.automation_scheduler.as_ref()
                                     .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
-                                if let Ok(messages) = workspace.load_conversation("primary") {
+                                if let Ok(messages) = workspace.load_conversation(&active_conversation_id) {
                                     self.app_state.conversation.restore_messages(messages);
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
                                     self.last_dispatched_message_id = self.app_state.conversation.messages()
