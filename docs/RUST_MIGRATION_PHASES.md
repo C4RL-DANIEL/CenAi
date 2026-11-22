@@ -40,7 +40,7 @@ This document tracks implementation and verification. A phase is complete only w
 
 - The API 35 emulator workflow completed successfully on commit `0eb72f63b8a58031c06d1093da087590dad7a493`: the APK asset checks verified the exact 613,722,264-byte model and SHA-256, the NativeActivity launch check passed, and the workflow's network-disabled `connectedDebugAndroidTest` step exited successfully.
 - The current Android adapter changes include atomic replacement of the verified model file and cleanup of partial user-selected file imports.
-- Re-run that complete Android workflow on the current branch head; the current head still needs a clean build and instrumentation pass.
+- The current-head Android workflow is being rerun after the Rust OAuth and legacy credential-migration fixes; do not mark Phase 1 complete until its APK/model/instrumentation checks pass again.
 - Rust chat orchestration routes the no-account offline path, default cloud-chat failures, and configured provider failures to the Android LiteRT-LM adapter on a blocking worker; up to eight recent user/assistant turns are forwarded within a bounded prompt size.
 - The dedicated Android workflow no longer requests Google's retired SDK `tools` package; it installs platform-tools and pins the required platform/build-tools/NDK packages directly.
 - Verify generation on the user's Redmi Pad 2 Pro, including memory use, first-run copy time, cold start, repeat prompts and thermal behavior.
@@ -66,9 +66,9 @@ The original `:app` module is intentionally retained during parity work and is n
 | `AgentTaskWorker`, `GuardianWorker` | Rust automation/Guardian state exists; Android scheduled-work adapter and restart/recovery parity are still outstanding |
 | `GuardianMonitor`, `AppMonitor` | `core/guardian.rs` covers privacy-safe diagnostics and system metric parsing; platform sampling and aggregate feature metrics need parity work |
 | `DeviceActionManager` | Android JNI/platform adapter is partial; dialer, share sheet and app-settings actions remain to port with approval gates |
-| `GoogleGeminiOAuth` | Not yet parity-verified in Rust; preserve PKCE, state validation, secure token storage and refresh semantics before removing Kotlin implementation |
-| `UpdateManager` | Not yet parity-verified in Rust; signed digest verification and safe install flow remain outstanding |
-| `SecureKeyStore` | Android Keystore-backed Rust vault adapter exists in `native/src/android/vault.rs`; needs device migration/restore tests |
+| `GoogleGeminiOAuth` | Rust PKCE/state/callback validation, token exchange/refresh, account-scoped encrypted token storage and disconnect path exist in `core/google_oauth.rs` + `core/network.rs`; Android redirect adapter is wired. Legacy access/refresh/client/expiry credentials are included in the one-time migration. Current-head callback, refresh, disconnect and upgrade migration still need emulator/device integration tests. |
+| `UpdateManager` | Rust release metadata validation, official GitHub URL allow-list, bounded APK streaming, SHA-256 validation, Android package identity/signing-certificate check and system installer handoff exist; end-to-end signed upgrade/downgrade/rejection tests remain outstanding. |
+| `SecureKeyStore` | Android Keystore-backed Rust vault adapter exists in `native/src/android/vault.rs`; one-time migration now preserves Supabase session, provider API keys, and legacy Gemini OAuth client/access/refresh/expiry values, verifies the old JWT account subject against the active account, and avoids overwriting already-migrated values. Android upgrade/migration and restore tests remain outstanding. |
 | backup/import and attachments | `core/backup.rs`, `core/multimodal.rs`, Android file-picker bridge; format and end-to-end import/export parity still require tests |
 
 Do not remove `:app` or its source files until the parity audit is complete and migration tests demonstrate that existing user data and account flows remain usable.
