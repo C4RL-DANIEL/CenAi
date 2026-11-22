@@ -50,6 +50,16 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
     local
 }
 
+pub(crate) fn current_app_version(app: &AndroidApp) -> Result<String, String> {
+    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
+    let activity = activity_local(&mut env, app).map_err(|error| error.to_string())?;
+    let value = env.call_method(&activity, "getInstalledVersionName", "()Ljava/lang/String;", &[])
+        .map_err(|error| error.to_string())?.l().map_err(|error| error.to_string())?;
+    let value = JString::from(value);
+    env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
+}
+
 /// Dispatch a model-requested Android action only after the native approval dialog
 /// has explicitly authorized this one request. Validate the exact argument shape again
 /// at the platform boundary before crossing JNI.
