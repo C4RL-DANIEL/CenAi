@@ -36,6 +36,7 @@ class GoogleGeminiOAuth(
         val stateBytes = ByteArray(24).also(random::nextBytes)
         val state = Base64.encodeToString(stateBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         val challenge = Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        putOAuthValue("google_oauth_client_id", clientId)
         putOAuthSecret("google_oauth_verifier", verifier)
         putOAuthSecret("google_oauth_state", state)
         val uri = Uri.parse("https://accounts.google.com/o/oauth2/v2/auth").buildUpon()
@@ -61,7 +62,7 @@ class GoogleGeminiOAuth(
             require(error.isNullOrBlank()) { "Google authorization failed: " + error }
             val code = uri.getQueryParameter("code") ?: error("Google did not return an authorization code.")
             val verifier = getOAuthSecret("google_oauth_verifier")
-            val clientId = vault.get("google_oauth_client_id")
+            val clientId = getOAuthValue("google_oauth_client_id")
             require(clientId.isNotBlank() && verifier.isNotBlank()) { "OAuth setup is incomplete." }
             val body = FormBody.Builder()
                 .add("client_id", clientId)
