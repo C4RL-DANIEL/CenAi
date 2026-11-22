@@ -2032,42 +2032,49 @@ impl WgpuRenderer {
                     self.app_state.conversation.sending = false;
                     match result {
                         Ok(mut plan) => {
-                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
                             // Model-generated IDs are not guaranteed unique across planning requests.
                             plan.id = format!("task-{now}-{message_id}");
-                            if let Err(error) = plan.validate() {
-                                self.app_state.conversation.push(MessageRole::Assistant, format!("I rejected the generated task plan because it failed structural safety checks: {error}. Nothing was saved or executed."));
-                            } else {
-                                match self.workspace.as_ref().ok_or("The account workspace is not open".to_owned())
-                                    .and_then(|store| store.save_task_plan(plan.clone(), now)) {
-                                    Ok(_) => {
-                                        self.app_state.task_plans.retain(|existing| existing.id != plan.id);
-                                        self.app_state.task_plans.insert(0, plan.clone());
-                                        let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
-                                        for step in &plan.steps {
-                                            summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
+                            match plan.validate() {
+                                Err(error) => {
+                                    self.app_state.conversation.push(
+                                        MessageRole::Assistant,
+                                        format!("I rejected the generated task plan because it failed structural safety checks: {error}. Nothing was saved or executed."),
+                                    );
+                                }
+                                Ok(()) => {
+                                    match self.workspace.as_ref()
+                                        .ok_or("The account workspace is not open".to_owned())
+                                        .and_then(|store| store.save_task_plan(plan.clone(), now)) {
+                                        Ok(_) => {
+                                            self.app_state.task_plans.retain(|existing| existing.id != plan.id);
+                                            self.app_state.task_plans.insert(0, plan.clone());
+                                            let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
+                                            for step in &plan.steps {
+                                                summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
+                                            }
+                                            summary.push_str("\nNothing has been executed. Review this plan before authorizing any actions.");
+                                            self.app_state.conversation.push(MessageRole::Assistant, summary);
                                         }
-                                        summary.push_str("\nNothing has been executed. Review this plan before authorizing any actions.");
-                                        self.app_state.conversation.push(MessageRole::Assistant, summary);
-                                    }
-                                    Err(error) => {
-                                        self.app_state.conversation.push(MessageRole::Assistant, format!("The plan could not be saved to Your Work: {error}"));
+                                        Err(error) => {
+                                            self.app_state.conversation.push(
+                                                MessageRole::Assistant,
+                                                format!("The plan could not be saved to Your Work: {error}"),
+                                            );
+                                        }
                                     }
                                 }
                             }
                         }
                         Err(error) => {
-                                    self.app_state.conversation.push(MessageRole::Assistant, format!("The plan was created but could not be saved to Your Work: {error}"));
-                                }
-                            }
-                            let mut summary = format!("## Proposed plan: {}\n\n", plan.goal);
-                            for step in &plan.steps {
-                                summary.push_str(&format!("{}. **{:?}** — {}\n", step.id, step.role, step.title));
-                            }
-                            summary.push_str("\nNothing has been executed. Review this plan before authorizing any actions.");
-                            self.app_state.conversation.push(MessageRole::Assistant, summary);
+                            self.app_state.conversation.push(
+                                MessageRole::Assistant,
+                                format!("I could not create a safe task plan: {error}"),
+                            );
                         }
-                        Err(error) => { self.app_state.conversation.push(MessageRole::Assistant, format!("I could not create a safe task plan: {error}")); }
                     }
                     log::debug!("Central Brain plan completed for message {message_id}");
                 }
