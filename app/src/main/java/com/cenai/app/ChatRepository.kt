@@ -70,10 +70,7 @@ class ChatRepository(
                 response.use { res ->
                     if (!res.isSuccessful) {
                         val raw = res.body?.string().orEmpty()
-                        val message = runCatching {
-                            JSONObject(raw).optJSONObject("error")?.stringOrEmpty("message")
-                                ?.takeIf { it.isNotBlank() } ?: raw.take(500)
-                        }.getOrDefault(raw.take(500))
+                        val message = NativeCore.parseProviderError(raw)
                         if (continuation.isActive) continuation.resumeWith(
                             Result.failure(IllegalStateException("HTTP ${res.code}: ${message.ifBlank { res.message }}"))
                         )
