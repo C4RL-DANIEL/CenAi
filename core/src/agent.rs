@@ -253,3 +253,105 @@ mod tool_call_tests {
         assert_eq!(parse_tool_call("[[CENAI_TOOL_CALL]]{").unwrap(), "");
     }
 }
+
+
+/// Executes deterministic safe tools in Rust. Android supplies only the local clock values.
+pub fn execute_safe_tool(
+    name: &str,
+    arguments_json: &str,
+    local_time: &str,
+    local_date: &str,
+) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use serde_json::{json, Value};
+    use uuid::Uuid;
+
+    let args: Value = serde_json::from_str(arguments_json)
+        .map_err(|_| "Tool arguments must be valid JSON.".to_owned())?;
+    if !args.is_object() {
+        return Err("Tool arguments must be a JSON object.".to_owned());
+    }
+    let text_arg = |key: &str| -> Result<&str, String> {
+        args.get(key).and_then(Value::as_str)
+            .ok_or_else(|| format!("Missing required text argument: {key}"))
+    };
+
+    match name {
+        "current_time" => Ok(local_time.to_owned()),
+        "current_date" => Ok(local_date.to_owned()),
+        "calculate" => {
+            let expression = text_arg("expression")?;
+            Ok(evaluate_arithmetic(expression)?.to_string())
+        }
+        "count_words" => {
+            let value = text_arg("text")?;
+            Ok(json!({
+                "words": value.split_whitespace().count(),
+                "characters": value.chars().count(),
+                "characters_without_spaces": value.chars().filter(|ch| !ch.is_whitespace()).count()
+            }).to_string())
+        }
+        "format_json" => {
+            let value: Value = serde_json::from_str(text_arg("json")?)
+                .map_err(|_| "The supplied text is not valid JSON.".to_owned())?;
+            serde_json::to_string_pretty(&value)
+                .map_err(|_| "Could not format the supplied JSON.".to_owned())
+        }
+        "generate_uuid" => Ok(Uuid::new_v4().to_string()),
+        "text_stats" => {
+            let value = text_arg("text")?;
+            let lines = if value.is_empty() { 0 } else {
+                value.split('\n').count()
+            };
+            Ok(json!({
+                "lines": lines,
+                "words": value.split_whitespace().count(),
+                "characters": value.chars().count()
+            }).to_string())
+        }
+        "base64_encode" => Ok(STANDARD.encode(text_arg("text")?.as_bytes())),
+        "base64_decode" => {
+            let decoded = STANDARD.decode(text_arg("value")?)
+                .map_err(|_| "The supplied value is not valid Base64.".to_owned())?;
+            String::from_utf8(decoded)
+                .map_err(|_| "Decoded Base64 is not valid UTF-8 text.".to_owned())
+        }
+        _ => Err("Tool is not an approved Rust safe local tool.".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod safe_tool_tests {
+    use super::execute_safe_tool;
+
+    #[test]
+    fn executes_safe_text_and_formatting_tools() {
+        let counts = execute_safe_tool("count_words", r#"{"text":"one two"}"#, "", "").unwrap();
+        let counts: serde_json::Value = serde_json::from_str(&counts).unwrap();
+        assert_eq!(counts["words"], 2);
+        assert_eq!(counts["characters"], 7);
+
+        let formatted = execute_safe_tool("format_json", r#"{"json":"{\"ok\":true}"}"#, "", "").unwrap();
+        assert!(formatted.contains("\n  \"ok\": true"));
+        assert_eq!(execute_safe_tool("text_stats", r#"{"text":"a\nb"}"#, "", "").unwrap(),
+            r#"{"characters":3,"lines":2,"words":2}"#);
+    }
+
+    #[test]
+    fn executes_safe_clock_uuid_and_base64_tools() {
+        assert_eq!(execute_safe_tool("current_time", "{}", "local-clock", "local-day").unwrap(), "local-clock");
+        assert_eq!(execute_safe_tool("current_date", "{}", "local-clock", "local-day").unwrap(), "local-day");
+        let id = execute_safe_tool("generate_uuid", "{}", "", "").unwrap();
+        assert_eq!(id.len(), 36);
+        assert_eq!(execute_safe_tool("base64_encode", r#"{"text":"CenAI"}"#, "", "").unwrap(), "Q2VuQUk=");
+        assert_eq!(execute_safe_tool("base64_decode", r#"{"value":"Q2VuQUk="}"#, "", "").unwrap(), "CenAI");
+    }
+
+    #[test]
+    fn rejects_unsafe_or_invalid_tool_arguments() {
+        assert!(execute_safe_tool("run_shell", "{}", "", "").is_err());
+        assert!(execute_safe_tool("base64_decode", r#"{"value":"%%%"}"#, "", "").is_err());
+        assert!(execute_safe_tool("format_json", r#"{"json":"not json"}"#, "", "").is_err());
+    }
+}
