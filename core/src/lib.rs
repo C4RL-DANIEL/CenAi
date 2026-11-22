@@ -4,6 +4,7 @@ pub mod providers;
 pub mod storage;
 pub mod context;
 pub mod auth;
+pub mod monitor;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
@@ -876,5 +877,51 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_generateOAuthPkce(
     match env.new_string(output) {
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_monitorEventKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    event: JString,
+) -> jstring {
+    let Some(value) = read_java_string(&mut env, &event) else { return std::ptr::null_mut(); };
+    let output = monitor::event_key(&value).unwrap_or_default();
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_monitorSuccessRate(
+    _env: JNIEnv,
+    _class: JClass,
+    succeeded: jint,
+    failed: jint,
+) -> jint {
+    monitor::success_rate(succeeded, failed)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_monitorAverageLatency(
+    _env: JNIEnv,
+    _class: JClass,
+    total_ms: jlong,
+    completed: jint,
+) -> jlong {
+    monitor::average_latency(total_ms, completed)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_monitorFailureCategory(
+    mut env: JNIEnv,
+    _class: JClass,
+    message: JString,
+    class_name: JString,
+) -> jstring {
+    let Some(message_value) = read_java_string(&mut env, &message) else { return std::ptr::null_mut(); };
+    let Some(class_value) = read_java_string(&mut env, &class_name) else { return std::ptr::null_mut(); };
+    match env.new_string(monitor::failure_category(&message_value, &class_value)) {
+        Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
     }
 }
