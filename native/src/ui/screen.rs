@@ -1105,6 +1105,40 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Application updates", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("CenAI checks official GitHub releases, verifies the APK SHA-256, and checks the installed signing certificate before opening Android's installer. Installation always requires your confirmation.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!state.pending_update_check && !state.pending_update_download, egui::Button::new("Check for updates")).clicked() {
+                state.pending_update_check = true;
+                state.update_status = "Checking official CenAI releases…".into();
+                state.available_update = None;
+                state.update_download_path.clear();
+            }
+            if let Some(update) = state.available_update.as_ref() {
+                if ui.add_enabled(!state.pending_update_download && state.update_download_path.is_empty(), egui::Button::new("Download verified APK")).clicked() {
+                    state.pending_update_download = true;
+                    state.update_status = format!("Downloading CenAI {}…", update.version);
+                }
+            }
+            if !state.update_download_path.is_empty() {
+                if ui.button("Install update").clicked() {
+                    state.pending_update_install = true;
+                    state.update_status = "Verifying the installed signing certificate and opening Android installer…".into();
+                }
+            }
+        });
+        if let Some(update) = state.available_update.as_ref() {
+            ui.label(text(format!("Version {} is available.", update.version), 11.0, egui::Color32::from_rgb(119, 220, 183)));
+            if !update.notes.is_empty() {
+                ui.label(text(&update.notes, 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            }
+        }
+        if !state.update_status.is_empty() {
+            ui.label(text(&state.update_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         egui::ComboBox::from_id_salt("cenai_provider_key")
