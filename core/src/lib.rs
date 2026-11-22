@@ -1025,3 +1025,17 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_agentStepLimitMessage(
         Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_googleOAuthAccessTokenUsable(
+    mut env: JNIEnv,
+    _class: JClass,
+    access_token: JString,
+    expires_at: JString,
+    now_ms: jlong,
+) -> jboolean {
+    let Some(access_value) = read_java_string(&mut env, &access_token) else { return 0; };
+    let Some(expiry_value) = read_java_string(&mut env, &expires_at) else { return 0; };
+    if auth::google_oauth_access_token_usable(&access_value, &expiry_value, now_ms.max(0) as u64) { 1 } else { 0 }
+}
