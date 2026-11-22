@@ -124,7 +124,7 @@ pub fn verify_apk_sha256(bytes: &[u8], expected: &str) -> Result<(), &'static st
     }
     let actual = Sha256::digest(bytes);
     let mut mismatch = 0u8;
-    for (actual, expected) in actual.iter().zip(expected.as_bytes().chunks_exact(2)) {
+    for (actual, expected) in actual.iter().zip(expected.as_bytes().as_chunks::<2>().0) {
         let high = (expected[0] as char).to_digit(16).ok_or("Expected APK SHA-256 digest is invalid")? as u8;
         let low = (expected[1] as char).to_digit(16).ok_or("Expected APK SHA-256 digest is invalid")? as u8;
         mismatch |= *actual ^ ((high << 4) | low);
