@@ -2,7 +2,9 @@
 //!
 //! Authentication identity must be supplied by the trusted transport adapter (for
 //! example, a verified Supabase session), never trusted from an app-provided field.
-use std::collections::HashMap;
+use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use super::manifest::{CapabilityRegistry, UserCapabilityGrant};
 
@@ -26,6 +28,7 @@ fn valid_token(value: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EcosystemRequest {
     pub protocol_version: u16,
     pub request_id: String,
@@ -33,19 +36,61 @@ pub struct EcosystemRequest {
     pub user_scope: String,
     pub capability: String,
     pub created_at_unix_ms: u64,
+    #[serde(rename = "payloadBase64", with = "base64_payload")]
     pub payload: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EcosystemResponse {
     pub protocol_version: u16,
     pub request_id: String,
     pub accepted: bool,
+    #[serde(rename = "payloadBase64", with = "base64_payload")]
     pub payload: Vec<u8>,
     pub error_code: Option<String>,
 }
 
+mod base64_payload {
+    use super::STANDARD;
+    use base64::Engine as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(&STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where D: Deserializer<'de> {
+        let encoded = String::deserialize(deserializer)?;
+        STANDARD.decode(encoded.as_bytes()).map_err(serde::de::Error::custom)
+    }
+}
+
 impl EcosystemRequest {
+    /// Creates a request with a cryptographically random 256-bit replay identifier.
+    /// The authenticated API adapter must overwrite user_scope from its verified session.
+    pub fn new(app_id: impl Into<String>, user_scope: impl Into<String>, capability: impl Into<String>, payload: Vec<u8>) -> Result<Self, &'static str> {
+        let mut random = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut random);
+        let request_id = random.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let created_at_unix_ms = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map_err(|_| "System clock is before the Unix epoch")?
+            .as_millis().min(u64::MAX as u128) as u64;
+        let request = Self {
+            protocol_version: ECOSYSTEM_PROTOCOL_VERSION,
+            request_id,
+            app_id: app_id.into(),
+            user_scope: user_scope.into(),
+            capability: capability.into(),
+            created_at_unix_ms,
+            payload,
+        };
+        request.validate_shape()?;
+        Ok(request)
+    }
+
     pub fn validate_shape(&self) -> Result<(), &'static str> {
         if self.protocol_version != ECOSYSTEM_PROTOCOL_VERSION {
             return Err("Unsupported ecosystem protocol version");
@@ -140,7 +185,7 @@ mod tests {
             user_scope: USER.into(),
             capability: "notes.read".into(),
             created_at_unix_ms: 1_000_000,
-            payload: br#"{\"note_id\":\"n-1\"}"#.to_vec(),
+            payload: br#"{"note_id":"n-1"}"#.to_vec(),
         }
     }
 
@@ -153,6 +198,38 @@ mod tests {
         }, 1).unwrap();
         let grant = registry.create_grant(USER, "com.cenai.notes", vec!["notes.read".into()]).unwrap();
         (registry, grant)
+    }
+
+    #[test]
+    fn wire_format_uses_camel_case_and_base64_payloads() {
+        let request = request();
+        let value = serde_json::to_value(&request).unwrap();
+        assert_eq!(value["protocolVersion"], ECOSYSTEM_PROTOCOL_VERSION);
+        assert_eq!(value["requestId"], request.request_id);
+        assert_eq!(value["payloadBase64"], "eyJub3RlX2lkIjoibi0xIn0=");
+        assert!(value.get("payload").is_none());
+        let restored: EcosystemRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(restored, request);
+
+        let response = EcosystemResponse {
+            protocol_version: ECOSYSTEM_PROTOCOL_VERSION,
+            request_id: request.request_id.clone(),
+            accepted: true,
+            payload: br#"{"ok":true}"#.to_vec(),
+            error_code: None,
+        };
+        let encoded = serde_json::to_value(&response).unwrap();
+        let restored: EcosystemResponse = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored, response);
+    }
+
+    #[test]
+    fn new_requests_receive_unique_bounded_random_ids() {
+        let first = EcosystemRequest::new("com.cenai.notes", "550e8400-e29b-41d4-a716-446655440011", "context.read", b"{}".to_vec()).unwrap();
+        let second = EcosystemRequest::new("com.cenai.notes", "550e8400-e29b-41d4-a716-446655440011", "context.read", b"{}".to_vec()).unwrap();
+        assert_eq!(first.request_id.len(), 64);
+        assert_ne!(first.request_id, second.request_id);
+        first.validate_shape().unwrap();
     }
 
     #[test]

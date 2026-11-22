@@ -14,6 +14,29 @@ const validList = (value: unknown, maxItems = 64): value is string[] => Array.is
 const validScopes = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= 64
   && value.every(item => typeof item === "string" && item.length > 0 && item.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9:._-]*$/.test(item))
   && new Set(value).size === value.length;
+
+const MAX_ECOSYSTEM_PAYLOAD_BYTES = 64 * 1024;
+const MAX_CONTEXT_VALUE_BYTES = 60 * 1024;
+const validRequestId = (value: unknown): value is string =>
+  typeof value === "string" && value.length >= 32 && value.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(value);
+const validContextKey = (value: unknown): value is string =>
+  typeof value === "string" && value.length >= 1 && value.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+function decodeBase64Payload(value: unknown): Uint8Array | null {
+  if (typeof value !== "string" || value.length > Math.ceil(MAX_ECOSYSTEM_PAYLOAD_BYTES / 3) * 4 + 4
+    || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
+  try {
+    const binary = atob(value);
+    if (binary.length > MAX_ECOSYSTEM_PAYLOAD_BYTES) return null;
+    return Uint8Array.from(binary, character => character.charCodeAt(0));
+  } catch { return null; }
+}
+function encodeBase64Payload(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
 async function audit(actorUserId: string, appId: string, action: string, details: Record<string, unknown> = {}) {
   const { error } = await db.from("ecosystem_audit_logs").insert({ actor_user_id: actorUserId, app_id: appId, action, details });
   if (error) throw error;
@@ -27,8 +50,11 @@ Deno.serve(async (req: Request) => {
     if (!token) return fail(401, "Sign in required");
     const { data: { user }, error: authError } = await authDb.auth.getUser(token);
     if (authError || !user || user.is_anonymous) return fail(401, "Invalid or expired session");
-    const raw = await req.text();
-    if (raw.length > 24_000) return fail(413, "Ecosystem request is too large");
+    const rawBytes = new Uint8Array(await req.arrayBuffer());
+    if (rawBytes.byteLength > 100_000) return fail(413, "Ecosystem request is too large");
+    let raw: string;
+    try { raw = new TextDecoder("utf-8", { fatal: true }).decode(rawBytes); }
+    catch { return fail(400, "Request must be valid UTF-8 JSON"); }
     let body: Record<string, unknown>;
     try {
       const parsed: unknown = JSON.parse(raw || "{}");
@@ -98,6 +124,80 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       await audit(user.id, appId, "grant.revoked");
       return respond(200, { revoked: Boolean(data), grant: data });
+    }
+
+    if (action === "invoke") {
+      const protocolVersion = body.protocolVersion;
+      const requestId = body.requestId;
+      const appId = body.appId;
+      const userScope = body.userScope;
+      const capability = body.capability;
+      const createdAtUnixMs = body.createdAtUnixMs;
+      if (protocolVersion !== 1 || !validId(appId, 160) || typeof capability !== "string" || !validScopes([capability])
+        || !validRequestId(requestId) || typeof userScope !== "string" || userScope !== user.id
+        || typeof createdAtUnixMs !== "number" || !Number.isSafeInteger(createdAtUnixMs)) {
+        return fail(400, "Invalid ecosystem protocol envelope");
+      }
+      if (Math.abs(Date.now() - createdAtUnixMs) > 5 * 60 * 1000) {
+        return fail(408, "Ecosystem request expired; create a fresh request ID");
+      }
+      if (!["context.read", "context.write", "context.delete"].includes(capability)) {
+        return fail(400, "This ecosystem capability has no registered handler");
+      }
+      const payloadBytes = decodeBase64Payload(body.payloadBase64);
+      if (!payloadBytes) return fail(400, "Ecosystem payload Base64 is invalid or exceeds 64 KB");
+      let payload: Record<string, unknown>;
+      try {
+        const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payloadBytes)) as unknown;
+        if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return fail(400, "Ecosystem payload must be a JSON object");
+        payload = decoded as Record<string, unknown>;
+      } catch { return fail(400, "Ecosystem payload must contain valid UTF-8 JSON"); }
+      const key = payload.key;
+      if (!validContextKey(key)) return fail(400, "Context key is invalid");
+      if (capability === "context.write") {
+        if (!Object.prototype.hasOwnProperty.call(payload, "value")) return fail(400, "Context write requires a value");
+        const valueBytes = new TextEncoder().encode(JSON.stringify(payload.value));
+        if (valueBytes.length > MAX_CONTEXT_VALUE_BYTES) return fail(413, "Context value exceeds the 60 KB storage limit");
+      }
+
+      // The SQL function locks the app/grant rows and consumes the nonce atomically.
+      const { data: consumeStatus, error: consumeError } = await db.rpc("consume_ecosystem_request", {
+        p_user_id: user.id,
+        p_app_id: appId,
+        p_capability: capability,
+        p_request_id: requestId,
+        p_created_at: new Date(createdAtUnixMs).toISOString()
+      });
+      if (consumeError) throw consumeError;
+      if (consumeStatus === "replay") return fail(409, "Ecosystem request replay detected");
+      if (consumeStatus !== "accepted") return fail(403, "App capability is not currently authorized");
+
+      let result: Record<string, unknown>;
+      if (capability === "context.read") {
+        const { data, error } = await db.from("ecosystem_context_store").select("value,updated_at")
+          .eq("user_id", user.id).eq("app_id", appId).eq("context_key", key).maybeSingle();
+        if (error) throw error;
+        result = { key, found: Boolean(data), value: data?.value ?? null, updatedAt: data?.updated_at ?? null };
+      } else if (capability === "context.write") {
+        const { data, error } = await db.from("ecosystem_context_store").upsert({
+          user_id: user.id, app_id: appId, context_key: key, value: payload.value, updated_at: new Date().toISOString()
+        }, { onConflict: "user_id,app_id,context_key" }).select("updated_at").single();
+        if (error) throw error;
+        result = { key, saved: true, updatedAt: data.updated_at };
+      } else {
+        const { data, error } = await db.from("ecosystem_context_store").delete()
+          .eq("user_id", user.id).eq("app_id", appId).eq("context_key", key)
+          .select("context_key").maybeSingle();
+        if (error) throw error;
+        result = { key, deleted: Boolean(data) };
+      }
+      await audit(user.id, appId, capability, {});
+      const responseBytes = new TextEncoder().encode(JSON.stringify(result));
+      if (responseBytes.length > MAX_ECOSYSTEM_PAYLOAD_BYTES) return fail(413, "Ecosystem response exceeds 64 KB");
+      return respond(200, {
+        protocolVersion: 1, requestId, accepted: true,
+        payloadBase64: encodeBase64Payload(responseBytes), errorCode: null
+      });
     }
 
     if (action === "authorize") {

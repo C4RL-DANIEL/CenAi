@@ -630,7 +630,7 @@ impl CenAiApi {
 
     /// Calls the per-user Ecosystem Engine. The server derives the account identity from the JWT.
     pub async fn ecosystem_action(&self, action: &str, mut payload: Value) -> Result<Value, String> {
-        if !matches!(action, "list" | "register" | "grant" | "revoke" | "authorize") {
+        if !matches!(action, "list" | "register" | "grant" | "revoke" | "authorize" | "invoke") {
             return Err("Unsupported Ecosystem Engine action".into());
         }
         let object = payload.as_object_mut().ok_or("Request payload must be an object")?;
@@ -682,6 +682,26 @@ impl CenAiApi {
             return Err("Downloaded backup is empty or exceeds the 100 MB limit".into());
         }
         Ok(bytes.to_vec())
+    }
+
+    /// Invokes a registered app capability through the versioned, replay-protected transport.
+    /// The account scope is always replaced with the verified Supabase session identity.
+    pub async fn ecosystem_invoke(
+        &self,
+        mut request: crate::ecosystem::transport::EcosystemRequest,
+    ) -> Result<crate::ecosystem::transport::EcosystemResponse, String> {
+        let account_id = self.vault.account_id()?;
+        if !valid_supabase_user_id(&account_id) {
+            return Err("A verified CenAI account is required for ecosystem requests.".into());
+        }
+        request.user_scope = account_id;
+        request.validate_shape().map_err(str::to_owned)?;
+        let payload = serde_json::to_value(&request).map_err(|error| error.to_string())?;
+        let response = self.ecosystem_action("invoke", payload).await?;
+        let response: crate::ecosystem::transport::EcosystemResponse =
+            serde_json::from_value(response).map_err(|_| "Ecosystem response format was invalid.".to_owned())?;
+        response.validate_for(&request).map_err(str::to_owned)?;
+        Ok(response)
     }
 
     pub async fn ecosystem_list(&self) -> Result<Value, String> {
