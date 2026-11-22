@@ -62,6 +62,11 @@ class NativeCoreInstrumentedTest {
         )
         assertEquals("Invalid API key", NativeCore.parseProviderError("""{"error":{"message":"Invalid API key"}}"""))
         assertEquals("Hello from cloud", JSONObject(NativeCore.parseCloudResponse("""{"choices":[{"message":{"content":"Hello from cloud"}}]}""")).getString("content"))
+        assertEquals("user@example.com", JSONObject(NativeCore.buildAuthPayload("signup", " user@example.com ", "password123", "")).getString("email"))
+        assertEquals("OK", NativeCore.validateEmailOtp("123456"))
+        assertTrue(NativeCore.validateEmailOtp("12x456") != "OK")
+        val session = JSONObject(NativeCore.parseAuthSession("""{"access_token":"a","refresh_token":"r","user":{"id":"u-1","email":"user@example.com"}}"""))
+        assertEquals("u-1", session.getString("user_id"))
         assertEquals("Describe [Image attached] please", NativeCore.stripImageMarkers("Describe [[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]] please"))
 
         val conversation = Conversation(
