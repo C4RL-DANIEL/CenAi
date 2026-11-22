@@ -129,35 +129,22 @@ class ChatRepository(
         require(error.isBlank()) { error.ifBlank { "Rust could not build the provider request." } }
         val payload = JSONObject(encoded)
 
-        val builder = when (p) {
-            Provider.CENAI_CLOUD -> Request.Builder().url("https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions")
-                .header("Authorization", "Bearer " + key)
-            Provider.CLAUDE -> Request.Builder().url("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", key).header("anthropic-version", "2023-06-01")
-            Provider.GEMINI -> {
-                val request = Request.Builder().url(
-                    if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse"
-                    else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key"
-                )
-                if (oauth) request.header("Authorization", "Bearer $key")
-                    .header("x-goog-user-project", vault.get("google_cloud_project_id"))
-                request
-            }
-            else -> {
-                val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
-                require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
-                Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
-                    .header("Authorization", "Bearer $key")
-            }
-        }
+        val transportConfig = NativeCore.buildProviderRequestConfig(
+            p.name,
+            if (p == Provider.GEMINI) model else base,
+            key,
+            oauth,
+            vault.getUser(accountId, "google_cloud_project_id", ""),
+            vault.getUserSecret(accountId, "custom_headers").ifBlank { "{}" }
+        )
+        val transportError = runCatching { JSONObject(transportConfig).optString("error") }.getOrDefault("")
+        require(transportError.isBlank()) { transportError.ifBlank { "Rust could not configure provider transport." } }
+        val config = JSONObject(transportConfig)
+        val builder = Request.Builder().url(config.getString("url"))
+        val headers = config.optJSONObject("headers") ?: JSONObject()
+        headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }
 
-        if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
-            runCatching { JSONObject(vault.getUserSecret(accountId, "custom_headers").ifBlank { "{}" }) }.getOrNull()?.let { headers ->
-                headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }
-            }
-        }
-        return builder.header("Accept", "text/event-stream")
-            .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
+        return builder.post(payload.toString().toRequestBody("application/json".toMediaType())).build()
     }
 
     private fun readEvents(source: BufferedSource, onData: (String) -> Unit) {
