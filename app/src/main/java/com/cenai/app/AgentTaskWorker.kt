@@ -30,9 +30,10 @@ import java.util.concurrent.TimeUnit
 class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(KEY_ID).orEmpty()
-        val prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val ownerId = inputData.getString(KEY_OWNER_ID).orEmpty().ifBlank { "guest" }
+        val prefs = applicationContext.getSharedPreferences(prefsName(ownerId), Context.MODE_PRIVATE)
         val vault = SecureKeyStore(applicationContext)
-        val prompt = vault.getSecret("scheduled_task_prompt_$taskId")
+        val prompt = vault.getUserSecret(ownerId, "scheduled_task_prompt_$taskId")
         val provider = Provider.parse(inputData.getString(KEY_PROVIDER))
         val model = inputData.getString(KEY_MODEL).orEmpty().ifBlank { provider.model }
         val base = inputData.getString(KEY_BASE).orEmpty().ifBlank { provider.baseUrl }
@@ -74,7 +75,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             if (response.isBlank()) response = "The scheduled agent returned an empty response."
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
-            vault.putSecret("scheduled_task_result_$taskId", response.take(16_000))
+            vault.putUserSecret(ownerId, "scheduled_task_result_$taskId", response.take(16_000))
             postNotification(taskId, "Completed", response)
             Result.success()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -112,6 +113,10 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         const val KEY_PROVIDER = "task_provider"
         const val KEY_MODEL = "task_model"
         const val KEY_BASE = "task_base"
+        const val KEY_OWNER_ID = "task_owner_id"
+
+        fun prefsName(ownerId: String): String =
+            PREFS + "_" + ownerId.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "guest" }
 
         fun schedule(
             context: Context,
@@ -119,7 +124,8 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             delayMinutes: Long,
             provider: Provider,
             model: String,
-            base: String
+            base: String,
+            ownerId: String = "guest"
         ): String {
             require(prompt.isNotBlank()) { "Enter a task before scheduling it." }
             require(prompt.length <= 8_000) { "Scheduled tasks are limited to 8,000 characters." }
@@ -130,6 +136,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 .putString(KEY_PROVIDER, provider.name)
                 .putString(KEY_MODEL, model)
                 .putString(KEY_BASE, base)
+                .putString(KEY_OWNER_ID, ownerId)
                 .build()
             val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
             val request = OneTimeWorkRequestBuilder<AgentTaskWorker>()
@@ -138,21 +145,22 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
                 .addTag("cenai-agent-task")
                 .build()
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            context.getSharedPreferences(prefsName(ownerId), Context.MODE_PRIVATE).edit()
                 .putString("status_$id", "Scheduled")
                 .putLong("scheduled_$id", System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes))
                 .apply()
-            SecureKeyStore(context.applicationContext).putSecret("scheduled_task_prompt_$id", prompt)
+            SecureKeyStore(context.applicationContext).putUserSecret(ownerId, "scheduled_task_prompt_$id", prompt)
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 "cenai-agent-$id", ExistingWorkPolicy.KEEP, request
             )
             return id
         }
 
-        fun cancel(context: Context, taskId: String) {
+        fun cancel(context: Context, taskId: String, ownerId: String = "guest") {
             WorkManager.getInstance(context.applicationContext).cancelUniqueWork("cenai-agent-$taskId")
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            context.getSharedPreferences(prefsName(ownerId), Context.MODE_PRIVATE)
                 .edit().putString("status_$taskId", "Cancelled").apply()
+            SecureKeyStore(context.applicationContext).putUserSecret(ownerId, "scheduled_task_prompt_$taskId", "")
         }
     }
 }
