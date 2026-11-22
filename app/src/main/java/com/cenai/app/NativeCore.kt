@@ -62,6 +62,9 @@ object NativeCore {
     /** Builds a safe provider endpoint and header set in Rust. */
     external fun buildProviderRequestConfig(provider: String, baseUrlOrModel: String, apiKey: String, oauth: Boolean, projectId: String, customHeadersJson: String): String
 
+    /** Selects the provider set for single-provider or multi-agent mode. */
+    external fun selectProviderTargets(primaryProvider: String, multiAgent: Boolean, localModelEnabled: Boolean, configuredProvidersJson: String): String
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
