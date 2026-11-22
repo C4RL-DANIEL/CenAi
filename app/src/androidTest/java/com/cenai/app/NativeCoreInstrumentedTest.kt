@@ -17,6 +17,8 @@ class NativeCoreInstrumentedTest {
         assertEquals(2, JSONObject(count.getString("output")).getInt("words"))
         assertEquals("Q2VuQUk=", JSONObject(NativeCore.executeSafeTool("base64_encode", """{"text":"CenAI"}""", "", "")).getString("output"))
 
+        val catalog = JSONArray(NativeCore.listAgentTools("null"))
+        assertTrue(catalog.length() >= 13)
         val policy = JSONObject(NativeCore.evaluateToolPolicy("open_dialer", "null"))
         assertTrue(policy.getBoolean("allowed"))
         assertTrue(policy.getBoolean("requires_approval"))
