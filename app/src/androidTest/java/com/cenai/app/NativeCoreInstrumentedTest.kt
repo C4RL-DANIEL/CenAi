@@ -32,6 +32,9 @@ class NativeCoreInstrumentedTest {
         assertTrue(policy.getBoolean("allowed"))
         assertTrue(policy.getBoolean("requires_approval"))
 
+        val stepDecision = JSONObject(NativeCore.parseAgentStep("Visible text [[CENAI_TOOL_CALL]]{\"name\":\"calculate\",\"arguments\":{\"expression\":\"1+1\"}}[[/CENAI_TOOL_CALL]]"))
+        assertEquals("tool", stepDecision.getString("kind"))
+        assertEquals("Visible text", stepDecision.getString("visible_text"))
         val toolCall = JSONObject(
             NativeCore.parseAgentToolCall(
                 "Thinking [[CENAI_TOOL_CALL]]{\"name\":\"calculate\",\"arguments\":{\"expression\":\"2+2\"}}[[/CENAI_TOOL_CALL]]"
