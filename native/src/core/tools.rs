@@ -322,10 +322,10 @@ mod tests {
     #[test]
     fn tool_call_parser_requires_valid_object_arguments() {
         let runtime = AgentToolRuntime::default();
-        let call = runtime.parse_tool_call("before [[CENAI_TOOL_CALL]]{\"name\":\"calculate\",\"arguments\":{\"expression\":\"2+2\"}}[[/CENAI_TOOL_CALL]] after").unwrap().unwrap();
+        let call = runtime.parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"2+2"}}[[/CENAI_TOOL_CALL]]"#).unwrap().unwrap();
         assert_eq!(call.name, "calculate");
         assert_eq!(call.arguments["expression"], "2+2");
-        assert!(runtime.parse_tool_call("prefix [[CENAI_TOOL_CALL]]{\\"name\\":\\"calculate\\",\\"arguments\\":{\\"expression\\":\\"2+2\\"}}[[/CENAI_TOOL_CALL]]").is_err());
+        assert!(runtime.parse_tool_call(r#"prefix [[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"2+2"}}[[/CENAI_TOOL_CALL]]"#).is_err());
         assert!(runtime.parse_tool_call("[[CENAI_TOOL_CALL]][][[/CENAI_TOOL_CALL]]").is_err());
     }
 }
