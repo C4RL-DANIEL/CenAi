@@ -135,7 +135,7 @@ impl TaskPlan {
 
     pub fn block_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
-        if step.status != StepStatus::Running || step.output.as_ref().map_or(true, |output| output.trim().is_empty()) {
+        if step.status != StepStatus::Running || step.output.as_ref().is_none_or(|output| output.trim().is_empty()) {
             return Err("Only a running task step with a saved blocker explanation can be blocked");
         }
         step.status = StepStatus::Blocked;
