@@ -543,6 +543,28 @@ impl WorkspaceStore {
         if state.schema_version != 1 || state.manifests.len() > 256 || state.grants.len() > 2000 {
             return Err("Stored Ecosystem Engine registry is invalid or exceeds limits".into());
         }
+        let mut app_ids = std::collections::HashSet::new();
+        for manifest in &state.manifests {
+            if !app_ids.insert(manifest.app_id.clone()) {
+                return Err("Stored Ecosystem Engine registry contains duplicate app identifiers".into());
+            }
+            manifest.validate(manifest.protocol_version)
+                .map_err(|error| format!("Stored app manifest is invalid: {error:?}"))?;
+        }
+        let mut grant_ids = std::collections::HashSet::new();
+        for grant in &state.grants {
+            if grant.user_scope != self.user_identity || !grant_ids.insert(grant.app_id.clone()) {
+                return Err("Stored Ecosystem Engine grant has an invalid account or duplicate app entry".into());
+            }
+            let manifest = state.manifests.iter().find(|manifest| manifest.app_id == grant.app_id)
+                .ok_or("Stored Ecosystem Engine grant references an unknown app")?;
+            if grant.granted_scopes.len() > 64 || grant.granted_scopes.iter().any(|scope| {
+                !manifest.capabilities.iter().any(|declared| declared == scope)
+                    || !manifest.requested_scopes.iter().any(|requested| requested == scope)
+            }) {
+                return Err("Stored Ecosystem Engine grant exceeds declared app scopes".into());
+            }
+        }
         Ok((state.manifests, state.grants))
     }
 
