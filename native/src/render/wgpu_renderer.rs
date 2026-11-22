@@ -2365,7 +2365,7 @@ impl WgpuRenderer {
                                 Ok(store) => {
                                     #[cfg(target_os = "android")]
                                     if let Some(app) = self.android_app.as_ref() {
-                                        if let Err(error) = crate::android::migrate_legacy_history(app, &store, &self.app_state.account_email) {
+                                        if let Err(error) = crate::android::migrate_legacy_history(app, &store, &self.app_state.account_email, None) {
                                             log::warn!("Deferred legacy history migration failed safely: {error}");
                                         }
                                     }
