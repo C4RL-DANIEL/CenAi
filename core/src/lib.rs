@@ -712,3 +712,23 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_stripImageMarkers(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_parseCloudResponse(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw: JString,
+) -> jstring {
+    let Some(raw_value) = read_java_string(&mut env, &raw) else {
+        return std::ptr::null_mut();
+    };
+    let output = match providers::parse_cloud_response(&raw_value) {
+        Ok(content) => serde_json::json!({ "content": content }).to_string(),
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
