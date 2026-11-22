@@ -36,45 +36,43 @@ class LocalModelRuntime(context: Context) {
 
     /** Installs the fixed Lightning model shipped in APK assets without asking the user to import it. */
     suspend fun installBundledModelIfMissing(): Boolean = withContext(Dispatchers.IO) {
-        if (isModelInstalled()) return@withContext true
-        val source = try {
-            app.assets.open("models/lightning.litertlm")
-        } catch (_: Throwable) {
-            return@withContext false
-        }
-        modelDir.mkdirs()
-        val temporary = File(modelDir, "lightning.bundle.tmp")
-        try {
-            var copied = 0L
-            source.use { input ->
-                FileOutputStream(temporary).use { output ->
-                    val buffer = ByteArray(1024 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        copied += count
-                        require(copied <= 2_500_000_000L) { "Bundled Lightning model exceeds the supported size." }
-                        output.write(buffer, 0, count)
-                    }
-                    output.fd.sync()
-                }
+        mutex.withLock {
+            if (isModelInstalled()) return@withLock true
+            val source = try {
+                app.assets.open("models/lightning.litertlm")
+            } catch (_: Throwable) {
+                return@withLock false
             }
-            require(copied > 1_000_000L) { "Bundled Lightning model is missing or incomplete." }
-            mutex.withLock {
-                if (isModelInstalled()) {
-                    temporary.delete()
-                    true
-                } else {
-                    closeEngineLocked()
-                    if (!temporary.renameTo(modelFile)) {
-                        throw IllegalStateException("Could not install the bundled Lightning model into private app storage.")
+            modelDir.mkdirs()
+            val temporary = File(modelDir, "lightning.bundle.tmp")
+            try {
+                var copied = 0L
+                source.use { input ->
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(1024 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            copied += count
+                            require(copied <= 2_500_000_000L) { "Bundled Lightning model exceeds the supported size." }
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
                     }
-                    true
                 }
+                require(copied > 1_000_000L) { "Bundled Lightning model is missing or incomplete." }
+                closeEngineLocked()
+                if (modelFile.exists() && !modelFile.delete()) {
+                    throw IllegalStateException("Could not replace an incomplete Lightning model file.")
+                }
+                if (!temporary.renameTo(modelFile)) {
+                    throw IllegalStateException("Could not install the bundled Lightning model into private app storage.")
+                }
+                true
+            } catch (_: Throwable) {
+                temporary.delete()
+                false
             }
-        } catch (_: Throwable) {
-            temporary.delete()
-            false
         }
     }
 
