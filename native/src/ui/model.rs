@@ -164,6 +164,9 @@ pub struct MfaFactor {
 pub struct AppState {
     pub destination: Destination,
     pub conversation: ConversationState,
+    pub conversation_history: Vec<crate::core::workspace::ConversationMetadata>,
+    pub active_conversation_id: String,
+    pub pending_conversation_switch: Option<String>,
     pub attachments: Vec<AttachmentMetadata>,
     pub attachment_status: String,
     pub attachment_analysis_result: String,
@@ -320,6 +323,9 @@ impl Default for AppState {
         Self {
             destination: Destination::Conversation,
             conversation: ConversationState::default(),
+            conversation_history: Vec::new(),
+            active_conversation_id: "primary".into(),
+            pending_conversation_switch: None,
             attachments: Vec::new(),
             attachment_status: String::new(),
             attachment_analysis_result: String::new(),
