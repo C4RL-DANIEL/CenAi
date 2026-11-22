@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
@@ -204,7 +204,7 @@ enum ChatEvent {
     OtpSent(u64, Result<String, String>),
     OtpVerified(u64, Result<String, String>),
     PlanFinished(u64, u64, Result<TaskPlan, String>),
-    StepExecuted(u64, String, u64, Result<String, String>),
+    StepExecuted(u64, String, u64, Result<StepExecutionResult, String>),
     McpConnected(u64, Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
     McpCallFinished(u64, Result<serde_json::Value, String>),
     CheckoutReady(u64, Result<String, String>),
@@ -2138,11 +2138,14 @@ impl WgpuRenderer {
                     };
                     let mut updated = self.app_state.task_plans[index].clone();
                     let transition = match result {
-                        Ok(output) => {
+                        Ok(execution) => {
                             if let Some(step) = updated.steps.iter_mut().find(|step| step.id == step_id) {
-                                step.output = Some(output);
+                                step.output = Some(execution.output);
                             }
-                            updated.complete_step(step_id).map_err(str::to_owned)
+                            match execution.disposition {
+                                crate::core::agents::StepExecutionDisposition::Completed => updated.complete_step(step_id).map_err(str::to_owned),
+                                crate::core::agents::StepExecutionDisposition::Blocked => updated.block_step(step_id).map_err(str::to_owned),
+                            }
                         }
                         Err(error) => {
                             let failed = updated.fail_step(step_id).map_err(str::to_owned);
@@ -2158,11 +2161,13 @@ impl WgpuRenderer {
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
                             match store.save_task_plan(updated.clone(), now) {
                                 Ok(_) => {
-                                    let completed = updated.steps.iter().find(|step| step.id == step_id).is_some_and(|step| step.status == crate::core::agents::StepStatus::Completed);
+                                    let status = updated.steps.iter().find(|step| step.id == step_id).map(|step| step.status);
                                     self.app_state.task_plans[index] = updated;
-                                    if completed {
-                                        self.app_state.plan_status = format!("AI step {step_id} completed and its result was saved to Your Work.");
-                                    }
+                                    self.app_state.plan_status = match status {
+                                        Some(crate::core::agents::StepStatus::Completed) => format!("AI step {step_id} completed and its result was saved to Your Work."),
+                                        Some(crate::core::agents::StepStatus::Blocked) => format!("AI step {step_id} is blocked. Its handoff explanation was saved; dependent steps remain locked."),
+                                        _ => format!("AI step {step_id} was updated and saved."),
+                                    };
                                 }
                                 Err(error) => self.app_state.plan_status = format!("AI step result could not be persisted: {error}. The step remains unfinished: {error}"),
                             }

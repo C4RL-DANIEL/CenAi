@@ -7,7 +7,14 @@ pub enum AgentRole { Planner, Researcher, Developer, Tester, SecurityReviewer, Q
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum StepStatus { Pending, Running, WaitingForApproval, Completed, Failed, Cancelled }
+pub enum StepStatus { Pending, Running, WaitingForApproval, Completed, Blocked, Failed, Cancelled }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepExecutionDisposition { Completed, Blocked }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StepExecutionResult { pub disposition: StepExecutionDisposition, pub output: String }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TaskStep {
@@ -77,6 +84,9 @@ impl TaskPlan {
             if step.output.as_ref().is_some_and(|output| output.is_empty() || output.len() > 24_000) {
                 return Err("A task step result is empty or exceeds the 24 KB limit");
             }
+            if step.status == StepStatus::Blocked && step.output.is_none() {
+                return Err("A blocked task step must retain its blocker explanation");
+            }
             if !matches!(step.status, StepStatus::Pending | StepStatus::Cancelled)
                 && !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)) {
                 return Err("A task step cannot advance before all dependencies complete");
@@ -120,6 +130,15 @@ impl TaskPlan {
         let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
         if step.status != StepStatus::Running { return Err("Only a running task step can complete"); }
         step.status = StepStatus::Completed;
+        Ok(())
+    }
+
+    pub fn block_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        if step.status != StepStatus::Running || step.output.as_ref().map_or(true, |output| output.trim().is_empty()) {
+            return Err("Only a running task step with a saved blocker explanation can be blocked");
+        }
+        step.status = StepStatus::Blocked;
         Ok(())
     }
 
@@ -277,6 +296,25 @@ mod tests {
         plan.steps[0].output = Some("x".repeat(24_001));
         assert!(plan.validate_persisted().is_err());
         plan.steps[0].output = Some(String::new());
+        assert!(plan.validate_persisted().is_err());
+    }
+
+    #[test]
+    fn blocked_steps_keep_their_handoff_and_never_unlock_dependents() {
+        let mut plan = TaskPlan {
+            id: "task-blocked".into(), goal: "Perform a protected action".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Perform external action".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify action".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+        plan.begin_step(1).unwrap();
+        plan.steps[0].output = Some("Needs explicit device permission".into());
+        plan.block_step(1).unwrap();
+        assert_eq!(plan.steps[0].status, StepStatus::Blocked);
+        assert!(plan.ready_steps().is_empty());
+        assert!(plan.validate_persisted().is_ok());
+        plan.steps[0].output = None;
         assert!(plan.validate_persisted().is_err());
     }
 

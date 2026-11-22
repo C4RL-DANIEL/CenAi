@@ -445,7 +445,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                     && step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate|
                         candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed));
                 if let Some(output) = step.output.as_deref() {
-                    ui.collapsing("AI step result", |ui| { ui.label(text(output, 11.0, egui::Color32::from_rgb(210, 220, 232))); });
+                    ui.collapsing(if step.status == crate::core::agents::StepStatus::Blocked { "Blocked · required handoff" } else { "AI step result" }, |ui| { ui.label(text(output, 11.0, egui::Color32::from_rgb(210, 220, 232))); });
                 }
                 ui.horizontal_wrapped(|ui| {
                     match step.status {
