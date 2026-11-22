@@ -955,7 +955,7 @@ impl WgpuRenderer {
         let generation = self.account_generation;
         let sender = self.response_tx.clone();
 
-        if !key.is_empty() {
+        if !key.is_empty() || (provider == "gemini" && api.has_google_gemini_oauth()) {
             let (endpoint, model) = match provider.as_str() {
                 "deepseek" => ("https://api.deepseek.com", "deepseek-flash"),
                 "anthropic" => ("", "claude-sonnet-5-5"),
@@ -964,6 +964,7 @@ impl WgpuRenderer {
             };
             let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
             let selected_provider = provider.clone();
+            let use_gemini_oauth = selected_provider == "gemini" && key.is_empty();
             let goal = latest_goal.clone();
             let offline_prompt = conversation_prompt_for_offline(&self.app_state.conversation);
             let fallback_sender = sender.clone();
@@ -972,6 +973,11 @@ impl WgpuRenderer {
             let task = self.runtime.spawn(async move {
                 let result = async {
                     let mut request = request;
+                    let credential = if use_gemini_oauth {
+                        api.google_gemini_access_token().await?
+                    } else {
+                        key
+                    };
                     if include_personal_memory {
                         let memories = api.personal_memories().await?;
                         let owner_user_id = api.account_id()?;
@@ -986,19 +992,25 @@ impl WgpuRenderer {
                     match selected_provider.as_str() {
                         "anthropic" => {
                             let delta_sender = sender.clone();
-                            api.stream_anthropic(&request, &key, move |delta| {
+                            api.stream_anthropic(&request, &credential, move |delta| {
                                 let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                             }).await
                         }
                         "gemini" => {
                             let delta_sender = sender.clone();
-                            api.stream_gemini(&request, &key, move |delta| {
-                                let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
-                            }).await
+                            if use_gemini_oauth {
+                                api.stream_gemini_oauth(&request, &credential, move |delta| {
+                                    let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                                }).await
+                            } else {
+                                api.stream_gemini(&request, &credential, move |delta| {
+                                    let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
+                                }).await
+                            }
                         }
                         _ => {
                             let delta_sender = sender.clone();
-                            api.stream_openai_compatible(endpoint, &key, &request, move |delta| {
+                            api.stream_openai_compatible(endpoint, &credential, &request, move |delta| {
                                 let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                             }).await
                         },
