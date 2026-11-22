@@ -126,8 +126,6 @@ class SecureKeyStore(context: Context) {
         else scoped.edit().putString(name, encrypt(value)).apply()
     }
 
-    fun apiKey(): String = decrypt(prefs.getString("api_key", null))
-
     fun apiKey(provider: Provider, ownerId: String = "guest"): String {
         val scoped = accountPrefs(ownerId)
         val stored = scoped.getString("api_key_${provider.name.lowercase()}", null)
