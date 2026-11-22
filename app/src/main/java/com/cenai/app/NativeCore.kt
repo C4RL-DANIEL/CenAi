@@ -32,6 +32,9 @@ object NativeCore {
     /** Parses structured agent tool calls in the Rust core. */
     external fun parseAgentToolCall(response: String): String
 
+    /** Classifies a model turn as final text or a structured tool request. */
+    external fun parseAgentStep(response: String): String
+
     /** Runs private conversation retrieval in the Rust core. */
     external fun retrieveLocalKnowledge(payload: String, maxResults: Int, maxCharacters: Int): String
 
