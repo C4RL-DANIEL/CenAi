@@ -21,8 +21,12 @@ class ChatStore(context: Context, ownerId: String = "guest") {
         val stored = prefs.getString("conversations", "[]") ?: "[]"
         val legacyPlaintext = stored.trimStart().startsWith("[")
         val raw = if (legacyPlaintext) stored else vault.decryptLocalData(stored).ifBlank { "[]" }
+        val normalized = runCatching { NativeCore.normalizeConversations(raw) }.getOrNull()
+            ?: return mutableListOf()
+        val error = runCatching { JSONObject(normalized).optString("error") }.getOrDefault("")
+        if (error.isNotBlank()) return mutableListOf()
         val parsed = runCatching {
-            val array = JSONArray(raw)
+            val array = JSONArray(normalized)
             MutableList(array.length()) { i ->
                 val item = array.getJSONObject(i)
                 val msgs = item.optJSONArray("messages") ?: JSONArray()
@@ -35,7 +39,7 @@ class ChatStore(context: Context, ownerId: String = "guest") {
                     },
                     updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
                 )
-            }.sortedByDescending { it.updatedAt }.toMutableList()
+            }
         }.getOrNull() ?: return mutableListOf()
         if (legacyPlaintext) save(parsed)
         return parsed
@@ -49,6 +53,9 @@ class ChatStore(context: Context, ownerId: String = "guest") {
             array.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
                 .put("updatedAt", conversation.updatedAt).put("messages", messages))
         }
-        prefs.edit().putString("conversations", vault.encryptLocalData(array.toString())).apply()
+        val normalized = NativeCore.normalizeConversations(array.toString())
+        val error = runCatching { JSONObject(normalized).optString("error") }.getOrDefault("")
+        require(error.isBlank()) { error.ifBlank { "Rust could not normalize saved conversations." } }
+        prefs.edit().putString("conversations", vault.encryptLocalData(normalized)).apply()
     }
 }
