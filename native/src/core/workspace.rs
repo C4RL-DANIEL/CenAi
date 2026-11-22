@@ -1435,7 +1435,7 @@ mod legacy_history_workspace_tests {
     fn conversation_metadata_promotes_placeholder_title_once() {
         let root = std::env::temp_dir().join(format!("cenai-title-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        let store = WorkspaceStore::new(root.clone(), "account-a").unwrap();
+        let store = WorkspaceStore::new(root.clone(), "550e8400-e29b-41d4-a716-446655440095").unwrap();
         store.upsert_conversation_metadata("chat-1", "New chat", 10).unwrap();
         store.upsert_conversation_metadata("chat-1", "How to build an app", 20).unwrap();
         store.upsert_conversation_metadata("chat-1", "A later message must not rename it", 30).unwrap();
