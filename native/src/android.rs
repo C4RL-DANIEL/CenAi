@@ -70,29 +70,15 @@ fn export_legacy_conversation_history(app: &AndroidApp) -> Result<String, String
     env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
 }
 
-fn legacy_history_owner_email(app: &AndroidApp) -> Result<String, String> {
-    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
-    let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
-    let activity = activity_local(&mut env, app).map_err(|error| error.to_string())?;
-    let value = env.call_method(&activity, "getLegacyConversationOwnerEmail", "()Ljava/lang/String;", &[])
-        .map_err(|error| error.to_string())?.l().map_err(|error| error.to_string())?;
-    let value = JString::from(value);
-    env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
-}
-
 pub(crate) fn migrate_legacy_history(app: &AndroidApp, workspace: &WorkspaceStore, expected_email: &str) -> Result<usize, String> {
     if expected_email.trim().is_empty() {
         return Err("The signed-in account email is unavailable; legacy history was not imported".into());
-    }
-    let legacy_owner = legacy_history_owner_email(app)?;
-    if legacy_owner.trim().is_empty() || !legacy_owner.trim().eq_ignore_ascii_case(expected_email.trim()) {
-        return Err("Legacy history account ownership could not be verified; original history was retained".into());
     }
     let export = export_legacy_conversation_history(app)?;
     if export.trim().is_empty() || export.trim() == "[]" {
         return Ok(0);
     }
-    workspace.import_legacy_conversations(&export)
+    workspace.import_legacy_conversations(&export, expected_email)
 }
 
 fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
