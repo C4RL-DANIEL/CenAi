@@ -2,6 +2,7 @@ pub mod agent;
 pub mod knowledge;
 pub mod providers;
 pub mod storage;
+pub mod context;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
@@ -497,6 +498,39 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_normalizeConversations(
         Err(error) => serde_json::json!({ "error": error }).to_string(),
     };
     match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildSystemContext(
+    mut env: JNIEnv,
+    _class: JClass,
+    system_prompt: JString,
+    approved_memory: JString,
+    local_knowledge: JString,
+    tool_guide: JString,
+) -> jstring {
+    let Some(system_value) = read_java_string(&mut env, &system_prompt) else {
+        return std::ptr::null_mut();
+    };
+    let Some(memory_value) = read_java_string(&mut env, &approved_memory) else {
+        return std::ptr::null_mut();
+    };
+    let Some(knowledge_value) = read_java_string(&mut env, &local_knowledge) else {
+        return std::ptr::null_mut();
+    };
+    let Some(tool_value) = read_java_string(&mut env, &tool_guide) else {
+        return std::ptr::null_mut();
+    };
+    match env.new_string(context::build_system_context(
+        &system_value,
+        &memory_value,
+        &knowledge_value,
+        &tool_value,
+    )) {
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
