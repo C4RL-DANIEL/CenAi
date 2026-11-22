@@ -403,3 +403,23 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseProviderDelta(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_parseAgentToolCall(
+    mut env: JNIEnv,
+    _class: JClass,
+    response: JString,
+) -> jstring {
+    let Some(response_value) = read_java_string(&mut env, &response) else {
+        return std::ptr::null_mut();
+    };
+    let output = match agent::parse_tool_call(&response_value) {
+        Ok(payload) => payload,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
