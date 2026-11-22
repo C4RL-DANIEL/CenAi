@@ -23,6 +23,9 @@ object NativeCore {
     /** Builds safe foreground/background tool-use instructions in Rust. */
     external fun buildToolGuide(enabledToolsJson: String, planningEnabled: Boolean, allowDeviceActions: Boolean): String
 
+    /** Combines independent provider responses into a bounded synthesis prompt. */
+    external fun buildSynthesisPrompt(userRequest: String, answersJson: String): String
+
     /** Enforces the Rust tool allowlist and approval policy. */
     external fun evaluateToolPolicy(name: String, enabledToolsJson: String): String
 
