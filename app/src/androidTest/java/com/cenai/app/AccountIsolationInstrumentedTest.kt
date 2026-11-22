@@ -101,6 +101,7 @@ class AccountIsolationInstrumentedTest {
         assertEquals("""{"x-legacy":"private"}""", vault.getUserSecret("legacy-owner", "custom_headers"))
         assertEquals("Legacy private memory", vault.getUserSecret("legacy-owner", "agent_memory"))
         assertEquals("legacy-api-key", vault.apiKey(Provider.OPENAI, "legacy-owner"))
+        assertEquals("", vault.apiKey(Provider.OPENAI, "guest"))
 
         vault.migrateLegacyAccountData("other-owner")
         assertEquals("", vault.getUserSecret("other-owner", "agent_memory"))
