@@ -835,9 +835,10 @@ impl WgpuRenderer {
         self.last_dispatched_message_id = message_id;
         self.app_state.conversation.sending = true;
 
+        let authenticated_account_available = self.api.as_ref().is_some_and(|api| api.account_id().is_ok());
         let use_local = crate::core::lightning::should_use_local_inference(
             self.app_state.offline_ai_enabled,
-            self.api.is_some(),
+            authenticated_account_available,
         );
         if use_local {
             let prompt = conversation_prompt_for_offline(&self.app_state.conversation);
