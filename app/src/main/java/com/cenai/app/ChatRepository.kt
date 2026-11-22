@@ -47,9 +47,9 @@ class ChatRepository(
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault) { ownerId() }.credential() else "" to false
-        val credential = when {
-            provider == Provider.CENAI_CLOUD -> vault.getUserSecret(ownerId(), "supabase_access_token") to false
-            oauthCredential.first.isNotBlank() -> oauthCredential
+        val credential = when (NativeCore.providerCredentialSource(provider.name, oauthCredential.first.isNotBlank())) {
+            "cloud_access_token" -> vault.getUserSecret(ownerId(), "supabase_access_token") to false
+            "google_oauth" -> oauthCredential
             else -> vault.apiKey(provider, ownerId()) to false
         }
         val key = credential.first
