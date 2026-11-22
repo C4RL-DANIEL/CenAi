@@ -989,6 +989,21 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Offline AI · Lightning", 16.0, egui::Color32::WHITE).strong());
+        ui.checkbox(&mut state.offline_ai_enabled, "Use Lightning for all new chats");
+        ui.label(text(
+            "When enabled, new chat prompts go directly to the bundled Qwen3 model on this device. CenAI does not send those prompts to cloud AI providers. Offline mode is available without signing in; signed-in accounts can save this preference.",
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
+        ui.label(text(
+            if state.offline_ai_enabled { "Local-only chat routing is enabled." } else { "Cloud routing is available when an account or provider is connected; Lightning remains the offline fallback." },
+            10.0,
+            if state.offline_ai_enabled { egui::Color32::from_rgb(119, 220, 183) } else { egui::Color32::from_rgb(163, 174, 203) },
+        ));
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         egui::ComboBox::from_id_salt("cenai_provider_key")
