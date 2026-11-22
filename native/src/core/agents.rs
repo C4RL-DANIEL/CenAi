@@ -33,7 +33,7 @@ pub struct TaskStep {
 #[serde(rename_all = "snake_case")]
 pub enum TaskExecutionEventKind {
     Started, ApprovalRequested, ApprovalGranted, ApprovalDenied, ApprovalConsumed,
-    Completed, Blocked, Failed, Retried, Interrupted, PlanStopped,
+    Completed, Blocked, Failed, Retried, Interrupted, PlanStopped, PlanPaused, PlanResumed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
