@@ -296,7 +296,7 @@ pub struct WgpuRenderer {
     workspace: Option<WorkspaceStore>,
     attachment_store: Option<AttachmentStore>,
     last_saved_message_count: usize,
-    last_saved_preferences: (bool, bool),
+    last_saved_preferences: (bool, bool, bool),
     last_saved_voice_language: String,
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
@@ -449,6 +449,7 @@ impl WgpuRenderer {
         if let Some(service) = &api {
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
+            app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
             if let Ok(language) = service.user_setting("voice_language") {
                 if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                     app_state.voice_language = language;
@@ -463,7 +464,7 @@ impl WgpuRenderer {
             app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
         }
         let last_saved_message_count = app_state.conversation.messages().count();
-        let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion);
+        let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion, app_state.offline_ai_enabled);
         let last_saved_voice_language = app_state.voice_language.clone();
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
@@ -834,7 +835,11 @@ impl WgpuRenderer {
         self.last_dispatched_message_id = message_id;
         self.app_state.conversation.sending = true;
 
-        let Some(api) = self.api.clone() else {
+        let use_local = crate::core::lightning::should_use_local_inference(
+            self.app_state.offline_ai_enabled,
+            self.api.is_some(),
+        );
+        if use_local {
             let prompt = conversation_prompt_for_offline(&self.app_state.conversation);
             #[cfg(not(target_os = "android"))]
             let _ = &prompt;
@@ -862,8 +867,16 @@ impl WgpuRenderer {
             }
             #[cfg(not(target_os = "android"))]
             {
-                let _ = sender.send(ChatEvent::Finished(generation, message_id, Err("The account service is not initialized.".into())));
+                let _ = sender.send(ChatEvent::Finished(generation, message_id, Err("Lightning inference is available in the Android runtime.".into())));
             }
+            return;
+        }
+        let Some(api) = self.api.clone() else {
+            let _ = self.response_tx.send(ChatEvent::Finished(
+                self.account_generation,
+                message_id,
+                Err("No cloud session is available and offline AI is disabled.".into()),
+            ));
             return;
         };
         let latest_goal = self.app_state.conversation.messages()
@@ -1145,7 +1158,8 @@ impl WgpuRenderer {
         self.app_state.pending_memory_clear = false;
         self.app_state.light_mode = false;
         self.app_state.reduced_motion = false;
-        self.last_saved_preferences = (false, false);
+        self.app_state.offline_ai_enabled = false;
+        self.last_saved_preferences = (false, false, false);
         self.app_state.voice_language = "English".into();
         self.last_saved_voice_language = "English".into();
         self.app_state.account_email.clear();
@@ -1292,12 +1306,13 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
-        let preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
+        let preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled);
         if preferences != self.last_saved_preferences {
             if let Some(service) = &self.api {
                 let light_saved = service.save_user_setting("light_mode", if preferences.0 { "true" } else { "false" }).is_ok();
                 let motion_saved = service.save_user_setting("reduced_motion", if preferences.1 { "true" } else { "false" }).is_ok();
-                if light_saved && motion_saved {
+                let offline_saved = service.save_user_setting("offline_ai_enabled", if preferences.2 { "true" } else { "false" }).is_ok();
+                if light_saved && motion_saved && offline_saved {
                     self.last_saved_preferences = preferences;
                 }
             }
@@ -1984,7 +1999,8 @@ impl WgpuRenderer {
                             if let Some(service) = &self.api {
                                 self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
-                                self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion);
+                                self.app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
+                                self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled);
                                 if let Ok(language) = service.user_setting("voice_language") {
                                     if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                                         self.app_state.voice_language = language;
