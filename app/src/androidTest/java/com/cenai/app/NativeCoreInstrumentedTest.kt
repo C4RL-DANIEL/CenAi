@@ -73,6 +73,11 @@ class NativeCoreInstrumentedTest {
         assertTrue(!NativeCore.googleOAuthAccessTokenUsable("", "999999", 1000L))
         assertEquals("first title", NativeCore.conversationTitle("[{\"role\":\"user\",\"content\":\"first title\"}]"))
 
+        val primarySettings = JSONObject(NativeCore.resolveProviderSettings("OPENAI", "OPENAI", "custom-model", "https://custom.example/v1", "", ""))
+        assertEquals("custom-model", primarySettings.getString("model"))
+        val deepSeekSettings = JSONObject(NativeCore.resolveProviderSettings("DEEPSEEK", "OPENAI", "", "", "deepseek-chat", ""))
+        assertEquals("deepseek-flash", deepSeekSettings.getString("model"))
+
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
             NativeCore.buildProviderPayload("OPENAI", "test-model", 128, messages.toString(), "{}")
