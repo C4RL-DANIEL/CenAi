@@ -673,3 +673,51 @@ mod credential_source_tests {
         assert_eq!(credential_source("GEMINI", false), "provider_api_key");
     }
 }
+
+/// Resolves per-provider model and endpoint settings while keeping defaults in the Rust registry.
+pub fn resolve_provider_settings(
+    provider: &str,
+    selected_provider: &str,
+    selected_model: &str,
+    selected_base_url: &str,
+    stored_model: &str,
+    stored_base_url: &str,
+) -> Result<String, String> {
+    let defaults: Value = serde_json::from_str(&provider_metadata(provider)?)
+        .map_err(|_| "Provider registry returned invalid metadata.".to_owned())?;
+    let default_model = defaults.get("model").and_then(Value::as_str).unwrap_or("");
+    let default_base = defaults.get("base_url").and_then(Value::as_str).unwrap_or("");
+    let model = if provider == selected_provider {
+        selected_model
+    } else if provider == "DEEPSEEK" && matches!(stored_model, "deepseek-chat" | "deepseek-reasoner") {
+        default_model
+    } else if stored_model.is_empty() {
+        default_model
+    } else {
+        stored_model
+    };
+    let base_url = if provider == selected_provider {
+        selected_base_url
+    } else if stored_base_url.is_empty() {
+        default_base
+    } else {
+        stored_base_url
+    };
+    Ok(json!({"model":model,"base_url":base_url}).to_string())
+}
+
+#[cfg(test)]
+mod provider_settings_tests {
+    use super::resolve_provider_settings;
+    use serde_json::Value;
+
+    #[test]
+    fn resolves_primary_custom_and_legacy_deepseek_settings() {
+        let primary: Value = serde_json::from_str(&resolve_provider_settings("OPENAI", "OPENAI", "my-model", "https://custom", "", "").unwrap()).unwrap();
+        assert_eq!(primary["model"], "my-model");
+        assert_eq!(primary["base_url"], "https://custom");
+        let legacy: Value = serde_json::from_str(&resolve_provider_settings("DEEPSEEK", "OPENAI", "", "", "deepseek-chat", "").unwrap()).unwrap();
+        assert_eq!(legacy["model"], "deepseek-flash");
+        assert_eq!(legacy["base_url"], "https://api.deepseek.com");
+    }
+}
