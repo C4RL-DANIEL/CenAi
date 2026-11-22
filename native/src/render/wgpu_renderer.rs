@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, open_google_oauth, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, open_google_oauth, install_verified_update, current_app_version, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
@@ -202,6 +202,8 @@ enum ChatEvent {
     SignedIn(u64, Result<SignInOutcome, String>),
     SignedOut(u64, Result<(), String>),
     GeminiOAuthCompleted(u64, Result<(), String>),
+    UpdateChecked(u64, Result<Option<crate::core::updates::UpdateInfo>, String>),
+    UpdateDownloaded(u64, String, Result<(), String>),
     OtpSent(u64, Result<String, String>),
     OtpVerified(u64, Result<String, String>),
     PlanFinished(u64, u64, Result<TaskPlan, String>),
@@ -239,6 +241,8 @@ impl ChatEvent {
             | Self::SignedIn(generation, ..)
             | Self::SignedOut(generation, ..)
             | Self::GeminiOAuthCompleted(generation, ..)
+            | Self::UpdateChecked(generation, ..)
+            | Self::UpdateDownloaded(generation, ..)
             | Self::OtpSent(generation, ..)
             | Self::OtpVerified(generation, ..)
             | Self::PlanFinished(generation, ..)
@@ -2065,6 +2069,59 @@ impl WgpuRenderer {
                 None => "Secure account service is unavailable.".into(),
             };
         }
+        if std::mem::take(&mut self.app_state.pending_update_check) {
+            if let Some(api) = self.api.clone() {
+                let sender = self.response_tx.clone();
+                let generation = self.account_generation;
+                #[cfg(target_os = "android")]
+                let version = self.android_app.as_ref().and_then(|app| current_app_version(app).ok())
+                    .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
+                #[cfg(not(target_os = "android"))]
+                let version = env!("CARGO_PKG_VERSION").to_owned();
+                let task = self.runtime.spawn(async move {
+                    let result = api.check_for_update(&version, false).await;
+                    let _ = sender.send(ChatEvent::UpdateChecked(generation, result));
+                });
+                self.track_task(task);
+            } else {
+                self.app_state.update_status = "Update service is unavailable.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_update_download) {
+            if let Some(update) = self.app_state.available_update.clone() {
+                let destination = self.workspace_root.join("updates").join("cenai-update.apk");
+                if let Some(parent) = destination.parent() {
+                    if let Err(error) = std::fs::create_dir_all(parent) {
+                        self.app_state.update_status = format!("Could not create private update storage: {error}");
+                    } else if let Some(api) = self.api.clone() {
+                        let sender = self.response_tx.clone();
+                        let generation = self.account_generation;
+                        let path = destination.to_string_lossy().into_owned();
+                        let event_path = path.clone();
+                        let task = self.runtime.spawn(async move {
+                            let result = api.download_update_to(&update, std::path::Path::new(&path)).await;
+                            let _ = sender.send(ChatEvent::UpdateDownloaded(generation, event_path, result));
+                        });
+                        self.track_task(task);
+                    }
+                }
+            } else {
+                self.app_state.update_status = "Check for an update before downloading.".into();
+            }
+        }
+        if std::mem::take(&mut self.app_state.pending_update_install) {
+            if self.app_state.update_download_path.is_empty() {
+                self.app_state.update_status = "Download and verify the APK before installation.".into();
+            } else {
+                #[cfg(target_os = "android")]
+                if let Some(app) = self.android_app.as_ref() {
+                    install_verified_update(app.clone(), self.app_state.update_download_path.clone());
+                    self.app_state.update_status = "Android is checking the APK signature. If special install access is requested, allow it and tap Install update again; approve installation in Android.".into();
+                }
+                #[cfg(not(target_os = "android"))]
+                { self.app_state.update_status = "APK installation is available only on Android.".into(); }
+            }
+        }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
                 Some(api) => match api.save_provider_key(&provider, &key) {
@@ -2288,6 +2345,28 @@ impl WgpuRenderer {
                         Ok(()) => "Google account connected. OAuth tokens are encrypted and stored for this CenAI account.".into(),
                         Err(error) => format!("Google sign-in failed: {error}"),
                     };
+                }
+                ChatEvent::UpdateChecked(_, result) => {
+                    match result {
+                        Ok(Some(update)) => {
+                            self.app_state.update_status = format!("Version {} is available.", update.version);
+                            self.app_state.available_update = Some(update);
+                        }
+                        Ok(None) => {
+                            self.app_state.available_update = None;
+                            self.app_state.update_status = "CenAI is up to date.".into();
+                        }
+                        Err(error) => self.app_state.update_status = format!("Update check failed: {error}"),
+                    }
+                }
+                ChatEvent::UpdateDownloaded(_, path, result) => {
+                    match result {
+                        Ok(()) => {
+                            self.app_state.update_download_path = path;
+                            self.app_state.update_status = "APK downloaded and SHA-256 verified. Tap Install update to continue.".into();
+                        }
+                        Err(error) => self.app_state.update_status = format!("Update download rejected: {error}"),
+                    }
                 }
                 ChatEvent::SignedOut(_, result) => {
                     match result {
