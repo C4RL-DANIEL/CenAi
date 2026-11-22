@@ -215,7 +215,6 @@ impl AndroidSecretVault {
     /// and moved into that account's scoped Rust vault namespace.
     pub fn migrate_legacy_export(&self, raw: &str) -> Result<bool, String> {
         if raw.len() > 64 * 1024 { return Err("Legacy secure-store export exceeds the migration limit".into()); }
-        if !self.get_secret("supabase_account_id")?.is_empty() { return Ok(false); }
         let value: serde_json::Value = serde_json::from_str(raw)
             .map_err(|_| "Legacy secure-store export is invalid JSON")?;
         let access = value.get("access_token").and_then(serde_json::Value::as_str).unwrap_or_default();
@@ -230,16 +229,26 @@ impl AndroidSecretVault {
         if !valid_supabase_user_id(user_id) {
             return Err("Legacy access token account identity is invalid".into());
         }
+        let existing_user_id = self.get_secret("supabase_account_id")?;
+        if !existing_user_id.is_empty() && existing_user_id != user_id {
+            return Err("Legacy credentials belong to a different CenAI account; original data was retained".into());
+        }
         let email = value.get("account_email").and_then(serde_json::Value::as_str).unwrap_or_default();
         let digest = Sha256::digest(user_id.as_bytes());
         let account_scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let mut entries = vec![
-            ("supabase_access_token".to_owned(), access.to_owned()),
-            ("supabase_refresh_token".to_owned(), refresh.to_owned()),
-            ("supabase_account_id".to_owned(), user_id.to_owned()),
-            ("supabase_account_email".to_owned(), email.to_owned()),
-        ];
-        if value.get("email_verified").and_then(serde_json::Value::as_bool) == Some(true) {
+        let mut entries = Vec::new();
+        for (name, secret) in [
+            ("supabase_access_token", access),
+            ("supabase_refresh_token", refresh),
+            ("supabase_account_id", user_id),
+            ("supabase_account_email", email),
+        ] {
+            if self.get_secret(name)?.is_empty() && !secret.is_empty() {
+                entries.push((name.to_owned(), secret.to_owned()));
+            }
+        }
+        if value.get("email_verified").and_then(serde_json::Value::as_bool) == Some(true)
+            && self.get_secret(&format!("cenai_{account_scope}_email_verified"))?.is_empty() {
             entries.push((format!("cenai_{account_scope}_email_verified"), "true".to_owned()));
         }
         if let Some(keys) = value.get("provider_keys").and_then(serde_json::Value::as_object) {
@@ -249,16 +258,27 @@ impl AndroidSecretVault {
                 ("claude", "anthropic"),
                 ("gemini", "gemini"),
                 ("custom", "custom"),
+                ("gemini_oauth_client_id", "gemini_oauth_client"),
+                ("gemini_oauth_access_token", "gemini_oauth_access"),
+                ("gemini_oauth_refresh_token", "gemini_oauth_refresh"),
             ] {
                 if let Some(key) = keys.get(legacy_provider).and_then(serde_json::Value::as_str) {
-                    if !key.trim().is_empty() {
-                        entries.push((format!("provider_api_key_{account_scope}_{rust_provider}"), key.to_owned()));
+                    let slot = format!("provider_api_key_{account_scope}_{rust_provider}");
+                    if !key.trim().is_empty() && self.get_secret(&slot)?.is_empty() {
+                        entries.push((slot, key.to_owned()));
                     }
                 }
             }
+            if let Some(expiry_ms) = keys.get("gemini_oauth_expires_at_ms")
+                .and_then(serde_json::Value::as_str).and_then(|value| value.parse::<i64>().ok()) {
+                let expiry_seconds = expiry_ms / 1000;
+                let slot = format!("provider_api_key_{account_scope}_gemini_oauth_expiry");
+                if expiry_seconds > 0 && self.get_secret(&slot)?.is_empty() {
+                    entries.push((slot, expiry_seconds.to_string()));
+                }
+            }
         }
-        let borrowed = entries.iter().map(|(name, secret)| (name.as_str(), secret.as_str())).collect::<Vec<_>>();
-        self.put_secrets(&borrowed)?;
+        self.put_secrets(&entries.iter().map(|(name, secret)| (name.as_str(), secret.as_str())).collect::<Vec<_>>())?;
         Ok(true)
     }
 
