@@ -237,10 +237,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
-    var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "system_prompt", "")) }
+    var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "system_prompt")) }
     var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getSecret("agent_memory_$activeAccountId")) }
-    var customHeaders by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "custom_headers", "{}")) }
-    var customParams by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "custom_params", "{}")) }
+    var customHeaders by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "custom_headers").ifBlank { "{}" }) }
+    var customParams by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "custom_params").ifBlank { "{}" }) }
     var maxTokens by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "max_tokens", "4096")) }
     var draft by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
@@ -1594,7 +1594,7 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.putUser(activeAccountId, "local_knowledge_enabled", localKnowledgeEnabled.toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString()); vault.putUser(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUser(activeAccountId, "custom_headers", customHeaders); vault.putUser(activeAccountId, "custom_params", customParams)
+                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString()); vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUserSecret(activeAccountId, "custom_headers", customHeaders); vault.putUserSecret(activeAccountId, "custom_params", customParams)
                 vault.putUser(activeAccountId, "max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
