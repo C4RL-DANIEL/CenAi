@@ -62,6 +62,9 @@ object NativeCore {
     /** Extracts a bounded error message from a provider response body. */
     external fun parseProviderError(raw: String): String
 
+    /** Extracts the assistant message from the CenAI Cloud response envelope. */
+    external fun parseCloudResponse(raw: String): String
+
     /** Replaces embedded image bytes with a retrieval-safe marker. */
     external fun stripImageMarkers(content: String): String
 
