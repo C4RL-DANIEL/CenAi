@@ -229,7 +229,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         mutableStateOf(if (savedProvider == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) savedProvider.model else savedModel)
     }
     var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
-    var providerKeys by remember { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it) }) }
+    var providerKeys by remember(activeAccountId) { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it, activeAccountId) }) }
     var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
     var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
@@ -1539,7 +1539,7 @@ Text("APP MONITOR", color = palette.accent, fontSize = 10.sp, fontWeight = FontW
                     if (info.isNotBlank()) Text(info, color = palette.accent, fontSize = 11.sp)
                     OutlinedButton(enabled = !testBusy, onClick = {
                         appMonitor.recordEvent("provider_test"); monitorSnapshot = appMonitor.snapshot()
-                        vault.saveApiKey(providerKeys[provider].orEmpty(), provider)
+                        vault.saveApiKey(providerKeys[provider].orEmpty(), provider, activeAccountId)
                         testBusy = true; info = "Testing connection…"
                         scope.launch {
                             try {
@@ -1577,7 +1577,7 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                     }
             },
             confirmButton = { TextButton(onClick = {
-                Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p) }
+                Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p, activeAccountId) }
                 onUiStyleChange(uiStyle)
                 vault.put("provider", provider.name)
                 vault.put("model", model); vault.put("model_${provider.name}", model)
