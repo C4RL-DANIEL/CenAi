@@ -16,6 +16,9 @@ class LightningOfflineInferenceTest {
         val response = LightningRuntimeBridge.generate(context, "Reply with one short greeting.")
         assertTrue("Offline Lightning inference returned an empty response.", response.isNotBlank())
         assertTrue("Offline Lightning response exceeded its memory-safety bound.", response.length <= LightningRuntimeBridge.MAX_RESPONSE_CHARS)
+        // Releasing an already released runtime must be safe and must not poison
+        // subsequent app lifecycle callbacks.
+        LightningRuntimeBridge.release()
         LightningRuntimeBridge.release()
     }
 }

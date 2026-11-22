@@ -135,16 +135,36 @@ object LightningRuntimeBridge {
         val cache = cacheDirectory(context)
         if (!cache.exists() && !cache.mkdirs()) error("Could not create Lightning inference cache.")
         val candidate = Engine(EngineConfig(modelPath = path, backend = Backend.CPU(), cacheDir = cache.absolutePath))
-        candidate.initialize()
+        try {
+            candidate.initialize()
+        } catch (initializationError: Throwable) {
+            // A partially initialized native engine may already own file descriptors,
+            // mapped weights, or native buffers. Dispose it before propagating failure.
+            try {
+                candidate.close()
+            } catch (cleanupError: Throwable) {
+                initializationError.addSuppressed(cleanupError)
+            }
+            throw initializationError
+        }
         engine = candidate
         loadedPath = path
         return candidate
     }
 
     private fun closeEngineLocked() {
-        engine?.close()
+        // Clear our references first so release remains idempotent even if native
+        // teardown throws. A later request can safely construct a fresh engine.
+        val previous = engine
         engine = null
         loadedPath = null
+        if (previous != null) {
+            try {
+                previous.close()
+            } catch (error: Throwable) {
+                android.util.Log.w("CenAI-Lightning", "Lightning engine teardown failed", error)
+            }
+        }
     }
 
     @JvmStatic
