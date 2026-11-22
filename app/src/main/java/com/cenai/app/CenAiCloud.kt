@@ -34,7 +34,7 @@ class CenAiCloud(private val vault: SecureKeyStore) {
             val text = response.body?.string().orEmpty()
             val data = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
             if (!response.isSuccessful) {
-                val message = data.optString("msg").ifBlank { data.optString("message") }.ifBlank { data.optString("error_description") }.ifBlank { data.optString("error") }.ifBlank { "Request failed (HTTP ${response.code})." }
+                val message = NativeCore.parseProviderError(text).ifBlank { "Request failed (HTTP ${response.code})." }
                 throw IOException(message)
             }
             data
