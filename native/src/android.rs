@@ -70,6 +70,14 @@ fn export_legacy_conversation_history(app: &AndroidApp) -> Result<String, String
     env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
 }
 
+pub(crate) fn migrate_legacy_history(app: &AndroidApp, workspace: &WorkspaceStore) -> Result<usize, String> {
+    let export = export_legacy_conversation_history(app)?;
+    if export.trim().is_empty() || export.trim() == "[]" {
+        return Ok(0);
+    }
+    workspace.import_legacy_conversations(&export)
+}
+
 fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
     let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
@@ -546,16 +554,10 @@ pub fn android_main(app: AndroidApp) {
         _ => None,
     };
     if let Some(workspace_store) = workspace.as_ref() {
-        match export_legacy_conversation_history(&app) {
-            Ok(export) if !export.is_empty() && export != "[]" => {
-                match workspace_store.import_legacy_conversations(&export) {
-                    Ok(count) if count > 0 => log::info!("Imported {count} legacy conversations into the encrypted Rust workspace."),
-                    Ok(_) => log::info!("Legacy conversation history is already present in the Rust workspace."),
-                    Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
-                }
-            }
-            Ok(_) => log::info!("No legacy conversation history was found."),
-            Err(error) => log::warn!("Legacy history export was unavailable; original history was retained: {error}"),
+        match migrate_legacy_history(&app, workspace_store) {
+            Ok(count) if count > 0 => log::info!("Imported {count} legacy conversations into the encrypted Rust workspace."),
+            Ok(_) => log::info!("Legacy conversation history is already present or no legacy history was found."),
+            Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
         }
     }
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
