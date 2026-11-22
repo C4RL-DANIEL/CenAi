@@ -2963,6 +2963,30 @@ impl WgpuRenderer {
                 }
             }
         }
+        if self.app_state.pending_new_conversation {
+            self.app_state.pending_new_conversation = false;
+            if !self.app_state.conversation.sending {
+                if let Some(store) = self.workspace.as_ref() {
+                    let messages: Vec<_> = self.app_state.conversation.messages().cloned().collect();
+                    let title = messages.iter().find(|message| message.role == MessageRole::User)
+                        .map(|message| message.body.lines().next().unwrap_or_default().chars().take(72).collect::<String>())
+                        .unwrap_or_else(|| "New chat".into());
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default().as_millis() as u64;
+                    if let Err(error) = store.save_conversation(&self.app_state.active_conversation_id, &messages)
+                        .and_then(|_| store.upsert_conversation_metadata(&self.app_state.active_conversation_id, &title, now)) {
+                        log::warn!("Could not save the previous conversation before creating a new one: {error}");
+                    }
+                }
+                self.app_state.active_conversation_id = new_session_id();
+                self.app_state.conversation.restore_messages(Vec::new());
+                self.last_saved_message_count = 0;
+                self.last_dispatched_message_id = 0;
+                if let Some(store) = self.workspace.as_ref() {
+                    self.app_state.conversation_history = store.list_conversations().unwrap_or_default();
+                }
+            }
+        }
         if let Some(target_id) = self.app_state.pending_conversation_switch.take() {
             if !self.app_state.conversation.sending {
                 if let Some(store) = self.workspace.as_ref() {
@@ -2991,6 +3015,17 @@ impl WgpuRenderer {
                 let messages: Vec<_> = self.app_state.conversation.messages().cloned().collect();
                 if let Err(error) = store.save_conversation(&self.app_state.active_conversation_id, &messages) {
                     log::warn!("Local conversation autosave failed: {error}");
+                } else {
+                    let title = messages.iter().find(|message| message.role == MessageRole::User)
+                        .map(|message| message.body.lines().next().unwrap_or_default().chars().take(72).collect::<String>())
+                        .unwrap_or_else(|| "New chat".into());
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default().as_millis() as u64;
+                    if let Err(error) = store.upsert_conversation_metadata(&self.app_state.active_conversation_id, &title, now) {
+                        log::warn!("Conversation metadata autosave failed: {error}");
+                    } else {
+                        self.app_state.conversation_history = store.list_conversations().unwrap_or_default();
+                    }
                 }
             }
             self.last_saved_message_count = message_count;
