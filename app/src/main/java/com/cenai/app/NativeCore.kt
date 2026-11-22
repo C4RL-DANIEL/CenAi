@@ -105,4 +105,7 @@ object NativeCore {
     external fun monitorSuccessRate(succeeded: Int, failed: Int): Int
     external fun monitorAverageLatency(totalMs: Long, completed: Int): Long
     external fun monitorFailureCategory(message: String, className: String): String
+
+    /** Reads the canonical provider registry owned by Rust. */
+    external fun providerMetadata(name: String): String
 }
