@@ -13,12 +13,22 @@ use winit::platform::android::activity::AndroidApp;
 use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
 
-fn latest_goal_for_offline(conversation: &crate::ui::model::ConversationState) -> String {
-    conversation.messages()
-        .filter(|message| message.role == MessageRole::User)
-        .map(|message| message.body.clone())
-        .last()
-        .unwrap_or_default()
+fn conversation_prompt_for_offline(conversation: &crate::ui::model::ConversationState) -> String {
+    let recent = conversation.messages()
+        .filter(|message| message.role != MessageRole::System)
+        .rev()
+        .take(8)
+        .collect::<Vec<_>>();
+    let mut prompt = recent.into_iter().rev().map(|message| {
+        let role = if message.role == MessageRole::User { "User" } else { "Assistant" };
+        format!("{role}: {}", message.body)
+    }).collect::<Vec<_>>().join("\n\n");
+    if prompt.len() > 30_000 {
+        let mut start = prompt.len() - 30_000;
+        while !prompt.is_char_boundary(start) { start += 1; }
+        prompt = prompt[start..].to_owned();
+    }
+    prompt
 }
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
@@ -785,7 +795,7 @@ impl WgpuRenderer {
         self.app_state.conversation.sending = true;
 
         let Some(api) = self.api.clone() else {
-            let prompt = latest_goal_for_offline(&self.app_state.conversation);
+            let prompt = conversation_prompt_for_offline(&self.app_state.conversation);
             let generation = self.account_generation;
             let sender = self.response_tx.clone();
             #[cfg(target_os = "android")]
@@ -940,10 +950,7 @@ impl WgpuRenderer {
             });
             self.track_task(task);
         } else {
-            let offline_prompt = messages.iter().rev()
-                .find(|message| message.role == "user")
-                .map(|message| message.content.clone())
-                .unwrap_or_default();
+            let offline_prompt = conversation_prompt_for_offline(&self.app_state.conversation);
             #[cfg(target_os = "android")]
             let lightning_app = self.android_app.clone();
             let payload = serde_json::json!({
