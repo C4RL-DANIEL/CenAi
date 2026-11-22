@@ -125,8 +125,9 @@ class SecureKeyStore(context: Context) {
         val scoped = accountPrefs(ownerId)
         val stored = scoped.getString("api_key_${provider.name.lowercase()}", null)
         if (stored != null) return decrypt(stored)
-        // Preserve legacy unscoped credentials for guest mode only; never leak them into another account.
-        return if (ownerId == "guest") decrypt(if (provider == Provider.OPENAI) prefs.getString("api_key", null) else prefs.getString("api_key_${provider.name.lowercase()}", null)) else ""
+        // Legacy global credentials are migrated only to their matching signed-in account.
+        // Guest mode never falls back to an old shared key.
+        return ""
     }
 
     fun putUserSecret(ownerId: String, name: String, value: String) {
