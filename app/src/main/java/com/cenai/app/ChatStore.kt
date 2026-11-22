@@ -18,7 +18,17 @@ class ChatStore(context: Context, ownerId: String = "guest") {
     private val vault = SecureKeyStore(context.applicationContext)
 
     fun load(): MutableList<Conversation> {
-        val stored = prefs.getString("conversations", "[]") ?: "[]"
+        var storedValue = prefs.getString("conversations", null)
+        val globalOwner = vault.get("supabase_user_id")
+        if (storedValue == null && globalOwner == namespace) {
+            val legacyPrefs = context.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
+            val legacy = legacyPrefs.getString("conversations", null)
+            if (!legacy.isNullOrBlank()) {
+                storedValue = legacy
+                legacyPrefs.edit().remove("conversations").apply()
+            }
+        }
+        val stored = storedValue ?: "[]"
         val legacyPlaintext = stored.trimStart().startsWith("[")
         val raw = if (legacyPlaintext) stored else vault.decryptLocalData(stored).ifBlank { "[]" }
         val normalized = runCatching { NativeCore.normalizeConversations(raw) }.getOrNull()
