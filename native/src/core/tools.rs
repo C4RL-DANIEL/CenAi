@@ -62,7 +62,13 @@ impl AgentToolRuntime {
     pub fn parse_tool_call(&self, response: &str) -> Result<Option<ToolCall>, &'static str> {
         if response.len() > MAX_TOOL_RESPONSE_BYTES { return Err("Tool response exceeds the 32 KiB limit"); }
         let response = response.trim();
-        if !response.contains(TOOL_CALL_OPEN) { return Ok(None); }
+        if !response.contains(TOOL_CALL_OPEN) {
+            return if response.contains(TOOL_CALL_CLOSE) {
+                Err("Tool call contains a closing marker without an opening marker")
+            } else {
+                Ok(None)
+            };
+        }
         if !response.starts_with(TOOL_CALL_OPEN) || !response.ends_with(TOOL_CALL_CLOSE)
             || response.matches(TOOL_CALL_OPEN).count() != 1
             || response.matches(TOOL_CALL_CLOSE).count() != 1 {
@@ -72,9 +78,12 @@ impl AgentToolRuntime {
         let raw = response[body_start..response.len() - TOOL_CALL_CLOSE.len()].trim();
         let payload: Value = serde_json::from_str(raw).map_err(|_| "Tool call JSON is invalid")?;
         let object = payload.as_object().ok_or("Tool call must be a JSON object")?;
+        if object.len() != 2 || !object.contains_key("name") || !object.contains_key("arguments") {
+            return Err("Tool call must contain exactly the name and arguments fields");
+        }
         let name = object.get("name").and_then(Value::as_str).ok_or("Tool name is required")?;
         if name.is_empty() || name.len() > 80 { return Err("Tool name is invalid"); }
-        let arguments = object.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        let arguments = object.get("arguments").cloned().ok_or("Tool arguments are required")?;
         if !arguments.is_object() { return Err("Tool arguments must be a JSON object"); }
         Ok(Some(ToolCall { name: name.to_owned(), arguments }))
     }
@@ -141,9 +150,10 @@ fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
         "open_dialer" => &[("number", true)],
         _ => return Err("No argument contract is registered for this tool".into()),
     };
-    if object.len() != expected.len() || expected.iter().any(|(key, required)| {
-        (*required && !object.contains_key(*key)) || object.keys().any(|actual| actual.as_str() != *key)
-    }) {
+    let expected_names: HashSet<&str> = expected.iter().map(|(key, _)| *key).collect();
+    if object.len() != expected.len()
+        || expected.iter().any(|(key, required)| *required && !object.contains_key(*key))
+        || object.keys().any(|actual| !expected_names.contains(actual.as_str())) {
         return Err("Tool arguments do not match the exact allow-listed schema".into());
     }
     for (key, _) in expected {
@@ -287,6 +297,14 @@ mod tests {
         assert!(runtime.execute("generate_uuid", json!({}), false).output.contains('-'));
         assert_eq!(runtime.execute("base64_encode", json!({"text":"CenAI"}), false).output, "Q2VuQUk=");
         assert_eq!(runtime.execute("base64_decode", json!({"value":"Q2VuQUk="}), false).output, "CenAI");
+    }
+
+    #[test]
+    fn parser_rejects_unmatched_close_and_extra_top_level_fields() {
+        let runtime = AgentToolRuntime::default();
+        assert!(runtime.parse_tool_call("orphan [[/CENAI_TOOL_CALL]]").is_err());
+        assert!(runtime.parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"current_time","arguments":{},"extra":true}[[/CENAI_TOOL_CALL]]"#).is_err());
+        assert!(runtime.parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"current_time"}[[/CENAI_TOOL_CALL]]"#).is_err());
     }
 
     #[test]
