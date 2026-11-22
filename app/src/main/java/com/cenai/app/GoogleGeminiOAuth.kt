@@ -29,7 +29,8 @@ class GoogleGeminiOAuth(
     private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
 
     fun authorizationIntent(clientId: String): Intent {
-        require(clientId.endsWith(".apps.googleusercontent.com")) { "Enter a valid Google OAuth client ID." }
+        val clientValidation = NativeCore.validateGoogleOAuthClientId(clientId)
+        require(clientValidation == "OK") { clientValidation }
         val random = SecureRandom()
         val verifierBytes = ByteArray(48).also(random::nextBytes)
         val verifier = Base64.encodeToString(verifierBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
@@ -53,14 +54,27 @@ class GoogleGeminiOAuth(
         return Intent(Intent.ACTION_VIEW, uri)
     }
 
+    private fun parseOAuthToken(raw: String): JSONObject {
+        val token = JSONObject(NativeCore.parseGoogleOAuthToken(raw, System.currentTimeMillis()))
+        val error = token.optString("error")
+        check(error.isBlank()) { error.ifBlank { NativeCore.parseProviderError(raw) } }
+        return token
+    }
+
     suspend fun completeCallback(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            require(uri.scheme == "com.cenai.app" && uri.path == "/oauth2redirect") { "Unexpected OAuth redirect." }
             val expectedState = getOAuthSecret("google_oauth_state")
-            require(expectedState.isNotBlank() && uri.getQueryParameter("state") == expectedState) { "OAuth state validation failed." }
-            val error = uri.getQueryParameter("error")
-            require(error.isNullOrBlank()) { "Google authorization failed: " + error }
-            val code = uri.getQueryParameter("code") ?: error("Google did not return an authorization code.")
+            val callback = JSONObject(NativeCore.validateGoogleOAuthCallback(
+                uri.scheme.orEmpty(),
+                uri.path.orEmpty(),
+                uri.getQueryParameter("state").orEmpty(),
+                expectedState,
+                uri.getQueryParameter("error").orEmpty(),
+                uri.getQueryParameter("code").orEmpty()
+            ))
+            val callbackError = callback.optString("error")
+            require(callbackError.isBlank()) { callbackError }
+            val code = callback.getString("code")
             val verifier = getOAuthSecret("google_oauth_verifier")
             val clientId = getOAuthValue("google_oauth_client_id")
             require(clientId.isNotBlank() && verifier.isNotBlank()) { "OAuth setup is incomplete." }
@@ -74,11 +88,11 @@ class GoogleGeminiOAuth(
             val request = Request.Builder().url("https://oauth2.googleapis.com/token").post(body).build()
             http.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
-                check(response.isSuccessful) { "Google token exchange failed (HTTP " + response.code + "): " + raw.take(300) }
-                val token = JSONObject(raw)
+                check(response.isSuccessful) { "Google token exchange failed (HTTP " + response.code + "): " + NativeCore.parseProviderError(raw) }
+                val token = parseOAuthToken(raw)
                 putOAuthSecret("gemini_oauth_access_token", token.getString("access_token"))
                 token.optString("refresh_token").takeIf { it.isNotBlank() }?.let { putOAuthSecret("gemini_oauth_refresh_token", it) }
-                putOAuthValue("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
+                putOAuthValue("gemini_oauth_expires_at", token.getString("expires_at"))
                 putOAuthSecret("google_oauth_verifier", "")
                 putOAuthSecret("google_oauth_state", "")
             }
@@ -97,11 +111,11 @@ class GoogleGeminiOAuth(
         http.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) return@withContext "" to false
-            val token = JSONObject(raw)
+            val token = runCatching { parseOAuthToken(raw) }.getOrNull() ?: return@withContext "" to false
             val next = token.optString("access_token")
             if (next.isNotBlank()) {
                 putOAuthSecret("gemini_oauth_access_token", next)
-                putOAuthValue("gemini_oauth_expires_at", (System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).toString())
+                putOAuthValue("gemini_oauth_expires_at", token.getString("expires_at"))
             }
             next to next.isNotBlank()
         }
