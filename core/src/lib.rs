@@ -423,3 +423,40 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseAgentToolCall(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_executeSafeTool(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+    arguments_json: JString,
+    local_time: JString,
+    local_date: JString,
+) -> jstring {
+    let Some(name_value) = read_java_string(&mut env, &name) else {
+        return std::ptr::null_mut();
+    };
+    let Some(arguments_value) = read_java_string(&mut env, &arguments_json) else {
+        return std::ptr::null_mut();
+    };
+    let Some(time_value) = read_java_string(&mut env, &local_time) else {
+        return std::ptr::null_mut();
+    };
+    let Some(date_value) = read_java_string(&mut env, &local_date) else {
+        return std::ptr::null_mut();
+    };
+    let output = match agent::execute_safe_tool(
+        &name_value,
+        &arguments_value,
+        &time_value,
+        &date_value,
+    ) {
+        Ok(value) => serde_json::json!({ "output": value }).to_string(),
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
