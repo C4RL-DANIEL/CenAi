@@ -48,6 +48,59 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
     local
 }
 
+/// Schedule a persistent OS-managed reminder for a user-owned automation.
+/// The worker only posts a notification; the task itself remains approval-gated in Rust.
+pub(crate) fn schedule_automation_reminder(app: AndroidApp, owner_scope: String, task_id: String, title: String, delay_ms: u64) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { log::error!("Could not attach to Android VM for automation reminder"); return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        let result = (|| -> jni::errors::Result<()> {
+            let owner = env.new_string(owner_scope)?;
+            let id = env.new_string(task_id)?;
+            let title = env.new_string(title)?;
+            env.call_static_method(
+                "com/cenai/app/AutomationReminderBridge",
+                "schedule",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V",
+                &[
+                    JValue::Object(&activity),
+                    JValue::Object(&owner),
+                    JValue::Object(&id),
+                    JValue::Object(&title),
+                    JValue::Long(delay_ms.min(i64::MAX as u64) as jni::sys::jlong),
+                ],
+            )?;
+            env.call_method(&activity, "requestNotificationPermissionIfNeeded", "()V", &[])?;
+            Ok(())
+        })();
+        if let Err(error) = result { log::error!("Could not schedule CenAI automation reminder: {error}"); }
+    }));
+}
+
+pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, task_id: String) {
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { log::error!("Could not attach to Android VM to cancel automation reminder"); return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &app) else { return; };
+        let result = (|| -> jni::errors::Result<()> {
+            let owner = env.new_string(owner_scope)?;
+            let id = env.new_string(task_id)?;
+            env.call_static_method(
+                "com/cenai/app/AutomationReminderBridge",
+                "cancel",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+                &[JValue::Object(&activity), JValue::Object(&owner), JValue::Object(&id)],
+            )?;
+            Ok(())
+        })();
+        if let Err(error) = result { log::error!("Could not cancel CenAI automation reminder: {error}"); }
+    }));
+}
+
 /// Invoke the fixed, on-device Lightning runtime. This JNI adapter is called only
 /// from a blocking worker; the model policy and fallback decision remain in Rust.
 pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String, String> {
