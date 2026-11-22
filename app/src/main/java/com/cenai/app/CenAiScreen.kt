@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import org.json.JSONArray
 import org.json.JSONObject
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
