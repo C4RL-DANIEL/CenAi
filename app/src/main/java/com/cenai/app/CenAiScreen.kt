@@ -186,12 +186,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val palette = LocalCenAiPalette.current
     val context = LocalContext.current
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
+    var activeAccountId by remember { mutableStateOf(vault.get("supabase_user_id", "guest").ifBlank { "guest" }) }
     var wideDestination by remember { mutableStateOf("Chat") }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
-    val store = remember { ChatStore(context) }
+    val store = remember(activeAccountId) { ChatStore(context, activeAccountId) }
     val updater = remember { UpdateManager(context) }
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
@@ -237,7 +238,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
-    var agentMemory by remember { mutableStateOf(vault.getSecret("agent_memory")) }
+    var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getSecret("agent_memory_$activeAccountId")) }
     var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
     var customParams by remember { mutableStateOf(vault.get("custom_params", "{}")) }
     var maxTokens by remember { mutableStateOf(vault.get("max_tokens", "4096")) }
@@ -249,9 +250,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
     var testBusy by remember { mutableStateOf(false) }
-    var conversations by remember { mutableStateOf(store.load()) }
-    var currentId by remember { mutableStateOf(conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()) }
-    var messages by remember { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
+    var conversations by remember(activeAccountId) { mutableStateOf(store.load()) }
+    var currentId by remember(activeAccountId) { mutableStateOf(conversations.firstOrNull()?.id ?: UUID.randomUUID().toString()) }
+    var messages by remember(activeAccountId) { mutableStateOf(conversations.firstOrNull()?.messages?.toList() ?: emptyList()) }
     var activeJob by remember { mutableStateOf<Job?>(null) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -1144,11 +1145,11 @@ Text("CENAI CLOUD ACCOUNT · PUBLIC BETA", color = palette.accent, fontSize = 10
                             if (!cloudSignedIn) OutlinedTextField(value = cloudPassword, onValueChange = { cloudPassword = it }, label = { Text("Password · at least 8 characters") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!cloudSignedIn) {
-                                    Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) cloudPassword = "" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
-                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Signing in…"; scope.launch { try { cloudStatus = cloud.signIn(cloudEmail, cloudPassword).message; cloudSignedIn = true; cloudPassword = ""; val status = cloud.call("status"); betaApplicationStatus = status.optJSONObject("application")?.optString("status") ?: "No application yet" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-in failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Sign in") }
+                                    Button(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Creating account…"; scope.launch { try { val result = cloud.signUp(cloudEmail, cloudPassword); cloudStatus = result.message; cloudSignedIn = result.signedIn; if (cloudSignedIn) { activeAccountId = vault.get("supabase_user_id", "guest").ifBlank { "guest" }; cloudPassword = "" } } catch (e: Exception) { cloudStatus = e.message ?: "Sign-up failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Create account") }
+                                    OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; cloudStatus = "Signing in…"; scope.launch { try { cloudStatus = cloud.signIn(cloudEmail, cloudPassword).message; cloudSignedIn = true; activeAccountId = vault.get("supabase_user_id", "guest").ifBlank { "guest" }; cloudPassword = ""; val status = cloud.call("status"); betaApplicationStatus = status.optJSONObject("application")?.optString("status") ?: "No application yet" } catch (e: Exception) { cloudStatus = e.message ?: "Sign-in failed." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Sign in") }
                                 } else {
                                     OutlinedButton(enabled = !cloudBusy, onClick = { cloudBusy = true; scope.launch { try { cloud.call("status").optJSONObject("application")?.let { betaApplicationStatus = it.optString("status") } ?: run { betaApplicationStatus = "No application yet" }; cloudStatus = "Beta status refreshed." } catch (e: Exception) { cloudStatus = e.message ?: "Could not refresh status." } finally { cloudBusy = false } } }, modifier = Modifier.weight(1f)) { Text("Refresh status") }
-                                    TextButton(onClick = { cloud.signOut(); cloudSignedIn = false; betaApplicationStatus = ""; cloudPassword = ""; cloudStatus = "Signed out of CenAI." }) { Text("Sign out") }
+                                    TextButton(onClick = { cloud.signOut(); activeAccountId = "guest"; cloudSignedIn = false; betaApplicationStatus = ""; cloudPassword = ""; cloudStatus = "Signed out of CenAI." }) { Text("Sign out") }
                                 }
                             }
                             if (cloudSignedIn) {
@@ -1593,7 +1594,7 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.put("local_knowledge_enabled", localKnowledgeEnabled.toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
+                vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
                 vault.put("max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
