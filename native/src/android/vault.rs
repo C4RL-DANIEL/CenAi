@@ -243,10 +243,16 @@ impl AndroidSecretVault {
             entries.push((format!("cenai_{account_scope}_email_verified"), "true".to_owned()));
         }
         if let Some(keys) = value.get("provider_keys").and_then(serde_json::Value::as_object) {
-            for provider in ["openai", "deepseek", "claude", "gemini", "custom"] {
-                if let Some(key) = keys.get(provider).and_then(serde_json::Value::as_str) {
+            for (legacy_provider, rust_provider) in [
+                ("openai", "openai"),
+                ("deepseek", "deepseek"),
+                ("claude", "anthropic"),
+                ("gemini", "gemini"),
+                ("custom", "custom"),
+            ] {
+                if let Some(key) = keys.get(legacy_provider).and_then(serde_json::Value::as_str) {
                     if !key.trim().is_empty() {
-                        entries.push((format!("provider_api_key_{account_scope}_{provider}"), key.to_owned()));
+                        entries.push((format!("provider_api_key_{account_scope}_{rust_provider}"), key.to_owned()));
                     }
                 }
             }
