@@ -913,6 +913,7 @@ mod tests {
                         output: None,
                     }],
                     stopped: false,
+                            events: Vec::new(),
                 }, index).unwrap();
             }
         });
@@ -965,6 +966,7 @@ mod tests {
             id: "task-1".into(),
             goal: "Build a tested feature".into(),
             stopped: false,
+                            events: Vec::new(),
             steps: vec![
                 crate::core::agents::TaskStep { id: 1, role: crate::core::agents::AgentRole::Developer, title: "Implement".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![],
                         output: None, },
@@ -1013,6 +1015,7 @@ mod tests {
         ]).unwrap();
         source.save_task_plan(TaskPlan {
             id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
+                            events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new(),
                         output: None, }],
         }, 10).unwrap();
