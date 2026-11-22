@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
@@ -1268,6 +1268,9 @@ impl WgpuRenderer {
         self.app_state.pending_sign_in = None;
         self.app_state.pending_sign_out = false;
         self.app_state.pending_open_url = None;
+        self.app_state.pending_agent_action = None;
+        self.app_state.pending_agent_action_execute = None;
+        self.app_state.agent_action_status.clear();
         self.app_state.checkout_status.clear();
         self.app_state.project_name_draft.clear();
         self.app_state.project_description_draft.clear();
@@ -1293,6 +1296,17 @@ impl WgpuRenderer {
 
     pub fn take_open_url(&mut self) -> Option<String> {
         self.app_state.pending_open_url.take()
+    }
+
+    pub fn handle_agent_action_result(&mut self, name: String, success: bool, message: String) {
+        self.app_state.agent_action_status = if success {
+            format!("{name}: {message}")
+        } else {
+            format!("{name} was not completed: {message}")
+        };
+        if !success {
+            self.app_state.conversation.push(MessageRole::Assistant, self.app_state.agent_action_status.clone());
+        }
     }
 
     pub fn record_diagnostic(&mut self, kind: DiagnosticKind, component: &str, code: &str) {
@@ -1358,6 +1372,19 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        if let Some((name, arguments)) = self.app_state.pending_agent_action_execute.take() {
+            #[cfg(target_os = "android")]
+            if let Some(app) = self.android_app.as_ref() {
+                execute_approved_agent_action(app.clone(), name, arguments);
+            } else {
+                self.app_state.agent_action_status = "Android platform bridge is unavailable; the action was not executed.".into();
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                let _ = (name, arguments);
+                self.app_state.agent_action_status = "This device action is available only on Android; nothing was executed.".into();
+            }
+        }
         let preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled);
         if preferences != self.last_saved_preferences {
             if let Some(service) = &self.api {
@@ -2739,10 +2766,19 @@ impl WgpuRenderer {
                                         self.tool_followup_dispatch = true;
                                         self.dispatch_new_message();
                                     } else if execution.requires_approval {
-                                        self.app_state.conversation.push(
-                                            MessageRole::Assistant,
-                                            format!("This action requires your explicit approval and has not been executed. Requested tool: {}. {}", execution.tool_name, execution.output),
-                                        );
+                                        if self.app_state.pending_agent_action.is_none() {
+                                            self.app_state.pending_agent_action = Some((execution.tool_name.clone(), execution.arguments.clone()));
+                                            self.app_state.agent_action_status = format!("Review the requested {} action before it can run.", execution.tool_name);
+                                            self.app_state.conversation.push(
+                                                MessageRole::Assistant,
+                                                format!("I need your approval before using {}. Review the action details in the approval dialog; nothing has been opened, called or shared yet.", execution.tool_name),
+                                            );
+                                        } else {
+                                            self.app_state.conversation.push(
+                                                MessageRole::Assistant,
+                                                "Another device action is already awaiting your review. The new request was not queued or executed.",
+                                            );
+                                        }
                                     } else {
                                         self.app_state.conversation.push(
                                             MessageRole::Assistant,
