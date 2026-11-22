@@ -17,6 +17,9 @@ object NativeCore {
     /** Executes deterministic safe agent tools in Rust. */
     external fun executeSafeTool(name: String, argumentsJson: String, localTime: String, localDate: String): String
 
+    /** Returns the Rust-owned agent tool catalog and schemas. */
+    external fun listAgentTools(enabledToolsJson: String): String
+
     /** Enforces the Rust tool allowlist and approval policy. */
     external fun evaluateToolPolicy(name: String, enabledToolsJson: String): String
 
