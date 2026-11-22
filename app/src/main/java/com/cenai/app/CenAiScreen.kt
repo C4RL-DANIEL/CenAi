@@ -433,9 +433,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val synthesisProvider = successfulTargets.first()
                     val synthesisModel = if (synthesisProvider == provider) model else vault.getUser(activeAccountId, "model_${synthesisProvider.name}", synthesisProvider.model)
                     val synthesisBase = if (synthesisProvider == provider) base else vault.getUser(activeAccountId, "base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
-                    val synthesisPrompt = "USER REQUEST:\n" + queryForKnowledge.take(8_000) +
-                        "\n\nCompare these independent AI responses to that request. Produce one clear, accurate, balanced answer. Resolve contradictions where evidence permits, preserve useful disagreements and uncertainty, remove repetition, and do not invent facts.\n\n" +
-                        providerAnswers.joinToString("\n\n---\n\n").take(32_000)
+                    val synthesisPrompt = NativeCore.buildSynthesisPrompt(
+                        queryForKnowledge,
+                        JSONArray().apply { providerAnswers.forEach(::put) }.toString()
+                    )
+                    require(!synthesisPrompt.startsWith("ERROR:")) { synthesisPrompt.removePrefix("ERROR:") }
                     val synthesisHeader = "Cross-provider synthesis\n\n"
                     persist(messages + ChatMessage("assistant", synthesisHeader))
                     val synthesisText = StringBuilder()
