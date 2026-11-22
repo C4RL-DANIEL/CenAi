@@ -96,9 +96,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: test -s app-rust/src/main/assets/models/lightning.litertlm
 
+      - name: Run Rust core unit tests
+        run: cargo test --manifest-path native/Cargo.toml
+
       - name: Compile Rust for Android ABIs
         working-directory: native
-        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app-rust/src/main/jniLibs build --release --locked
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app-rust/src/main/jniLibs build --release
 
       - uses: gradle/actions/setup-gradle@v4
         with:
