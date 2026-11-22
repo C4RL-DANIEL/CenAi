@@ -164,7 +164,6 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(16.0);
 
     let history_items: Vec<(String, String)> = state.conversation_history.iter()
-        .take(8)
         .map(|item| (item.id.clone(), item.title.clone()))
         .collect();
     surface(ui, |ui| {
@@ -177,8 +176,10 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
         if history_items.is_empty() {
             ui.label(text("Your saved conversations will appear here.", 10.0, egui::Color32::from_rgb(143, 154, 180)));
         } else {
-            ui.horizontal_wrapped(|ui| {
-                for (id, title) in &history_items {
+            ui.label(text(format!("{} saved conversations", history_items.len()), 9.0, egui::Color32::from_rgb(143, 154, 180)));
+            egui::ScrollArea::vertical().max_height(150.0).show_rows(ui, 28.0, history_items.len(), |ui, rows| {
+                for index in rows {
+                    let (id, title) = &history_items[index];
                     let label = if title.trim().is_empty() { "New chat" } else { title.as_str() };
                     let selected = state.active_conversation_id == *id;
                     if !state.conversation.sending && ui.selectable_label(selected, label).clicked() && !selected {
