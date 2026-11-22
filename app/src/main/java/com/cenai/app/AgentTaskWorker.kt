@@ -68,7 +68,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             var response = ""
             var lastTurn = ""
             var finished = false
-            for (step in 0..3) {
+            for (step in 0 until NativeCore.maxAgentSteps()) {
                 val turn = repository.stream(provider, model, base, history) { }
                 lastTurn = turn
                 val decision = runtime.parseAgentStep(turn)
@@ -85,9 +85,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                     break
                 }
                 history += ChatMessage("assistant", turn)
-                history += ChatMessage("user", "Tool result for " + execution.toolName + ": " + execution.output + "\nContinue the task. Use another safe tool if needed, otherwise provide the final answer.")
+                history += ChatMessage("user", NativeCore.buildToolContinuationPrompt(execution.toolName, execution.output, true))
             }
-            if (!finished) response = "The scheduled agent reached its four-step tool limit. Last model output: " + lastTurn.take(2_000)
+            if (!finished) response = NativeCore.agentStepLimitMessage(lastTurn, true)
             if (response.isBlank()) response = "The scheduled agent returned an empty response."
             prefs.edit().putString("status_$taskId", "Completed")
                 .putLong("completed_$taskId", System.currentTimeMillis()).apply()
