@@ -18,7 +18,7 @@ data class MonitorSnapshot(
     val providerTests: Int
 ) {
     val successRate: Int
-        get() = if (succeeded + failed == 0) 0 else (succeeded * 100 / (succeeded + failed))
+        get() = NativeCore.monitorSuccessRate(succeeded, failed)
 }
 
 /**
@@ -27,18 +27,9 @@ data class MonitorSnapshot(
  */
 class AppMonitor(context: Context) {
     private val prefs = context.getSharedPreferences("cenai_app_monitor", Context.MODE_PRIVATE)
-    private val eventKeys = mapOf(
-        "app_start" to "app_starts",
-        "voice_input" to "voice_inputs",
-        "voice_output" to "voice_outputs",
-        "document_attached" to "documents_attached",
-        "update_check" to "update_checks",
-        "provider_test" to "provider_tests"
-    )
-
     @Synchronized
     fun recordEvent(event: String) {
-        val key = eventKeys[event] ?: return
+        val key = NativeCore.monitorEventKey(event).ifBlank { return }
         prefs.edit().putInt(key, prefs.getInt(key, 0) + 1).apply()
     }
 
@@ -60,8 +51,7 @@ class AppMonitor(context: Context) {
         val count = prefs.getInt("failed", 0) + 1
         val total = prefs.getLong("latency_total", 0L) + durationMs.coerceAtLeast(0L)
         val message = error.message.orEmpty()
-        val category = Regex("HTTP ([0-9]{3})").find(message)?.groupValues?.get(1)
-            ?.let { "HTTP $it" } ?: error.javaClass.simpleName.take(48)
+        val category = NativeCore.monitorFailureCategory(message, error.javaClass.simpleName)
         prefs.edit().putInt("failed", count).putLong("latency_total", total)
             .putString("last_failure_category", category).apply()
     }
@@ -82,7 +72,7 @@ class AppMonitor(context: Context) {
             succeeded = succeeded,
             failed = failed,
             cancelled = prefs.getInt("cancelled", 0),
-            averageLatencyMs = if (completed == 0) 0L else total / completed,
+            averageLatencyMs = NativeCore.monitorAverageLatency(total, completed),
             lastSuccessAt = prefs.getLong("last_success_at", 0L),
             lastFailureCategory = prefs.getString("last_failure_category", "").orEmpty(),
             appStarts = prefs.getInt("app_starts", 0),
