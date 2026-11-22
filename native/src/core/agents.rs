@@ -68,7 +68,7 @@ impl TaskPlan {
     pub fn validate_persisted(&self) -> Result<(), &'static str> {
         let mut structure = self.clone();
         structure.stopped = false;
-        for step in &mut structure.steps { step.status = StepStatus::Pending; }
+        for step in &mut structure.steps { step.status = StepStatus::Pending; step.output = None; }
         structure.validate()?;
         if self.stopped && self.steps.iter().any(|step| matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval)) {
             return Err("Stopped task plans cannot contain active steps");
