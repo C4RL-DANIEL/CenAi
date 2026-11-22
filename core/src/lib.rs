@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod knowledge;
+pub mod providers;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
@@ -314,6 +315,45 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_retrieveLocalKnowledge(
         )
     })();
     let output = result.unwrap_or_else(|error| format!("ERROR:{error}"));
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildProviderPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    provider: JString,
+    model: JString,
+    max_tokens: jint,
+    messages_json: JString,
+    custom_params_json: JString,
+) -> jstring {
+    let Some(provider_value) = read_java_string(&mut env, &provider) else {
+        return std::ptr::null_mut();
+    };
+    let Some(model_value) = read_java_string(&mut env, &model) else {
+        return std::ptr::null_mut();
+    };
+    let Some(messages_value) = read_java_string(&mut env, &messages_json) else {
+        return std::ptr::null_mut();
+    };
+    let Some(custom_params_value) = read_java_string(&mut env, &custom_params_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match providers::build_provider_payload(
+        &provider_value,
+        &model_value,
+        max_tokens,
+        &messages_value,
+        &custom_params_value,
+    ) {
+        Ok(payload) => payload,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
     match env.new_string(output) {
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
