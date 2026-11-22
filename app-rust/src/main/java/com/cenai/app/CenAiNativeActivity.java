@@ -35,11 +35,13 @@ public final class CenAiNativeActivity extends NativeActivity {
     private static native void nativeOnFilePicked(int requestCode, String path, String mimeType, String displayName, String error);
     private static native void nativeOnPlatformActionResult(String name, boolean success, String message);
     private static native void nativeOnOAuthCallback(String callback);
+    private static native void nativeOnAutomationReminder(String notificationTag);
 
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         handleOAuthIntent(getIntent());
+        handleAutomationReminderIntent(getIntent());
     }
 
     @Override
@@ -47,6 +49,7 @@ public final class CenAiNativeActivity extends NativeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleOAuthIntent(intent);
+        handleAutomationReminderIntent(intent);
     }
 
     private void handleOAuthIntent(Intent intent) {
@@ -54,6 +57,17 @@ public final class CenAiNativeActivity extends NativeActivity {
         Uri uri = intent.getData();
         if ("com.cenai.app".equals(uri.getScheme()) && "/oauth2redirect".equals(uri.getPath())) {
             nativeOnOAuthCallback(uri.toString());
+        }
+    }
+
+    /** Routes a generic WorkManager reminder to the matching signed-in Rust automation. */
+    private void handleAutomationReminderIntent(Intent intent) {
+        if (intent == null || intent.getData() == null) return;
+        Uri uri = intent.getData();
+        if (!"cenai".equals(uri.getScheme()) || !"automation-reminder".equals(uri.getHost())) return;
+        String tag = uri.getLastPathSegment();
+        if (tag != null && tag.matches("cenai_automation_[0-9a-f]{64}")) {
+            nativeOnAutomationReminder(tag);
         }
     }
 

@@ -1327,6 +1327,35 @@ impl WgpuRenderer {
         self.app_state.pending_open_url.take()
     }
 
+    pub fn handle_automation_reminder(&mut self, notification_tag: String) {
+        if notification_tag.len() != 81 || !notification_tag.starts_with("cenai_automation_")
+            || !notification_tag[17..].bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
+            return;
+        }
+        self.app_state.pending_automation_reminder_tag = Some(notification_tag);
+        self.resolve_pending_automation_reminder();
+    }
+
+    fn resolve_pending_automation_reminder(&mut self) {
+        let Some(tag) = self.app_state.pending_automation_reminder_tag.clone() else { return; };
+        // Keep the opaque tag pending until the correct account's encrypted workspace
+        // has loaded. Never reveal automation titles from another account.
+        if self.api.is_none() || self.workspace.is_none() { return; }
+        let matched = self.app_state.automations.iter().find(|automation| {
+            crate::core::automations::reminder_notification_tag(&automation.owner_scope, &automation.id)
+                .as_deref() == Some(tag.as_str())
+        }).cloned();
+        self.app_state.destination = crate::ui::model::Destination::YourWork;
+        self.app_state.automation_status = match matched {
+            Some(automation) => format!(
+                "Reminder opened for '{}'. Review the scheduled task below. No action has been executed.",
+                automation.title
+            ),
+            None => "This scheduled reminder is no longer available in the current account.".into(),
+        };
+        self.app_state.pending_automation_reminder_tag = None;
+    }
+
     pub fn handle_google_oauth_callback(&mut self, callback: String) {
         if callback.len() > 8 * 1024 {
             self.app_state.gemini_oauth_status = "Google sign-in callback was too large.".into();
@@ -2360,6 +2389,7 @@ impl WgpuRenderer {
                                     #[cfg(target_os = "android")]
                                     if let Some(app) = self.android_app.as_ref() { schedule_android_automation_reminders(app, &self.app_state.automations); }
                                     self.workspace = Some(store);
+                                    self.resolve_pending_automation_reminder();
                                 }
                                 Err(error) => self.app_state.auth_status = format!("Signed in, but workspace could not open: {error}"),
                             }
@@ -2794,6 +2824,7 @@ impl WgpuRenderer {
                                 self.automation_scheduler = AutomationScheduler::from_workspace(workspace).ok();
                                 self.app_state.automations = self.automation_scheduler.as_ref()
                                     .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
+                                self.resolve_pending_automation_reminder();
                                 if let Ok(messages) = workspace.load_conversation(&active_conversation_id) {
                                     self.app_state.conversation.restore_messages(messages);
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();

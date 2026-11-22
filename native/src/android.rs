@@ -22,6 +22,7 @@ enum AndroidPlatformEvent {
     FilePicked { request_code: i32, path: String, mime_type: String, display_name: String, error: String },
     AgentActionResult { name: String, success: bool, message: String },
     OAuthCallback(String),
+    AutomationReminder(String),
 }
 
 static PLATFORM_EVENTS: OnceLock<Mutex<VecDeque<AndroidPlatformEvent>>> = OnceLock::new();
@@ -318,6 +319,17 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnOAuthCallb
     }
 }
 
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnAutomationReminder(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, notification_tag: JString<'_>,
+) {
+    let tag = java_string(&mut env, notification_tag);
+    if tag.len() == 81 && tag.starts_with("cenai_automation_")
+        && tag[17..].bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
+        push_platform_event(AndroidPlatformEvent::AutomationReminder(tag));
+    }
+}
+
 /// Launch Google's validated authorization URL through the narrow Android adapter.
 pub(crate) fn open_google_oauth(app: AndroidApp, url: String) {
     let parsed = reqwest::Url::parse(&url);
@@ -496,6 +508,9 @@ impl ApplicationHandler for CenAiApplication {
                             }
                             AndroidPlatformEvent::OAuthCallback(callback) => {
                                 renderer.handle_google_oauth_callback(callback);
+                            }
+                            AndroidPlatformEvent::AutomationReminder(tag) => {
+                                renderer.handle_automation_reminder(tag);
                             }
                         }
                     }
