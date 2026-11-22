@@ -13,6 +13,9 @@ class NativeCoreInstrumentedTest {
     @Test
     fun rustJniExportsCoverChatAgentProviderAndLocalRetrieval() {
         assertEquals("14", NativeCore.evaluateArithmetic("2 + 3 * 4"))
+        val count = JSONObject(NativeCore.executeSafeTool("count_words", """{"text":"one two"}""", "", ""))
+        assertEquals(2, count.getJSONObject("output").getInt("words"))
+        assertEquals("Q2VuQUk=", JSONObject(NativeCore.executeSafeTool("base64_encode", """{"text":"CenAI"}""", "", "")).getString("output"))
 
         val policy = JSONObject(NativeCore.evaluateToolPolicy("open_dialer", "null"))
         assertTrue(policy.getBoolean("allowed"))
