@@ -240,6 +240,11 @@ pub struct AppState {
     pub pending_checkout_plan: Option<String>,
     pub checkout_status: String,
     pub pending_open_url: Option<String>,
+    /// Model-requested Android action awaiting explicit user review.
+    pub pending_agent_action: Option<(String, serde_json::Value)>,
+    /// Action approved in the review dialog; consumed by the Android platform bridge.
+    pub pending_agent_action_execute: Option<(String, serde_json::Value)>,
+    pub agent_action_status: String,
     pub mcp_server_id_draft: String,
     pub mcp_endpoint_draft: String,
     pub mcp_publisher_draft: String,
@@ -395,6 +400,9 @@ impl Default for AppState {
             pending_checkout_plan: None,
             checkout_status: String::new(),
             pending_open_url: None,
+            pending_agent_action: None,
+            pending_agent_action_execute: None,
+            agent_action_status: String::new(),
             mcp_server_id_draft: String::new(),
             mcp_endpoint_draft: String::new(),
             mcp_publisher_draft: String::new(),
