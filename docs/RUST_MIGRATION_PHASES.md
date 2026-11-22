@@ -83,6 +83,7 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 - Safe local tools (date/time, arithmetic, text statistics, JSON formatting, UUID and Base64) execute from an app-owned allow-list.
 - Chat orchestration runs up to four safe tool calls per request and returns results to the model for a final response.
 - Sensitive/destructive tools never execute from model output; they remain blocked until an explicit per-action approval and platform executor exist.
+- The four supported Android side effects (open URL, open dialer, share text, open app settings) now require a native review dialog and one-time approval; Rust and Android both validate arguments before dispatch, and dialer uses `ACTION_DIAL` only.
 - MCP discovery validates schemas and security metadata but never implicitly approves or executes a newly discovered capability.
 - Per-user context and sandbox request policies are implemented in Rust.
 
