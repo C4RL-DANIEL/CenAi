@@ -465,6 +465,7 @@ impl WgpuRenderer {
             }
         }
         if let Some(store) = &workspace {
+            app_state.conversation_history = store.list_conversations().unwrap_or_default();
             if let Ok(messages) = store.load_conversation("primary") {
                 app_state.conversation.restore_messages(messages);
             }
@@ -1859,7 +1860,7 @@ impl WgpuRenderer {
                             );
                         }
                         let messages = self.app_state.conversation.messages().cloned().collect::<Vec<_>>();
-                        let reminder_saved = store.save_conversation("primary", &messages).is_ok();
+                        let reminder_saved = store.save_conversation(&self.app_state.active_conversation_id, &messages).is_ok();
                         let mut acknowledgement_succeeded = false;
                         if reminder_saved {
                             self.last_saved_message_count = messages.len();
@@ -2323,6 +2324,8 @@ impl WgpuRenderer {
                             match self.api.as_ref().ok_or_else(|| "Account service is unavailable.".to_owned())
                                 .and_then(|service| service.workspace_store(self.workspace_root.join("cenai-workspace"))) {
                                 Ok(store) => {
+                                    self.app_state.conversation_history = store.list_conversations().unwrap_or_default();
+                                    self.app_state.active_conversation_id = "primary".into();
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
                                     self.app_state.projects = store.projects(false).unwrap_or_default();
                                     self.app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
@@ -2377,6 +2380,9 @@ impl WgpuRenderer {
                             self.app_state.email_verified = false;
                             self.app_state.otp_status.clear();
                             self.app_state.auth_status = "Signed out.".into();
+                            self.app_state.conversation_history.clear();
+                            self.app_state.active_conversation_id = "primary".into();
+                            self.app_state.pending_conversation_switch = None;
                             self.workspace = None;
                         }
                         Err(error) => self.app_state.auth_status = format!("Sign-out failed: {error}"),
@@ -2739,6 +2745,7 @@ impl WgpuRenderer {
                             let mut recovered_steps = 0usize;
                             let mut recovery_error = None;
                             if let Some(workspace) = self.workspace.as_ref() {
+                                self.app_state.conversation_history = workspace.list_conversations().unwrap_or_default();
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default().into_iter()
                                     .filter_map(|record| {
@@ -2953,6 +2960,28 @@ impl WgpuRenderer {
                         }
                     }
                     log::debug!("Completed CenAI request for message {message_id}");
+                }
+            }
+        }
+        if let Some(target_id) = self.app_state.pending_conversation_switch.take() {
+            if !self.app_state.conversation.sending {
+                if let Some(store) = self.workspace.as_ref() {
+                    let target_is_known = self.app_state.conversation_history.iter().any(|item| item.id == target_id);
+                    if target_is_known {
+                        let current_messages: Vec<_> = self.app_state.conversation.messages().cloned().collect();
+                        match store.save_conversation(&self.app_state.active_conversation_id, &current_messages)
+                            .and_then(|_| store.load_conversation(&target_id)) {
+                            Ok(messages) => {
+                                self.app_state.conversation.restore_messages(messages);
+                                self.app_state.active_conversation_id = target_id;
+                                self.last_saved_message_count = self.app_state.conversation.messages().count();
+                                self.last_dispatched_message_id = self.app_state.conversation.messages()
+                                    .filter(|message| message.role == MessageRole::User)
+                                    .map(|message| message.id).max().unwrap_or(0);
+                            }
+                            Err(error) => log::warn!("Conversation switch failed without discarding the current chat: {error}"),
+                        }
+                    }
                 }
             }
         }
