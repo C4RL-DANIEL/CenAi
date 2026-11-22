@@ -962,6 +962,12 @@ impl CenAiApi {
         if self.vault.account_id()? != account_id {
             return Err("The active CenAI account changed during Google token refresh.".into());
         }
+        if let Some(rotated) = token.get("refresh_token").and_then(Value::as_str) {
+            if rotated.is_empty() || rotated.len() > 16 * 1024 {
+                return Err("Google returned an invalid rotated refresh token.".into());
+            }
+            self.vault.save_provider_key("gemini_oauth_refresh", rotated)?;
+        }
         self.vault.save_provider_key("gemini_oauth_access", next)?;
         self.vault.save_provider_key("gemini_oauth_expiry", &(chrono::Utc::now().timestamp() + expires).to_string())?;
         Ok(next.to_owned())
