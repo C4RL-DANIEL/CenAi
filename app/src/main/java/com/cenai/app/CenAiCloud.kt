@@ -41,9 +41,15 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         }
     }
 
+    private fun authPayload(action: String, email: String = "", password: String = "", refreshToken: String = ""): JSONObject {
+        val payload = JSONObject(NativeCore.buildAuthPayload(action, email, password, refreshToken))
+        val error = payload.optString("error")
+        require(error.isBlank()) { error.ifBlank { "Authentication payload validation failed." } }
+        return payload
+    }
+
     suspend fun signUp(email: String, password: String): AccountResult {
-        require(email.contains("@") && password.length >= 8) { "Enter a valid email and a password of at least 8 characters." }
-        val data = post("$BASE_URL/auth/v1/signup", JSONObject().put("email", email.trim()).put("password", password))
+        val data = post("$BASE_URL/auth/v1/signup", authPayload("signup", email, password))
         val access = data.optString("access_token")
         if (access.isNotBlank()) saveSession(data, email)
         return if (access.isNotBlank()) AccountResult("Account created and signed in.", true)
@@ -51,23 +57,26 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     suspend fun signIn(email: String, password: String): AccountResult {
-        require(email.contains("@") && password.isNotBlank()) { "Enter your email and password." }
-        val data = post("$BASE_URL/auth/v1/token?grant_type=password", JSONObject().put("email", email.trim()).put("password", password))
+        val data = post("$BASE_URL/auth/v1/token?grant_type=password", authPayload("signin", email, password))
         if (data.optString("access_token").isBlank()) throw IOException("Sign-in did not return a session.")
         saveSession(data, email)
         return AccountResult("Signed in as ${email.trim()}.", true)
     }
 
     private fun saveSession(data: JSONObject, email: String) {
-        vault.putSecret("supabase_access_token", data.optString("access_token"))
-        vault.putSecret("supabase_refresh_token", data.optString("refresh_token"))
-        val ownerId = data.optJSONObject("user")?.optString("id").orEmpty()
+        val session = JSONObject(NativeCore.parseAuthSession(data.toString()))
+        val error = session.optString("error")
+        if (error.isNotBlank()) throw IOException(error)
+        val accessToken = session.optString("access_token")
+        val refreshToken = session.optString("refresh_token")
+        val ownerId = session.optString("user_id")
+        val accountEmail = session.optString("email").ifBlank { email }
+        vault.putSecret("supabase_access_token", accessToken)
+        vault.putSecret("supabase_refresh_token", refreshToken)
         vault.put("supabase_user_id", ownerId)
-        if (ownerId.isNotBlank()) {
-            vault.putUserSecret(ownerId, "supabase_access_token", data.optString("access_token"))
-            vault.putUserSecret(ownerId, "supabase_refresh_token", data.optString("refresh_token"))
-        }
-        vault.put("supabase_account_email", data.optJSONObject("user")?.optString("email")?.ifBlank { email } ?: email)
+        vault.putUserSecret(ownerId, "supabase_access_token", accessToken)
+        vault.putUserSecret(ownerId, "supabase_refresh_token", refreshToken)
+        vault.put("supabase_account_email", accountEmail)
     }
 
     fun signOut() {
@@ -87,7 +96,7 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         val refresh = vault.getSecret("supabase_refresh_token")
         if (refresh.isBlank()) return false
         return try {
-            val data = post("$BASE_URL/auth/v1/token?grant_type=refresh_token", JSONObject().put("refresh_token", refresh))
+            val data = post("$BASE_URL/auth/v1/token?grant_type=refresh_token", authPayload("refresh", refreshToken = refresh))
             if (data.optString("access_token").isBlank()) false else {
                 saveSession(data, vault.get("supabase_account_email"))
                 true
@@ -174,7 +183,8 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     suspend fun verifyEmailOtp(code: String): String {
-        require(code.matches(Regex("\\d{6}"))) { "Enter the six-digit verification code." }
+        val validation = NativeCore.validateEmailOtp(code)
+        require(validation == "OK") { validation }
         val token = vault.getSecret("supabase_access_token")
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val data = post("https://cenai-website.cenai-app.workers.dev/api/email-otp", JSONObject().put("action", "verify").put("code", code), token)
