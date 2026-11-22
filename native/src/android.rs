@@ -5,7 +5,7 @@ use jni::{objects::{JClass, JObject, JString, JValue}, sys::jint, JNIEnv, JavaVM
 mod vault;
 pub(crate) mod audio;
 use vault::AndroidSecretVault;
-use crate::core::{guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
+use crate::core::{automations::reminder_notification_tag, guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
@@ -51,6 +51,10 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
 /// Schedule a persistent OS-managed reminder for a user-owned automation.
 /// The worker only posts a notification; the task itself remains approval-gated in Rust.
 pub(crate) fn schedule_automation_reminder(app: AndroidApp, owner_scope: String, task_id: String, delay_ms: u64) {
+    let Some(notification_tag) = reminder_notification_tag(&owner_scope, &task_id) else {
+        log::warn!("Rejected invalid automation reminder identity");
+        return;
+    };
     let callback_app = app.clone();
     app.run_on_java_main_thread(Box::new(move || {
         let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
@@ -58,16 +62,14 @@ pub(crate) fn schedule_automation_reminder(app: AndroidApp, owner_scope: String,
         let Ok(mut env) = vm.attach_current_thread() else { return; };
         let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
         let result = (|| -> jni::errors::Result<()> {
-            let owner = env.new_string(owner_scope)?;
-            let id = env.new_string(task_id)?;
+            let tag = env.new_string(notification_tag)?;
             env.call_static_method(
                 "com/cenai/app/AutomationReminderBridge",
                 "schedule",
-                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;J)V",
+                "(Landroid/content/Context;Ljava/lang/String;J)V",
                 &[
                     JValue::Object(&activity),
-                    JValue::Object(&owner),
-                    JValue::Object(&id),
+                    JValue::Object(&tag),
                     JValue::Long(delay_ms.min(i64::MAX as u64) as jni::sys::jlong),
                 ],
             )?;
@@ -79,6 +81,10 @@ pub(crate) fn schedule_automation_reminder(app: AndroidApp, owner_scope: String,
 }
 
 pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, task_id: String) {
+    let Some(notification_tag) = reminder_notification_tag(&owner_scope, &task_id) else {
+        log::warn!("Rejected invalid automation reminder cancellation identity");
+        return;
+    };
     let callback_app = app.clone();
     app.run_on_java_main_thread(Box::new(move || {
         let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
@@ -86,13 +92,12 @@ pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, t
         let Ok(mut env) = vm.attach_current_thread() else { return; };
         let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
         let result = (|| -> jni::errors::Result<()> {
-            let owner = env.new_string(owner_scope)?;
-            let id = env.new_string(task_id)?;
+            let tag = env.new_string(notification_tag)?;
             env.call_static_method(
                 "com/cenai/app/AutomationReminderBridge",
                 "cancel",
-                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
-                &[JValue::Object(&activity), JValue::Object(&owner), JValue::Object(&id)],
+                "(Landroid/content/Context;Ljava/lang/String;)V",
+                &[JValue::Object(&activity), JValue::Object(&tag)],
             )?;
             Ok(())
         })();

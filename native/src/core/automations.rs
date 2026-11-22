@@ -2,6 +2,7 @@
 use chrono::{DateTime, Duration, Utc};
 use cron_parser::Schedule;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use crate::core::workspace::WorkspaceStore;
 
@@ -36,6 +37,21 @@ fn valid_user_uuid(value: &str) -> bool {
         && bytes.iter().enumerate().all(|(index, byte)| {
             [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
         })
+}
+
+/// Stable, privacy-preserving Android WorkManager identity for an automation.
+/// Raw account scope and task identifiers stay inside the Rust core.
+pub fn reminder_notification_tag(owner_scope: &str, automation_id: &str) -> Option<String> {
+    if !valid_user_uuid(owner_scope)
+        || automation_id.trim().is_empty()
+        || automation_id.len() > 128
+        || !automation_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    {
+        return None;
+    }
+    let digest = Sha256::digest(format!("{owner_scope}:{automation_id}").as_bytes());
+    let token = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    Some(format!("cenai_automation_{token}"))
 }
 
 impl Automation {
@@ -272,6 +288,18 @@ mod tests {
             last_scheduled_at: None,
             pending_scheduled_at: None,
         }
+    }
+
+    #[test]
+    fn reminder_notification_tags_are_stable_scoped_and_reject_invalid_ids() {
+        let tag = reminder_notification_tag(OWNER, "daily-digest").unwrap();
+        assert_eq!(tag, reminder_notification_tag(OWNER, "daily-digest").unwrap());
+        assert!(tag.starts_with("cenai_automation_"));
+        assert_eq!(tag.len(), "cenai_automation_".len() + 64);
+        assert_ne!(tag, reminder_notification_tag(OTHER, "daily-digest").unwrap());
+        assert_ne!(tag, reminder_notification_tag(OWNER, "weekly-digest").unwrap());
+        assert!(reminder_notification_tag("not-a-user", "daily-digest").is_none());
+        assert!(reminder_notification_tag(OWNER, "../unsafe").is_none());
     }
 
     #[test]

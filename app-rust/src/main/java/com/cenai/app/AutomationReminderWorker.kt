@@ -13,8 +13,10 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+
+private fun isValidNotificationTag(value: String): Boolean =
+    value.matches(Regex("cenai_automation_[0-9a-f]{64}"))
 
 /**
  * OS-managed, best-effort reminder only. It never runs the agent or performs an action.
@@ -29,7 +31,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
             }
         )
         val notificationTag = inputData.getString(AutomationReminderWorker.NOTIFICATION_TAG_KEY)
-            ?.takeIf { it.startsWith("cenai_automation_") }
+            ?.takeIf { isValidNotificationTag(it) }
             ?: return Result.failure()
         val launch = Intent(applicationContext, CenAiNativeActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -66,32 +68,24 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
 
 object AutomationReminderBridge {
     @JvmStatic
-    fun schedule(context: Context, ownerScope: String, taskId: String, delayMillis: Long) {
-        require(ownerScope.isNotBlank() && taskId.isNotBlank())
-        val name = workName(ownerScope, taskId)
+    fun schedule(context: Context, notificationTag: String, delayMillis: Long) {
+        require(isValidNotificationTag(notificationTag))
         val request = OneTimeWorkRequestBuilder<AutomationReminderWorker>()
-            .setInputData(Data.Builder().putString(AutomationReminderWorker.NOTIFICATION_TAG_KEY, name).build())
+            .setInputData(Data.Builder().putString(AutomationReminderWorker.NOTIFICATION_TAG_KEY, notificationTag).build())
             .setInitialDelay(delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-            name,
+            notificationTag,
             ExistingWorkPolicy.REPLACE,
             request
         )
     }
 
     @JvmStatic
-    fun cancel(context: Context, ownerScope: String, taskId: String) {
-        if (ownerScope.isBlank() || taskId.isBlank()) return
-        val name = workName(ownerScope, taskId)
-        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(name)
+    fun cancel(context: Context, notificationTag: String) {
+        if (!isValidNotificationTag(notificationTag)) return
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(notificationTag)
         val manager = context.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(name, 0)
-    }
-
-    private fun workName(ownerScope: String, taskId: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest("$ownerScope:$taskId".toByteArray(Charsets.UTF_8))
-        val token = digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return "cenai_automation_$token"
+        manager.cancel(notificationTag, 0)
     }
 }
