@@ -155,13 +155,17 @@ impl TaskPlan {
     }
 
     pub fn request_step_approval(&mut self, step_id: u64) -> Result<(), &'static str> {
+        self.request_step_approval_with_binding(step_id, None)
+    }
+
+    fn request_step_approval_with_binding(&mut self, step_id: u64, binding: Option<&str>) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
             .is_some_and(|step| step.status == StepStatus::Pending
                 && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
         if !ready { return Err("Task step is not ready for approval"); }
         self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?.status = StepStatus::WaitingForApproval;
-        self.record_event(Some(step_id), TaskExecutionEventKind::ApprovalRequested, None);
+        self.record_event(Some(step_id), TaskExecutionEventKind::ApprovalRequested, binding);
         Ok(())
     }
 
@@ -191,17 +195,29 @@ impl TaskPlan {
             class,
             OperationClass::ExternalAccount | OperationClass::Sensitive | OperationClass::Destructive
         );
-        let has_fresh_approval = self.events.iter().rev().find(|event| event.step_id == Some(step_id)
-            && matches!(event.kind, TaskExecutionEventKind::ApprovalGranted | TaskExecutionEventKind::ApprovalDenied))
-            .is_some_and(|event| event.kind == TaskExecutionEventKind::ApprovalGranted);
+        let operation_class = match class {
+            OperationClass::ReadOnly => "read_only",
+            OperationClass::Reversible => "reversible",
+            OperationClass::ExternalAccount => "external_account",
+            OperationClass::Sensitive => "sensitive",
+            OperationClass::Destructive => "destructive",
+        };
+        // Bind approval to both the operation class and the exact step description.
+        // A grant for a less risky action cannot be replayed for a changed action.
+        let binding = format!("{operation_class}:{}", step.title);
+        let approved_binding = self.events.iter().rev().find(|event| event.step_id == Some(step_id)
+            && matches!(event.kind, TaskExecutionEventKind::ApprovalGranted | TaskExecutionEventKind::ApprovalDenied));
+        let has_fresh_approval = approved_binding.is_some_and(|event|
+            event.kind == TaskExecutionEventKind::ApprovalGranted
+                && event.detail.as_deref() == Some(binding.as_str()));
 
         if decision == ApprovalDecision::RequireUserApproval
             && !(requires_fresh_approval && explicitly_granted && has_fresh_approval) {
-            self.request_step_approval(step_id)?;
+            self.request_step_approval_with_binding(step_id, Some(&binding))?;
             return Ok(ApprovalDecision::RequireUserApproval);
         }
         if requires_fresh_approval && (!explicitly_granted || !has_fresh_approval) {
-            self.request_step_approval(step_id)?;
+            self.request_step_approval_with_binding(step_id, Some(&binding))?;
             return Ok(ApprovalDecision::RequireUserApproval);
         }
 
@@ -216,7 +232,10 @@ impl TaskPlan {
             return Err("Task step is not waiting for approval");
         }
         step.status = if approved { StepStatus::Pending } else { StepStatus::Cancelled };
-        self.record_event(Some(step_id), if approved { TaskExecutionEventKind::ApprovalGranted } else { TaskExecutionEventKind::ApprovalDenied }, None);
+        let binding = self.events.iter().rev().find(|event|
+            event.step_id == Some(step_id) && event.kind == TaskExecutionEventKind::ApprovalRequested
+        ).and_then(|event| event.detail.clone());
+        self.record_event(Some(step_id), if approved { TaskExecutionEventKind::ApprovalGranted } else { TaskExecutionEventKind::ApprovalDenied }, binding.as_deref());
         Ok(())
     }
 
@@ -486,6 +505,64 @@ mod tests {
         plan.resolve_step_approval(1, false).unwrap();
         assert!(plan.authorize_and_begin_step(1, OperationClass::Destructive, true).is_err());
         assert_eq!(plan.steps[0].status, StepStatus::Cancelled);
+    }
+
+    #[test]
+    fn approval_is_bound_to_the_exact_operation_class_and_description() {
+        let mut plan = TaskPlan {
+            id: "task-bound-approval".into(),
+            goal: "Prevent approval replay across operations".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Update profile".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None,
+            }],
+        };
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::Sensitive, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        plan.resolve_step_approval(1, true).unwrap();
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::Sensitive, true).unwrap(),
+            ApprovalDecision::Allow
+        );
+        plan.fail_step(1).unwrap();
+        plan.retry_failed_step(1).unwrap();
+
+        // The previous approval was for a sensitive read, not a destructive action.
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::Destructive, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        assert_eq!(plan.steps[0].status, StepStatus::WaitingForApproval);
+        assert!(plan.validate_persisted().is_ok());
+    }
+
+    #[test]
+    fn approval_is_invalidated_when_the_step_description_changes() {
+        let mut plan = TaskPlan {
+            id: "task-description-binding".into(),
+            goal: "Prevent stale approval reuse".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Send a message".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None,
+            }],
+        };
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        plan.resolve_step_approval(1, true).unwrap();
+        plan.steps[0].title = "Delete the account".into();
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        assert_eq!(plan.steps[0].status, StepStatus::WaitingForApproval);
     }
 
     #[test]
