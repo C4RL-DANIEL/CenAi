@@ -131,4 +131,9 @@ object NativeCore {
 
     /** Resolves model and endpoint settings from Rust provider defaults and account values. */
     external fun resolveProviderSettings(provider: String, selectedProvider: String, selectedModel: String, selectedBaseUrl: String, storedModel: String, storedBaseUrl: String): String
+
+    /** Builds bounded telemetry payloads in Rust; Android supplies only device facts. */
+    external fun buildConsentTelemetryPayload(usageAnalytics: Boolean, guardian: Boolean): String
+    external fun buildUsageTelemetryPayload(provider: String, model: String, inputTokens: Int, outputTokens: Int, latencyMs: Long, status: String, errorCode: String): String
+    external fun buildGuardianTelemetryPayload(appVersion: String, androidVersion: String, batteryPercent: Int, availableRamMb: Long, freeStorageMb: Long, network: String, crashCategory: String): String
 }
