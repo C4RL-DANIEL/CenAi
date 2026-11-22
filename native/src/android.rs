@@ -49,6 +49,30 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
 }
 
 #[no_mangle]
+/// Invoke the fixed, on-device Lightning runtime. This JNI adapter is called only
+/// from a blocking worker; the model policy and fallback decision remain in Rust.
+pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String, String> {
+    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }
+        .map_err(|error| format!("Lightning could not access the Android VM: {error}"))?;
+    let mut env = vm.attach_current_thread()
+        .map_err(|error| format!("Lightning could not attach to the Android VM: {error}"))?;
+    let activity = activity_local(&mut env, &app)
+        .map_err(|error| format!("Lightning could not access the Android context: {error}"))?;
+    let prompt = env.new_string(prompt)
+        .map_err(|error| format!("Lightning prompt conversion failed: {error}"))?;
+    let output = env.call_static_method(
+        "com/cenai/app/LightningRuntimeBridge",
+        "generate",
+        "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;",
+        &[JValue::Object(&activity), JValue::Object(&prompt)],
+    ).and_then(|value| value.l())
+        .map_err(|error| format!("Lightning local inference failed: {error}"))?;
+    let output = JString::from(output);
+    env.get_string(&output)
+        .map(|value| value.into())
+        .map_err(|error| format!("Lightning response conversion failed: {error}"))
+}
+
 pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked(
     mut env: JNIEnv<'_>, _class: JClass<'_>, request_code: jint,
     path: JString<'_>, mime_type: JString<'_>, display_name: JString<'_>, error: JString<'_>,
