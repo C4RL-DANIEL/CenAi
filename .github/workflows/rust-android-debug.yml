@@ -54,6 +54,15 @@ jobs:
         run: cargo install cargo-ndk --locked
       - name: Build Rust Android library
         run: cargo ndk -t arm64-v8a -t x86_64 -o app-rust/src/main/jniLibs build --release -p cenai-native
+      - name: Download and verify pinned Lightning model
+        run: |
+          mkdir -p app-rust/src/main/assets/models
+          model=app-rust/src/main/assets/models/lightning.litertlm
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+            "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm" \
+            --output "$model"
+          echo "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108  $model" | sha256sum --check --strict
+          test "$(stat -c '%s' "$model")" = "613722264"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
