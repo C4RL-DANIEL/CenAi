@@ -14,6 +14,9 @@ object NativeCore {
     /** Evaluates bounded arithmetic in the Rust core; errors are prefixed with ERROR:. */
     external fun evaluateArithmetic(expression: String): String
 
+    /** Runs private conversation retrieval in the Rust core. */
+    external fun retrieveLocalKnowledge(payload: String, maxResults: Int, maxCharacters: Int): String
+
     /** Normalizes line endings and removes unsafe control characters from message bodies. */
     external fun normalizeMessageContent(input: String): String
 
