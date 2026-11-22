@@ -32,7 +32,7 @@ pub struct TaskStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskExecutionEventKind {
-    Started, ApprovalRequested, ApprovalGranted, ApprovalDenied,
+    Started, ApprovalRequested, ApprovalGranted, ApprovalDenied, ApprovalConsumed,
     Completed, Blocked, Failed, Retried, Interrupted, PlanStopped,
 }
 
@@ -205,23 +205,25 @@ impl TaskPlan {
         // Bind approval to both the operation class and the exact step description.
         // A grant for a less risky action cannot be replayed for a changed action.
         let binding = format!("{operation_class}:{}", step.title);
-        let approved_binding = self.events.iter().rev().find(|event| event.step_id == Some(step_id)
-            && matches!(event.kind, TaskExecutionEventKind::ApprovalGranted | TaskExecutionEventKind::ApprovalDenied));
-        let has_fresh_approval = approved_binding.is_some_and(|event|
+        let approval_event = self.events.iter().rev().find(|event| event.step_id == Some(step_id)
+            && matches!(event.kind, TaskExecutionEventKind::ApprovalGranted
+                | TaskExecutionEventKind::ApprovalDenied | TaskExecutionEventKind::ApprovalConsumed));
+        let has_fresh_approval = approval_event.is_some_and(|event|
             event.kind == TaskExecutionEventKind::ApprovalGranted
                 && event.detail.as_deref() == Some(binding.as_str()));
+        let approval_required = decision == ApprovalDecision::RequireUserApproval || requires_fresh_approval;
 
-        if decision == ApprovalDecision::RequireUserApproval
-            && !(requires_fresh_approval && explicitly_granted && has_fresh_approval) {
-            self.request_step_approval_with_binding(step_id, Some(&binding))?;
-            return Ok(ApprovalDecision::RequireUserApproval);
-        }
-        if requires_fresh_approval && (!explicitly_granted || !has_fresh_approval) {
+        if approval_required && !has_fresh_approval {
             self.request_step_approval_with_binding(step_id, Some(&binding))?;
             return Ok(ApprovalDecision::RequireUserApproval);
         }
 
         self.begin_step(step_id)?;
+        if approval_required {
+            // A grant authorizes exactly one execution attempt. Retrying a failed
+            // action requires a fresh review, even if its description is unchanged.
+            self.record_event(Some(step_id), TaskExecutionEventKind::ApprovalConsumed, Some(&binding));
+        }
         Ok(ApprovalDecision::Allow)
     }
 
@@ -538,6 +540,61 @@ mod tests {
         );
         assert_eq!(plan.steps[0].status, StepStatus::WaitingForApproval);
         assert!(plan.validate_persisted().is_ok());
+    }
+
+    #[test]
+    fn approval_is_single_use_and_must_be_renewed_after_a_failed_attempt() {
+        let mut plan = TaskPlan {
+            id: "task-single-use-approval".into(),
+            goal: "Prevent approval replay after failure".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Change account setting".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None,
+            }],
+        };
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        plan.resolve_step_approval(1, true).unwrap();
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::Allow
+        );
+        assert_eq!(plan.events.last().unwrap().kind, TaskExecutionEventKind::ApprovalConsumed);
+        plan.fail_step(1).unwrap();
+        plan.retry_failed_step(1).unwrap();
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        assert_eq!(plan.steps[0].status, StepStatus::WaitingForApproval);
+    }
+
+    #[test]
+    fn ordinary_operations_can_proceed_after_their_requested_approval() {
+        let mut plan = TaskPlan {
+            id: "task-ordinary-approval".into(),
+            goal: "Allow explicitly reviewed ordinary operations".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Researcher, title: "Read local data".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None,
+            }],
+        };
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ReadOnly, false).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        plan.resolve_step_approval(1, true).unwrap();
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ReadOnly, false).unwrap(),
+            ApprovalDecision::Allow
+        );
+        assert_eq!(plan.steps[0].status, StepStatus::Running);
     }
 
     #[test]
