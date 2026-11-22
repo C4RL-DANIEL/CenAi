@@ -2428,7 +2428,17 @@ impl WgpuRenderer {
                         Ok(answer) => {
                             let stream_id = self.active_streams.remove(&message_id);
                             let runtime = AgentToolRuntime::default();
-                            let tool_call = runtime.parse_tool_call(&answer).ok().flatten();
+                            let tool_call = match runtime.parse_tool_call(&answer) {
+                                Ok(call) => call,
+                                Err(error) => {
+                                    if let Some(stream_id) = stream_id {
+                                        self.app_state.conversation.replace_stream(stream_id, "Rejected malformed agent tool request.");
+                                        self.app_state.conversation.finish_stream(stream_id);
+                                    }
+                                    self.app_state.conversation.push(MessageRole::Assistant, format!("The agent tool request was rejected: {error}. No tool was executed."));
+                                    continue;
+                                }
+                            };
                             if let Some(call) = tool_call {
                                 if let Some(stream_id) = stream_id {
                                     self.app_state.conversation.replace_stream(stream_id, format!("Running safe local tool: {}…", call.name));
