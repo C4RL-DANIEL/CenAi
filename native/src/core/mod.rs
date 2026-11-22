@@ -18,3 +18,4 @@ pub mod multimodal;
 pub mod qwen_voice;
 pub mod lightning;
 pub mod tools;
+pub mod updates;
