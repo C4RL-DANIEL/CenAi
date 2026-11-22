@@ -1,6 +1,10 @@
 //! Versioned first-party app identity and per-user capability authorization contracts.
 use std::collections::{HashMap, HashSet};
 
+const MAX_ID_BYTES: usize = 128;
+const MAX_VERSION_BYTES: usize = 64;
+const MAX_DECLARATIONS: usize = 64;
+
 fn valid_user_uuid(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36
@@ -8,6 +12,26 @@ fn valid_user_uuid(value: &str) -> bool {
         && bytes.iter().enumerate().all(|(index, byte)| {
             [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
         })
+}
+
+fn valid_dotted_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_ID_BYTES
+        && value.split('.').all(|part| {
+            !part.is_empty()
+                && part.len() <= 63
+                && part.as_bytes()[0].is_ascii_alphanumeric()
+                && part.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+                && part.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
+}
+
+fn valid_scope_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_ID_BYTES
+        && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._:-".contains(&byte))
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+        && value.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,33 +47,71 @@ pub struct AppManifest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManifestError {
     EmptyAppId,
+    InvalidAppId,
     EmptyPublisher,
+    InvalidPublisher,
     UntrustedPublisher,
     EmptyVersion,
+    InvalidVersion,
     UnsupportedProtocol,
+    TooManyCapabilities,
     EmptyCapability,
+    InvalidCapability,
     DuplicateCapability,
+    TooManyScopes,
     EmptyScope,
+    InvalidScope,
     DuplicateScope,
     AppIdOwnedByAnotherPublisher,
 }
 
 impl AppManifest {
     pub fn validate(&self, supported_protocol: u16) -> Result<(), ManifestError> {
-        if self.app_id.trim().is_empty() { return Err(ManifestError::EmptyAppId); }
-        if self.publisher_id.trim().is_empty() { return Err(ManifestError::EmptyPublisher); }
-        if self.version.trim().is_empty() { return Err(ManifestError::EmptyVersion); }
-        if self.protocol_version != supported_protocol { return Err(ManifestError::UnsupportedProtocol); }
+        if self.app_id.trim().is_empty() {
+            return Err(ManifestError::EmptyAppId);
+        }
+        if !valid_dotted_id(&self.app_id) {
+            return Err(ManifestError::InvalidAppId);
+        }
+        if self.publisher_id.trim().is_empty() {
+            return Err(ManifestError::EmptyPublisher);
+        }
+        if !valid_dotted_id(&self.publisher_id) {
+            return Err(ManifestError::InvalidPublisher);
+        }
+        if self.version.trim().is_empty() {
+            return Err(ManifestError::EmptyVersion);
+        }
+        if self.version.len() > MAX_VERSION_BYTES
+            || !self.version.bytes().all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
+        {
+            return Err(ManifestError::InvalidVersion);
+        }
+        if self.protocol_version != supported_protocol {
+            return Err(ManifestError::UnsupportedProtocol);
+        }
+        if self.capabilities.len() > MAX_DECLARATIONS {
+            return Err(ManifestError::TooManyCapabilities);
+        }
         if self.capabilities.iter().any(|value| value.trim().is_empty()) {
             return Err(ManifestError::EmptyCapability);
+        }
+        if self.capabilities.iter().any(|value| !valid_scope_token(value)) {
+            return Err(ManifestError::InvalidCapability);
         }
         let unique_capabilities: HashSet<&str> =
             self.capabilities.iter().map(String::as_str).collect();
         if unique_capabilities.len() != self.capabilities.len() {
             return Err(ManifestError::DuplicateCapability);
         }
+        if self.requested_scopes.len() > MAX_DECLARATIONS {
+            return Err(ManifestError::TooManyScopes);
+        }
         if self.requested_scopes.iter().any(|value| value.trim().is_empty()) {
             return Err(ManifestError::EmptyScope);
+        }
+        if self.requested_scopes.iter().any(|value| !valid_scope_token(value)) {
+            return Err(ManifestError::InvalidScope);
         }
         let unique_scopes: HashSet<&str> =
             self.requested_scopes.iter().map(String::as_str).collect();
@@ -94,7 +156,9 @@ impl CapabilityRegistry {
         }
         // An app ID is permanently bound to its first trusted publisher. A different
         // publisher cannot replace the manifest and inherit existing user grants.
-        if self.manifests.get(&manifest.app_id)
+        if self
+            .manifests
+            .get(&manifest.app_id)
             .is_some_and(|existing| existing.publisher_id != manifest.publisher_id)
         {
             return Err(ManifestError::AppIdOwnedByAnotherPublisher);
@@ -209,5 +273,28 @@ mod tests {
         let mut app = manifest();
         app.requested_scopes.push("notes.read".into());
         assert_eq!(app.validate(1), Err(ManifestError::DuplicateScope));
+    }
+
+    #[test]
+    fn identifiers_and_declarations_are_strictly_bounded() {
+        let mut app = manifest();
+        app.app_id = "com..notes".into();
+        assert_eq!(app.validate(1), Err(ManifestError::InvalidAppId));
+
+        let mut app = manifest();
+        app.publisher_id = "CenAI.publisher".into();
+        assert_eq!(app.validate(1), Err(ManifestError::InvalidPublisher));
+
+        let mut app = manifest();
+        app.capabilities = vec!["*".into()];
+        assert_eq!(app.validate(1), Err(ManifestError::InvalidCapability));
+
+        let mut app = manifest();
+        app.requested_scopes = vec!["notes.read\nadmin".into()];
+        assert_eq!(app.validate(1), Err(ManifestError::InvalidScope));
+
+        let mut app = manifest();
+        app.capabilities = (0..=MAX_DECLARATIONS).map(|index| format!("capability.{index}")).collect();
+        assert_eq!(app.validate(1), Err(ManifestError::TooManyCapabilities));
     }
 }
