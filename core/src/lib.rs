@@ -3,6 +3,7 @@ pub mod knowledge;
 pub mod providers;
 pub mod storage;
 pub mod context;
+pub mod auth;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
@@ -727,6 +728,61 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseCloudResponse(
         Ok(content) => serde_json::json!({ "content": content }).to_string(),
         Err(error) => serde_json::json!({ "error": error }).to_string(),
     };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildAuthPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    action: JString,
+    email: JString,
+    password: JString,
+    refresh_token: JString,
+) -> jstring {
+    let Some(action_value) = read_java_string(&mut env, &action) else { return std::ptr::null_mut(); };
+    let Some(email_value) = read_java_string(&mut env, &email) else { return std::ptr::null_mut(); };
+    let Some(password_value) = read_java_string(&mut env, &password) else { return std::ptr::null_mut(); };
+    let Some(refresh_value) = read_java_string(&mut env, &refresh_token) else { return std::ptr::null_mut(); };
+    let output = match auth::build_auth_payload(&action_value, &email_value, &password_value, &refresh_value) {
+        Ok(payload) => payload,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_parseAuthSession(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw_json: JString,
+) -> jstring {
+    let Some(raw_value) = read_java_string(&mut env, &raw_json) else { return std::ptr::null_mut(); };
+    let output = match auth::parse_auth_session(&raw_value) {
+        Ok(session) => session,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_validateEmailOtp(
+    mut env: JNIEnv,
+    _class: JClass,
+    code: JString,
+) -> jstring {
+    let Some(code_value) = read_java_string(&mut env, &code) else { return std::ptr::null_mut(); };
+    let output = auth::validate_email_otp(&code_value).err().unwrap_or_else(|| "OK".to_owned());
     match env.new_string(output) {
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
