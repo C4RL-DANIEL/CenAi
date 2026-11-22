@@ -231,19 +231,28 @@ impl AndroidSecretVault {
             return Err("Legacy access token account identity is invalid".into());
         }
         let email = value.get("account_email").and_then(serde_json::Value::as_str).unwrap_or_default();
-        <Self as SessionVault>::save_session(self, access, refresh, user_id, email)?;
+        let digest = Sha256::digest(user_id.as_bytes());
+        let account_scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let mut entries = vec![
+            ("supabase_access_token".to_owned(), access.to_owned()),
+            ("supabase_refresh_token".to_owned(), refresh.to_owned()),
+            ("supabase_account_id".to_owned(), user_id.to_owned()),
+            ("supabase_account_email".to_owned(), email.to_owned()),
+        ];
         if value.get("email_verified").and_then(serde_json::Value::as_bool) == Some(true) {
-            <Self as SessionVault>::set_email_verified(self, true)?;
+            entries.push((format!("cenai_{account_scope}_email_verified"), "true".to_owned()));
         }
         if let Some(keys) = value.get("provider_keys").and_then(serde_json::Value::as_object) {
             for provider in ["openai", "deepseek", "claude", "gemini", "custom"] {
                 if let Some(key) = keys.get(provider).and_then(serde_json::Value::as_str) {
                     if !key.trim().is_empty() {
-                        <Self as SessionVault>::save_provider_key(self, provider, key)?;
+                        entries.push((format!("provider_api_key_{account_scope}_{provider}"), key.to_owned()));
                     }
                 }
             }
         }
+        let borrowed = entries.iter().map(|(name, secret)| (name.as_str(), secret.as_str())).collect::<Vec<_>>();
+        self.put_secrets(&borrowed)?;
         Ok(true)
     }
 
