@@ -1,5 +1,6 @@
 //! Versioned first-party app identity and per-user capability authorization contracts.
 use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
 
 const MAX_ID_BYTES: usize = 128;
 const MAX_VERSION_BYTES: usize = 64;
@@ -34,7 +35,7 @@ fn valid_scope_token(value: &str) -> bool {
         && value.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AppManifest {
     pub app_id: String,
     pub publisher_id: String,
@@ -122,7 +123,7 @@ impl AppManifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UserCapabilityGrant {
     /// Immutable authenticated account identifier; never an email or app-provided label.
     pub user_scope: String,
