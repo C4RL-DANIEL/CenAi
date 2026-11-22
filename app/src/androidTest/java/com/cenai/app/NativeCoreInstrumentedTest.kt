@@ -71,6 +71,7 @@ class NativeCoreInstrumentedTest {
         assertTrue(NativeCore.googleOAuthAccessTokenUsable("access", "61001", 1000L))
         assertTrue(!NativeCore.googleOAuthAccessTokenUsable("access", "61000", 1000L))
         assertTrue(!NativeCore.googleOAuthAccessTokenUsable("", "999999", 1000L))
+        assertEquals("first title", NativeCore.conversationTitle("[{\"role\":\"user\",\"content\":\"first title\"}]"))
 
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
