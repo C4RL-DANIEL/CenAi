@@ -431,6 +431,22 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "execute_ready".into()));
             }
+            if !plan.events.is_empty() {
+                ui.collapsing(format!("Execution history · {} events", plan.events.len()), |ui| {
+                    for event in plan.events.iter().rev().take(12) {
+                        let step_label = event.step_id.map(|id| format!("Step #{id}")).unwrap_or_else(|| "Plan".into());
+                        let detail = event.detail.as_deref().unwrap_or("");
+                        ui.label(text(
+                            format!("{} · {} · {:?}{}", event.sequence, step_label, event.kind,
+                                if detail.is_empty() { String::new() } else { format!(" — {detail}") }),
+                            9.0, egui::Color32::from_rgb(163, 174, 203),
+                        ));
+                    }
+                    if plan.events.len() > 12 {
+                        ui.label(text("Showing the latest 12 events; older events remain saved until history rolls over.", 9.0, egui::Color32::from_rgb(140, 154, 190)));
+                    }
+                });
+            }
             for step in &plan.steps {
                 ui.separator();
                 ui.horizontal(|ui| {
