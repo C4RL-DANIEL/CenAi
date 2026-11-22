@@ -111,4 +111,32 @@ class AccountIsolationInstrumentedTest {
         other.edit().clear().apply()
     }
 
+
+    @Test
+    fun legacyConversationHistoryMigratesEncryptedToMatchingAccount() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val vault = SecureKeyStore(context)
+        val global = context.getSharedPreferences("cenai_private", android.content.Context.MODE_PRIVATE)
+        val legacyHistory = context.getSharedPreferences("cenai_history", android.content.Context.MODE_PRIVATE)
+        val scopedHistory = context.getSharedPreferences("cenai_history_legacy-owner", android.content.Context.MODE_PRIVATE)
+        global.edit().clear().apply()
+        legacyHistory.edit().clear().apply()
+        scopedHistory.edit().clear().apply()
+        vault.put("supabase_user_id", "legacy-owner")
+        legacyHistory.edit().putString(
+            "conversations",
+            """[{"id":"legacy-chat","title":"Legacy chat","updatedAt":1,"messages":[{"role":"user","content":"Old private history"}]}]"""
+        ).apply()
+
+        val migrated = ChatStore(context, "legacy-owner").load()
+        assertEquals(listOf("legacy-chat"), migrated.map { it.id })
+        val encrypted = scopedHistory.getString("conversations", "").orEmpty()
+        assertTrue(encrypted.isNotBlank() && !encrypted.trimStart().startsWith("["))
+        assertTrue(legacyHistory.getString("conversations", null) == null)
+
+        global.edit().clear().apply()
+        legacyHistory.edit().clear().apply()
+        scopedHistory.edit().clear().apply()
+    }
+
 }
