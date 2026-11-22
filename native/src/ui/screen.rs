@@ -536,12 +536,12 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                                 state.pending_plan_action = Some((plan.id.clone(), step.id, "deny".into()));
                             }
                         }
-                        crate::core::agents::StepStatus::Blocked if !plan.stopped => {
+                        crate::core::agents::StepStatus::Blocked if !plan.stopped && !plan.is_paused() => {
                             if ui.button("Retry after resolving blocker").clicked() {
                                 state.pending_plan_action = Some((plan.id.clone(), step.id, "retry_blocked".into()));
                             }
                         }
-                        crate::core::agents::StepStatus::Failed if !plan.stopped => {
+                        crate::core::agents::StepStatus::Failed if !plan.stopped && !plan.is_paused() => {
                             if ui.button("Retry failed step").clicked() {
                                 state.pending_plan_action = Some((plan.id.clone(), step.id, "retry_failed".into()));
                             }
