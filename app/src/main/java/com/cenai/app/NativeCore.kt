@@ -108,4 +108,7 @@ object NativeCore {
 
     /** Reads the canonical provider registry owned by Rust. */
     external fun providerMetadata(name: String): String
+
+    /** Compares release versions in Rust for safe update decisions. */
+    external fun compareVersions(left: String, right: String): Int
 }
