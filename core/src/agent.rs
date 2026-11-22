@@ -502,3 +502,36 @@ mod agent_step_tests {
         assert_eq!(tool_turn["name"], "calculate");
     }
 }
+
+/// Upper bound for tool cycles in one agent turn.
+pub const MAX_AGENT_STEPS: i32 = 4;
+
+pub fn tool_continuation_prompt(tool_name: &str, output: &str, scheduled: bool) -> String {
+    if scheduled {
+        format!("Tool result for {tool_name}: {output}\nContinue the task. Use another safe tool if needed, otherwise provide the final answer.")
+    } else {
+        format!("Tool result for {tool_name}: {output}\nContinue the task. If another safe tool is needed, request it using the same tool-call format.")
+    }
+}
+
+pub fn step_limit_message(last_output: &str, scheduled: bool) -> String {
+    if scheduled {
+        format!("The scheduled agent reached its four-step tool limit. Last model output: {}", last_output.chars().take(2_000).collect::<String>())
+    } else {
+        "Agent step limit reached. Ask me to continue if needed.".to_owned()
+    }
+}
+
+#[cfg(test)]
+mod orchestration_policy_tests {
+    use super::{step_limit_message, tool_continuation_prompt, MAX_AGENT_STEPS};
+
+    #[test]
+    fn keeps_agent_execution_bounded_and_contextual() {
+        assert_eq!(MAX_AGENT_STEPS, 4);
+        assert!(tool_continuation_prompt("calculate", "14", false).contains("same tool-call format"));
+        assert!(tool_continuation_prompt("calculate", "14", true).contains("final answer"));
+        assert!(step_limit_message("last", false).contains("Ask me to continue"));
+        assert!(step_limit_message(&"x".repeat(2_100), true).len() < 2_100);
+    }
+}
