@@ -86,7 +86,11 @@ impl AgentToolRuntime {
             ToolRisk::Sensitive => OperationClass::Sensitive,
             ToolRisk::Destructive => OperationClass::Destructive,
         };
-        if approval_policy(class, approval_granted) != ApprovalDecision::Allow {
+        // A safe tool can run only because it is explicitly present in this
+        // app-owned allow-list; sensitive/destructive tools still require a
+        // separate per-action user approval.
+        let explicitly_granted = definition.risk == ToolRisk::Safe || approval_granted;
+        if approval_policy(class, explicitly_granted) != ApprovalDecision::Allow {
             return execution(name, arguments, "User approval is required.", true, false);
         }
         let result = match name {
