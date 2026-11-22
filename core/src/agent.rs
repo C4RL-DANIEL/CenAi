@@ -235,8 +235,6 @@ pub fn parse_tool_call(response: &str) -> Result<String, String> {
         .filter(serde_json::Value::is_object)
         .unwrap_or_else(|| serde_json::json!({}));
     Ok(serde_json::json!({"name":name,"arguments":arguments}).to_string())
-
-    Ok(serde_json::json!({"name":name,"arguments":arguments}).to_string())
 }
 
 #[cfg(test)]
