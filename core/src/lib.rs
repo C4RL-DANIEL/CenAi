@@ -6,7 +6,7 @@ pub mod context;
 pub mod auth;
 
 use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
+use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 /// Converts a Java string without allowing a JNI conversion error to unwind across the ABI.
