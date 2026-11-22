@@ -68,6 +68,9 @@ class NativeCoreInstrumentedTest {
         assertTrue(NativeCore.buildToolContinuationPrompt("calculate", "14", false).contains("same tool-call format"))
         assertTrue(NativeCore.buildToolContinuationPrompt("calculate", "14", true).contains("final answer"))
         assertTrue(NativeCore.agentStepLimitMessage("last", false).contains("Ask me to continue"))
+        assertTrue(NativeCore.googleOAuthAccessTokenUsable("access", "61001", 1000L))
+        assertTrue(!NativeCore.googleOAuthAccessTokenUsable("access", "61000", 1000L))
+        assertTrue(!NativeCore.googleOAuthAccessTokenUsable("", "999999", 1000L))
 
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
