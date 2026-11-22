@@ -14,6 +14,9 @@ object NativeCore {
     /** Evaluates bounded arithmetic in the Rust core; errors are prefixed with ERROR:. */
     external fun evaluateArithmetic(expression: String): String
 
+    /** Executes deterministic safe agent tools in Rust. */
+    external fun executeSafeTool(name: String, argumentsJson: String, localTime: String, localDate: String): String
+
     /** Enforces the Rust tool allowlist and approval policy. */
     external fun evaluateToolPolicy(name: String, enabledToolsJson: String): String
 
