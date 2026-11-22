@@ -13,6 +13,14 @@ use winit::platform::android::activity::AndroidApp;
 use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
 
+fn latest_goal_for_offline(conversation: &crate::ui::model::ConversationState) -> String {
+    conversation.messages()
+        .filter(|message| message.role == MessageRole::User)
+        .map(|message| message.body.clone())
+        .last()
+        .unwrap_or_default()
+}
+
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
     let records = memories.iter().filter_map(|memory| {
         let content = memory.get("content").and_then(serde_json::Value::as_str)?.trim();
@@ -777,7 +785,30 @@ impl WgpuRenderer {
         self.app_state.conversation.sending = true;
 
         let Some(api) = self.api.clone() else {
-            let _ = self.response_tx.send(ChatEvent::Finished(self.account_generation, message_id, Err("The account service is not initialized.".into())));
+            let prompt = latest_goal_for_offline(&self.app_state.conversation);
+            let generation = self.account_generation;
+            let sender = self.response_tx.clone();
+            #[cfg(target_os = "android")]
+            {
+                let app = self.android_app.clone();
+                let task = self.runtime.spawn(async move {
+                    let result = match tokio::task::spawn_blocking(move || lightning_generate(app, &prompt)).await {
+                        Ok(Ok(answer)) if !answer.trim().is_empty() => {
+                            let _ = sender.send(ChatEvent::Delta(generation, message_id, answer.clone()));
+                            Ok(answer)
+                        }
+                        Ok(Ok(_)) => Err("Lightning returned an empty response.".into()),
+                        Ok(Err(error)) => Err(format!("Lightning offline inference failed: {error}")),
+                        Err(error) => Err(format!("Lightning worker failed: {error}")),
+                    };
+                    let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
+                });
+                self.track_task(task);
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                let _ = sender.send(ChatEvent::Finished(generation, message_id, Err("The account service is not initialized.".into())));
+            }
             return;
         };
         let latest_goal = self.app_state.conversation.messages()
@@ -843,6 +874,10 @@ impl WgpuRenderer {
             let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
             let selected_provider = provider.clone();
             let goal = latest_goal.clone();
+            let offline_prompt = latest_goal.clone();
+            let fallback_sender = sender.clone();
+            #[cfg(target_os = "android")]
+            let lightning_app = self.android_app.clone();
             let task = self.runtime.spawn(async move {
                 let result = async {
                     let mut request = request;
@@ -878,6 +913,29 @@ impl WgpuRenderer {
                         },
                     }
                 }.await;
+                let result = match result {
+                    Ok(answer) => Ok(answer),
+                    Err(cloud_error) => {
+                        #[cfg(target_os = "android")]
+                        {
+                            match tokio::task::spawn_blocking(move || lightning_generate(lightning_app, &offline_prompt)).await {
+                                Ok(Ok(answer)) if !answer.trim().is_empty() => {
+                                    let _ = fallback_sender.send(ChatEvent::Delta(generation, message_id, answer.clone()));
+                                    Ok(answer)
+                                }
+                                Ok(Ok(_)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning returned an empty response.")),
+                                Ok(Err(local_error)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning offline fallback failed ({local_error}).")),
+                                Err(join_error) => Err(format!("Cloud AI failed ({cloud_error}); Lightning worker failed ({join_error}).")),
+                            }
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            let _ = fallback_sender;
+                            let _ = offline_prompt;
+                            Err(cloud_error)
+                        }
+                    }
+                };
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
             self.track_task(task);
