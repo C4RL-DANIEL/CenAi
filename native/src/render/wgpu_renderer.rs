@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::TaskPlan, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::{lightning_generate, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
@@ -307,8 +307,36 @@ impl WgpuRenderer {
         renderer.audio_capture = Some(AndroidAudioCapture::new(android_app.clone()));
         renderer.audio_playback = Some(AndroidAudioPlayback::new(android_app.clone()));
         renderer.android_app = Some(android_app);
+        renderer.sync_android_automation_reminders();
         Ok(renderer)
     }
+
+    #[cfg(target_os = "android")]
+    fn sync_android_automation_reminders(&self) {
+        let Some(app) = self.android_app.clone() else { return; };
+        let now = chrono::Utc::now();
+        for automation in &self.app_state.automations {
+            if !automation.enabled {
+                cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
+                continue;
+            }
+            let next = automation.pending_scheduled_at
+                .and_then(|timestamp| chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0))
+                .or_else(|| automation.next_run_after(now).ok().flatten());
+            if let Some(next) = next {
+                let delay = (next - now).num_milliseconds().max(0) as u64;
+                schedule_automation_reminder(
+                    app.clone(), automation.owner_scope.clone(), automation.id.clone(),
+                    automation.title.clone(), delay,
+                );
+            } else {
+                cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn sync_android_automation_reminders(&self) {}
 
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
