@@ -142,6 +142,20 @@ impl TaskPlan {
         Ok(())
     }
 
+    /// Re-queues a blocked step after the user has resolved its external blocker.
+    /// The old blocker explanation is cleared so a new execution cannot inherit stale output.
+    pub fn retry_blocked_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let ready = self.steps.iter().find(|step| step.id == step_id)
+            .is_some_and(|step| step.status == StepStatus::Blocked
+                && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
+        if !ready { return Err("Only a blocked step with completed prerequisites can be retried"); }
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        step.status = StepStatus::Pending;
+        step.output = None;
+        Ok(())
+    }
+
     pub fn fail_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
         if step.status != StepStatus::Running { return Err("Only a running task step can fail"); }
@@ -316,6 +330,37 @@ mod tests {
         assert!(plan.validate_persisted().is_ok());
         plan.steps[0].output = None;
         assert!(plan.validate_persisted().is_err());
+    }
+
+    #[test]
+    fn blocked_step_can_be_retried_only_after_blocker_resolution_and_clears_stale_output() {
+        let mut plan = TaskPlan {
+            id: "task-retry".into(), goal: "Perform a protected action".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Perform external action".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify action".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+        plan.begin_step(1).unwrap();
+        plan.steps[0].output = Some("Waiting for user permission".into());
+        plan.block_step(1).unwrap();
+        plan.retry_blocked_step(1).unwrap();
+        assert_eq!(plan.steps[0].status, StepStatus::Pending);
+        assert_eq!(plan.steps[0].output, None);
+        assert_eq!(plan.ready_steps(), vec![1]);
+        assert!(plan.retry_blocked_step(1).is_err());
+        plan.begin_step(1).unwrap();
+        plan.complete_step(1).unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+    }
+
+    #[test]
+    fn stopped_plans_cannot_retry_blocked_steps() {
+        let mut plan = TaskPlan {
+            id: "task-stopped-retry".into(), goal: "Recover".into(), stopped: true,
+            steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Recover".into(), status: StepStatus::Blocked, depends_on: vec![], output: Some("Blocked".into()) }],
+        };
+        assert!(plan.retry_blocked_step(1).is_err());
     }
 
     #[test]

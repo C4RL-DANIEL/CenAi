@@ -1363,6 +1363,7 @@ impl WgpuRenderer {
                 if let Some(index) = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id) {
                     let mut updated = self.app_state.task_plans[index].clone();
                     let transition = match action.as_str() {
+                        "retry_blocked" => updated.retry_blocked_step(step_id),
                         "start" => updated.begin_step(step_id),
                         "request_approval" => updated.request_step_approval(step_id),
                         "approve" => updated.resolve_step_approval(step_id, true),
@@ -1385,6 +1386,7 @@ impl WgpuRenderer {
                                     Ok(_) => {
                                         self.app_state.task_plans[index] = updated;
                                         self.app_state.plan_status = match action.as_str() {
+                                            "retry_blocked" => format!("Step {step_id} re-queued. Review the blocker above, resolve it, then run with AI again."),
                                             "start" => format!("Step {step_id} marked as started. CenAI has not performed external actions."),
                                             "request_approval" => format!("Step {step_id} is waiting for your approval."),
                                             "approve" => format!("Step {step_id} approved. It is ready for you to start."),
