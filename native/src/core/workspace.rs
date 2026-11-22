@@ -1435,7 +1435,8 @@ mod legacy_history_workspace_tests {
         let store = WorkspaceStore::new(&root, owner).unwrap();
         let legacy = r#"[{"id":"old-chat-1","title":"My old chat","updatedAt":1700000000123,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"welcome"}]},{"id":"old-chat-2","title":"Another chat","updatedAt":1700000000999,"ownerEmail":"owner@example.com","messages":[]}]"#;
         assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 2);
-        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 0);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 0);
+        assert!(store.import_legacy_conversations(legacy, "another@example.com").is_err());
         let catalog = store.list_conversations().unwrap();
         assert_eq!(catalog.len(), 2);
         assert_eq!(catalog[0].id, "old-chat-2");
@@ -1471,8 +1472,8 @@ mod legacy_history_workspace_tests {
             id: 1, role: crate::ui::model::MessageRole::User, body: "Rust version".into(), streaming: false,
         }]).unwrap();
         let legacy = r#"[{"id":"same-id","title":"Legacy","updatedAt":22,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"old version"}]}]"#;
-        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 1);
-        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 0);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 1);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 0);
         assert_eq!(store.load_conversation("same-id").unwrap()[0].body, "Rust version");
         let _ = fs::remove_dir_all(root);
     }
