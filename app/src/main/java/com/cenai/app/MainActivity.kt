@@ -1,19 +1,33 @@
 package com.cenai.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* Permission is optional; background task notifications are best-effort when denied. */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         GuardianMonitor(applicationContext).installCrashRecorder()
         GuardianWorker.schedule(applicationContext)
         val vault = SecureKeyStore(applicationContext)
         setContent { CenAiScreen(vault) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         handleOAuthCallback(intent, vault)
     }
 
