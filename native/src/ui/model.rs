@@ -294,6 +294,10 @@ pub struct AppState {
     pub pending_automation_save: bool,
     pub pending_automation_toggle: Option<(String, bool)>,
     pub pending_automation_delete: Option<String>,
+    /// One-shot user-requested plan transition: (plan ID, step ID, action).
+    /// Step ID zero is reserved for plan-level actions such as stopping a plan.
+    pub pending_plan_action: Option<(String, u64, String)>,
+    pub plan_status: String,
 }
 
 impl Default for AppState {
@@ -363,6 +367,8 @@ impl Default for AppState {
             pending_automation_save: false,
             pending_automation_toggle: None,
             pending_automation_delete: None,
+            pending_plan_action: None,
+            plan_status: String::new(),
             account_email: String::new(),
             email_verified: false,
             mfa_factors: Vec::new(),
