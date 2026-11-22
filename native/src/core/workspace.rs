@@ -1207,7 +1207,7 @@ mod encrypted_workspace_tests {
             granted_scopes: std::collections::HashSet::from(["notes.admin".into()]),
             revoked: true,
         };
-        assert!(store.save_ecosystem_state(&[manifest.clone()], &[], &[], 1).is_err());
+        assert!(store.save_ecosystem_state(std::slice::from_ref(&manifest), &[], &[], 1).is_err());
         let trusted = vec!["untrusted.publisher".to_owned()];
         assert!(store.save_ecosystem_state(&[manifest], &[grant], &trusted, 1).is_err());
         let _ = fs::remove_dir_all(root);
