@@ -607,6 +607,15 @@ impl WorkspaceStore {
                 return Err("Ecosystem grant exceeds the registered manifest scopes".into());
             }
         }
+        let _guard = self.lock_index()?;
+        self.write_ecosystem_state_unlocked(manifests, grants)
+    }
+
+    fn write_ecosystem_state_unlocked(
+        &self,
+        manifests: &[AppManifest],
+        grants: &[UserCapabilityGrant],
+    ) -> Result<(), String> {
         let state = EcosystemState {
             schema_version: 1,
             manifests: manifests.to_vec(),
@@ -616,8 +625,51 @@ impl WorkspaceStore {
         if bytes.len() > 2 * 1024 * 1024 {
             return Err("Ecosystem Engine registry exceeds the 2 MiB storage limit".into());
         }
-        let _guard = self.lock_index()?;
         self.write_atomic(&self.user_root.join("ecosystem").join("registry.json"), &bytes)
+    }
+
+    /// Grant a bounded set of scopes to one app for this authenticated account.
+    pub fn grant_ecosystem_scopes(
+        &self,
+        app_id: &str,
+        scopes: &[String],
+        trusted_publishers: &[String],
+        supported_protocol: u16,
+    ) -> Result<UserCapabilityGrant, String> {
+        let _guard = self.lock_index()?;
+        let (manifests, mut grants) = self.load_ecosystem_state()?;
+        let mut registry = CapabilityRegistry::new(trusted_publishers.iter().cloned());
+        for manifest in &manifests {
+            registry.register(manifest.clone(), supported_protocol)
+                .map_err(|error| format!("App manifest is not trusted: {error:?}"))?;
+        }
+        let grant = registry.create_grant(&self.user_identity, app_id, scopes.iter().cloned())
+            .map_err(|error| format!("Cannot grant requested app scopes: {error:?}"))?;
+        grants.retain(|existing| existing.app_id != app_id);
+        grants.push(grant.clone());
+        self.write_ecosystem_state_unlocked(&manifests, &grants)?;
+        Ok(grant)
+    }
+
+    /// Revoke all capabilities for one app without affecting other apps or accounts.
+    pub fn revoke_ecosystem_app(
+        &self,
+        app_id: &str,
+        trusted_publishers: &[String],
+        supported_protocol: u16,
+    ) -> Result<(), String> {
+        let _guard = self.lock_index()?;
+        let (manifests, mut grants) = self.load_ecosystem_state()?;
+        let mut registry = CapabilityRegistry::new(trusted_publishers.iter().cloned());
+        for manifest in &manifests {
+            registry.register(manifest.clone(), supported_protocol)
+                .map_err(|error| format!("App manifest is not trusted: {error:?}"))?;
+        }
+        let grant = grants.iter_mut().find(|grant| grant.app_id == app_id)
+            .ok_or("No grant exists for this app")?;
+        registry.revoke_grant(&self.user_identity, grant)
+            .map_err(|error| format!("Cannot revoke app grant: {error:?}"))?;
+        self.write_ecosystem_state_unlocked(&manifests, &grants)
     }
 
     /// Check a stored user grant against the current trusted manifest registry.
@@ -1210,6 +1262,32 @@ mod encrypted_workspace_tests {
         assert!(store.save_ecosystem_state(std::slice::from_ref(&manifest), &[], &[], 1).is_err());
         let trusted = vec!["untrusted.publisher".to_owned()];
         assert!(store.save_ecosystem_state(&[manifest], &[grant], &trusted, 1).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+
+    #[test]
+    fn ecosystem_workspace_grant_and_revoke_are_atomic_and_account_scoped() {
+        let root = temp_root();
+        let user = "550e8400-e29b-41d4-a716-446655440034";
+        let store = WorkspaceStore::new(&root, user).unwrap();
+        let manifest = AppManifest {
+            app_id: "com.cenai.notes".into(),
+            publisher_id: "cenai.firstparty".into(),
+            version: "1.0.0".into(),
+            protocol_version: 1,
+            capabilities: vec!["notes.read".into(), "notes.write".into()],
+            requested_scopes: vec!["notes.read".into()],
+        };
+        let trusted = vec!["cenai.firstparty".to_owned()];
+        store.save_ecosystem_state(std::slice::from_ref(&manifest), &[], &trusted, 1).unwrap();
+        let grant = store.grant_ecosystem_scopes("com.cenai.notes", &["notes.read".into()], &trusted, 1).unwrap();
+        assert!(store.ecosystem_authorized("com.cenai.notes", "notes.read", &trusted, 1).unwrap());
+        assert!(!store.ecosystem_authorized("com.cenai.notes", "notes.write", &trusted, 1).unwrap());
+        assert!(store.grant_ecosystem_scopes("com.cenai.notes", &["notes.write".into()], &trusted, 1).is_err());
+        store.revoke_ecosystem_app("com.cenai.notes", &trusted, 1).unwrap();
+        assert!(!store.ecosystem_authorized("com.cenai.notes", "notes.read", &trusted, 1).unwrap());
+        assert!(grant.granted_scopes.contains("notes.read"));
         let _ = fs::remove_dir_all(root);
     }
 
