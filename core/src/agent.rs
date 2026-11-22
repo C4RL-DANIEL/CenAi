@@ -182,12 +182,6 @@ pub fn tool_policy(name: &str, enabled_tools_json: &str) -> Result<String, Strin
         "risk": risk,
         "requires_approval": allowed && risk != "safe"
     }).to_string())
-
-    Ok(json!({
-        "allowed": allowed,
-        "risk": risk,
-        "requires_approval": allowed && risk != "safe"
-    }).to_string())
 }
 
 #[cfg(test)]
