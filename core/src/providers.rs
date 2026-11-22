@@ -605,7 +605,7 @@ mod cloud_response_tests {
 
 
 pub fn contains_image_marker(content: &str) -> bool {
-    vision_parts(content).iter().any(|(kind, _)| kind == "image")
+    vision_parts(content).iter().any(|(kind, _)| kind != "text")
 }
 
 #[cfg(test)]
