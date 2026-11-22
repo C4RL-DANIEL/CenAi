@@ -59,7 +59,7 @@ pub(crate) fn execute_approved_agent_action(app: AndroidApp, name: String, argum
             let Some(url) = arguments.get("url").and_then(serde_json::Value::as_str) else {
                 log::warn!("Rejected approved URL action with invalid arguments"); return;
             };
-            if url.len() > 4096 || !url::Url::parse(url).ok().is_some_and(|parsed| {
+            if url.len() > 4096 || !reqwest::Url::parse(url).ok().is_some_and(|parsed| {
                 matches!(parsed.scheme(), "https" | "http") && parsed.host_str().is_some()
                     && parsed.username().is_empty() && parsed.password().is_none()
             }) {
