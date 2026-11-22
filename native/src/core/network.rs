@@ -152,6 +152,91 @@ impl CenAiApi {
         self.vault.account_email()
     }
 
+    /// Checks the official CenAI GitHub releases feed using strict Rust metadata validation.
+    pub async fn check_for_update(
+        &self,
+        current_version: &str,
+        include_prerelease: bool,
+    ) -> Result<Option<crate::core::updates::UpdateInfo>, String> {
+        let response = self.client.get("https://api.github.com/repos/C4RL-DANIEL/CenAi/releases?per_page=30")
+            .header(header::ACCEPT, "application/vnd.github+json")
+            .header(header::USER_AGENT, concat!("CenAI/", env!("CARGO_PKG_VERSION")))
+            .send().await.map_err(|error| format!("Update check failed: {error}"))?;
+        if response.status() == StatusCode::NOT_FOUND { return Ok(None); }
+        if !response.status().is_success() {
+            return Err(format!("Update check failed (HTTP {}).", response.status().as_u16()));
+        }
+        let bytes = response.bytes().await.map_err(|error| format!("Update metadata download failed: {error}"))?;
+        if bytes.len() > 1024 * 1024 { return Err("Update metadata exceeds the supported size limit.".into()); }
+        let body = std::str::from_utf8(&bytes).map_err(|_| "Update metadata is not valid UTF-8")?;
+        crate::core::updates::parse_latest_release(body, current_version, include_prerelease)
+            .map_err(str::to_owned)
+    }
+
+    /// Streams an update to a private cache path, enforces a size bound and verifies
+    /// SHA-256 before atomically making the APK available to the Android installer.
+    pub async fn download_update_to(
+        &self,
+        info: &crate::core::updates::UpdateInfo,
+        destination: &std::path::Path,
+    ) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        if !crate::core::updates::valid_release_download_url(&info.download_url) {
+            return Err("Update download URL is not an official CenAI release asset.".into());
+        }
+        if info.sha256.len() != 64 || !info.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("Update SHA-256 digest is invalid.".into());
+        }
+        let temporary = destination.with_extension("apk.part");
+        let _ = tokio::fs::remove_file(&temporary).await;
+        let result = async {
+            let response = self.client.get(&info.download_url).send().await
+                .map_err(|error| format!("APK download failed: {error}"))?;
+            if !response.status().is_success() {
+                return Err(format!("APK download failed (HTTP {}).", response.status().as_u16()));
+            }
+            let final_url = response.url();
+            let final_host = final_url.host_str().unwrap_or_default();
+            if final_url.scheme() != "https" || !matches!(final_host,
+                "github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com") {
+                return Err("APK download redirected outside GitHub's trusted release hosts.".into());
+            }
+            if response.content_length().is_some_and(|size| size == 0 || size > crate::core::updates::MAX_UPDATE_APK_BYTES) {
+                return Err("APK download size is outside the supported range.".into());
+            }
+            let mut file = tokio::fs::OpenOptions::new().write(true).create_new(true)
+                .open(&temporary).await.map_err(|error| format!("Could not create update cache file: {error}"))?;
+            let mut stream = response.bytes_stream();
+            let mut digest = Sha256::new();
+            let mut total = 0u64;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|error| format!("APK download stream failed: {error}"))?;
+                total = total.saturating_add(chunk.len() as u64);
+                if total > crate::core::updates::MAX_UPDATE_APK_BYTES
+                    || info.size.is_some_and(|expected| total > expected) {
+                    return Err("APK download exceeded its declared or supported size.".into());
+                }
+                digest.update(&chunk);
+                file.write_all(&chunk).await.map_err(|error| format!("Could not write update cache: {error}"))?;
+            }
+            if total == 0 || info.size.is_some_and(|expected| total != expected) {
+                return Err("Downloaded APK size does not match the release metadata.".into());
+            }
+            file.sync_all().await.map_err(|error| format!("Could not sync update cache: {error}"))?;
+            drop(file);
+            let actual = digest.finalize();
+            let actual_hex = actual.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+            if !actual_hex.eq_ignore_ascii_case(&info.sha256) {
+                return Err("APK SHA-256 verification failed. The downloaded file was rejected.".into());
+            }
+            tokio::fs::rename(&temporary, destination).await
+                .map_err(|error| format!("Could not finalize verified APK: {error}"))?;
+            Ok(())
+        }.await;
+        if result.is_err() { let _ = tokio::fs::remove_file(&temporary).await; }
+        result
+    }
+
     /// Returns the immutable account UUID received from Supabase, never an email-derived identity.
     pub fn account_id(&self) -> Result<String, String> {
         self.vault.account_id()
