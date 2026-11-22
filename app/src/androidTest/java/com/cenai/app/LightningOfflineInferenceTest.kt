@@ -1,0 +1,35 @@
+package com.cenai.app
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class LightningOfflineInferenceTest {
+    @Test
+    fun bundledLightningModelLoadsAndGeneratesWithoutNetwork() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = LocalModelRuntime(context)
+        try {
+            assertTrue("The APK must contain the bundled Lightning model.", runtime.installBundledModelIfMissing())
+            assertEquals(613_722_264L, runtime.modelSizeBytes())
+
+            val response = withTimeout(180_000L) {
+                runtime.stream(
+                    listOf(
+                        ChatMessage("system", "You are CenAI, a concise private on-device assistant. Reply briefly."),
+                        ChatMessage("user", "Reply with one short greeting.")
+                    )
+                ) { /* The smoke test validates local generation; no network callback is installed. */ }
+            }
+            assertTrue("Offline Lightning inference returned an empty response.", response.isNotBlank())
+        } finally {
+            runtime.release()
+        }
+    }
+}
