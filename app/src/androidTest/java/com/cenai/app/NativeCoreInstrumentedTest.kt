@@ -49,6 +49,13 @@ class NativeCoreInstrumentedTest {
         val transport = JSONObject(NativeCore.buildProviderRequestConfig("GEMINI", "gemini-test", "key", false, "", "{}"))
         assertTrue(transport.getString("url").contains("gemini-test"))
         assertEquals("key", transport.getJSONObject("headers").getString("x-goog-api-key"))
+        val openAiProvider = JSONObject(NativeCore.providerMetadata("OPENAI"))
+        assertEquals("OpenAI", openAiProvider.getString("label"))
+        assertEquals("gpt-4.1-mini", openAiProvider.getString("model"))
+        assertEquals(1, NativeCore.compareVersions("v1.2.0+build.1", "1.1.9"))
+        assertEquals(-1, NativeCore.compareVersions("1.0.0-beta.1", "1.0.0"))
+        assertEquals(0, NativeCore.compareVersions("1.0.0+first", "1.0.0+second"))
+
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
             NativeCore.buildProviderPayload("OPENAI", "test-model", 128, messages.toString(), "{}")
