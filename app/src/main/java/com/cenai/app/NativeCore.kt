@@ -20,6 +20,9 @@ object NativeCore {
     /** Returns the Rust-owned agent tool catalog and schemas. */
     external fun listAgentTools(enabledToolsJson: String): String
 
+    /** Builds safe foreground/background tool-use instructions in Rust. */
+    external fun buildToolGuide(enabledToolsJson: String, planningEnabled: Boolean, allowDeviceActions: Boolean): String
+
     /** Enforces the Rust tool allowlist and approval policy. */
     external fun evaluateToolPolicy(name: String, enabledToolsJson: String): String
 
