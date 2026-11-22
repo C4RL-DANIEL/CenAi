@@ -788,3 +788,14 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_validateEmailOtp(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_containsImageMarker(
+    mut env: JNIEnv,
+    _class: JClass,
+    content: JString,
+) -> jboolean {
+    let Some(content_value) = read_java_string(&mut env, &content) else { return 0; };
+    if providers::contains_image_marker(&content_value) { 1 } else { 0 }
+}
