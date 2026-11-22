@@ -174,7 +174,7 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                 for (id, title) in &history_items {
                     let label = if title.trim().is_empty() { "New chat" } else { title.as_str() };
                     let selected = state.active_conversation_id == *id;
-                    if ui.selectable_label(selected, label).clicked() && !selected {
+                    if !state.conversation.sending && ui.selectable_label(selected, label).clicked() && !selected {
                         state.pending_conversation_switch = Some(id.clone());
                     }
                 }
