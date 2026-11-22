@@ -17,6 +17,9 @@ class AgentRuntime(
     private val arithmeticEvaluator: (String) -> Double = SafeArithmetic::evaluate,
     private val policyEvaluator: (String, String) -> String = { name, enabledJson ->
         NativeCore.evaluateToolPolicy(name, enabledJson)
+    },
+    private val toolCallParser: (String) -> String = { response ->
+        NativeCore.parseAgentToolCall(response)
     }
 ) {
     private val tools = listOf(
@@ -37,14 +40,12 @@ class AgentRuntime(
     )
     fun availableTools(): List<AgentTool> = tools.filter { enabledTools == null || it.name in enabledTools }
     fun parseToolCall(response: String): Pair<String, JSONObject>? {
-        val marker = "[[CENAI_TOOL_CALL]]"
-        val closing = "[[/CENAI_TOOL_CALL]]"
-        val start = response.indexOf(marker)
-        if (start < 0) return null
-        val end = response.indexOf(closing, start + marker.length)
-        if (end < 0) return null
-        val payload = JSONObject(response.substring(start + marker.length, end).trim())
-        return payload.getString("name") to payload.optJSONObject("arguments").orEmptyJson()
+        val encoded = runCatching { toolCallParser(response) }.getOrDefault("")
+        if (encoded.isBlank()) return null
+        val payload = runCatching { JSONObject(encoded) }.getOrNull() ?: return null
+        if (payload.optString("error").isNotBlank()) return null
+        val name = payload.optString("name").takeIf { it.isNotBlank() } ?: return null
+        return name to payload.optJSONObject("arguments").orEmptyJson()
     }
     private fun JSONObject?.orEmptyJson() = this ?: JSONObject()
     fun execute(name: String, args: JSONObject, approvalGranted: Boolean = false): ToolExecution {
