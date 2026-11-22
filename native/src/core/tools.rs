@@ -61,12 +61,15 @@ impl AgentToolRuntime {
 
     pub fn parse_tool_call(&self, response: &str) -> Result<Option<ToolCall>, &'static str> {
         if response.len() > MAX_TOOL_RESPONSE_BYTES { return Err("Tool response exceeds the 32 KiB limit"); }
-        let Some(start) = response.find(TOOL_CALL_OPEN) else { return Ok(None); };
-        let body_start = start + TOOL_CALL_OPEN.len();
-        let Some(relative_end) = response[body_start..].find(TOOL_CALL_CLOSE) else {
-            return Err("Tool call closing marker is missing");
-        };
-        let raw = response[body_start..body_start + relative_end].trim();
+        let response = response.trim();
+        if !response.contains(TOOL_CALL_OPEN) { return Ok(None); }
+        if !response.starts_with(TOOL_CALL_OPEN) || !response.ends_with(TOOL_CALL_CLOSE)
+            || response.matches(TOOL_CALL_OPEN).count() != 1
+            || response.matches(TOOL_CALL_CLOSE).count() != 1 {
+            return Err("A tool call must contain exactly one complete marker pair and no surrounding text");
+        }
+        let body_start = TOOL_CALL_OPEN.len();
+        let raw = response[body_start..response.len() - TOOL_CALL_CLOSE.len()].trim();
         let payload: Value = serde_json::from_str(raw).map_err(|_| "Tool call JSON is invalid")?;
         let object = payload.as_object().ok_or("Tool call must be a JSON object")?;
         let name = object.get("name").and_then(Value::as_str).ok_or("Tool name is required")?;
@@ -81,6 +84,9 @@ impl AgentToolRuntime {
         let Some(definition) = definition else {
             return execution(name, arguments, "Tool is disabled or not allow-listed.", false, false);
         };
+        if let Err(error) = validate_arguments(name, &arguments) {
+            return execution(name, arguments, format!("Invalid tool arguments: {error}"), false, false);
+        }
         let class = match definition.risk {
             ToolRisk::Safe => OperationClass::ReadOnly,
             ToolRisk::Sensitive => OperationClass::Sensitive,
@@ -121,6 +127,34 @@ impl AgentToolRuntime {
             Err(error) => execution(name, arguments, format!("Tool error: {error}"), false, false),
         }
     }
+}
+
+fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
+    let object = arguments.as_object().ok_or("Tool arguments must be a JSON object")?;
+    let expected: &[(&str, bool)] = match name {
+        "current_time" | "current_date" | "generate_uuid" | "open_app_settings" => &[],
+        "calculate" => &[("expression", true)],
+        "count_words" | "text_stats" | "base64_encode" | "share_text" => &[("text", true)],
+        "format_json" => &[("json", true)],
+        "base64_decode" => &[("value", true)],
+        "open_url" => &[("url", true)],
+        "open_dialer" => &[("number", true)],
+        _ => return Err("No argument contract is registered for this tool".into()),
+    };
+    if object.len() != expected.len() || expected.iter().any(|(key, required)| {
+        (*required && !object.contains_key(*key)) || object.keys().any(|actual| actual.as_str() != *key)
+    }) {
+        return Err("Tool arguments do not match the exact allow-listed schema".into());
+    }
+    for (key, _) in expected {
+        if !object.get(*key).is_some_and(Value::is_string) {
+            return Err(format!("Tool argument '{key}' must be a string"));
+        }
+        if object.get(*key).and_then(Value::as_str).is_some_and(|value| value.len() > MAX_TOOL_TEXT_BYTES) {
+            return Err("Tool text argument exceeds 64 KiB".into());
+        }
+    }
+    Ok(())
 }
 
 fn definitions() -> Vec<ToolDefinition> {
@@ -264,6 +298,14 @@ mod tests {
     }
 
     #[test]
+    fn tools_reject_extra_and_missing_arguments() {
+        let runtime = AgentToolRuntime::default();
+        assert!(!runtime.execute("calculate", json!({"expression":"1+1","unexpected":"ignored"}), false).completed);
+        assert!(!runtime.execute("current_time", json!({"unexpected":true}), false).completed);
+        assert!(!runtime.execute("base64_encode", json!({}), false).completed);
+    }
+
+    #[test]
     fn sensitive_actions_never_execute_without_approval() {
         let runtime = AgentToolRuntime::default();
         let result = runtime.execute("open_url", json!({"url":"https://example.com"}), false);
@@ -283,6 +325,7 @@ mod tests {
         let call = runtime.parse_tool_call("before [[CENAI_TOOL_CALL]]{\"name\":\"calculate\",\"arguments\":{\"expression\":\"2+2\"}}[[/CENAI_TOOL_CALL]] after").unwrap().unwrap();
         assert_eq!(call.name, "calculate");
         assert_eq!(call.arguments["expression"], "2+2");
+        assert!(runtime.parse_tool_call("prefix [[CENAI_TOOL_CALL]]{\\"name\\":\\"calculate\\",\\"arguments\\":{\\"expression\\":\\"2+2\\"}}[[/CENAI_TOOL_CALL]]").is_err());
         assert!(runtime.parse_tool_call("[[CENAI_TOOL_CALL]][][[/CENAI_TOOL_CALL]]").is_err());
     }
 }
