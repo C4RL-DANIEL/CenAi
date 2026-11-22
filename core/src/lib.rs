@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod knowledge;
 pub mod providers;
+pub mod storage;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
@@ -473,6 +474,26 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_listAgentTools(
     };
     let output = match agent::tool_catalog(&enabled_value) {
         Ok(catalog) => catalog,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_normalizeConversations(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw_json: JString,
+) -> jstring {
+    let Some(raw_value) = read_java_string(&mut env, &raw_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match storage::normalize_conversations(&raw_value) {
+        Ok(value) => value,
         Err(error) => serde_json::json!({ "error": error }).to_string(),
     };
     match env.new_string(output) {
