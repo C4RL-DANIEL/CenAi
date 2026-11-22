@@ -384,7 +384,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     var displayText = heading
                     persist(messages + ChatMessage("assistant", displayText))
                     var finished = false
-                    for (step in 0..3) {
+                    for (step in 0 until NativeCore.maxAgentSteps()) {
                         val response = if (localModelEnabled) localModelRuntime.stream(systemMessages + agentHistory) { delta ->
                             val current = messages.toMutableList()
                             val last = current.lastIndex
@@ -430,11 +430,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             break
                         }
                         agentHistory = agentHistory + ChatMessage("assistant", response) +
-                            ChatMessage("user", "Tool result for " + execution.toolName + ": " + execution.output + "\nContinue the task. If another safe tool is needed, request it using the same tool-call format.")
+                            ChatMessage("user", NativeCore.buildToolContinuationPrompt(execution.toolName, execution.output, false))
                     }
                     if (!finished) {
                         val current = messages.toMutableList()
-                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText + "\n\nAgent step limit reached. Ask me to continue if needed.")
+                        if (current.lastOrNull()?.role == "assistant") current[current.lastIndex] = ChatMessage("assistant", displayText + "\n\n" + NativeCore.agentStepLimitMessage("", false))
                         persist(current)
                     }
                     providerAnswers += "${target.label}:\n" + displayText.trim().take(8_000)
