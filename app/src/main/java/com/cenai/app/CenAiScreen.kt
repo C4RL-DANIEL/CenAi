@@ -264,25 +264,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var updateProgress by remember { mutableIntStateOf(0) }
     var updateStatus by remember { mutableStateOf("Check for the latest CenAI release.") }
     val listState = rememberLazyListState()
-    val localModelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            info = "Importing on-device model…"
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    } ?: "selected-model.litertlm"
-                    localModelRuntime.importModel(uri, displayName)
-                }
-            }
-            if (result.isSuccess) {
-                localModelReady = true
-                localModelEnabled = true
-                vault.put("local_model_enabled", "true")
-                info = "Offline model imported (${result.getOrThrow() / 1_048_576L} MB)."
-            } else info = result.exceptionOrNull()?.message ?: "Model import failed."
-            guardianSnapshot = guardian.snapshot()
-        }
+    LaunchedEffect(localModelRuntime) {
+        val ready = localModelRuntime.installBundledModelIfMissing()
+        localModelReady = ready
+        localModelEnabled = ready
+        vault.put("local_model_enabled", ready.toString())
     }
     LaunchedEffect(Unit) { appMonitor.recordEvent("app_start"); monitorSnapshot = appMonitor.snapshot() }
 
@@ -1449,12 +1435,9 @@ Text("VOICE ENGINE", color = palette.accent, fontSize = 10.sp, fontWeight = Font
 Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Private local language model", color = palette.text, fontWeight = FontWeight.SemiBold)
-                            Text(if (localModelReady) "Model installed · ${localModelRuntime.modelSizeBytes() / 1_048_576L} MB" else "No local model installed", color = if (localModelReady) palette.accent else palette.muted, fontSize = 11.sp)
-                            Text("Import a compatible .litertlm model once. After import, chats can run fully offline on this device using LiteRT-LM CPU inference. Model files stay in private app storage and are not included in the APK.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
-                            OutlinedButton(onClick = { localModelPicker.launch(arrayOf("application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
-                                Text(if (localModelReady) "Replace local model" else "Import .litertlm model")
-                            }
+                            Text("Lightning · private on-device model", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text(if (localModelReady) "Lightning engine ready · ${localModelRuntime.modelSizeBytes() / 1_048_576L} MB" else "Lightning model is not bundled in this build", color = if (localModelReady) palette.accent else palette.muted, fontSize = 11.sp)
+                            Text("The fixed Lightning model is packaged with CenAI, copied into private app storage on first launch, and used for offline CPU inference. Model weights and prompts stay on this device.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Use Offline AI for chats", color = palette.text)
