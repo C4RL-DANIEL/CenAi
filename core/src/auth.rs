@@ -116,7 +116,7 @@ pub fn validate_google_oauth_callback(
     if scheme != "com.cenai.app" || path != "/oauth2redirect" {
         return Err("Unexpected OAuth redirect.".to_owned());
     }
-    if expected_state.is_empty() || returned_state != expected_state {
+    if expected_state.is_empty() || !constant_time_eq(returned_state.as_bytes(), expected_state.as_bytes()) {
         return Err("OAuth state validation failed.".to_owned());
     }
     if !error.is_empty() {
@@ -170,5 +170,22 @@ mod google_oauth_tests {
         assert_eq!(token["access_token"], "a");
         assert_eq!(token["expires_at"], "3601000");
         assert!(parse_google_oauth_token(r#"{"error":"invalid_grant"}"#, 1000).is_err());
+    }
+}
+
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() { return false; }
+    left.iter().zip(right.iter()).fold(0u8, |difference, (a, b)| difference | (a ^ b)) == 0
+}
+
+#[cfg(test)]
+mod constant_time_state_tests {
+    use super::constant_time_eq;
+
+    #[test]
+    fn compares_oauth_state_bytes() {
+        assert!(constant_time_eq(b"same-state", b"same-state"));
+        assert!(!constant_time_eq(b"same-state", b"different"));
     }
 }
