@@ -6,7 +6,9 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::audio::{AndroidAudioCapture, AndroidAudioPlayback};
+use crate::android::{lightning_generate, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
 use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
@@ -264,6 +266,8 @@ pub struct WgpuRenderer {
     audio_capture: Option<AndroidAudioCapture>,
     #[cfg(target_os = "android")]
     audio_playback: Option<AndroidAudioPlayback>,
+    #[cfg(target_os = "android")]
+    android_app: Option<AndroidApp>,
 }
 
 impl WgpuRenderer {
@@ -282,7 +286,8 @@ impl WgpuRenderer {
     ) -> anyhow::Result<Self> {
         let mut renderer = pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))?;
         renderer.audio_capture = Some(AndroidAudioCapture::new(android_app.clone()));
-        renderer.audio_playback = Some(AndroidAudioPlayback::new(android_app));
+        renderer.audio_playback = Some(AndroidAudioPlayback::new(android_app.clone()));
+        renderer.android_app = Some(android_app);
         Ok(renderer)
     }
 
@@ -477,6 +482,8 @@ impl WgpuRenderer {
             audio_capture: None,
             #[cfg(target_os = "android")]
             audio_playback: None,
+            #[cfg(target_os = "android")]
+            android_app: None,
         })
     }
 
@@ -875,6 +882,12 @@ impl WgpuRenderer {
             });
             self.track_task(task);
         } else {
+            let offline_prompt = messages.iter().rev()
+                .find(|message| message.role == "user")
+                .map(|message| message.content.clone())
+                .unwrap_or_default();
+            #[cfg(target_os = "android")]
+            let lightning_app = self.android_app.clone();
             let payload = serde_json::json!({
                 "model": "cloudflare-gemma-4-26b-a4b-it",
                 "messages": messages,
@@ -886,6 +899,7 @@ impl WgpuRenderer {
             let goal = latest_goal.clone();
             let task = self.runtime.spawn(async move {
                 let delta_sender = sender.clone();
+                let fallback_sender = sender.clone();
                 let result = async {
                     let mut payload = payload;
                     if include_personal_memory {
@@ -905,6 +919,34 @@ impl WgpuRenderer {
                         let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                     }).await
                 }.await;
+                let result = match result {
+                    Ok(answer) => Ok(answer),
+                    Err(cloud_error) => {
+                        #[cfg(target_os = "android")]
+                        {
+                            if let Some(app) = lightning_app {
+                                let prompt = offline_prompt;
+                                match tokio::task::spawn_blocking(move || lightning_generate(app, &prompt)).await {
+                                    Ok(Ok(answer)) if !answer.trim().is_empty() => {
+                                        let _ = fallback_sender.send(ChatEvent::Delta(generation, message_id, answer.clone()));
+                                        Ok(answer)
+                                    }
+                                    Ok(Ok(_)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning returned an empty response.")),
+                                    Ok(Err(local_error)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning offline fallback failed ({local_error}).")),
+                                    Err(join_error) => Err(format!("Cloud AI failed ({cloud_error}); Lightning worker failed ({join_error}).")),
+                                }
+                            } else {
+                                Err(cloud_error)
+                            }
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            let _ = fallback_sender;
+                            let _ = offline_prompt;
+                            Err(cloud_error)
+                        }
+                    }
+                };
                 let _ = sender.send(ChatEvent::Finished(generation, message_id, result));
             });
             self.track_task(task);
