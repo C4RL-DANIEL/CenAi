@@ -369,6 +369,20 @@ mod tests {
     }
 
     #[test]
+    fn stopping_plan_cancels_running_step_and_prevents_late_result_from_being_applied() {
+        let mut plan = TaskPlan {
+            id: "task-late-result".into(), goal: "Cancel safely".into(), stopped: false,
+            steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Work".into(), status: StepStatus::Pending, depends_on: vec![], output: None }],
+        };
+        plan.begin_step(1).unwrap();
+        plan.stop();
+        assert!(plan.stopped);
+        assert_eq!(plan.steps[0].status, StepStatus::Cancelled);
+        assert!(plan.complete_step(1).is_err());
+        assert_eq!(plan.steps[0].status, StepStatus::Cancelled);
+    }
+
+    #[test]
     fn failed_step_can_be_retried_without_unlocking_dependents_or_reusing_output() {
         let mut plan = TaskPlan {
             id: "task-failed-retry".into(), goal: "Recover failed work".into(), stopped: false,

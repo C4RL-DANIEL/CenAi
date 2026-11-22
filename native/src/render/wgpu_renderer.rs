@@ -2141,6 +2141,14 @@ impl WgpuRenderer {
                         continue;
                     };
                     let mut updated = self.app_state.task_plans[index].clone();
+                    // A stop/cancel can race an in-flight model request. Ignore late results
+                    // instead of allowing them to resurrect a cancelled step.
+                    let still_running = !updated.stopped && updated.steps.iter()
+                        .any(|step| step.id == step_id && step.status == crate::core::agents::StepStatus::Running);
+                    if !still_running {
+                        self.app_state.plan_status = format!("Late result for step {step_id} was discarded because the step is no longer running.");
+                        continue;
+                    }
                     let transition = match result {
                         Ok(execution) => {
                             if let Some(step) = updated.steps.iter_mut().find(|step| step.id == step_id) {
