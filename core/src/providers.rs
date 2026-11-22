@@ -417,7 +417,7 @@ mod transport_tests {
         let config: Value = serde_json::from_str(
             &build_provider_request_config(
                 "CUSTOM", "https://example.com/v1", "key", false, "",
-                r#"{"x-extra":"ok","Authorization":"Bearer other","x-bad":"line\\nbreak"}"#
+                r#"{"x-extra":"ok","Authorization":"Bearer other","x-bad":"line\nbreak"}"#
             ).unwrap()
         ).unwrap();
         assert_eq!(config["headers"]["x-extra"], "ok");
