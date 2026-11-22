@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - "rewrite/**"
+    tags:
+      - "v*"
     paths:
       - "native/**"
       - "app-rust/**"
@@ -25,7 +27,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: rust-native-android-${{ github.event.pull_request.number || github.ref }}
@@ -35,7 +37,7 @@ jobs:
   android:
     name: Build and smoke-test Rust NativeActivity APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
 
@@ -104,7 +106,7 @@ jobs:
             sleep 25
             adb shell pidof com.cenai.app.rustdebug
 
-      - name: Generate APK SHA-256
+      - name: Generate debug APK SHA-256
         run: sha256sum "$RUST_NATIVE_APK" > "$RUST_NATIVE_APK.sha256"
 
       - name: Upload Rust-native debug APK
@@ -116,3 +118,56 @@ jobs:
             app-rust/build/outputs/apk/debug/*.apk.sha256
           if-no-files-found: error
           retention-days: 30
+
+      - name: Prepare production signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
+          CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
+          CENAI_KEY_ALIAS: ${{ secrets.CENAI_KEY_ALIAS }}
+          CENAI_KEY_PASSWORD: ${{ secrets.CENAI_KEY_PASSWORD }}
+        run: |
+          test -n "$CENAI_KEYSTORE_BASE64" || (echo "::error::Missing CENAI_KEYSTORE_BASE64" && exit 1)
+          test -n "$CENAI_KEYSTORE_PASSWORD" || (echo "::error::Missing CENAI_KEYSTORE_PASSWORD" && exit 1)
+          test -n "$CENAI_KEY_ALIAS" || (echo "::error::Missing CENAI_KEY_ALIAS" && exit 1)
+          test -n "$CENAI_KEY_PASSWORD" || (echo "::error::Missing CENAI_KEY_PASSWORD" && exit 1)
+          echo "$CENAI_KEYSTORE_BASE64" | base64 --decode > app-rust/release.keystore
+          echo "CENAI_KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
+          echo "CENAI_KEYSTORE_PASSWORD=$CENAI_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_ALIAS=$CENAI_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_PASSWORD=$CENAI_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Set release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IFS='.-' read -r MAJOR MINOR PATCH PRE_TYPE PRE_NUM <<< "$VERSION"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          if [[ "$VERSION" == *-* ]]; then PRE_NUM=${PRE_NUM:-1}; else PRE_NUM=99; fi
+          CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100 + PRE_NUM))
+          echo "CENAI_VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
+          echo "CENAI_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+
+      - name: Build production Rust-native APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gradle :app-rust:assembleRelease --stacktrace
+
+      - name: Verify production APK signature and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          APK="$(find app-rust/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+          rm -f app-rust/release.keystore
+
+      - name: Publish signed Rust-native APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app-rust/build/outputs/apk/release/*.apk
+            app-rust/build/outputs/apk/release/*.apk.sha256
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
