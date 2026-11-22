@@ -1304,9 +1304,9 @@ impl WgpuRenderer {
         } else {
             format!("{name} was not completed: {message}")
         };
-        if !success {
-            self.app_state.conversation.push(MessageRole::Assistant, self.app_state.agent_action_status.clone());
-        }
+        // Keep the platform result in the local conversation so the user can
+        // distinguish an opened chooser/dialer from an action they completed there.
+        self.app_state.conversation.push(MessageRole::Assistant, self.app_state.agent_action_status.clone());
     }
 
     pub fn record_diagnostic(&mut self, kind: DiagnosticKind, component: &str, code: &str) {
