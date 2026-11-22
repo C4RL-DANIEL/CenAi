@@ -6,25 +6,26 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
  * OS-managed, best-effort reminder only. It never runs the agent or performs an action.
- * Android may defer or suppress this work according to battery and notification policy.
+ * Notification content is generic so private task titles are not exposed on the lock screen.
  */
 class AutomationReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(CHANNEL_ID, "CenAI automation reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "Reminds you to review scheduled CenAI tasks. No task action runs automatically."
-        }
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "CenAI automation reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Reminds you to review scheduled CenAI tasks. No task action runs automatically."
+            }
+        )
         val launch = Intent(applicationContext, CenAiNativeActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -36,14 +37,14 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
         )
         val notification = Notification.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("CenAI task ready for review")
-            .setContentText(title.take(120))
-            .setStyle(Notification.BigTextStyle().bigText("$title\n\nOpen CenAI to review. No action has been executed."))
+            .setContentTitle("CenAI scheduled task")
+            .setContentText("A task is ready for your review. Open CenAI to continue.")
+            .setStyle(Notification.BigTextStyle().bigText("A scheduled task is ready for your review. Open CenAI to continue. No action has been executed."))
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
         return try {
-            manager.notify(taskId.hashCode(), notification)
+            manager.notify(id.hashCode(), notification)
             Result.success()
         } catch (_: SecurityException) {
             // POST_NOTIFICATIONS may be denied; do not retry forever or bypass the permission.
@@ -76,6 +77,9 @@ object AutomationReminderBridge {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(workName(ownerScope, taskId))
     }
 
-    private fun workName(ownerScope: String, taskId: String) =
-        "cenai_automation_${ownerScope}_${taskId}"
+    private fun workName(ownerScope: String, taskId: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest("$ownerScope:$taskId".toByteArray(Charsets.UTF_8))
+        val token = digest.joinToString("") { "%02x".format(it) }
+        return "cenai_automation_$token"
+    }
 }
