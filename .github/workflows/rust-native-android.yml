@@ -155,7 +155,7 @@ jobs:
             adb shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
             adb shell svc wifi disable || true
             adb shell svc data disable || true
-            test "$(adb shell settings get global airplane_mode_on | tr -d '\\r')" = "1"
+            test "$(adb shell settings get global airplane_mode_on | tr -d '\r')" = "1"
             gradle :app-rust:connectedDebugAndroidTest --stacktrace
 
       - name: Generate debug APK SHA-256
