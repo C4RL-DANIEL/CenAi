@@ -15,8 +15,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-class ChatRepository(private val vault: SecureKeyStore) {
-    private fun ownerId(): String = vault.get("supabase_user_id", "guest").ifBlank { "guest" }
+class ChatRepository(
+    private val vault: SecureKeyStore,
+    private val accountId: () -> String = { vault.get("supabase_user_id", "guest").ifBlank { "guest" } }
+) {
+    private fun ownerId(): String = accountId()
     private val client = OkHttpClient.Builder()
         .connectTimeout(25, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -43,9 +46,9 @@ class ChatRepository(private val vault: SecureKeyStore) {
         if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && preparedMessages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
-        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault).credential() else "" to false
+        val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault) { ownerId() }.credential() else "" to false
         val credential = when {
-            provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
+            provider == Provider.CENAI_CLOUD -> vault.getUserSecret(ownerId(), "supabase_access_token") to false
             oauthCredential.first.isNotBlank() -> oauthCredential
             else -> vault.apiKey(provider, ownerId()) to false
         }
