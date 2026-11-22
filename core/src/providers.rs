@@ -566,3 +566,39 @@ mod image_marker_tests {
         assert_eq!(strip_image_markers(value), "Describe [Image attached] please");
     }
 }
+
+
+/// Extracts the assistant response from the CenAI Cloud OpenAI-compatible envelope.
+pub fn parse_cloud_response(raw: &str) -> Result<String, String> {
+    let value: Value = serde_json::from_str(raw)
+        .map_err(|_| "CenAI Cloud returned invalid JSON.".to_owned())?;
+    if let Some(error) = value.get("error") {
+        let message = error.as_str()
+            .or_else(|| error.get("message").and_then(Value::as_str))
+            .unwrap_or("CenAI Cloud request failed.");
+        return Err(message.chars().take(500).collect());
+    }
+    let answer = value.get("choices").and_then(|v| v.get(0))
+        .and_then(|v| v.get("message")).and_then(|v| v.get("content"))
+        .and_then(Value::as_str).unwrap_or("");
+    if answer.trim().is_empty() {
+        return Err("CenAI Cloud returned an empty response.".to_owned());
+    }
+    Ok(answer.to_owned())
+}
+
+#[cfg(test)]
+mod cloud_response_tests {
+    use super::parse_cloud_response;
+
+    #[test]
+    fn parses_cloud_chat_completions_and_errors() {
+        assert_eq!(
+            parse_cloud_response(r#"{"choices":[{"message":{"content":"Hello from cloud"}}]}"#).unwrap(),
+            "Hello from cloud"
+        );
+        assert!(parse_cloud_response(r#"{"error":{"message":"quota exceeded"}}"#)
+            .unwrap_err().contains("quota exceeded"));
+        assert!(parse_cloud_response("{}").is_err());
+    }
+}
