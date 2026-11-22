@@ -200,8 +200,13 @@ mod tests {
 
     #[test]
     fn normalizes_line_endings_and_removes_unsafe_controls() {
-        let input = "  hello\r\nworld\r\u{0007}\t!  ";
-        assert_eq!(normalize_prompt(input), "hello\nworld\n\t!");
+        let cr = char::from(13);
+        let lf = char::from(10);
+        let tab = char::from(9);
+        let bell = char::from(7);
+        let input = format!("  hello{cr}{lf}world{cr}{bell}{tab}!  ");
+        let expected = format!("hello{lf}world{lf}{tab}!");
+        assert_eq!(normalize_prompt(&input), expected);
     }
 
     #[test]
@@ -223,18 +228,26 @@ mod tests {
 
     #[test]
     fn sanitizes_message_content_without_trimming_spaces() {
-        assert_eq!(sanitize_message_content("  hello\r\nworld\u{0007}  "), "  hello\nworld  ");
+        let cr = char::from(13);
+        let lf = char::from(10);
+        let bell = char::from(7);
+        let input = format!("  hello{cr}{lf}world{bell}  ");
+        let expected = format!("  hello{lf}world  ");
+        assert_eq!(sanitize_message_content(&input), expected);
     }
 
     #[test]
     fn builds_valid_openai_payload_and_sanitizes_message_content() {
-        let messages = serde_json::json!([{"role":"user","content":"hello\r\nworld"}]).to_string();
+        let cr = char::from(13);
+        let lf = char::from(10);
+        let content = format!("hello{cr}{lf}world");
+        let messages = serde_json::json!([{"role":"user","content":content}]).to_string();
         let payload = build_openai_chat_payload("gpt-test", 2048, &messages).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["model"], "gpt-test");
         assert_eq!(parsed["stream"], true);
         assert_eq!(parsed["max_tokens"], 2048);
-        assert_eq!(parsed["messages"][0]["content"], "hello\nworld");
+        assert_eq!(parsed["messages"][0]["content"], format!("hello{lf}world"));
     }
 
     #[test]
