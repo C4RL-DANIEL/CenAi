@@ -1598,7 +1598,6 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.putUser(activeAccountId, "speech_language", speechLanguage.ifBlank { "device" })
                 vault.putUser(activeAccountId, "speech_input_language", speechInputLanguage.ifBlank { "device" })
                 vault.putUser(activeAccountId, "local_knowledge_enabled", localKnowledgeEnabled.toString())
-                vault.putUser(activeAccountId, "tool_enabled_map", JSONObject(toolEnabled as Map<*, *>).toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
                 vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt)
