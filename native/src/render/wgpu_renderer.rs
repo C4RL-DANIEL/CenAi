@@ -14,12 +14,11 @@ use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
 
 fn conversation_prompt_for_offline(conversation: &crate::ui::model::ConversationState) -> String {
-    let recent = conversation.messages()
+    let all_messages = conversation.messages()
         .filter(|message| message.role != MessageRole::System)
-        .rev()
-        .take(8)
         .collect::<Vec<_>>();
-    let mut prompt = recent.into_iter().rev().map(|message| {
+    let start = all_messages.len().saturating_sub(8);
+    let mut prompt = all_messages[start..].iter().map(|message| {
         let role = if message.role == MessageRole::User { "User" } else { "Assistant" };
         format!("{role}: {}", message.body)
     }).collect::<Vec<_>>().join("\n\n");
