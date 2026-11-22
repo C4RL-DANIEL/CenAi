@@ -99,4 +99,10 @@ object NativeCore {
 
     /** Checks Unicode code-point length against a caller-supplied character limit. */
     external fun isPromptWithinLimit(input: String, maxChars: Int): Boolean
+
+    /** Owns privacy-safe feature event mapping and monitor aggregation. */
+    external fun monitorEventKey(event: String): String
+    external fun monitorSuccessRate(succeeded: Int, failed: Int): Int
+    external fun monitorAverageLatency(totalMs: Long, completed: Int): Long
+    external fun monitorFailureCategory(message: String, className: String): String
 }
