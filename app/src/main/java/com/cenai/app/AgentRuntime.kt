@@ -9,6 +9,7 @@ import java.time.format.DateTimeFormatter
 enum class ToolRisk { SAFE, SENSITIVE, DESTRUCTIVE }
 data class AgentTool(val name: String, val description: String, val risk: ToolRisk, val parameters: JSONObject)
 data class ToolExecution(val toolName: String, val arguments: JSONObject, val output: String, val requiresApproval: Boolean, val completed: Boolean)
+data class AgentStep(val kind: String, val visibleText: String, val name: String, val arguments: JSONObject)
 
 class AgentRuntime(
     private val enabledTools: Set<String>? = null,
@@ -41,6 +42,21 @@ class AgentRuntime(
             )
         }
     }
+    fun parseAgentStep(response: String): AgentStep {
+        val encoded = NativeCore.parseAgentStep(response)
+        val payload = runCatching { JSONObject(encoded) }.getOrElse {
+            return AgentStep("error", "", "", JSONObject().put("message", it.message ?: "Invalid agent step"))
+        }
+        val error = payload.optString("error")
+        if (error.isNotBlank()) return AgentStep("error", "", "", JSONObject().put("message", error))
+        return AgentStep(
+            payload.optString("kind", "final"),
+            payload.optString("visible_text", response),
+            payload.optString("name"),
+            payload.optJSONObject("arguments").orEmptyJson()
+        )
+    }
+
     fun parseToolCall(response: String): Pair<String, JSONObject>? {
         val encoded = runCatching { toolCallParser(response) }.getOrDefault("")
         if (encoded.isBlank()) return null
