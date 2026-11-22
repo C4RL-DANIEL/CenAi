@@ -111,6 +111,16 @@ public final class CenAiNativeActivity extends NativeActivity {
         return new String(cipher.doFinal(packed, 12, packed.length - 12), java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /** Returns the account email associated with the old secure store, if known. */
+    public String getLegacyConversationOwnerEmail() {
+        try {
+            return getSharedPreferences("cenai_private", MODE_PRIVATE)
+                .getString("supabase_account_email", "");
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
     /**
      * Exports the legacy conversation JSON without mutating or deleting it.
      * Rust validates every identifier, role, message and size before import.
