@@ -382,8 +382,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 messages = current
                             }
                         }
-                        val toolCall = if (agentPlanning) runtime.parseToolCall(response) else null
-                        if (toolCall == null) {
+                        val decision = if (agentPlanning) runtime.parseAgentStep(response) else AgentStep("final", response, "", JSONObject())
+                        if (decision.kind == "error") error(decision.arguments.optString("message", "Agent response could not be parsed."))
+                        if (decision.kind != "tool") {
                             displayText += response
                             val final = messages.toMutableList()
                             if (final.lastOrNull()?.role == "assistant") final[final.lastIndex] = ChatMessage("assistant", displayText)
@@ -391,9 +392,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             finished = true
                             break
                         }
-                        val visible = response.substringBefore("[[CENAI_TOOL_CALL]]").trim()
+                        val visible = decision.visibleText
                         if (visible.isNotBlank()) displayText += visible + "\n\n"
-                        val execution = runtime.execute(toolCall.first, toolCall.second)
+                        val execution = runtime.execute(decision.name, decision.arguments)
                         val current = messages.toMutableList()
                         if (current.lastOrNull()?.role == "assistant") {
                             current[current.lastIndex] = ChatMessage("assistant", displayText.trimEnd())
