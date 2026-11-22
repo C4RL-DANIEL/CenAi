@@ -1051,3 +1051,28 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_conversationTitle(
     let title = storage::conversation_title(&raw).unwrap_or_else(|_| "New chat".to_owned());
     match env.new_string(title) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_resolveProviderSettings(
+    mut env: JNIEnv,
+    _class: JClass,
+    provider: JString,
+    selected_provider: JString,
+    selected_model: JString,
+    selected_base_url: JString,
+    stored_model: JString,
+    stored_base_url: JString,
+) -> jstring {
+    let Some(provider_value) = read_java_string(&mut env, &provider) else { return std::ptr::null_mut(); };
+    let Some(selected_provider_value) = read_java_string(&mut env, &selected_provider) else { return std::ptr::null_mut(); };
+    let Some(selected_model_value) = read_java_string(&mut env, &selected_model) else { return std::ptr::null_mut(); };
+    let Some(selected_base_value) = read_java_string(&mut env, &selected_base_url) else { return std::ptr::null_mut(); };
+    let Some(stored_model_value) = read_java_string(&mut env, &stored_model) else { return std::ptr::null_mut(); };
+    let Some(stored_base_value) = read_java_string(&mut env, &stored_base_url) else { return std::ptr::null_mut(); };
+    let output = match providers::resolve_provider_settings(&provider_value, &selected_provider_value, &selected_model_value, &selected_base_value, &stored_model_value, &stored_base_value) {
+        Ok(value) => value,
+        Err(error) => serde_json::json!({"error":error}).to_string(),
+    };
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
