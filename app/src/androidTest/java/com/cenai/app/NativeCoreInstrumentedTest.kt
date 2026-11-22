@@ -36,6 +36,9 @@ class NativeCoreInstrumentedTest {
         assertEquals("calculate", toolCall.getString("name"))
         assertEquals("2+2", toolCall.getJSONObject("arguments").getString("expression"))
 
+        val transport = JSONObject(NativeCore.buildProviderRequestConfig("GEMINI", "gemini-test", "key", false, "", "{}"))
+        assertTrue(transport.getString("url").contains("gemini-test"))
+        assertEquals("key", transport.getJSONObject("headers").getString("x-goog-api-key"))
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
             NativeCore.buildProviderPayload("OPENAI", "test-model", 128, messages.toString(), "{}")
