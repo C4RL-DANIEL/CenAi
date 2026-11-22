@@ -129,7 +129,7 @@ public final class CenAiNativeActivity extends NativeActivity {
     public void clearLegacySecureStoreAfterMigration() {
         try {
             SharedPreferences prefs = getSharedPreferences("cenai_private", MODE_PRIVATE);
-            prefs.edit()
+            boolean preferencesCommitted = prefs.edit()
                 .remove("secret_supabase_access_token")
                 .remove("secret_supabase_refresh_token")
                 .remove("cenai_email_verified")
@@ -145,7 +145,11 @@ public final class CenAiNativeActivity extends NativeActivity {
                 .remove("secret_gemini_oauth_refresh_token")
                 .remove("google_oauth_client_id")
                 .remove("gemini_oauth_expires_at")
-                .apply();
+                .commit();
+            if (!preferencesCommitted) {
+                android.util.Log.w("CenAI", "Legacy secure-store cleanup was not durable; the old Keystore key was retained.");
+                return;
+            }
             KeyStore store = KeyStore.getInstance("AndroidKeyStore");
             store.load(null);
             store.deleteEntry("cenai_aes_key_v1");
