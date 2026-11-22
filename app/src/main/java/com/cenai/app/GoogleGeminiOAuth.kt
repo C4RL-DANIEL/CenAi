@@ -90,7 +90,7 @@ class GoogleGeminiOAuth(
         val expires = getOAuthValue("gemini_oauth_expires_at", "0").toLongOrNull() ?: 0L
         if (access.isNotBlank() && expires > System.currentTimeMillis() + 60_000L) return@withContext access to true
         val refresh = getOAuthSecret("gemini_oauth_refresh_token")
-        val clientId = vault.get("google_oauth_client_id")
+        val clientId = getOAuthValue("google_oauth_client_id")
         if (refresh.isBlank() || clientId.isBlank()) return@withContext "" to false
         val body = FormBody.Builder().add("client_id", clientId).add("refresh_token", refresh).add("grant_type", "refresh_token").build()
         val request = Request.Builder().url("https://oauth2.googleapis.com/token").post(body).build()
