@@ -21,6 +21,7 @@ use crate::render::wgpu_renderer::WgpuRenderer;
 enum AndroidPlatformEvent {
     FilePicked { request_code: i32, path: String, mime_type: String, display_name: String, error: String },
     AgentActionResult { name: String, success: bool, message: String },
+    OAuthCallback(String),
 }
 
 static PLATFORM_EVENTS: OnceLock<Mutex<VecDeque<AndroidPlatformEvent>>> = OnceLock::new();
@@ -257,6 +258,40 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnPlatformAc
     });
 }
 
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnOAuthCallback(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, callback: JString<'_>,
+) {
+    let callback = java_string(&mut env, callback);
+    if callback.len() <= 8 * 1024 {
+        push_platform_event(AndroidPlatformEvent::OAuthCallback(callback));
+    }
+}
+
+/// Launch Google's validated authorization URL through the narrow Android adapter.
+pub(crate) fn open_google_oauth(app: AndroidApp, url: String) {
+    let parsed = reqwest::Url::parse(&url);
+    if !parsed.ok().is_some_and(|uri| uri.scheme() == "https"
+        && uri.host_str() == Some("accounts.google.com")
+        && uri.path() == "/o/oauth2/v2/auth") {
+        log::warn!("Rejected Google OAuth URL outside the official authorization endpoint");
+        return;
+    }
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &app) else { return; };
+        let Ok(url_string) = env.new_string(url) else { return; };
+        if let Err(error) = env.call_method(
+            &activity, "openGoogleOAuth", "(Ljava/lang/String;)Z",
+            &[JValue::Object(&url_string)],
+        ) {
+            log::error!("Could not launch Google OAuth: {error}");
+        }
+    }));
+}
+
 struct CenAiApplication {
     api: Option<CenAiApi>,
     runtime: tokio::runtime::Handle,
@@ -383,6 +418,9 @@ impl ApplicationHandler for CenAiApplication {
                             }
                             AndroidPlatformEvent::AgentActionResult { name, success, message } => {
                                 renderer.handle_agent_action_result(name, success, message);
+                            }
+                            AndroidPlatformEvent::OAuthCallback(callback) => {
+                                renderer.handle_google_oauth_callback(callback);
                             }
                         }
                     }
