@@ -108,7 +108,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.13.2"
+          gradle-version: "8.13"
 
       - name: Assemble Rust-native debug APK
         run: gradle :app-rust:assembleDebug --stacktrace
