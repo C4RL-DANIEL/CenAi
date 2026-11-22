@@ -11,6 +11,9 @@ object NativeCore {
 
     external fun normalizePrompt(input: String): String
 
+    /** Evaluates bounded arithmetic in the Rust core; errors are prefixed with ERROR:. */
+    external fun evaluateArithmetic(expression: String): String
+
     /** Normalizes line endings and removes unsafe control characters from message bodies. */
     external fun normalizeMessageContent(input: String): String
 
