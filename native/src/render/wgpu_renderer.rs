@@ -2824,7 +2824,6 @@ impl WgpuRenderer {
                                 self.automation_scheduler = AutomationScheduler::from_workspace(workspace).ok();
                                 self.app_state.automations = self.automation_scheduler.as_ref()
                                     .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
-                                self.resolve_pending_automation_reminder();
                                 if let Ok(messages) = workspace.load_conversation(&active_conversation_id) {
                                     self.app_state.conversation.restore_messages(messages);
                                     self.last_saved_message_count = self.app_state.conversation.messages().count();
