@@ -696,3 +696,19 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseProviderError(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_stripImageMarkers(
+    mut env: JNIEnv,
+    _class: JClass,
+    content: JString,
+) -> jstring {
+    let Some(content_value) = read_java_string(&mut env, &content) else {
+        return std::ptr::null_mut();
+    };
+    match env.new_string(providers::strip_image_markers(&content_value)) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
