@@ -86,7 +86,7 @@ pub(crate) fn execute_approved_agent_action(app: AndroidApp, name: String, argum
             }
             text.to_owned()
         }
-        "open_app_settings" if object.is_some_and(serde_json::Map::is_empty) => String::new(),
+        "open_app_settings" if object.is_some_and(|object| object.is_empty()) => String::new(),
         _ => {
             log::warn!("Rejected unsupported or malformed approved Android action");
             return;
