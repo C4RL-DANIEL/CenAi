@@ -576,7 +576,7 @@ pub fn android_main(app: AndroidApp) {
     };
     if let Some(workspace_store) = workspace.as_ref() {
         let expected_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
-        match migrate_legacy_history(&app, workspace_store, &expected_email, legacy_verified_owner_email.as_deref()) {
+        match migrate_legacy_history(&app, workspace_store, &expected_email) {
             Ok(count) if count > 0 => log::info!("Imported {count} legacy conversations into the encrypted Rust workspace."),
             Ok(_) => log::info!("Legacy conversation history is already present or no legacy history was found."),
             Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
