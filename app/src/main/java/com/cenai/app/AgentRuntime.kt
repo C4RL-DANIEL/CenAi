@@ -4,8 +4,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.ZonedDateTime
 import java.time.LocalDate
-import java.util.UUID
-import java.util.Base64
 import java.time.format.DateTimeFormatter
 
 enum class ToolRisk { SAFE, SENSITIVE, DESTRUCTIVE }
@@ -14,7 +12,12 @@ data class ToolExecution(val toolName: String, val arguments: JSONObject, val ou
 
 class AgentRuntime(
     private val enabledTools: Set<String>? = null,
-    private val arithmeticEvaluator: (String) -> Double = SafeArithmetic::evaluate,
+    private val safeToolExecutor: (String, JSONObject, String, String) -> String = { name, args, localTime, localDate ->
+        val result = JSONObject(NativeCore.executeSafeTool(name, args.toString(), localTime, localDate))
+        val error = result.optString("error")
+        require(error.isBlank()) { error }
+        result.optString("output")
+    },
     private val policyEvaluator: (String, String) -> String = { name, enabledJson ->
         NativeCore.evaluateToolPolicy(name, enabledJson)
     },
@@ -57,32 +60,15 @@ class AgentRuntime(
         val requiresApproval = policy.optBoolean("requires_approval")
         if (requiresApproval && !approvalGranted) return ToolExecution(name, args, "User approval is required.", true, false)
         return try {
+            val localTime = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+            val localDate = LocalDate.now().toString()
             val output = when (name) {
-                "current_time" -> ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                "calculate" -> arithmeticEvaluator(args.getString("expression")).toString()
-                "count_words" -> { val value = args.getString("text"); JSONObject().put("words", value.trim().split(Regex("\\s+")).count { it.isNotBlank() }).put("characters", value.length).put("characters_without_spaces", value.count { !it.isWhitespace() }).toString() }
-                "format_json" -> JSONObject(args.getString("json")).toString(2)
-                "current_date" -> LocalDate.now().toString()
-                "generate_uuid" -> UUID.randomUUID().toString()
-                "text_stats" -> {
-                    val value = args.getString("text")
-                    JSONObject().put("lines", if (value.isEmpty()) 0 else value.lines().size)
-                        .put("words", value.trim().split(Regex("\\s+")).count { it.isNotBlank() })
-                        .put("characters", value.length).toString()
-                }
-                "base64_encode" -> Base64.getEncoder().encodeToString(args.getString("text").toByteArray(Charsets.UTF_8))
-                "base64_decode" -> String(Base64.getDecoder().decode(args.getString("value")), Charsets.UTF_8)
+                "current_time", "calculate", "count_words", "format_json", "current_date",
+                "generate_uuid", "text_stats", "base64_encode", "base64_decode" ->
+                    safeToolExecutor(name, args, localTime, localDate)
                 else -> "No executor registered."
             }
             ToolExecution(name, args, output, false, true)
         } catch (error: Exception) { ToolExecution(name, args, "Tool error: " + (error.message ?: "invalid arguments"), false, false) }
-    }
-}
-
-private object SafeArithmetic {
-    fun evaluate(source: String): Double {
-        val result = NativeCore.evaluateArithmetic(source)
-        require(!result.startsWith("ERROR:")) { result.removePrefix("ERROR:") }
-        return result.toDouble()
     }
 }
