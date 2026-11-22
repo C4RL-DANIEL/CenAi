@@ -52,12 +52,25 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 runtime.availableTools().joinToString { it.name + " — " + it.description } +
                 ". Tool calls must use [[CENAI_TOOL_CALL]] followed by JSON {name,arguments} and [[/CENAI_TOOL_CALL]]. " +
                 "Background tasks cannot execute Android device actions, send messages, access arbitrary files or run shell commands. Never claim to have performed external actions you cannot perform."
-            val history = mutableListOf(ChatMessage("user", prompt))
+            val savedConversations = ChatStore(applicationContext, ownerId).load()
+            val localKnowledge = if (vault.getUser(ownerId, "local_knowledge_enabled", "false").toBoolean()) {
+                LocalKnowledgeStore().retrieve(prompt, savedConversations, emptyList())
+            } else ""
+            val systemContext = NativeCore.buildSystemContext(
+                vault.getUserSecret(ownerId, "system_prompt"),
+                vault.getUserSecret(ownerId, "agent_memory"),
+                localKnowledge,
+                toolGuide
+            )
+            val history = mutableListOf<ChatMessage>().apply {
+                if (systemContext.isNotBlank()) add(ChatMessage("system", systemContext))
+                add(ChatMessage("user", prompt))
+            }
             var response = ""
             var lastTurn = ""
             var finished = false
             for (step in 0..3) {
-                val turn = repository.stream(provider, model, base, listOf(ChatMessage("system", toolGuide)) + history) { }
+                val turn = repository.stream(provider, model, base, history) { }
                 lastTurn = turn
                 val call = runtime.parseToolCall(turn)
                 if (call == null) {
