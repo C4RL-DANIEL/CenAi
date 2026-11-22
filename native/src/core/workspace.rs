@@ -45,6 +45,13 @@ pub struct TaskRecord {
     pub updated_at_unix_ms: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ConversationMetadata {
+    pub id: String,
+    pub title: String,
+    pub updated_at_unix_ms: u64,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 struct WorkspaceIndex {
     schema_version: u16,
@@ -233,6 +240,56 @@ impl WorkspaceStore {
         write_result
     }
 
+
+    fn conversation_catalog_path(&self) -> PathBuf {
+        self.user_root.join("conversation_catalog.json")
+    }
+
+    pub fn list_conversations(&self) -> Result<Vec<ConversationMetadata>, String> {
+        let path = self.conversation_catalog_path();
+        if !path.exists() { return Ok(Vec::new()); }
+        let bytes = self.read_storage(&path)?;
+        let mut entries: Vec<ConversationMetadata> = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Conversation catalog is invalid: {error}"))?;
+        entries.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
+        Ok(entries)
+    }
+
+    /// Imports legacy Kotlin history into the authenticated, encrypted workspace.
+    /// Existing Rust conversations are never overwritten. Re-running after a crash
+    /// is safe: message files are durable before catalog metadata is committed.
+    pub fn import_legacy_conversations(&self, json: &str) -> Result<usize, String> {
+        let imported = crate::core::legacy_history::parse_legacy_history(json)?;
+        let _guard = self.lock_index()?;
+        let catalog_path = self.conversation_catalog_path();
+        let mut catalog: Vec<ConversationMetadata> = if catalog_path.exists() {
+            serde_json::from_slice(&self.read_storage(&catalog_path)?)
+                .map_err(|error| format!("Conversation catalog is invalid: {error}"))?
+        } else { Vec::new() };
+        let mut known: std::collections::HashSet<String> =
+            catalog.iter().map(|entry| entry.id.clone()).collect();
+        let mut added = 0usize;
+        for conversation in imported {
+            let message_path = self.user_root.join("conversations")
+                .join(format!("{}.json", conversation.id));
+            if !message_path.exists() {
+                self.save_conversation(&conversation.id, &conversation.messages)?;
+            }
+            if known.insert(conversation.id.clone()) {
+                catalog.push(ConversationMetadata {
+                    id: conversation.id,
+                    title: conversation.title,
+                    updated_at_unix_ms: conversation.updated_at_unix_ms,
+                });
+                added += 1;
+            }
+        }
+        if added > 0 {
+            let bytes = serde_json::to_vec_pretty(&catalog).map_err(|error| error.to_string())?;
+            self.write_atomic(&catalog_path, &bytes)?;
+        }
+        Ok(added)
+    }
 
     pub fn save_conversation(&self, conversation_id: &str, messages: &[crate::ui::model::Message]) -> Result<(), String> {
         if !safe_segment(conversation_id) { return Err("Conversation identifier is invalid".into()); }
