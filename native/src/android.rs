@@ -71,7 +71,12 @@ fn export_legacy_conversation_history(app: &AndroidApp) -> Result<String, String
     env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
 }
 
-pub(crate) fn migrate_legacy_history(app: &AndroidApp, workspace: &WorkspaceStore, expected_email: &str) -> Result<usize, String> {
+pub(crate) fn migrate_legacy_history(
+    app: &AndroidApp,
+    workspace: &WorkspaceStore,
+    expected_email: &str,
+    legacy_verified_owner_email: Option<&str>,
+) -> Result<usize, String> {
     if expected_email.trim().is_empty() {
         return Err("The signed-in account email is unavailable; legacy history was not imported".into());
     }
@@ -79,7 +84,16 @@ pub(crate) fn migrate_legacy_history(app: &AndroidApp, workspace: &WorkspaceStor
     if export.trim().is_empty() || export.trim() == "[]" {
         return Ok(0);
     }
-    workspace.import_legacy_conversations(&export, expected_email)
+    workspace.import_legacy_conversations(&export, expected_email, legacy_verified_owner_email)
+}
+
+fn verified_legacy_owner_email(export: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(export).ok()?;
+    if value.get("email_verified").and_then(serde_json::Value::as_bool) != Some(true) {
+        return None;
+    }
+    let email = value.get("account_email").and_then(serde_json::Value::as_str)?.trim();
+    (email.contains('@') && email.len() <= 320).then(|| email.to_owned())
 }
 
 fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
@@ -542,9 +556,15 @@ pub fn android_main(app: AndroidApp) {
         Ok(vault) => Arc::new(vault),
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
-    match export_legacy_secure_store(&app) {
-        Ok(export) if export != "{}" && !export.is_empty() => {
-            match vault.migrate_legacy_export(&export) {
+    let legacy_secure_export = export_legacy_secure_store(&app).ok();
+    // Capture the old account identity before credential migration clears the legacy
+    // preferences. It can authorize recovery only when the old store explicitly
+    // recorded a verified email and it matches the currently authenticated account.
+    let legacy_verified_owner_email = legacy_secure_export.as_deref()
+        .and_then(verified_legacy_owner_email);
+    match legacy_secure_export.as_deref() {
+        Some(export) if export != "{}" && !export.is_empty() => {
+            match vault.migrate_legacy_export(export) {
                 Ok(true) => match clear_legacy_secure_store(&app) {
                     Ok(()) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault."),
                     Err(error) => log::warn!("Legacy credentials migrated, but old-store cleanup was deferred: {error}"),
@@ -553,8 +573,8 @@ pub fn android_main(app: AndroidApp) {
                 Err(error) => log::warn!("Legacy credential migration was deferred; original encrypted data was retained: {error}"),
             }
         }
-        Ok(_) => {},
-        Err(error) => log::warn!("Legacy secure-store export was unavailable; original data was retained: {error}"),
+        Some(_) => {},
+        None => log::warn!("Legacy secure-store export was unavailable; original data was retained."),
     }
     let workspace_root = app.internal_data_path().unwrap_or_default();
     let api = CenAiApi::new(vault).ok();
@@ -573,7 +593,7 @@ pub fn android_main(app: AndroidApp) {
     };
     if let Some(workspace_store) = workspace.as_ref() {
         let expected_email = api.as_ref().and_then(|service| service.session_email().ok()).unwrap_or_default();
-        match migrate_legacy_history(&app, workspace_store, &expected_email) {
+        match migrate_legacy_history(&app, workspace_store, &expected_email, legacy_verified_owner_email.as_deref()) {
             Ok(count) if count > 0 => log::info!("Imported {count} legacy conversations into the encrypted Rust workspace."),
             Ok(_) => log::info!("Legacy conversation history is already present or no legacy history was found."),
             Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
