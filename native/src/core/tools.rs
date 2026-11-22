@@ -180,10 +180,8 @@ fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
                 return Err("Dialer number contains unsupported characters or is outside the 4–32 character limit".into());
             }
         }
-        "share_text" => {
-            if required_string(arguments, "text")?.trim().is_empty() {
-                return Err("Shared text cannot be empty".into());
-            }
+        "share_text" if required_string(arguments, "text")?.trim().is_empty() => {
+            return Err("Shared text cannot be empty".into());
         }
         _ => {}
     }
