@@ -214,7 +214,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     DisposableEffect(textToSpeech) { onDispose { textToSpeech.stop(); textToSpeech.shutdown() } }
     val localKnowledge = remember { LocalKnowledgeStore() }
     val appMonitor = remember { AppMonitor(context) }
-    var localKnowledgeEnabled by remember { mutableStateOf(vault.get("local_knowledge_enabled", "false").toBoolean()) }
+    var localKnowledgeEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "local_knowledge_enabled", "false").toBoolean()) }
     var localModelEnabled by remember { mutableStateOf(vault.get("local_model_enabled", "false").toBoolean()) }
     var localModelReady by remember { mutableStateOf(localModelRuntime.isModelInstalled()) }
     var guardianSnapshot by remember { mutableStateOf(guardian.snapshot()) }
@@ -222,26 +222,26 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var monitorSnapshot by remember { mutableStateOf(appMonitor.snapshot()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    var provider by remember { mutableStateOf(Provider.parse(vault.get("provider", "OPENAI"))) }
-    var model by remember {
-        val savedProvider = Provider.parse(vault.get("provider", "OPENAI"))
-        val savedModel = vault.get("model", savedProvider.model)
+    var provider by remember(activeAccountId) { mutableStateOf(Provider.parse(vault.getUser(activeAccountId, "provider", "OPENAI"))) }
+    var model by remember(activeAccountId) {
+        val savedProvider = Provider.parse(vault.getUser(activeAccountId, "provider", "OPENAI"))
+        val savedModel = vault.getUser(activeAccountId, "model", savedProvider.model)
         mutableStateOf(if (savedProvider == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) savedProvider.model else savedModel)
     }
-    var base by remember { mutableStateOf(vault.get("base_url", provider.baseUrl)) }
+    var base by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "base_url", provider.baseUrl)) }
     var providerKeys by remember(activeAccountId) { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it, activeAccountId) }) }
-    var multiAgent by remember { mutableStateOf(vault.get("multi_agent", "false").toBoolean()) }
+    var multiAgent by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "multi_agent", "false").toBoolean()) }
     var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
     var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
     var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
-    var systemPrompt by remember { mutableStateOf(vault.get("system_prompt", "")) }
+    var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "system_prompt", "")) }
     var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getSecret("agent_memory_$activeAccountId")) }
-    var customHeaders by remember { mutableStateOf(vault.get("custom_headers", "{}")) }
-    var customParams by remember { mutableStateOf(vault.get("custom_params", "{}")) }
-    var maxTokens by remember { mutableStateOf(vault.get("max_tokens", "4096")) }
+    var customHeaders by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "custom_headers", "{}")) }
+    var customParams by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "custom_params", "{}")) }
+    var maxTokens by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "max_tokens", "4096")) }
     var draft by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
@@ -1591,11 +1591,11 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.put("speech_pitch", speechPitch.toString())
                 vault.put("speech_language", speechLanguage.ifBlank { "device" })
                 vault.put("speech_input_language", speechInputLanguage.ifBlank { "device" })
-                vault.put("local_knowledge_enabled", localKnowledgeEnabled.toString())
+                vault.putUser(activeAccountId, "local_knowledge_enabled", localKnowledgeEnabled.toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.put("system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.put("custom_headers", customHeaders); vault.put("custom_params", customParams)
-                vault.put("max_tokens", maxTokens.ifBlank { "4096" })
+                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString()); vault.putUser(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUser(activeAccountId, "custom_headers", customHeaders); vault.putUser(activeAccountId, "custom_params", customParams)
+                vault.putUser(activeAccountId, "max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
             dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } },
