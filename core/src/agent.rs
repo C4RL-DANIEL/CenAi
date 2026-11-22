@@ -212,3 +212,40 @@ mod policy_tests {
         assert_eq!(unknown["allowed"], false);
     }
 }
+
+
+/// Extracts the first bounded structured tool call from an assistant response.
+pub fn parse_tool_call(response: &str) -> Result<String, String> {
+    const OPEN: &str = "[[CENAI_TOOL_CALL]]";
+    const CLOSE: &str = "[[/CENAI_TOOL_CALL]]";
+    let Some(start) = response.find(OPEN) else { return Ok(String::new()); };
+    let payload_start = start + OPEN.len();
+    let Some(relative_end) = response[payload_start..].find(CLOSE) else {
+        return Ok(String::new());
+    };
+    let payload_text = response[payload_start..payload_start + relative_end].trim();
+    if payload_text.len() > 16_384 {
+        return Err("Tool call payload exceeds the 16 KB safety limit.".to_owned());
+    }
+    let parsed: serde_json::Value = serde_json::from_str(payload_text)
+        .map_err(|_| "Tool call payload is not valid JSON.".to_owned())?;
+    let name = parsed.get("name").and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "Tool call is missing a tool name.".to_owned())?;
+    let arguments = parsed.get("arguments").cloned()
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    Ok(serde_json::json!({"name":name,"arguments":arguments}).to_string())
+
+    #[test]
+    fn parses_only_complete_bounded_tool_call_markers() {
+        let parsed = super::parse_tool_call(
+            r#"Plan [[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"1+2"}}[[/CENAI_TOOL_CALL]] done"#
+        ).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&parsed).unwrap();
+        assert_eq!(value["name"], "calculate");
+        assert_eq!(value["arguments"]["expression"], "1+2");
+        assert_eq!(super::parse_tool_call("no tool call").unwrap(), "");
+        assert_eq!(super::parse_tool_call("[[CENAI_TOOL_CALL]]{").unwrap(), "");
+    }
+
+}
