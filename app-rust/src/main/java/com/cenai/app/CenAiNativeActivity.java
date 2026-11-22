@@ -74,12 +74,13 @@ public final class CenAiNativeActivity extends NativeActivity {
         Uri uri = data.getData();
         String mime = getContentResolver().getType(uri);
         String name = displayName(uri);
+        File destination = null;
         try {
             File cache = new File(getCacheDir(), "cenai-imports");
             if (!cache.exists() && !cache.mkdirs()) {
                 throw new java.io.IOException("Could not create the private import cache.");
             }
-            File destination = new File(cache, UUID.randomUUID().toString() + ".bin");
+            destination = new File(cache, UUID.randomUUID().toString() + ".bin");
             long total = 0;
             try (InputStream input = getContentResolver().openInputStream(uri);
                  OutputStream output = new FileOutputStream(destination)) {
@@ -98,6 +99,11 @@ public final class CenAiNativeActivity extends NativeActivity {
             nativeOnFilePicked(requestCode, destination.getAbsolutePath(), mime == null ? "application/octet-stream" : mime,
                 name == null ? "attachment" : name, "");
         } catch (Exception error) {
+            if (destination != null && destination.exists()) {
+                // Never leave a partial import behind after cancellation, size-limit or I/O failure.
+                //noinspection ResultOfMethodCallIgnored
+                destination.delete();
+            }
             nativeOnFilePicked(requestCode, "", mime == null ? "" : mime, name == null ? "" : name,
                 error.getMessage() == null ? "Could not import the selected file." : error.getMessage());
         }
