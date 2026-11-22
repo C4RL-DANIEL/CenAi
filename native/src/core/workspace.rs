@@ -289,8 +289,8 @@ impl WorkspaceStore {
     /// Imports legacy Kotlin history into the authenticated, encrypted workspace.
     /// Existing Rust conversations are never overwritten. Re-running after a crash
     /// is safe: message files are durable before catalog metadata is committed.
-    pub fn import_legacy_conversations(&self, json: &str, expected_owner_email: &str) -> Result<usize, String> {
-        let imported = crate::core::legacy_history::parse_legacy_history(json, expected_owner_email)?;
+    pub fn import_legacy_conversations(&self, json: &str, expected_owner_email: &str, legacy_verified_owner_email: Option<&str>) -> Result<usize, String> {
+        let imported = crate::core::legacy_history::parse_legacy_history(json, expected_owner_email, legacy_verified_owner_email)?;
         let _guard = self.lock_index()?;
         let catalog_path = self.conversation_catalog_path();
         let mut catalog: Vec<ConversationMetadata> = if catalog_path.exists() {
