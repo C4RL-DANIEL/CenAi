@@ -861,6 +861,10 @@ impl CenAiApi {
         Ok(next.to_owned())
     }
 
+    pub fn has_google_gemini_oauth(&self) -> bool {
+        self.vault.provider_key("gemini_oauth_refresh").map(|value| !value.is_empty()).unwrap_or(false)
+    }
+
     pub fn disconnect_google_gemini_oauth(&self) -> Result<(), String> {
         for key in ["gemini_oauth_state", "gemini_oauth_verifier", "gemini_oauth_access",
             "gemini_oauth_refresh", "gemini_oauth_expiry"] {
