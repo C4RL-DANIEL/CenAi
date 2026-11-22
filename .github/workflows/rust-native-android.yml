@@ -64,6 +64,31 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
+      - name: Cache pinned Lightning model
+        uses: actions/cache@v4
+        with:
+          path: app-rust/src/main/assets/models/lightning.litertlm
+          key: lightning-qwen3-0.6b-int8-c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+
+      - name: Download and verify fixed Lightning model
+        env:
+          LIGHTNING_MODEL_URL: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm
+          LIGHTNING_MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+          LIGHTNING_MODEL_SIZE: 613722264
+        run: |
+          mkdir -p app-rust/src/main/assets/models
+          MODEL=app-rust/src/main/assets/models/lightning.litertlm
+          if [[ ! -s "$MODEL" ]]; then
+            curl --location --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 1200 "$LIGHTNING_MODEL_URL" --output "$MODEL.part"
+            mv "$MODEL.part" "$MODEL"
+          fi
+          echo "$LIGHTNING_MODEL_SHA256  $MODEL" | sha256sum --check -
+          test "$(stat -c%s "$MODEL")" = "$LIGHTNING_MODEL_SIZE"
+
+      - name: Verify bundled Lightning model for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test -s app-rust/src/main/assets/models/lightning.litertlm
+
       - name: Compile Rust for Android ABIs
         working-directory: native
         run: cargo ndk -t arm64-v8a -t x86_64 -o ../app-rust/src/main/jniLibs build --release --locked
@@ -105,6 +130,7 @@ jobs:
             adb shell monkey -p com.cenai.app.rustdebug 1
             sleep 25
             adb shell pidof com.cenai.app.rustdebug
+            gradle :app-rust:connectedDebugAndroidTest --stacktrace
 
       - name: Generate debug APK SHA-256
         run: sha256sum "$RUST_NATIVE_APK" > "$RUST_NATIVE_APK.sha256"
