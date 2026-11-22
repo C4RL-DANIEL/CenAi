@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -29,10 +30,11 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
         )
         val launch = Intent(applicationContext, CenAiNativeActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            data = Uri.parse("cenai://automation-reminder/${workNameForNotification()}")
         }
         val pending = PendingIntent.getActivity(
             applicationContext,
-            id.hashCode(),
+            0,
             launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -45,7 +47,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
             .setAutoCancel(true)
             .build()
         return try {
-            manager.notify(inputData.getInt(AutomationReminderWorker.NOTIFICATION_ID_KEY, id.hashCode()), notification)
+            manager.notify(inputData.getString(AutomationReminderWorker.NOTIFICATION_TAG_KEY), 0, notification)
             Result.success()
         } catch (_: SecurityException) {
             // POST_NOTIFICATIONS may be denied; do not retry forever or bypass the permission.
@@ -55,7 +57,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
 
     companion object {
         const val CHANNEL_ID = "cenai_automation_reminders"
-        const val NOTIFICATION_ID_KEY = "notification_id"
+        const val NOTIFICATION_TAG_KEY = "notification_tag"
     }
 }
 
@@ -64,9 +66,8 @@ object AutomationReminderBridge {
     fun schedule(context: Context, ownerScope: String, taskId: String, delayMillis: Long) {
         require(ownerScope.isNotBlank() && taskId.isNotBlank())
         val name = workName(ownerScope, taskId)
-        val notificationId = name.hashCode()
         val request = OneTimeWorkRequestBuilder<AutomationReminderWorker>()
-            .setInputData(Data.Builder().putInt(AutomationReminderWorker.NOTIFICATION_ID_KEY, notificationId).build())
+            .setInputData(Data.Builder().putString(AutomationReminderWorker.NOTIFICATION_TAG_KEY, name).build())
             .setInitialDelay(delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
@@ -82,7 +83,7 @@ object AutomationReminderBridge {
         val name = workName(ownerScope, taskId)
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(name)
         val manager = context.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(name.hashCode())
+        manager.cancel(name, 0)
     }
 
     private fun workName(ownerScope: String, taskId: String): String {
