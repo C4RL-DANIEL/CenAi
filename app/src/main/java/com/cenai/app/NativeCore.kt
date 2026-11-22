@@ -29,6 +29,9 @@ object NativeCore {
     /** Runs private conversation retrieval in the Rust core. */
     external fun retrieveLocalKnowledge(payload: String, maxResults: Int, maxCharacters: Int): String
 
+    /** Validates and canonicalizes the encrypted conversation store in Rust. */
+    external fun normalizeConversations(rawJson: String): String
+
     /** Normalizes line endings and removes unsafe control characters from message bodies. */
     external fun normalizeMessageContent(input: String): String
 
