@@ -174,6 +174,8 @@ pub struct AppState {
     pub pending_backup_file_picker: bool,
     pub reduced_motion: bool,
     pub light_mode: bool,
+    /// Force all new chat requests through the bundled on-device Lightning model.
+    pub offline_ai_enabled: bool,
     pub guardian_snapshot: Option<GuardianSnapshot>,
     pub guardian_consent: bool,
     pub pending_guardian_consent: Option<bool>,
@@ -309,6 +311,7 @@ impl Default for AppState {
             pending_backup_file_picker: false,
             reduced_motion: false,
             light_mode: false,
+            offline_ai_enabled: false,
             guardian_snapshot: None,
             guardian_consent: false,
             pending_guardian_consent: None,
