@@ -4,7 +4,7 @@ use serde_json::Value;
 
 const MAX_RELEASE_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_RELEASE_NOTES_BYTES: usize = 20 * 1024;
-pub const MAX_UPDATE_APK_BYTES: usize = 1_500_000_000;
+pub const MAX_UPDATE_APK_BYTES: u64 = 1_500_000_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateInfo {
