@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#090f19">
+  <title>Secure registration · CenAI</title>
+  <link rel="stylesheet" href="/site-shell.css">
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#203e4c 0,transparent 48%),#090f19;color:#eef5f2;font:15px/1.65 Inter,system-ui,sans-serif;display:grid;place-items:center;padding:24px}.register{width:min(100%,560px);padding:clamp(24px,5vw,44px);border:1px solid #ffffff20;border-radius:26px;background:linear-gradient(145deg,#162632ee,#101923f5);box-shadow:0 28px 100px #0008;position:relative;overflow:hidden}.register:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,#7ce4c4,#8caaff,transparent)}.mark{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(135deg,#9bf0d0,#7998ff);color:#09131b;font-weight:900;font-size:24px;box-shadow:0 0 36px #83ddca44}.eyebrow{margin-top:26px;color:#91dcca;font:11px ui-monospace,monospace;letter-spacing:.18em}.register h1{font-size:clamp(32px,7vw,48px);line-height:1.05;letter-spacing:-.055em;margin:10px 0 14px}.register p{color:#b4c4d0}.trust{display:grid;gap:10px;margin:24px 0;padding:16px;border:1px solid #ffffff16;border-radius:14px;background:#07121b88;color:#c6d5dc;font-size:13px}.trust span:before{content:"✓";color:#8ce2c4;margin-right:10px}.discord{width:100%;border:0;border-radius:13px;padding:15px 18px;background:linear-gradient(110deg,#8be7c6,#9caeff);color:#08131b;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 10px 35px #83d9c744;transition:transform .2s,filter .2s}.discord:hover{transform:translateY(-2px);filter:brightness(1.08)}.discord:disabled{opacity:.55;cursor:wait;transform:none}.status{min-height:26px;margin-top:16px;padding:12px 14px;border-radius:11px;background:#0b1721;color:#b9d2d0;white-space:pre-wrap;overflow-wrap:anywhere}.status.error{color:#ffc4c8;background:#351b26}.status.success{color:#a9f0d1;background:#123027}.fine{font-size:11px!important;color:#8296a4!important;margin-top:22px}.hidden{display:none!important}a{color:#9ee8d0}
+  </style>
+</head>
+<body>
+  <main class="register">
+    <div class="mark" aria-hidden="true">C</div>
+    <div class="eyebrow">CENAI · PRIVATE ACCESS</div>
+    <h1>Secure registration.</h1>
+    <p id="intro">This invitation opens a protected registration session. Continue with the Discord account you want associated with CenAI.</p>
+    <div class="trust">
+      <span>Invitation is single-use and expires automatically</span>
+      <span>Discord identity is verified by CenAI's server</span>
+      <span>Registration does not grant administrator privileges</span>
+    </div>
+    <button id="discord" class="discord" type="button" disabled>Continue with Discord</button>
+    <section id="password-panel" class="hidden">
+      <h2 style="margin:24px 0 4px">Create your CenAI app password</h2>
+      <p>Discord has verified your identity. Set a password so you can sign in to the native CenAI Android app using your Discord email.</p>
+      <form id="password-form" class="trust">
+        <label style="display:grid;gap:7px">New password<input id="new-password" type="password" minlength="12" autocomplete="new-password" required style="padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#07121b;color:#fff"></label>
+        <label style="display:grid;gap:7px">Confirm password<input id="confirm-password" type="password" minlength="12" autocomplete="new-password" required style="padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#07121b;color:#fff"></label>
+        <button class="discord" type="submit">Set password and finish</button>
+      </form>
+    </section>
+    <div id="status" class="status" role="status" aria-live="polite">Checking invitation…</div>
+    <p class="fine">Only use a registration link issued by a CenAI administrator. Never forward your invitation to anyone else. If you did not expect this link, close this page.</p>
+  </main>
+  <script src="/register.js" defer></script>
+</body>
+</html>

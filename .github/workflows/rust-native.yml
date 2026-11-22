@@ -1,0 +1,42 @@
+name: Rust Native CI
+
+on:
+  push:
+    branches:
+      - main
+      - "rewrite/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "native/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  # New commits on the same branch supersede stale checks; the newest snapshot
+  # is always allowed to run instead of waiting behind obsolete builds.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust workspace checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Parse and format Rust workspace for CI checks
+        run: cargo fmt --all
+      - name: Run unit tests
+        run: cargo test --workspace --all-targets
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

@@ -1,0 +1,219 @@
+name: Rust Native Android CI
+
+on:
+  push:
+    branches:
+      - "rewrite/**"
+    tags:
+      - "v*"
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - ".github/workflows/rust-native-android.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - ".github/workflows/rust-native-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rust-native-android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Build and smoke-test Rust NativeActivity APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          # The action's default "tools" SDK package has been retired by Google.
+          packages: platform-tools
+
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native -> target
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Cache pinned Lightning model
+        uses: actions/cache@v4
+        with:
+          path: |
+            app-rust/src/main/assets/models/lightning.litertlm
+            app-rust/src/main/assets/licenses/Apache-2.0.txt
+          key: lightning-qwen3-0.6b-int8-c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+
+      - name: Download and verify fixed Lightning model
+        env:
+          LIGHTNING_MODEL_URL: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm
+          LIGHTNING_MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+          LIGHTNING_MODEL_SIZE: 613722264
+          LICENSE_URL: https://www.apache.org/licenses/LICENSE-2.0.txt
+        run: |
+          mkdir -p app-rust/src/main/assets/models app-rust/src/main/assets/licenses
+          MODEL=app-rust/src/main/assets/models/lightning.litertlm
+          if [[ ! -s "$MODEL" ]]; then
+            curl --location --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 1200 "$LIGHTNING_MODEL_URL" --output "$MODEL.part"
+            mv "$MODEL.part" "$MODEL"
+          fi
+          echo "$LIGHTNING_MODEL_SHA256  $MODEL" | sha256sum --check -
+          test "$(stat -c%s "$MODEL")" = "$LIGHTNING_MODEL_SIZE"
+          LICENSE=app-rust/src/main/assets/licenses/Apache-2.0.txt
+          if [[ ! -s "$LICENSE" ]]; then
+            curl --location --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 120 "$LICENSE_URL" --output "$LICENSE"
+          fi
+
+      - name: Verify bundled Lightning model for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test -s app-rust/src/main/assets/models/lightning.litertlm
+
+      - name: Run Rust core unit tests
+        run: cargo test --manifest-path native/Cargo.toml
+
+      - name: Compile Rust for Android ABIs
+        working-directory: native
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app-rust/src/main/jniLibs build --release
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Assemble Rust-native debug APK
+        run: gradle :app-rust:assembleDebug --stacktrace
+
+      - name: Verify APK contains both native libraries
+        run: |
+          APK="$(find app-rust/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcenai_native.so'
+          unzip -l "$APK" | grep -q 'lib/x86_64/libcenai_native.so'
+          unzip -l "$APK" | grep -q 'assets/models/lightning.litertlm'
+          unzip -l "$APK" | grep -q 'assets/licenses/Apache-2.0.txt'
+          MODEL_HASH="$(unzip -p "$APK" assets/models/lightning.litertlm | sha256sum | cut -d' ' -f1)"
+          test "$MODEL_HASH" = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108"
+          MODEL_SIZE="$(unzip -l "$APK" | awk '$4 == "assets/models/lightning.litertlm" { print $1 }')"
+          test "$MODEL_SIZE" = "613722264"
+          echo "Verified bundled Lightning model in APK: $MODEL_SIZE bytes, SHA-256 $MODEL_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "RUST_NATIVE_APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+
+      - name: Install and launch Rust NativeActivity on API 35
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-boot-timeout: 900000
+          disable-linux-hw-accel: false
+          script: |
+            gradle :app-rust:installDebug
+            adb shell monkey -p com.cenai.app.rustdebug 1
+            sleep 25
+            adb shell pidof com.cenai.app.rustdebug
+            gradle :app-rust:connectedDebugAndroidTest --stacktrace
+
+      - name: Generate debug APK SHA-256
+        run: sha256sum "$RUST_NATIVE_APK" > "$RUST_NATIVE_APK.sha256"
+
+      - name: Upload Rust-native debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CenAI-rust-native-debug-apk
+          path: |
+            app-rust/build/outputs/apk/debug/*.apk
+            app-rust/build/outputs/apk/debug/*.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Prepare production signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
+          CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
+          CENAI_KEY_ALIAS: ${{ secrets.CENAI_KEY_ALIAS }}
+          CENAI_KEY_PASSWORD: ${{ secrets.CENAI_KEY_PASSWORD }}
+        run: |
+          test -n "$CENAI_KEYSTORE_BASE64" || (echo "::error::Missing CENAI_KEYSTORE_BASE64" && exit 1)
+          test -n "$CENAI_KEYSTORE_PASSWORD" || (echo "::error::Missing CENAI_KEYSTORE_PASSWORD" && exit 1)
+          test -n "$CENAI_KEY_ALIAS" || (echo "::error::Missing CENAI_KEY_ALIAS" && exit 1)
+          test -n "$CENAI_KEY_PASSWORD" || (echo "::error::Missing CENAI_KEY_PASSWORD" && exit 1)
+          echo "$CENAI_KEYSTORE_BASE64" | base64 --decode > app-rust/release.keystore
+          echo "CENAI_KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
+          echo "CENAI_KEYSTORE_PASSWORD=$CENAI_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_ALIAS=$CENAI_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "CENAI_KEY_PASSWORD=$CENAI_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Set release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IFS='.-' read -r MAJOR MINOR PATCH PRE_TYPE PRE_NUM <<< "$VERSION"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          if [[ "$VERSION" == *-* ]]; then PRE_NUM=${PRE_NUM:-1}; else PRE_NUM=99; fi
+          CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100 + PRE_NUM))
+          echo "CENAI_VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
+          echo "CENAI_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+
+      - name: Build production Rust-native APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gradle :app-rust:assembleRelease --stacktrace
+
+      - name: Verify production APK signature and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          APK="$(find app-rust/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+          rm -f app-rust/release.keystore
+
+      - name: Publish signed Rust-native APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app-rust/build/outputs/apk/release/*.apk
+            app-rust/build/outputs/apk/release/*.apk.sha256
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}

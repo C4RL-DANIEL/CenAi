@@ -1,0 +1,37 @@
+name: CenAI Voice Cloud Service Checks
+
+on:
+  push:
+    branches:
+      - "rewrite/**"
+    paths:
+      - "voice-server/**"
+      - "website/worker.js"
+      - ".github/workflows/voice-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "voice-server/**"
+      - "website/worker.js"
+      - ".github/workflows/voice-server.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate Python syntax
+        run: python -m py_compile voice-server/main.py voice-server/prepare_voice.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Cloudflare Worker JavaScript syntax
+        run: node --check website/worker.js

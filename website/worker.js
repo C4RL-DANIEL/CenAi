@@ -1,6 +1,13 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261119-gmail-mime-line-wrap-1";
+// The Worker is copied as a native ES module by build.mjs (not passed through esbuild).
+// Preserve function names without relying on esbuild's injected helper.
+function __name(target, value) {
+  Object.defineProperty(target, "name", { value, configurable: true });
+  return target;
+}
+
+const STATIC_CACHE_VERSION = "20261121-discord-registration-invites-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
@@ -9,7 +16,7 @@ const STATIC_FILES = new Set([
   "/beta.html", "/beta.js", "/billing.html", "/billing.js", "/billing-success.html",
   "/billing-cancel.html", "/page.html", "/page.js", "/reset-password.html", "/reset-password.js",
   "/roadmap.html", "/security.html", "/updates.html", "/updates.js",
-  "/admin/index.html", "/admin/admin.css", "/admin/admin.js", "/account.html", "/account.js"
+  "/admin/index.html", "/admin/admin.css", "/admin/admin.js", "/register.html", "/register.js", "/account.html", "/account.js"
 ]);
 
 const corsHeaders = {
@@ -297,6 +304,186 @@ function estimateTokens(value) {
   return Math.max(1, Math.ceil(String(value || "").length / 4));
 }
 
+function streamAiChatResponse(upstream, env, token, reservation, model, inputTokens, started) {
+  const base = env.SUPABASE_URL.replace(/\/$/, "");
+  let reader;
+  let cancelled = false;
+  let finalized = false;
+  let output = "";
+  let buffer = "";
+  const decoder = new TextDecoder();
+
+  function collectText(line) {
+    const data = line.trim().startsWith("data:") ? line.trim().slice(5).trim() : "";
+    if (!data || data === "[DONE]") return;
+    try {
+      const value = JSON.parse(data);
+      const text = value?.choices?.[0]?.delta?.content
+        ?? value?.response
+        ?? value?.generated_text
+        ?? value?.text
+        ?? "";
+      if (typeof text === "string") output += text;
+    } catch {
+      // Ignore non-JSON SSE control events; forward the original event unchanged.
+    }
+  }
+
+  async function record(status, errorCode = "") {
+    if (finalized) return;
+    finalized = true;
+    try {
+      const response = await fetch(base + "/functions/v1/cenai-ai-quota", {
+        method: "POST",
+        headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record",
+          eventId: reservation.eventId,
+          model,
+          inputTokens,
+          outputTokens: estimateTokens(output),
+          latencyMs: Math.max(0, Date.now() - started),
+          status,
+          ...(errorCode ? { errorCode } : {})
+        })
+      });
+      if (!response.ok) console.error("CenAI streamed usage record returned HTTP", response.status);
+    } catch (error) {
+      console.error("CenAI streamed usage record failed", error instanceof Error ? error.message : "unknown error");
+    }
+  }
+
+  const body = new ReadableStream({
+    async start(controller) {
+      reader = upstream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || "";
+          for (const line of lines) collectText(line);
+          controller.enqueue(value);
+        }
+        buffer += decoder.decode();
+        if (buffer.trim()) collectText(buffer);
+        if (cancelled) return;
+        if (!output) throw new Error("AI provider returned an empty streamed response");
+        await record("success");
+        controller.close();
+      } catch (error) {
+        if (!cancelled) {
+          await record("error", "AI_STREAM_FAILED");
+          controller.error(error);
+        }
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+    },
+    async cancel(reason) {
+      cancelled = true;
+      try { await reader?.cancel(reason); } catch {}
+      await record("cancelled", "CLIENT_CANCELLED");
+    }
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    }
+  });
+}
+__name(streamAiChatResponse, "streamAiChatResponse");
+
+async function cloudVoiceStatus(request, env) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") {
+    return json(503, { error: "CenAI Voice Workers AI binding is not available." });
+  }
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return json(401, { error: "Sign in to CenAI before checking cloud voice." });
+  try {
+    const base = env.SUPABASE_URL.replace(/\/$/, "");
+    const identity = await fetch(base + "/auth/v1/user", { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
+    if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
+    const user = await identity.json().catch(() => ({}));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    const quotaResponse = await fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_status" }), signal: AbortSignal.timeout(10000), cache: "no-store" });
+    const quota = await quotaResponse.json().catch(() => ({}));
+    if (!quotaResponse.ok || quota.ok !== true) return json(quotaResponse.status === 401 ? 401 : quotaResponse.status === 403 ? 403 : 503, { error: quota.error || "CenAI Voice quota status is unavailable.", code: quota.code || "VOICE_QUOTA_STATUS_UNAVAILABLE" });
+    return json(200, { ready: true, service: "CenAI Voice", provider: "Cloudflare Workers AI", model: "@cf/deepgram/aura-1", profile: "CenAI English · Aura-1", language: "English", quota: quota.quota });
+  } catch (error) {
+    console.error("CenAI Voice health check failed", error instanceof Error ? error.message : "unknown error");
+    return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
+  }
+}
+__name(cloudVoiceStatus, "cloudVoiceStatus");
+
+async function cloudVoiceSpeech(request, env, ctx) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") return json(503, { error: "CenAI Voice Workers AI binding is not available." });
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
+  const declaredLength = Number(request.headers.get("Content-Length") || 0);
+  if (declaredLength > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
+  const rawBody = await request.text();
+  if (rawBody.length > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
+  let body;
+  try { body = JSON.parse(rawBody); } catch { return json(400, { error: "Voice request must be valid JSON." }); }
+  const input = typeof body?.input === "string" ? body.input.trim() : "";
+  const language = typeof body?.language === "string" ? body.language : "English";
+  const voice = typeof body?.voice === "string" ? body.voice : "cenai-en-v1";
+  if (!input || input.length > 1000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(input)) return json(400, { error: "Speech text must contain 1–1,000 supported characters." });
+  if (language !== "English") return json(400, { error: "CenAI Aura-1 currently supports English only." });
+  if (voice !== "cenai-en-v1") return json(400, { error: "The requested CenAI Voice profile is not available." });
+  const base = env.SUPABASE_URL.replace(/\/$/, "");
+  try {
+    const identity = await fetch(base + "/auth/v1/user", { method: "GET", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token }, cache: "no-store" });
+    if (!identity.ok) return json(401, { error: "Your CenAI session is invalid or expired." });
+    const user = await identity.json().catch(() => ({}));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(user.id || "")) || user.is_anonymous) return json(401, { error: "A verified CenAI account is required for cloud voice." });
+    const quotaResponse = await fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_authorize", characters: input.length }), signal: AbortSignal.timeout(10000), cache: "no-store" });
+    const quota = await quotaResponse.json().catch(() => ({}));
+    if (!quotaResponse.ok || quota.ok !== true || !Number.isSafeInteger(Number(quota.eventId))) return json(quotaResponse.status === 429 ? 429 : quotaResponse.status === 403 ? 403 : quotaResponse.status === 503 ? 503 : 429, { error: quota.error || "CenAI Voice quota could not be reserved.", code: quota.code || "VOICE_QUOTA_BLOCKED", quota: quota.quota });
+    const eventId = Number(quota.eventId);
+    const record = (status) => fetch(base + "/functions/v1/cenai-ai-quota", { method: "POST", headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ action: "voice_record", eventId, status }), signal: AbortSignal.timeout(10000), cache: "no-store" }).then(async (r) => { if (!r.ok) console.error("CenAI Voice usage record returned HTTP", r.status); }).catch((error) => console.error("CenAI Voice usage record failed", error instanceof Error ? error.message : "unknown error"));
+    let audio;
+    try {
+      audio = await env.AI.run("@cf/deepgram/aura-1", { text: input, speaker: "angus", encoding: "linear16", container: "wav" }, { returnRawResponse: true });
+    } catch (error) {
+      ctx.waitUntil(record("error"));
+      console.error("CenAI Aura-1 inference failed", error instanceof Error ? error.message : "unknown error");
+      return json(503, { error: "CenAI Voice synthesis is temporarily unavailable." });
+    }
+    if (!(audio instanceof Response) || !audio.ok) {
+      ctx.waitUntil(record("error"));
+      return json(503, { error: "CenAI Aura-1 returned an invalid audio response." });
+    }
+    const contentType = (audio.headers.get("Content-Type") || "").toLowerCase();
+    const contentLength = Number(audio.headers.get("Content-Length") || 0);
+    if ((!contentType.startsWith("audio/wav") && !contentType.startsWith("audio/x-wav")) || (contentLength && contentLength > 33554432)) {
+      ctx.waitUntil(record("error"));
+      return json(502, { error: "CenAI Aura-1 returned an unsupported or oversized audio format." });
+    }
+    ctx.waitUntil(record("success"));
+    const headers = new Headers(corsHeaders);
+    headers.set("Content-Type", "audio/wav");
+    headers.set("Cache-Control", "no-store, no-transform");
+    headers.set("X-CenAI-Voice-Profile", voice);
+    headers.set("X-CenAI-Voice-Model", "@cf/deepgram/aura-1");
+    return new Response(audio.body, { status: 200, headers });
+  } catch (error) {
+    console.error("CenAI Voice gateway failed", error instanceof Error ? error.message : "unknown error");
+    return json(503, { error: "CenAI Voice cloud service is temporarily unavailable." });
+  }
+}
+__name(cloudVoiceSpeech, "cloudVoiceSpeech");
+
 async function aiChat(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
@@ -306,7 +493,6 @@ async function aiChat(request, env) {
   if (!body || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
     return json(400, { error: "Provide between 1 and 50 chat messages." });
   }
-  if (body.stream === true) return json(400, { error: "Streaming is not enabled for this initial Cloud AI release." });
   const messages = [];
   for (const item of body.messages) {
     const role = String(item?.role || "");
@@ -333,6 +519,11 @@ async function aiChat(request, env) {
     reservation = await reserveResponse.json().catch(() => ({}));
     if (!reserveResponse.ok) return json(reserveResponse.status, reservation);
     const started = Date.now();
+    if (body.stream === true) {
+      const upstream = await env.AI.run(reservation.modelId, { messages, max_tokens: maxTokens, temperature, stream: true });
+      if (!upstream || typeof upstream.getReader !== "function") throw new Error("AI runtime did not return a readable stream");
+      return streamAiChatResponse(upstream, env, token, reservation, model, inputTokens, started);
+    }
     const result = await env.AI.run(reservation.modelId, { messages, max_tokens: maxTokens, temperature });
     const latencyMs = Date.now() - started;
     const content = typeof result?.response === "string" ? result.response
@@ -519,6 +710,9 @@ function rewritePath(url) {
     "/beta/": "/beta.html",
     "/admin": "/admin/index.html",
     "/admin/": "/admin/index.html",
+    "/register": "/register.html",
+    "/register/": "/register.html",
+    "/register/complete": "/register.html",
     "/reset-password": "/reset-password.html",
     "/reset-password/": "/reset-password.html",
     "/account": "/account.html",
@@ -553,6 +747,8 @@ export default {
         return releaseFeed();
       }
       if (url.pathname === "/api/beta-notification") return betaNotification(request, env);
+      if (url.pathname === "/api/voice/status") return cloudVoiceStatus(request, env);
+      if (url.pathname === "/api/voice/speech") return cloudVoiceSpeech(request, env, ctx);
       if (url.pathname === "/api/ai/chat/completions") return aiChat(request, env);
       if (url.pathname === "/api/email-otp") return emailOtp(request, env);
       if (url.pathname === "/api/webhooks/paypal") return proxyFunction(request, env, "cenai-paypal-billing");

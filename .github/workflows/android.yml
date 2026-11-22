@@ -42,6 +42,9 @@ permissions:
 
 jobs:
   build:
+    # The Rust-native rewrite has its own packaging workflow. Keep this legacy
+    # Kotlin/JNI pipeline for mainline builds, but do not run it against the rewrite PR.
+    if: github.event_name != 'pull_request' || github.head_ref != 'rewrite/rust-native-core'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

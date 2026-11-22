@@ -1,12 +1,7 @@
 name: Website checks
 on:
   push:
-    branches: [ main, "feat/**", cloudflare-migration ]
-    paths:
-      - "website/**"
-      - "supabase/**"
-      - ".github/workflows/website-check.yml"
-  pull_request:
+    branches: [ main, "feat/**", "rewrite/**", cloudflare-migration ]
     paths:
       - "website/**"
       - "supabase/**"
@@ -31,6 +26,7 @@ jobs:
           npm run build
           test -s dist/index.html
           test -s dist/admin/index.html
+          test -s dist/register.html
           test -s dist/_worker.js
           test -s dist/styles.css
           test -s dist/editorial.css
@@ -49,13 +45,13 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-paypal-billing cenai-public-api cenai-telemetry; do
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-paypal-billing cenai-public-api cenai-telemetry; do
             deno check --no-lock "supabase/functions/$function/index.ts"
           done
 
       - name: Verify Cloudflare API and recovery routes
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           grep -q 'cenai-email-otp' website/worker.js
           grep -q 'cenai-control-plane' website/worker.js
           grep -q 'cenai-paypal-billing' website/worker.js
@@ -63,10 +59,24 @@ jobs:
           grep -q 'issue_admin' website/api/email-otp.js
           grep -q 'verify_admin' website/api/email-otp.js
           grep -q 'email MFA fallback' website/admin/admin.js
+          grep -q 'registration_invite_create' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'registration_redeem' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'code_challenge_method' website/register.js
+          grep -q 'registration_invites' supabase/migrations/20261121222402_discord_registration_invites.sql
+          grep -q 'registration_policy' supabase/migrations/20261121222402_discord_registration_invites.sql
+          grep -q 'registration_status' native/src/core/network.rs
+          grep -q 'registration_status' supabase/functions/cenai-control-plane/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-paypal-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-billing/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-public-api/index.ts
+          grep -q 'Complete Discord invitation registration' supabase/functions/cenai-telemetry/index.ts
+          grep -q 'link.hash = "invite="' website/admin/admin.js
+          grep -q 'password-form' website/register.js
           node - <<'NODE'
           const fs = require("node:fs");
           const source = fs.readFileSync("website/worker.js", "utf8");
-          if (!source.includes('message.replace(/(^|\\r\\n)\\./g, "$1..") + "\\r\\n.\\r\\n"')) {
+          if (!source.includes("const smtpData = message.replace")) {
             throw new Error("SMTP DATA must dot-stuff content but preserve the single-dot terminator");
           }
           if (source.includes('.replace(/\\r?\\n\\./g')) {
@@ -74,8 +84,11 @@ jobs:
           }
           const body = "Subject: test\r\n\r\n.first line\r\n..second line";
           const formatted = body.replace(/(^|\r\n)\./g, "$1..") + "\r\n.\r\n";
-          if (!formatted.endsWith("\r\n.\r\n") || formatted.endsWith("\r\n..\r\n")) {
+          if (formatted.slice(-5) !== "\r\n.\r\n") {
             throw new Error("SMTP terminator regression test failed");
+          }
+          if (!formatted.includes("\r\n..first line") || !formatted.includes("\r\n...second line")) {
+            throw new Error("SMTP dot-stuffing regression test failed");
           }
           console.log("SMTP DATA terminator regression test passed.");
           NODE
@@ -93,6 +106,18 @@ jobs:
           for script in website/*.js website/api/*.js website/api/v1/*.js website/admin/*.js; do node --check "$script"; done
           grep -q 'cenai-ai-quota' website/worker.js
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
+          grep -q '@cf/deepgram/aura-1' website/worker.js
+          grep -q 'function __name' website/worker.js
+          grep -q 'voice_authorize' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'voice_status' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_record_voice_usage' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'voice.cloud.enabled' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_ai_daily_budget' supabase/migrations/20261121222413_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/migrations/20261121222413_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/functions/cenai-ai-quota/index.ts
+          grep -q 'globalNeuronLimit: 8000' supabase/functions/cenai-ai-quota/index.ts
+          node --check website/worker.js
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
           grep -q 'cenai-website.cenai-app.workers.dev/reset-password' website/reset-password.js
@@ -116,6 +141,10 @@ jobs:
             exit 1
           fi
           node -e 'const h=require("/tmp/cenai-health.json"); if(h.service!=="cenai-website" || h.status!=="online") process.exit(1)'
+          for endpoint in /api/voice/status /api/voice/speech; do
+            code=$(curl -sS --max-time 15 -o /tmp/cenai-voice-auth.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE$endpoint")
+            if [[ "$code" != "401" ]]; then cat /tmp/cenai-voice-auth.json; echo "$endpoint should require a signed-in account (expected 401, got $code)"; exit 1; fi
+          done
           for route in / /admin /beta /billing /account /reset-password /billing/success /billing/cancel /updates.html /security.html /roadmap.html /api.html /about.html /privacy.html /terms.html /contact.html /guides/ /guides/choosing-ai-models.html /guides/approval-first-agents.html /guides/organizing-ai-projects.html /guides/local-vs-cloud-ai.html /guides/checking-ai-answers.html /robots.txt /sitemap.xml; do
             code=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" "$BASE$route")
             if [[ "$code" != "200" ]]; then echo "$route returned $code"; exit 1; fi

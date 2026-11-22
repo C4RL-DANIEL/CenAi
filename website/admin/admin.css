@@ -374,3 +374,5 @@ body{background:var(--bg);font-size:14px;line-height:1.55}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+.invite-created{display:grid;gap:9px;margin:16px 0;padding:17px;border:1px solid #b8d8cb;border-radius:12px;background:#f2faf6}.invite-created a{overflow-wrap:anywhere;color:#315f9a;font-size:12px}.invite-created small{color:#607568}.invite-created button{justify-self:start}.invite-row{align-items:center}.invite-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.invite-state button{font-size:11px;padding:7px 10px}.invite-state .pill{text-transform:uppercase}
