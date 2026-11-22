@@ -92,3 +92,83 @@ mod tests {
         assert!(validate_email_otp("12a456").is_err());
     }
 }
+
+
+pub fn validate_google_oauth_client_id(client_id: &str) -> Result<(), String> {
+    if client_id.len() <= 256
+        && client_id.ends_with(".apps.googleusercontent.com")
+        && !client_id.chars().any(char::is_whitespace)
+    {
+        Ok(())
+    } else {
+        Err("Enter a valid Google OAuth client ID.".to_owned())
+    }
+}
+
+pub fn validate_google_oauth_callback(
+    scheme: &str,
+    path: &str,
+    returned_state: &str,
+    expected_state: &str,
+    error: &str,
+    code: &str,
+) -> Result<String, String> {
+    if scheme != "com.cenai.app" || path != "/oauth2redirect" {
+        return Err("Unexpected OAuth redirect.".to_owned());
+    }
+    if expected_state.is_empty() || returned_state != expected_state {
+        return Err("OAuth state validation failed.".to_owned());
+    }
+    if !error.is_empty() {
+        return Err(format!("Google authorization failed: {}", error.chars().take(200).collect::<String>()));
+    }
+    if code.is_empty() {
+        return Err("Google did not return an authorization code.".to_owned());
+    }
+    Ok(code.to_owned())
+}
+
+pub fn parse_google_oauth_token(raw_json: &str, now_ms: u64) -> Result<String, String> {
+    let value: Value = serde_json::from_str(raw_json)
+        .map_err(|_| "Google returned invalid OAuth token JSON.".to_owned())?;
+    let access = value.get("access_token").and_then(Value::as_str).unwrap_or("");
+    if access.is_empty() {
+        return Err(value.get("error_description").and_then(Value::as_str)
+            .unwrap_or("Google did not return an access token.").to_owned());
+    }
+    let refresh = value.get("refresh_token").and_then(Value::as_str).unwrap_or("");
+    let expires_in = value.get("expires_in").and_then(Value::as_u64).unwrap_or(3600);
+    let expires_at = now_ms.saturating_add(expires_in.saturating_mul(1000));
+    Ok(json!({
+        "access_token": access,
+        "refresh_token": refresh,
+        "expires_at": expires_at.to_string()
+    }).to_string())
+}
+
+#[cfg(test)]
+mod google_oauth_tests {
+    use super::{parse_google_oauth_token, validate_google_oauth_callback, validate_google_oauth_client_id};
+    use serde_json::Value;
+
+    #[test]
+    fn validates_google_oauth_client_and_callback_state() {
+        assert!(validate_google_oauth_client_id("abc.apps.googleusercontent.com").is_ok());
+        assert!(validate_google_oauth_client_id("invalid").is_err());
+        assert_eq!(
+            validate_google_oauth_callback("com.cenai.app", "/oauth2redirect", "s", "s", "", "c").unwrap(),
+            "c"
+        );
+        assert!(validate_google_oauth_callback("com.cenai.app", "/oauth2redirect", "bad", "s", "", "c").is_err());
+    }
+
+    #[test]
+    fn parses_google_oauth_tokens_and_expiry() {
+        let token: Value = serde_json::from_str(
+            &parse_google_oauth_token(r#"{"access_token":"a","refresh_token":"r","expires_in":3600}"#, 1000).unwrap()
+        ).unwrap();
+        assert_eq!(token["access_token"], "a");
+        assert_eq!(token["expires_at"], "3601000");
+        assert!(parse_google_oauth_token(r#"{"error":"invalid_grant"}"#, 1000).is_err());
+    }
+}
