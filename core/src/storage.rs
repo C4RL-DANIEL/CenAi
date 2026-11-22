@@ -67,3 +67,29 @@ mod tests {
         assert_eq!(output.as_array().unwrap().len(), 1);
     }
 }
+
+/// Builds a bounded conversation title from the first user message.
+pub fn conversation_title(messages_json: &str) -> Result<String, String> {
+    let messages: Value = serde_json::from_str(messages_json)
+        .map_err(|_| "Conversation messages are not valid JSON.".to_owned())?;
+    let items = messages.as_array()
+        .ok_or_else(|| "Conversation messages must be a JSON array.".to_owned())?;
+    let first_prompt = items.iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .unwrap_or("");
+    let title: String = first_prompt.chars().take(42).collect();
+    Ok(if title.trim().is_empty() { "New chat".to_owned() } else { title })
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::conversation_title;
+
+    #[test]
+    fn derives_title_from_first_user_message_with_safe_fallback() {
+        assert_eq!(conversation_title(r#"[{"role":"assistant","content":"hello"},{"role":"user","content":"A first prompt"}]"#).unwrap(), "A first prompt");
+        assert_eq!(conversation_title(r#"[{"role":"user","content":""}]"#).unwrap(), "New chat");
+        assert_eq!(conversation_title(&format!(r#"[{{"role":"user","content":"{}"}}]"#, "x".repeat(80)).unwrap()).unwrap().len(), 42);
+    }
+}
