@@ -48,7 +48,13 @@ class AgentRuntimeTest {
 
     @Test
     fun toolCallsRequireTheExpectedStructuredMarker() {
-        val runtime = AgentRuntime()
+        val runtime = AgentRuntime(
+            toolCallParser = { response ->
+                if (response.contains("[[CENAI_TOOL_CALL]]")) {
+                    JSONObject().put("name", "current_date").put("arguments", JSONObject()).toString()
+                } else ""
+            }
+        )
         val parsed = runtime.parseToolCall("thinking\n[[CENAI_TOOL_CALL]]{\"name\":\"current_date\",\"arguments\":{}}[[/CENAI_TOOL_CALL]]")
         assertNotNull(parsed)
         assertEquals("current_date", parsed!!.first)
