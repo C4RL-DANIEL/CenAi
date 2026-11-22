@@ -11,7 +11,9 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class SecureKeyStore(context: Context) {
-    private val prefs = context.getSharedPreferences("cenai_private", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences("cenai_private", Context.MODE_PRIVATE)
+    private fun accountPrefs(ownerId: String) = appContext.getSharedPreferences("cenai_private_" + ownerId.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "guest" }, Context.MODE_PRIVATE)
     private val alias = "cenai_aes_key_v1"
 
     private fun key(): SecretKey {
@@ -48,17 +50,21 @@ class SecureKeyStore(context: Context) {
         else prefs.edit().putString("api_key", encrypt(value)).apply()
     }
 
-    fun saveApiKey(value: String, provider: Provider) {
+    fun saveApiKey(value: String, provider: Provider, ownerId: String = "guest") {
+        val scoped = accountPrefs(ownerId)
         val name = "api_key_${provider.name.lowercase()}"
-        if (value.isBlank()) prefs.edit().remove(name).apply()
-        else prefs.edit().putString(name, encrypt(value)).apply()
+        if (value.isBlank()) scoped.edit().remove(name).apply()
+        else scoped.edit().putString(name, encrypt(value)).apply()
     }
 
     fun apiKey(): String = decrypt(prefs.getString("api_key", null))
 
-    fun apiKey(provider: Provider): String {
-        val stored = prefs.getString("api_key_${provider.name.lowercase()}", null)
-        return decrypt(stored ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null)
+    fun apiKey(provider: Provider, ownerId: String = "guest"): String {
+        val scoped = accountPrefs(ownerId)
+        val stored = scoped.getString("api_key_${provider.name.lowercase()}", null)
+        if (stored != null) return decrypt(stored)
+        // Preserve legacy unscoped credentials for guest mode only; never leak them into another account.
+        return if (ownerId == "guest") decrypt(if (provider == Provider.OPENAI) prefs.getString("api_key", null) else prefs.getString("api_key_${provider.name.lowercase()}", null)) else ""
     }
 
     fun putSecret(name: String, value: String) { if (value.isBlank()) prefs.edit().remove("secret_" + name).apply() else prefs.edit().putString("secret_" + name, encrypt(value)).apply() }
