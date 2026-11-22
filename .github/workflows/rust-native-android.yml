@@ -145,7 +145,8 @@ jobs:
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
           script: |
-            set -euo pipefail
+            # android-emulator-runner executes this block with /bin/sh, not Bash.
+            set -eu
             APK="$RUST_NATIVE_APK"
             timeout 60s adb wait-for-device
             package_ready=false
