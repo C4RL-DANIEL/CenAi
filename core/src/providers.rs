@@ -618,3 +618,34 @@ mod image_detection_tests {
         assert!(!contains_image_marker("[[CENAI_IMAGE|image/png|not-base64]]"));
     }
 }
+
+/// Canonical provider identity and default configuration. Kotlin keeps only enum IDs.
+pub fn provider_metadata(name: &str) -> Result<String, String> {
+    let (label, model, base_url) = match name {
+        "OPENAI" => ("OpenAI", "gpt-4.1-mini", "https://api.openai.com/v1"),
+        "DEEPSEEK" => ("DeepSeek", "deepseek-flash", "https://api.deepseek.com"),
+        "CLAUDE" => ("Claude", "claude-3-5-haiku-latest", "https://api.anthropic.com"),
+        "GEMINI" => ("Gemini", "gemini-2.0-flash", "https://generativelanguage.googleapis.com"),
+        "CENAI_CLOUD" => ("CenAI Cloud · Gemma 4", "cloudflare-gemma-4-26b-a4b-it", "https://cenai-website.aglibotcarldaniel.workers.dev"),
+        "CUSTOM" => ("Custom OpenAI-compatible", "", "https://"),
+        _ => return Err("Unknown AI provider.".to_owned()),
+    };
+    serde_json::to_string(&json!({"name":name,"label":label,"model":model,"base_url":base_url}))
+        .map_err(|_| "Could not encode provider metadata.".to_owned())
+}
+
+#[cfg(test)]
+mod provider_metadata_tests {
+    use super::provider_metadata;
+    use serde_json::Value;
+
+    #[test]
+    fn rust_registry_is_the_single_source_for_provider_defaults() {
+        let openai: Value = serde_json::from_str(&provider_metadata("OPENAI").unwrap()).unwrap();
+        assert_eq!(openai["model"], "gpt-4.1-mini");
+        assert_eq!(openai["base_url"], "https://api.openai.com/v1");
+        let local: Value = serde_json::from_str(&provider_metadata("CUSTOM").unwrap()).unwrap();
+        assert_eq!(local["model"], "");
+        assert!(provider_metadata("UNKNOWN").is_err());
+    }
+}
