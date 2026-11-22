@@ -15,10 +15,13 @@ data class Conversation(
 class ChatStore(context: Context, ownerId: String = "guest") {
     private val namespace = ownerId.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "guest" }
     private val prefs = context.getSharedPreferences("cenai_history_$namespace", Context.MODE_PRIVATE)
+    private val vault = SecureKeyStore(context.applicationContext)
 
     fun load(): MutableList<Conversation> {
-        val raw = prefs.getString("conversations", "[]") ?: "[]"
-        return runCatching {
+        val stored = prefs.getString("conversations", "[]") ?: "[]"
+        val legacyPlaintext = stored.trimStart().startsWith("[")
+        val raw = if (legacyPlaintext) stored else vault.decryptLocalData(stored).ifBlank { "[]" }
+        val parsed = runCatching {
             val array = JSONArray(raw)
             MutableList(array.length()) { i ->
                 val item = array.getJSONObject(i)
@@ -33,7 +36,9 @@ class ChatStore(context: Context, ownerId: String = "guest") {
                     updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
                 )
             }.sortedByDescending { it.updatedAt }.toMutableList()
-        }.getOrDefault(mutableListOf())
+        }.getOrNull() ?: return mutableListOf()
+        if (legacyPlaintext) save(parsed)
+        return parsed
     }
 
     fun save(items: List<Conversation>) {
@@ -44,6 +49,6 @@ class ChatStore(context: Context, ownerId: String = "guest") {
             array.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
                 .put("updatedAt", conversation.updatedAt).put("messages", messages))
         }
-        prefs.edit().putString("conversations", array.toString()).apply()
+        prefs.edit().putString("conversations", vault.encryptLocalData(array.toString())).apply()
     }
 }
