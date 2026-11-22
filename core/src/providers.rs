@@ -540,3 +540,29 @@ mod error_tests {
         assert_eq!(parse_provider_error(&"x".repeat(700)).len(), 500);
     }
 }
+
+
+/// Replaces embedded image payloads with a safe textual marker for retrieval and synthesis.
+pub fn strip_image_markers(content: &str) -> String {
+    let parts = vision_parts(content);
+    let mut output = String::new();
+    for (kind, value) in parts {
+        if kind == "text" {
+            output.push_str(&value);
+        } else {
+            output.push_str("[Image attached]");
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod image_marker_tests {
+    use super::strip_image_markers;
+
+    #[test]
+    fn strips_encoded_image_payloads_without_losing_surrounding_text() {
+        let value = "Describe [[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]] please";
+        assert_eq!(strip_image_markers(value), "Describe [Image attached] please");
+    }
+}
