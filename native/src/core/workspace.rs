@@ -1452,9 +1452,9 @@ mod legacy_history_workspace_tests {
         let owner = "550e8400-e29b-41d4-a716-446655440091";
         let store = WorkspaceStore::new(&root, owner).unwrap();
         let legacy = r#"[{"id":"old-chat-1","title":"My old chat","updatedAt":1700000000123,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"welcome"}]},{"id":"old-chat-2","title":"Another chat","updatedAt":1700000000999,"ownerEmail":"owner@example.com","messages":[]}]"#;
-        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 2);
-        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 0);
-        assert!(store.import_legacy_conversations(legacy, "another@example.com").is_err());
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com", None).unwrap(), 2);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com", None).unwrap(), 0);
+        assert!(store.import_legacy_conversations(legacy, "another@example.com", None).is_err());
         let catalog = store.list_conversations().unwrap();
         assert_eq!(catalog.len(), 2);
         assert_eq!(catalog[0].id, "old-chat-2");
@@ -1473,9 +1473,9 @@ mod legacy_history_workspace_tests {
         let owner = "550e8400-e29b-41d4-a716-446655440092";
         let other = "550e8400-e29b-41d4-a716-446655440093";
         let store = WorkspaceStore::new(&root, owner).unwrap();
-        assert!(store.import_legacy_conversations(r#"[{"id":"../bad","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com").is_err());
+        assert!(store.import_legacy_conversations(r#"[{"id":"../bad","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com", None).is_err());
         assert!(store.list_conversations().unwrap().is_empty());
-        store.import_legacy_conversations(r#"[{"id":"safe-id","title":"Safe","updatedAt":10,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"private"}]}]"#, "owner@example.com").unwrap();
+        store.import_legacy_conversations(r#"[{"id":"safe-id","title":"Safe","updatedAt":10,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"private"}]}]"#, "owner@example.com", None).unwrap();
         let other_store = WorkspaceStore::new(&root, other).unwrap();
         assert!(other_store.list_conversations().unwrap().is_empty());
         assert!(other_store.load_conversation("safe-id").unwrap().is_empty());
@@ -1490,8 +1490,8 @@ mod legacy_history_workspace_tests {
             id: 1, role: crate::ui::model::MessageRole::User, body: "Rust version".into(), streaming: false,
         }]).unwrap();
         let legacy = r#"[{"id":"same-id","title":"Legacy","updatedAt":22,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"old version"}]}]"#;
-        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 1);
-        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com").unwrap(), 0);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com", None).unwrap(), 1);
+        assert_eq!(store.import_legacy_conversations(legacy, "owner@example.com", None).unwrap(), 0);
         assert_eq!(store.load_conversation("same-id").unwrap()[0].body, "Rust version");
         let _ = fs::remove_dir_all(root);
     }
