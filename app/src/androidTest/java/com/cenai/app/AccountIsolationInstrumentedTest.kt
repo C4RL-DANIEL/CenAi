@@ -31,6 +31,8 @@ class AccountIsolationInstrumentedTest {
             messages = mutableListOf(ChatMessage("user", "Beta context only"))
         )))
 
+        val storedAlpha = context.getSharedPreferences("cenai_history_account-alpha", android.content.Context.MODE_PRIVATE).getString("conversations", "").orEmpty()
+        assertTrue(storedAlpha.isNotBlank() && !storedAlpha.trimStart().startsWith("["))
         assertEquals(listOf("alpha-chat"), first.load().map { it.id })
         assertEquals(listOf("beta-chat"), second.load().map { it.id })
         assertTrue(guest.load().isEmpty())
