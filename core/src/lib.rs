@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod knowledge;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
@@ -280,6 +281,40 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_evaluateArithmetic(
         Err(error) => format!("ERROR:{error}"),
     };
     match env.new_string(result) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_retrieveLocalKnowledge(
+    mut env: JNIEnv,
+    _class: JClass,
+    payload: JString,
+    max_results: jint,
+    max_characters: jint,
+) -> jstring {
+    let Some(payload_value) = read_java_string(&mut env, &payload) else {
+        return std::ptr::null_mut();
+    };
+    let result = (|| {
+        let parsed: serde_json::Value = serde_json::from_str(&payload_value)
+            .map_err(|_| "Local knowledge request could not be decoded.".to_owned())?;
+        let query = parsed.get("query").and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "Local knowledge query is missing.".to_owned())?;
+        let conversations = parsed.get("conversations").cloned().unwrap_or_else(|| serde_json::json!([]));
+        let current_messages = parsed.get("current_messages").cloned().unwrap_or_else(|| serde_json::json!([]));
+        knowledge::retrieve_local_knowledge(
+            query,
+            &conversations.to_string(),
+            &current_messages.to_string(),
+            max_results.max(1) as usize,
+            max_characters.max(500) as usize,
+        )
+    })();
+    let output = result.unwrap_or_else(|error| format!("ERROR:{error}"));
+    match env.new_string(output) {
         Ok(value) => value.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
