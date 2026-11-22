@@ -1,7 +1,6 @@
 package com.cenai.app
 
 import android.content.Context
-import android.net.Uri
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -18,8 +17,8 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Private, on-device language model runtime. Model weights remain in app-private
- * storage and are never uploaded. The fixed Lightning model is copied from APK assets on first use.
+ * Private, on-device Lightning runtime. The pinned Qwen3-0.6B INT8 LiteRT-LM
+ * asset is copied into app-private storage and never uploaded.
  */
 class LocalModelRuntime(context: Context) {
     private val app = context.applicationContext
@@ -30,16 +29,17 @@ class LocalModelRuntime(context: Context) {
     private var engine: Engine? = null
     private var loadedPath: String? = null
 
-    fun isModelInstalled(): Boolean = modelFile.isFile && modelFile.length() > 1_000_000L
+    fun isModelInstalled(): Boolean =
+        modelFile.isFile && modelFile.length() == EXPECTED_MODEL_SIZE_BYTES
+
     fun modelSizeBytes(): Long = if (isModelInstalled()) modelFile.length() else 0L
 
-
-    /** Installs the fixed Lightning model shipped in APK assets without asking the user to import it. */
+    /** Installs the fixed model from APK assets, without a user import or download step. */
     suspend fun installBundledModelIfMissing(): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (isModelInstalled()) return@withLock true
             val source = try {
-                app.assets.open("models/lightning.litertlm")
+                app.assets.open(MODEL_ASSET_PATH)
             } catch (_: Throwable) {
                 return@withLock false
             }
@@ -54,19 +54,23 @@ class LocalModelRuntime(context: Context) {
                             val count = input.read(buffer)
                             if (count < 0) break
                             copied += count
-                            require(copied <= 2_500_000_000L) { "Bundled Lightning model exceeds the supported size." }
+                            require(copied <= EXPECTED_MODEL_SIZE_BYTES) {
+                                "Bundled Lightning model is larger than the pinned model."
+                            }
                             output.write(buffer, 0, count)
                         }
                         output.fd.sync()
                     }
                 }
-                require(copied > 1_000_000L) { "Bundled Lightning model is missing or incomplete." }
+                require(copied == EXPECTED_MODEL_SIZE_BYTES) {
+                    "Bundled Lightning model is incomplete or has an unexpected size."
+                }
                 closeEngineLocked()
                 if (modelFile.exists() && !modelFile.delete()) {
-                    throw IllegalStateException("Could not replace an incomplete Lightning model file.")
+                    throw IllegalStateException("Could not replace the incomplete Lightning model file.")
                 }
                 if (!temporary.renameTo(modelFile)) {
-                    throw IllegalStateException("Could not install the bundled Lightning model into private app storage.")
+                    throw IllegalStateException("Could not install Lightning into private app storage.")
                 }
                 true
             } catch (_: Throwable) {
@@ -76,66 +80,13 @@ class LocalModelRuntime(context: Context) {
         }
     }
 
-    suspend fun importModel(uri: Uri, displayName: String): Long = withContext(Dispatchers.IO) {
-        require(displayName.lowercase().endsWith(".litertlm")) {
-            "Choose a LiteRT-LM .litertlm model file."
-        }
-        modelDir.mkdirs()
-        val temporary = File(modelDir, "lightning.importing")
-        try {
-            val input = app.contentResolver.openInputStream(uri)
-                ?: throw IllegalStateException("Android could not open the selected model file.")
-            var copied = 0L
-            input.use { source ->
-                FileOutputStream(temporary).use { output ->
-                    val buffer = ByteArray(1024 * 1024)
-                    while (true) {
-                        val count = source.read(buffer)
-                        if (count < 0) break
-                        copied += count
-                        require(copied <= 2_500_000_000L) { "Model is larger than the 2.5 GB import limit." }
-                        output.write(buffer, 0, count)
-                    }
-                    output.fd.sync()
-                }
-            }
-            require(copied > 1_000_000L) { "The selected model file is empty or incomplete." }
-            mutex.withLock {
-                closeEngineLocked()
-                // Keep the previous working model until the new import has been
-                // promoted successfully. A failed rename must not destroy the
-                // user's only installed offline model.
-                val backup = File(modelDir, "lightning.previous")
-                if (backup.exists() && !backup.delete()) {
-                    throw IllegalStateException("Could not prepare the model backup.")
-                }
-                val hadPrevious = modelFile.exists()
-                if (hadPrevious && !modelFile.renameTo(backup)) {
-                    throw IllegalStateException("Could not safely stage the existing local model.")
-                }
-                val installed = temporary.renameTo(modelFile)
-                if (!installed) {
-                    if (hadPrevious && !backup.renameTo(modelFile)) {
-                        throw IllegalStateException(
-                            "New model installation failed and the previous model could not be restored. The backup is preserved in app storage."
-                        )
-                    }
-                    throw IllegalStateException("Could not finish installing the local model. The previous model was restored.")
-                }
-                backup.delete()
-            }
-            copied
-        } catch (error: Throwable) {
-            temporary.delete()
-            throw error
-        }
-    }
-
     suspend fun stream(messages: List<ChatMessage>, onDelta: (String) -> Unit): String =
         withContext(Dispatchers.IO) {
-            val bundledReady = installBundledModelIfMissing()
+            val installed = installBundledModelIfMissing()
+            check(installed && isModelInstalled()) {
+                "The bundled Lightning model is not present or failed verification in this app build."
+            }
             mutex.withLock {
-                check(bundledReady || isModelInstalled()) { "The bundled Lightning model is not present in this app build." }
                 val activeEngine = ensureEngineLocked()
                 val system = messages.firstOrNull { it.role == "system" }?.content.orEmpty()
                 val history = messages.filter { it.role != "system" }.dropLast(1).mapNotNull { message ->
@@ -193,5 +144,10 @@ class LocalModelRuntime(context: Context) {
 
     suspend fun release() = withContext(Dispatchers.IO) {
         mutex.withLock { closeEngineLocked() }
+    }
+
+    companion object {
+        private const val MODEL_ASSET_PATH = "models/lightning.litertlm"
+        private const val EXPECTED_MODEL_SIZE_BYTES = 613_722_264L
     }
 }
