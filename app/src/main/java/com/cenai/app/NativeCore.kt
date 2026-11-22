@@ -117,4 +117,9 @@ object NativeCore {
 
     /** Evaluates account-scoped daily usage and quota reset rules in Rust. */
     external fun evaluateDailyUsage(today: String, storedDay: String, storedCount: String, dailyLimit: String): String
+
+    /** Rust-owned bounded agent orchestration policy. */
+    external fun maxAgentSteps(): Int
+    external fun buildToolContinuationPrompt(toolName: String, output: String, scheduled: Boolean): String
+    external fun agentStepLimitMessage(lastOutput: String, scheduled: Boolean): String
 }
