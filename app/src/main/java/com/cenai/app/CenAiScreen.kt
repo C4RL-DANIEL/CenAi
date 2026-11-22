@@ -15,7 +15,6 @@ import android.os.ParcelFileDescriptor
 import android.app.Activity
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -315,7 +314,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             .getOrDefault(inputText.length / 4)
         val totalEstimate = vault.getUser(activeAccountId, "usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.putUser(activeAccountId, "usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
-        if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
+        if (localModelEnabled && !localModelReady) { error = "The bundled Lightning model is unavailable in this build."; return }
         val configuredTargets = Provider.entries.filter {
             !providerKeys[it].isNullOrBlank() ||
                 (it == Provider.GEMINI && vault.getUserSecret(activeAccountId, "gemini_oauth_access_token").isNotBlank()) ||
@@ -1448,15 +1447,7 @@ Text("OFFLINE BRAIN · ON-DEVICE AI", color = palette.accent, fontSize = 10.sp, 
                                     vault.put("local_model_enabled", it.toString())
                                 })
                             }
-                            Text("Recommended model: Qwen3 0.6B INT8 · about 614 MB · Apache 2.0. Download it, then import the .litertlm file above. CPU inference is used for broad device compatibility.", color = palette.muted, fontSize = 10.sp)
-                            OutlinedButton(
-                                onClick = {
-                                    val modelUri = Uri.parse("https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm")
-                                    try { context.startActivity(Intent(Intent.ACTION_VIEW, modelUri)) }
-                                    catch (e: Exception) { info = e.message ?: "Could not open model download." }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("Download recommended 614 MB model") }
+
                         }
                     }
                     
