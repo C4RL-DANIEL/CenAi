@@ -233,8 +233,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var multiAgent by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "multi_agent", "false").toBoolean()) }
     var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
     var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
-    var googleOAuthClientId by remember { mutableStateOf(vault.get("google_oauth_client_id")) }
-    var googleCloudProjectId by remember { mutableStateOf(vault.get("google_cloud_project_id")) }
+    var googleOAuthClientId by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "google_oauth_client_id")) }
+    var googleCloudProjectId by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "google_cloud_project_id")) }
     var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "system_prompt")) }
@@ -1127,8 +1127,8 @@ Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight
                             Text("Google’s official Gemini OAuth quickstart documents a simplified desktop-app testing flow; this in-app PKCE redirect integration is experimental and has not been verified as a production Android OAuth client. For reliable mobile access, use a Gemini API key. Enable the Generative Language API and configure Google OAuth consent/test users if you experiment with this flow. Gemini consumer subscriptions do not automatically include API access. OpenAI and Anthropic support API keys and certain workload-identity options; DeepSeek documents bearer API-key authentication. Consumer ChatGPT, Claude and DeepSeek subscriptions are not third-party API credentials. API keys are encrypted at rest on this device, but direct mobile API calls are not equivalent to keeping secrets on a trusted server.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
-                                    vault.put("google_oauth_client_id", googleOAuthClientId)
-                                    vault.put("google_cloud_project_id", googleCloudProjectId)
+                                    vault.putUser(activeAccountId, "google_oauth_client_id", googleOAuthClientId)
+                                    vault.putUser(activeAccountId, "google_cloud_project_id", googleCloudProjectId)
                                     runCatching { context.startActivity(GoogleGeminiOAuth(vault).authorizationIntent(googleOAuthClientId)) }
                                         .onFailure { info = it.message ?: "Could not start Google sign-in." }
                                 }, enabled = googleOAuthClientId.endsWith(".apps.googleusercontent.com"), modifier = Modifier.weight(1f)) { Text("Connect Google") }
