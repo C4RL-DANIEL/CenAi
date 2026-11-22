@@ -8,6 +8,7 @@ pub mod config;
 pub mod guardian;
 pub mod mcp;
 pub mod network;
+pub mod google_oauth;
 pub mod providers;
 pub mod workspace;
 pub mod brain;
