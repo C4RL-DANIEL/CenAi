@@ -17,5 +17,6 @@ pub mod voice;
 pub mod multimodal;
 pub mod qwen_voice;
 pub mod lightning;
+pub mod legacy_history;
 pub mod tools;
 pub mod updates;
