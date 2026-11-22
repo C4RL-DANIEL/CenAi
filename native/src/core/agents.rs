@@ -224,6 +224,33 @@ impl TaskPlan {
         Ok(())
     }
 
+    /// Returns interrupted steps that can safely be retried now. Only steps
+    /// with a recorded interruption and completed prerequisites are eligible.
+    pub fn interrupted_steps_ready_to_retry(&self) -> Vec<u64> {
+        if self.stopped { return Vec::new(); }
+        self.steps.iter().filter(|step| {
+            step.status == StepStatus::Failed
+                && self.events.iter().any(|event| event.step_id == Some(step.id)
+                    && event.kind == TaskExecutionEventKind::Interrupted)
+                && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate|
+                    candidate.id == *dependency && candidate.status == StepStatus::Completed))
+        }).map(|step| step.id).collect()
+    }
+
+    /// Re-queues all currently retryable interrupted steps. Execution remains
+    /// a separate explicit action and no request is replayed by recovery itself.
+    pub fn retry_interrupted_steps(&mut self) -> Result<Vec<u64>, &'static str> {
+        let ids = self.interrupted_steps_ready_to_retry();
+        if ids.is_empty() { return Err("There are no interrupted steps ready to retry"); }
+        for id in &ids {
+            let step = self.steps.iter_mut().find(|step| step.id == *id).ok_or("Task step does not exist")?;
+            step.status = StepStatus::Pending;
+            step.output = None;
+            self.record_event(Some(*id), TaskExecutionEventKind::Retried, Some("Interrupted step re-queued by user"));
+        }
+        Ok(ids)
+    }
+
     pub fn fail_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
         if step.status != StepStatus::Running { return Err("Only a running task step can fail"); }
@@ -552,6 +579,29 @@ mod tests {
         plan.begin_step(1).unwrap();
         plan.complete_step(1).unwrap();
         assert_eq!(plan.ready_steps(), vec![2]);
+    }
+
+    #[test]
+    fn interrupted_steps_can_be_retried_in_one_explicit_batch_without_replaying_dependents() {
+        let mut plan = TaskPlan {
+            id: "task-batch-recovery".into(), goal: "Retry recovered work".into(), stopped: false,
+            events: Vec::new(),
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Running, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Running, depends_on: vec![1], output: None },
+            ],
+        };
+        assert_eq!(plan.recover_interrupted_steps(), vec![1, 2]);
+        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![1]);
+        let retried = plan.retry_interrupted_steps().unwrap();
+        assert_eq!(retried, vec![1]);
+        assert_eq!(plan.steps[0].status, StepStatus::Pending);
+        assert_eq!(plan.steps[0].output, None);
+        assert_eq!(plan.steps[1].status, StepStatus::Failed);
+        assert!(plan.validate_persisted().is_ok());
+        plan.begin_step(1).unwrap();
+        plan.complete_step(1).unwrap();
+        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![2]);
     }
 
     #[test]

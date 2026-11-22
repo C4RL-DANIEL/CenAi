@@ -1377,16 +1377,24 @@ impl WgpuRenderer {
             }
         }
         if let Some((plan_id, step_id, action)) = self.app_state.pending_plan_action.take() {
-            if action == "execute" || action == "execute_ready" {
+            if action == "execute" || action == "execute_ready" || action == "retry_interrupted" {
                 let api = self.api.clone();
                 let store = self.workspace.clone();
                 let index = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id);
                 match (api, store, index) {
                     (Some(api), Some(store), Some(index)) => {
                         let mut running = self.app_state.task_plans[index].clone();
-                        let step_ids = if action == "execute_ready" { running.ready_steps() } else { vec![step_id] };
+                        let step_ids_result = if action == "retry_interrupted" {
+                            running.retry_interrupted_steps().map_err(str::to_owned)
+                        } else if action == "execute_ready" {
+                            Ok(running.ready_steps())
+                        } else {
+                            Ok(vec![step_id])
+                        };
+                        let step_ids = step_ids_result.unwrap_or_default();
                         let transition = if step_ids.is_empty() {
-                            Err("There are no ready steps to run".to_owned())
+                            Err(if action == "retry_interrupted" { "No interrupted steps are ready to retry".to_owned() }
+                                else { "There are no ready steps to run".to_owned() })
                         } else {
                             step_ids.iter().try_for_each(|id| running.begin_step(*id).map_err(str::to_owned))
                         };
@@ -1398,7 +1406,9 @@ impl WgpuRenderer {
                                     Err(error) => self.app_state.plan_status = format!("AI steps could not be saved before execution: {error}."),
                                     Ok(_) => {
                                         self.app_state.task_plans[index] = running.clone();
-                                        self.app_state.plan_status = if step_ids.len() == 1 {
+                                        self.app_state.plan_status = if action == "retry_interrupted" {
+                                            format!("Retrying {} recovered interrupted step(s). These requests are being run again only because you explicitly asked; no external actions will be performed.", step_ids.len())
+                                        } else if step_ids.len() == 1 {
                                             format!("CenAI is working on step {}. No external actions will be performed.", step_ids[0])
                                         } else {
                                             format!("CenAI is running {} independent ready steps in parallel. Dependent steps stay locked until their prerequisites complete.", step_ids.len())

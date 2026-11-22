@@ -431,6 +431,12 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "execute_ready".into()));
             }
+            let interrupted_count = plan.interrupted_steps_ready_to_retry().len();
+            if interrupted_count > 0 && !plan.stopped
+                && ui.button(format!("Retry {interrupted_count} interrupted step(s)")).clicked()
+            {
+                state.pending_plan_action = Some((plan.id.clone(), 0, "retry_interrupted".into()));
+            }
             if !plan.events.is_empty() {
                 ui.collapsing(format!("Execution history · {} events", plan.events.len()), |ui| {
                     for event in plan.events.iter().rev().take(12) {
