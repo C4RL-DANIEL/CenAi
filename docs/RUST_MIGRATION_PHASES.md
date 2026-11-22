@@ -47,6 +47,50 @@ This document tracks implementation and verification. A phase is complete only w
 
 Do not label Phase 1 complete until the runtime is wired into the Rust conversation flow and both emulator and target-device inference have been verified.
 
+## Phase 2 — Pure Rust application migration
+
+### Current migration audit
+
+The production entry point in `app-rust` is Android `NativeActivity`; the rendered screens, conversation state, networking, encrypted workspace, permissions, ecosystem registry, agent plans and diagnostics are implemented in Rust. The remaining Java/Kotlin files in `app-rust` are intended to be narrow Android platform/runtime adapters.
+
+The original `:app` module is intentionally retained during parity work and is not packaged by the Rust-native APK task. It must not be deleted until each capability below has a verified Rust replacement.
+
+| Legacy Kotlin capability | Rust-native replacement / status |
+|---|---|
+| `CenAiScreen`, theme, rich chat UI | `render/wgpu_renderer.rs`, `render/scene.rs`, `ui/screen.rs`; feature and visual parity still needs device review |
+| `ChatRepository`, `CenAiCloud`, provider streaming | `core/network.rs`, `core/providers.rs`; provider adapters and auth paths still require integration tests |
+| `ChatStore`, local knowledge, project data | `core/workspace.rs`, `core/context.rs`; encrypted account-scoped persistence exists |
+| `LocalModelRuntime` | Fixed Lightning bridge in `app-rust`; actual model inference remains pending emulator/device proof |
+| `AgentRuntime` safe local tools | `core/tools.rs`, wired into chat with a four-call cap; sensitive Android actions remain approval-gated and are not auto-executed |
+| `AgentTaskWorker`, `GuardianWorker` | Rust automation/Guardian state exists; Android scheduled-work adapter and restart/recovery parity are still outstanding |
+| `GuardianMonitor`, `AppMonitor` | `core/guardian.rs` covers privacy-safe diagnostics and system metric parsing; platform sampling and aggregate feature metrics need parity work |
+| `DeviceActionManager` | Android JNI/platform adapter is partial; dialer, share sheet and app-settings actions remain to port with approval gates |
+| `GoogleGeminiOAuth` | Not yet parity-verified in Rust; preserve PKCE, state validation, secure token storage and refresh semantics before removing Kotlin implementation |
+| `UpdateManager` | Not yet parity-verified in Rust; signed digest verification and safe install flow remain outstanding |
+| `SecureKeyStore` | Android Keystore-backed Rust vault adapter exists in `native/src/android/vault.rs`; needs device migration/restore tests |
+| backup/import and attachments | `core/backup.rs`, `core/multimodal.rs`, Android file-picker bridge; format and end-to-end import/export parity still require tests |
+
+Do not remove `:app` or its source files until the parity audit is complete and migration tests demonstrate that existing user data and account flows remain usable.
+
+## Phase 3 — AI brain and autonomous agents
+
+### Implemented foundations
+
+- Rust task plans enforce unique IDs, bounded steps, valid dependencies and explicit approval states.
+- Rust tool definitions and parsing validate bounded structured tool calls.
+- Safe local tools (date/time, arithmetic, text statistics, JSON formatting, UUID and Base64) execute from an app-owned allow-list.
+- Chat orchestration runs up to four safe tool calls per request and returns results to the model for a final response.
+- Sensitive/destructive tools never execute from model output; they remain blocked until an explicit per-action approval and platform executor exist.
+- MCP discovery validates schemas and security metadata but never implicitly approves or executes a newly discovered capability.
+- Per-user context and sandbox request policies are implemented in Rust.
+
+### Still required
+
+- Durable execution of approved multi-step task plans, including pause/resume/cancel and restart recovery.
+- A real approval UI and one-time capability grant binding for sensitive device/account actions.
+- Sandboxed tool execution, resource quotas and failure recovery integrated with the task runner.
+- End-to-end tests proving model-generated tool calls cannot bypass allow-lists, owner scopes or approval gates.
+
 ## Global constraints
 
 - Keep the existing `main` branch unchanged during migration.
