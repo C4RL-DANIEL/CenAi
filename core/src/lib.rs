@@ -954,3 +954,17 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_compareVersions(
     let Some(right_value) = read_java_string(&mut env, &right) else { return 0; };
     updates::compare_versions(&left_value, &right_value)
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_providerCredentialSource(
+    mut env: JNIEnv,
+    _class: JClass,
+    provider: JString,
+    oauth_available: jboolean,
+) -> jstring {
+    let Some(provider_value) = read_java_string(&mut env, &provider) else { return std::ptr::null_mut(); };
+    match env.new_string(providers::credential_source(&provider_value, oauth_available != 0)) {
+        Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
+    }
+}
