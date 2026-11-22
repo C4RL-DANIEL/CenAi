@@ -220,3 +220,23 @@ mod pkce_tests {
         assert_ne!(generated["state"], generated["verifier"]);
     }
 }
+
+/// Determines whether a stored Google OAuth access token is safe to reuse.
+pub fn google_oauth_access_token_usable(access_token: &str, expires_at: &str, now_ms: u64) -> bool {
+    if access_token.is_empty() { return false; }
+    let expires = expires_at.parse::<u64>().unwrap_or(0);
+    expires > now_ms.saturating_add(60_000)
+}
+
+#[cfg(test)]
+mod oauth_expiry_tests {
+    use super::google_oauth_access_token_usable;
+
+    #[test]
+    fn refreshes_missing_expired_and_near_expiry_tokens() {
+        assert!(!google_oauth_access_token_usable("", "999999", 1000));
+        assert!(!google_oauth_access_token_usable("access", "61000", 1000));
+        assert!(google_oauth_access_token_usable("access", "61001", 1000));
+        assert!(!google_oauth_access_token_usable("access", "bad", 1000));
+    }
+}
