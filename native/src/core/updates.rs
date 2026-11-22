@@ -39,7 +39,7 @@ fn parse_version(value: &str) -> Result<Version, &'static str> {
         Some(value) => {
             if value.is_empty() { return Err("Version prerelease is empty"); }
             let ids = value.split('.').map(str::to_owned).collect::<Vec<_>>();
-            if ids.iter().any(|id| id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            if ids.iter().any(|id| id.is_empty() || id.len() > 32 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
                 || ids.iter().any(|id| id.len() > 1 && id.starts_with('0') && id.bytes().all(|b| b.is_ascii_digit())) {
                 return Err("Version prerelease identifier is invalid");
             }
