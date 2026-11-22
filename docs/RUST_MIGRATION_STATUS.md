@@ -9,7 +9,7 @@ This file is the handoff record for the ongoing full Rust migration. It is not a
 - \`context.rs\`: bounded assembly of system instructions, account memory, local retrieval and tool guidance.
 - \`knowledge.rs\`: local retrieval/ranking over only the active account's supplied conversation context.
 - \`providers.rs\`: provider payloads, endpoint/header policy, SSE delta parsing, cloud response parsing, error extraction, image marker parsing/detection, multi-agent provider selection and synthesis prompt construction.
-- \`storage.rs\`: conversation schema validation, sanitation, sorting and normalization.
+- \`storage.rs\`: conversation title generation, schema validation, sanitation, sorting and normalization.
 - \`lib.rs\`: JNI bridge. Every Kotlin \`NativeCore.external fun\` declaration currently has a matching Rust JNI export.
 
 ## Android platform adapters still in Kotlin
