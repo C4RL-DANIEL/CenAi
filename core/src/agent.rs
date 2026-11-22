@@ -456,3 +456,49 @@ mod guide_tests {
         assert_eq!(build_tool_guide("null", false, true).unwrap(), "");
     }
 }
+
+
+/// Classifies an assistant turn and extracts visible text before any tool marker.
+pub fn parse_agent_step(response: &str) -> Result<String, String> {
+    const OPEN: &str = "[[CENAI_TOOL_CALL]]";
+    let visible: String = response.split(OPEN).next().unwrap_or(response).trim().to_owned();
+    match parse_tool_call(response) {
+        Ok(encoded) if encoded.is_empty() => Ok(serde_json::json!({
+            "kind":"final",
+            "visible_text":response,
+            "name":"",
+            "arguments":{}
+        }).to_string()),
+        Ok(encoded) => {
+            let call: serde_json::Value = serde_json::from_str(&encoded)
+                .map_err(|_| "Parsed tool call could not be decoded.".to_owned())?;
+            Ok(serde_json::json!({
+                "kind":"tool",
+                "visible_text":visible,
+                "name":call.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "arguments":call.get("arguments").cloned().unwrap_or_else(|| serde_json::json!({}))
+            }).to_string())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod agent_step_tests {
+    use super::parse_agent_step;
+
+    #[test]
+    fn classifies_final_and_tool_turns() {
+        let final_turn: serde_json::Value = serde_json::from_str(
+            &parse_agent_step("This is the final answer.").unwrap()
+        ).unwrap();
+        assert_eq!(final_turn["kind"], "final");
+
+        let tool_turn: serde_json::Value = serde_json::from_str(
+            &parse_agent_step("I will calculate. [[CENAI_TOOL_CALL]]{\"name\":\"calculate\",\"arguments\":{\"expression\":\"2+2\"}}[[/CENAI_TOOL_CALL]]").unwrap()
+        ).unwrap();
+        assert_eq!(tool_turn["kind"], "tool");
+        assert_eq!(tool_turn["visible_text"], "I will calculate.");
+        assert_eq!(tool_turn["name"], "calculate");
+    }
+}
