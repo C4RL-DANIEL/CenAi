@@ -403,6 +403,44 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             ui.add_space(8.0);
         }
     }
+    ui.add_space(12.0);
+    surface(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(text("Agent task plans", 17.0, egui::Color32::WHITE).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(text(format!("{} saved", state.task_plans.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+            });
+        });
+        ui.label(text("Central Brain proposals are saved here for review. Saving a plan never executes its steps.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        if state.task_plans.is_empty() {
+            ui.label(text("No agent plans yet. Turn on Planning mode in chat to create a structured proposal.", 11.0, egui::Color32::from_rgb(140, 154, 190)));
+        }
+    });
+    for plan in &state.task_plans {
+        surface(ui, |ui| {
+            ui.label(text(&plan.goal, 14.0, egui::Color32::WHITE).strong());
+            ui.label(text(
+                if plan.stopped { "Stopped" } else { "Saved proposal · not executed" },
+                10.0,
+                if plan.stopped { egui::Color32::from_rgb(235, 156, 130) } else { egui::Color32::from_rgb(119, 220, 183) },
+            ));
+            for step in &plan.steps {
+                ui.horizontal(|ui| {
+                    ui.label(text(format!("#{} · {:?}", step.id, step.role), 10.0, egui::Color32::from_rgb(165, 184, 220)));
+                    ui.label(text(format!("{:?}", step.status), 10.0, egui::Color32::from_rgb(190, 198, 220)));
+                });
+                ui.label(text(&step.title, 11.0, egui::Color32::WHITE));
+                if !step.depends_on.is_empty() {
+                    ui.label(text(
+                        format!("Depends on step(s): {}", step.depends_on.iter().map(u64::to_string).collect::<Vec<_>>().join(", ")),
+                        9.0,
+                        egui::Color32::from_rgb(140, 154, 190),
+                    ));
+                }
+            }
+        });
+        ui.add_space(6.0);
+    }
     if let Some(artifact_id) = open_artifact {
         state.pending_artifact_open = Some(artifact_id);
         state.artifact_preview_status = "Opening artifact…".into();
