@@ -114,4 +114,7 @@ object NativeCore {
 
     /** Chooses the credential source for a provider in Rust. */
     external fun providerCredentialSource(provider: String, oauthAvailable: Boolean): String
+
+    /** Evaluates account-scoped daily usage and quota reset rules in Rust. */
+    external fun evaluateDailyUsage(today: String, storedDay: String, storedCount: String, dailyLimit: String): String
 }
