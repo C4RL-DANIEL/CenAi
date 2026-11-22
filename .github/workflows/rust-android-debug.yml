@@ -66,8 +66,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Build debug APK
-        run: gradle --no-daemon :app-rust:assembleDebug
+      - name: Build debug APK and Lightning instrumentation tests
+        run: gradle --no-daemon :app-rust:assembleDebug :app-rust:assembleDebugAndroidTest
       - name: Compile retained Kotlin migration compatibility layer
         run: gradle --no-daemon :app:compileDebugKotlin
       - name: Verify NativeActivity smoke-test script syntax
@@ -89,6 +89,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -memory 4096
           script: bash .github/scripts/verify-rust-native-activity.sh
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
