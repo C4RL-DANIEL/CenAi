@@ -3,6 +3,7 @@ package com.cenai.app;
 import android.app.NativeActivity;
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.os.Build;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
