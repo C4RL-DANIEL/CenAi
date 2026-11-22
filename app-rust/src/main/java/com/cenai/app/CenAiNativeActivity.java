@@ -1,6 +1,9 @@
 package com.cenai.app;
 
 import android.app.NativeActivity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.database.Cursor;
@@ -19,6 +22,14 @@ public final class CenAiNativeActivity extends NativeActivity {
     private static final long MAX_IMPORT_BYTES = 100L * 1024L * 1024L;
 
     private static native void nativeOnFilePicked(int requestCode, String path, String mimeType, String displayName, String error);
+
+    /** Called only when the user enables scheduled reminders in CenAI. */
+    public void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 8120);
+        }
+    }
 
     public void openAttachmentPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
