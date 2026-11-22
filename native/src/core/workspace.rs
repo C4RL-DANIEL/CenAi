@@ -12,6 +12,7 @@ use crate::core::agents::TaskPlan;
 use crate::core::backup::EncryptedBackup;
 use crate::core::automations::Automation;
 use crate::core::network::SessionVault;
+use crate::ecosystem::manifest::{AppManifest, CapabilityRegistry, UserCapabilityGrant};
 
 pub const WORKSPACE_CIPHER_MAGIC: &[u8] = b"CENAI-WORKSPACE-ENC-V1:";
 use sha2::{Digest, Sha256};
@@ -52,6 +53,15 @@ struct WorkspaceIndex {
     tasks: Vec<TaskRecord>,
     #[serde(default)]
     automations: Vec<Automation>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+struct EcosystemState {
+    schema_version: u16,
+    #[serde(default)]
+    manifests: Vec<AppManifest>,
+    #[serde(default)]
+    grants: Vec<UserCapabilityGrant>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -521,6 +531,82 @@ impl WorkspaceStore {
         let removed = index.automations.len() != previous;
         if removed { self.write_index(&index)?; }
         Ok(removed)
+    }
+
+
+    /// Load the encrypted, account-scoped Ecosystem Engine registry.
+    pub fn load_ecosystem_state(&self) -> Result<(Vec<AppManifest>, Vec<UserCapabilityGrant>), String> {
+        let path = self.user_root.join("ecosystem").join("registry.json");
+        if !path.exists() { return Ok((Vec::new(), Vec::new())); }
+        let bytes = self.read_storage(&path)?;
+        let state: EcosystemState = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        if state.schema_version != 1 || state.manifests.len() > 256 || state.grants.len() > 2000 {
+            return Err("Stored Ecosystem Engine registry is invalid or exceeds limits".into());
+        }
+        Ok((state.manifests, state.grants))
+    }
+
+    /// Atomically persist registry metadata inside this authenticated user's encrypted workspace.
+    /// Trusted publishers are supplied by the app, never loaded from user-editable storage.
+    pub fn save_ecosystem_state(
+        &self,
+        manifests: &[AppManifest],
+        grants: &[UserCapabilityGrant],
+        trusted_publishers: &[String],
+        supported_protocol: u16,
+    ) -> Result<(), String> {
+        if manifests.len() > 256 || grants.len() > 2000 {
+            return Err("Ecosystem Engine registry limit reached".into());
+        }
+        let mut registry = CapabilityRegistry::new(trusted_publishers.iter().cloned());
+        for manifest in manifests {
+            registry.register(manifest.clone(), supported_protocol)
+                .map_err(|error| format!("Invalid or untrusted app manifest: {error:?}"))?;
+        }
+        let mut grant_keys = std::collections::HashSet::new();
+        for grant in grants {
+            if grant.user_scope != self.user_identity
+                || !grant_keys.insert(grant.app_id.clone()) {
+                return Err("Ecosystem grant has the wrong account or a duplicate app entry".into());
+            }
+            if grant.granted_scopes.len() > 64 {
+                return Err("Ecosystem grant exceeds the scope limit".into());
+            }
+            if !grant.revoked && grant.granted_scopes.iter().any(|scope| {
+                !registry.authorize(&self.user_identity, grant, scope)
+            }) {
+                return Err("Ecosystem grant exceeds the registered manifest scopes".into());
+            }
+        }
+        let state = EcosystemState {
+            schema_version: 1,
+            manifests: manifests.to_vec(),
+            grants: grants.to_vec(),
+        };
+        let bytes = serde_json::to_vec_pretty(&state).map_err(|error| error.to_string())?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err("Ecosystem Engine registry exceeds the 2 MiB storage limit".into());
+        }
+        let _guard = self.lock_index()?;
+        self.write_atomic(&self.user_root.join("ecosystem").join("registry.json"), &bytes)
+    }
+
+    /// Check a stored user grant against the current trusted manifest registry.
+    pub fn ecosystem_authorized(
+        &self,
+        app_id: &str,
+        capability: &str,
+        trusted_publishers: &[String],
+        supported_protocol: u16,
+    ) -> Result<bool, String> {
+        let (manifests, grants) = self.load_ecosystem_state()?;
+        let mut registry = CapabilityRegistry::new(trusted_publishers.iter().cloned());
+        for manifest in manifests {
+            registry.register(manifest, supported_protocol)
+                .map_err(|error| format!("Stored app manifest is no longer trusted: {error:?}"))?;
+        }
+        Ok(grants.iter().find(|grant| grant.app_id == app_id)
+            .is_some_and(|grant| registry.authorize(&self.user_identity, grant, capability)))
     }
 
     pub fn task_plans(&self) -> Result<Vec<TaskRecord>, String> {
