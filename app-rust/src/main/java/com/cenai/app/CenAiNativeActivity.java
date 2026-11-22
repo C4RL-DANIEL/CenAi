@@ -25,6 +25,43 @@ public final class CenAiNativeActivity extends NativeActivity {
 
     private static native void nativeOnFilePicked(int requestCode, String path, String mimeType, String displayName, String error);
     private static native void nativeOnPlatformActionResult(String name, boolean success, String message);
+    private static native void nativeOnOAuthCallback(String callback);
+
+    @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        handleOAuthIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleOAuthIntent(intent);
+    }
+
+    private void handleOAuthIntent(Intent intent) {
+        if (intent == null || intent.getData() == null) return;
+        Uri uri = intent.getData();
+        if ("com.cenai.app".equals(uri.getScheme()) && "/oauth2redirect".equals(uri.getPath())) {
+            nativeOnOAuthCallback(uri.toString());
+        }
+    }
+
+    /** Opens only Google's official OAuth authorization endpoint. */
+    public boolean openGoogleOAuth(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            if (!"https".equals(uri.getScheme()) || !"accounts.google.com".equals(uri.getHost())
+                || !"/o/oauth2/v2/auth".equals(uri.getPath()) || uri.getUserInfo() != null) {
+                throw new IllegalArgumentException("Google authorization URL was rejected.");
+            }
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
 
     /** Executes only a native-reviewed, one-time agent action. Calls are never placed. */
     public boolean performAgentAction(String action, String value) {
