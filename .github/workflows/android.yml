@@ -82,7 +82,7 @@ jobs:
           test -n "$APK"
           sha256sum "$APK" > "$APK.sha256"
       - name: Check release signing readiness without exposing secrets
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           CENAI_KEYSTORE_BASE64: ${{ secrets.CENAI_KEYSTORE_BASE64 }}
           CENAI_KEYSTORE_PASSWORD: ${{ secrets.CENAI_KEYSTORE_PASSWORD }}
