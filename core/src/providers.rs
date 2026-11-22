@@ -467,3 +467,48 @@ mod synthesis_tests {
         assert!(prompt.contains("Provider B: answer two"));
     }
 }
+
+
+/// Selects the provider execution set from account-configured providers.
+pub fn select_provider_targets(
+    primary_provider: &str,
+    multi_agent: bool,
+    local_model_enabled: bool,
+    configured_json: &str,
+) -> Result<String, String> {
+    let configured: Value = serde_json::from_str(configured_json)
+        .map_err(|_| "Configured provider list must be valid JSON.".to_owned())?;
+    let configured = configured.as_array()
+        .ok_or_else(|| "Configured provider list must be a JSON array.".to_owned())?;
+    let selected: Vec<String> = if local_model_enabled || !multi_agent {
+        vec![primary_provider.to_owned()]
+    } else {
+        configured.iter().filter_map(Value::as_str)
+            .filter(|name| matches!(*name, "OPENAI" | "DEEPSEEK" | "CLAUDE" | "GEMINI" | "CUSTOM" | "CENAI_CLOUD"))
+            .map(str::to_owned).collect()
+    };
+    serde_json::to_string(&selected)
+        .map_err(|_| "Could not encode selected provider targets.".to_owned())
+}
+
+#[cfg(test)]
+mod target_selection_tests {
+    use super::select_provider_targets;
+    use serde_json::Value;
+
+    #[test]
+    fn selects_primary_or_configured_multi_agent_providers() {
+        let primary: Value = serde_json::from_str(
+            &select_provider_targets("OPENAI", false, false, r#"["GEMINI"]"#).unwrap()
+        ).unwrap();
+        assert_eq!(primary[0], "OPENAI");
+        let multi: Value = serde_json::from_str(
+            &select_provider_targets("OPENAI", true, false, r#"["OPENAI","GEMINI","BAD"]"#).unwrap()
+        ).unwrap();
+        assert_eq!(multi.as_array().unwrap().len(), 2);
+        let local: Value = serde_json::from_str(
+            &select_provider_targets("OPENAI", true, true, "[]").unwrap()
+        ).unwrap();
+        assert_eq!(local[0], "OPENAI");
+    }
+}
