@@ -12,17 +12,18 @@ data class Conversation(
     var updatedAt: Long = System.currentTimeMillis()
 )
 
-class ChatStore(private val context: Context, ownerId: String = "guest") {
+class ChatStore(context: Context, ownerId: String = "guest") {
+    private val appContext = context.applicationContext
     private val namespace = ownerId.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "guest" }
-    private val prefs = context.getSharedPreferences("cenai_history_$namespace", Context.MODE_PRIVATE)
-    private val vault = SecureKeyStore(context.applicationContext)
+    private val prefs = appContext.getSharedPreferences("cenai_history_$namespace", Context.MODE_PRIVATE)
+    private val vault = SecureKeyStore(appContext)
 
     fun load(): MutableList<Conversation> {
         var storedValue = prefs.getString("conversations", null)
         var legacyPrefsToClear: android.content.SharedPreferences? = null
         val globalOwner = vault.get("supabase_user_id")
         if (storedValue == null && globalOwner == namespace) {
-            val legacyPrefs = context.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
+            val legacyPrefs = appContext.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
             val legacy = legacyPrefs.getString("conversations", null)
             if (!legacy.isNullOrBlank()) {
                 storedValue = legacy
