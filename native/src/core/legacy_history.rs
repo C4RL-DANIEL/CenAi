@@ -22,6 +22,19 @@ pub struct LegacyMessage {
 }
 fn default_title() -> String { "New chat".into() }
 
+/// Returns the old account email only when the legacy encrypted store explicitly
+/// marked that email as verified. This value may recover ownerless history only
+/// after it is compared with the currently authenticated account email.
+pub fn verified_legacy_owner_email(export: &str) -> Option<String> {
+    if export.len() > 64 * 1024 { return None; }
+    let value: serde_json::Value = serde_json::from_str(export).ok()?;
+    if value.get("email_verified").and_then(serde_json::Value::as_bool) != Some(true) {
+        return None;
+    }
+    let email = value.get("account_email").and_then(serde_json::Value::as_str)?.trim();
+    (email.contains('@') && email.len() <= 320).then(|| email.to_owned())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportedConversation {
     pub id: String,
@@ -92,6 +105,17 @@ pub fn parse_legacy_history(json: &str, expected_owner_email: &str, legacy_verif
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn trusts_only_explicitly_verified_legacy_account_email() {
+        assert_eq!(
+            verified_legacy_owner_email(r#"{"account_email":" Alice@example.com ","email_verified":true}"#).as_deref(),
+            Some("Alice@example.com")
+        );
+        assert!(verified_legacy_owner_email(r#"{"account_email":"alice@example.com","email_verified":false}"#).is_none());
+        assert!(verified_legacy_owner_email(r#"{"account_email":"alice@example.com"}"#).is_none());
+        assert!(verified_legacy_owner_email(r#"{"account_email":"not-an-email","email_verified":true}"#).is_none());
+    }
+
     #[test]
     fn parses_roles_order_and_timestamps() {
         let parsed = parse_legacy_history(r#"[{"id":"c1","title":"First","updatedAt":123,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"world"}]}]"#, "owner@example.com", None).unwrap();
