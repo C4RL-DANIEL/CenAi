@@ -17,6 +17,9 @@ object NativeCore {
     /** Enforces the Rust tool allowlist and approval policy. */
     external fun evaluateToolPolicy(name: String, enabledToolsJson: String): String
 
+    /** Parses structured agent tool calls in the Rust core. */
+    external fun parseAgentToolCall(response: String): String
+
     /** Runs private conversation retrieval in the Rust core. */
     external fun retrieveLocalKnowledge(payload: String, maxResults: Int, maxCharacters: Int): String
 
