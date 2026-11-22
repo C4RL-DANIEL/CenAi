@@ -164,6 +164,29 @@ fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
             return Err("Tool text argument exceeds 64 KiB".into());
         }
     }
+    match name {
+        "open_url" => {
+            let value = required_string(arguments, "url")?;
+            let parsed = reqwest::Url::parse(value).map_err(|_| "URL must be a valid HTTP(S) link".to_owned())?;
+            if value.len() > 4096 || !matches!(parsed.scheme(), "https" | "http")
+                || parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
+                return Err("Only public HTTP(S) links without embedded credentials can be opened".into());
+            }
+        }
+        "open_dialer" => {
+            let number = required_string(arguments, "number")?;
+            if !(4..=32).contains(&number.len()) || !number.chars().all(|c|
+                c.is_ascii_digit() || "+*#(). -".contains(c)) {
+                return Err("Dialer number contains unsupported characters or is outside the 4–32 character limit".into());
+            }
+        }
+        "share_text" => {
+            if required_string(arguments, "text")?.trim().is_empty() {
+                return Err("Shared text cannot be empty".into());
+            }
+        }
+        _ => {}
+    }
     Ok(())
 }
 
