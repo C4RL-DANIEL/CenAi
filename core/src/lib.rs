@@ -869,7 +869,7 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseGoogleOAuthToken(
 
 #[no_mangle]
 pub extern "system" fn Java_com_cenai_app_NativeCore_generateOAuthPkce(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
 ) -> jstring {
     let output = match auth::generate_oauth_pkce() {
