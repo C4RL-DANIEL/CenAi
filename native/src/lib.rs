@@ -6,7 +6,7 @@ pub mod render;
 pub mod ui;
 
 #[cfg(target_os = "android")]
-mod android;
+pub(crate) mod android;
 
 /// Stable runtime identity used by diagnostics and capability registration.
 pub const RUNTIME_ID: &str = "cenai.native";
