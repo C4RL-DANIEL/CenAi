@@ -73,6 +73,9 @@ class NativeCoreInstrumentedTest {
         assertTrue(!NativeCore.googleOAuthAccessTokenUsable("", "999999", 1000L))
         assertEquals("first title", NativeCore.conversationTitle("[{\"role\":\"user\",\"content\":\"first title\"}]"))
 
+        val telemetryConsent = JSONObject(NativeCore.buildConsentTelemetryPayload(true, false))
+        assertTrue(telemetryConsent.getBoolean("usageAnalytics"))
+        assertTrue(!telemetryConsent.getBoolean("guardian"))
         val telemetryUsage = JSONObject(NativeCore.buildUsageTelemetryPayload("local", "offline", -1, 3, -1L, "success", "x".repeat(100)))
         assertEquals(0, telemetryUsage.getInt("inputTokens"))
         assertEquals(0, telemetryUsage.getLong("latencyMs"))
