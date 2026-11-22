@@ -231,11 +231,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var base by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "base_url", provider.baseUrl)) }
     var providerKeys by remember(activeAccountId) { mutableStateOf(Provider.entries.associateWith { vault.apiKey(it, activeAccountId) }) }
     var multiAgent by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "multi_agent", "false").toBoolean()) }
-    var toolEnabled by remember { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.get("tool_enabled_" + it, "true").toBoolean() }) }
-    var agentPlanning by remember { mutableStateOf(vault.get("agent_planning", "false").toBoolean()) }
+    var toolEnabled by remember(activeAccountId) { mutableStateOf(listOf("current_time", "calculate", "count_words", "format_json", "current_date", "generate_uuid", "text_stats", "base64_encode", "base64_decode", "open_url", "open_dialer", "share_text", "open_app_settings").associateWith { vault.getUser(activeAccountId, "tool_enabled_" + it, "true").toBoolean() }) }
+    var agentPlanning by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "agent_planning", "false").toBoolean()) }
     var googleOAuthClientId by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "google_oauth_client_id")) }
     var googleCloudProjectId by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "google_cloud_project_id")) }
-    var dailyLimit by remember { mutableStateOf(vault.get("daily_request_limit", "0")) }
+    var dailyLimit by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "system_prompt")) }
     var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getSecret("agent_memory_$activeAccountId")) }
@@ -308,22 +308,22 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     fun startRequest(requestMessages: List<ChatMessage>) {
         if (busy) return
         val today = java.time.LocalDate.now().toString()
-        if (vault.get("usage_day") != today) {
+        if (vault.getUser(activeAccountId, "usage_day") != today) {
             vault.put("usage_day", today)
-            vault.put("usage_count", "0")
+            vault.putUser(activeAccountId, "usage_count", "0")
         }
-        val used = vault.get("usage_count", "0").toIntOrNull() ?: 0
+        val used = vault.getUser(activeAccountId, "usage_count", "0").toIntOrNull() ?: 0
         val limit = dailyLimit.toIntOrNull() ?: 0
         if (limit > 0 && used >= limit) {
             error = "Daily message limit reached. Change it in Settings or try again tomorrow."
             return
         }
-        vault.put("usage_count", (used + 1).toString())
+        vault.putUser(activeAccountId, "usage_count", (used + 1).toString())
         val inputText = requestMessages.joinToString("\n") { it.content }
         val inputEstimate = runCatching { NativeCore.estimatePromptTokens(inputText) }
             .getOrDefault(inputText.length / 4)
-        val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
-        vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
+        val totalEstimate = vault.getUser(activeAccountId, "usage_estimated_tokens", "0").toLongOrNull() ?: 0L
+        vault.putUser(activeAccountId, "usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
         val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getUserSecret(activeAccountId, "gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
         if (targets.isEmpty()) {
@@ -1109,7 +1109,7 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                             Text(label, color = palette.text, modifier = Modifier.weight(1f), fontSize = 13.sp)
                             Switch(checked = toolEnabled[tool] == true, onCheckedChange = { enabled ->
                                 toolEnabled = toolEnabled.toMutableMap().apply { put(tool, enabled) }
-                                vault.put("tool_enabled_" + tool, enabled.toString())
+                                vault.putUser(activeAccountId, "tool_enabled_" + tool, enabled.toString())
                             })
                         }
                     }
@@ -1587,10 +1587,10 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.put("model", model); vault.put("model_${provider.name}", model)
                 vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
                 vault.put("multi_agent", multiAgent.toString())
-                vault.put("agent_planning", agentPlanning.toString())
+                vault.putUser(activeAccountId, "agent_planning", agentPlanning.toString())
                 vault.put("google_oauth_client_id", googleOAuthClientId)
                 vault.put("google_cloud_project_id", googleCloudProjectId)
-                vault.put("daily_request_limit", dailyLimit.ifBlank { "0" })
+                vault.putUser(activeAccountId, "daily_request_limit", dailyLimit.ifBlank { "0" })
                 vault.put("speech_rate", speechRate.toString())
                 vault.put("speech_pitch", speechPitch.toString())
                 vault.put("speech_language", speechLanguage.ifBlank { "device" })
@@ -1598,7 +1598,9 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                 vault.putUser(activeAccountId, "local_knowledge_enabled", localKnowledgeEnabled.toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString()); vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUserSecret(activeAccountId, "custom_headers", customHeaders); vault.putUserSecret(activeAccountId, "custom_params", customParams)
+                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString());
+                vault.putUser(activeAccountId, "model_${provider.name}", model)
+                vault.putUser(activeAccountId, "base_url_${provider.name}", base) vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUserSecret(activeAccountId, "custom_headers", customHeaders); vault.putUserSecret(activeAccountId, "custom_params", customParams)
                 vault.putUser(activeAccountId, "max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
