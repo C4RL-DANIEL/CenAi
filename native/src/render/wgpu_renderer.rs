@@ -2550,8 +2550,25 @@ impl WgpuRenderer {
                         Ok(()) => {
                             if let Some(workspace) = self.workspace.as_ref() {
                                 self.app_state.projects = workspace.projects(false).unwrap_or_default();
+                                let mut recovered_steps = 0usize;
+                                let mut recovery_error = None;
                                 self.app_state.task_plans = workspace.task_plans().unwrap_or_default().into_iter()
-                                    .map(|record| record.plan).collect();
+                                    .filter_map(|record| {
+                                        let mut plan = record.plan;
+                                        if plan.validate_persisted().is_err() {
+                                            return None;
+                                        }
+                                        let recovered = plan.recover_interrupted_steps();
+                                        recovered_steps += recovered.len();
+                                        if !recovered.is_empty() {
+                                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or_default().as_millis() as u64;
+                                            if let Err(error) = workspace.save_task_plan(plan.clone(), now) {
+                                                recovery_error = Some(error);
+                                            }
+                                        }
+                                        Some(plan)
+                                    }).collect();
                                 self.automation_scheduler = AutomationScheduler::from_workspace(workspace).ok();
                                 self.app_state.automations = self.automation_scheduler.as_ref()
                                     .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
@@ -2564,7 +2581,13 @@ impl WgpuRenderer {
                                 }
                             }
                             self.app_state.backup_passphrase_draft.clear();
-                            self.app_state.backup_status = "Workspace restored from the encrypted backup.".into();
+                            self.app_state.backup_status = if let Some(error) = recovery_error {
+                                format!("Backup restored, but interrupted agent recovery could not be saved: {error}")
+                            } else if recovered_steps > 0 {
+                                format!("Backup restored. Recovered {recovered_steps} interrupted agent step(s) as retryable failures; no work was replayed automatically.")
+                            } else {
+                                "Workspace restored from the encrypted backup.".into()
+                            };
                         }
                         Err(error) => self.app_state.backup_status = format!("Backup restore failed: {error}"),
                     }
