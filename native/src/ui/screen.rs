@@ -1323,4 +1323,37 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
                 );
             });
         });
+
+    if let Some((tool_name, arguments)) = state.pending_agent_action.clone() {
+        let mut open = true;
+        let mut approved = false;
+        let mut denied = false;
+        egui::Window::new("Approve Android action")
+            .collapsible(false)
+            .resizable(true)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label(text("CenAI is requesting permission to perform this action on your device.", 12.0, egui::Color32::WHITE));
+                ui.add_space(6.0);
+                ui.label(text(format!("Action: {tool_name}"), 11.0, accent()).strong());
+                let details = serde_json::to_string_pretty(&arguments).unwrap_or_else(|_| "{}".into());
+                egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                    ui.add(egui::TextEdit::multiline(&mut details.as_str()).desired_width(360.0).interactive(false));
+                });
+                ui.add_space(8.0);
+                ui.label(text("Approve only if the destination and content are correct. CenAI will not place calls; the dialer opens without calling.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.horizontal(|ui| {
+                    if ui.button("Approve once").clicked() { approved = true; }
+                    if ui.button("Deny").clicked() { denied = true; }
+                });
+            });
+        if approved {
+            state.pending_agent_action_execute = Some((tool_name, arguments));
+            state.pending_agent_action = None;
+            state.agent_action_status = "Action approved once. Waiting for Android to open the requested destination…".into();
+        } else if denied || !open {
+            state.pending_agent_action = None;
+            state.agent_action_status = "Android action denied. Nothing was opened or shared.".into();
+        }
+    }
 }
