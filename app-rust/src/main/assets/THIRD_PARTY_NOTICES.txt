@@ -1,0 +1,17 @@
+CenAI Lightning model notice
+=============================
+
+CenAI bundles the LiteRT-LM INT8 conversion of Qwen3-0.6B as its fixed
+on-device model, internally named Lightning.
+
+Model: Qwen3-0.6B (dynamic INT8 weights, float KV cache)
+Publisher: litert-community
+Pinned revision: e6687177e00897731e7716267eebd4eba0dde7c2
+Artifact: Qwen3-0.6B.litertlm
+Artifact size: 613,722,264 bytes
+SHA-256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+License: Apache-2.0
+
+The upstream model is from the Qwen Team. The LiteRT-LM conversion is
+published by LiteRT Community. CenAI's Lightning name is an internal
+product label and does not imply ownership of upstream trademarks.
