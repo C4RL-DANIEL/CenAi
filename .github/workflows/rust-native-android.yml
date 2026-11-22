@@ -144,21 +144,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
-          script: |
-            # android-emulator-runner executes this block with /bin/sh, not Bash.
-            set -eu
-            APK="$GITHUB_WORKSPACE/app-rust/build/outputs/apk/debug/app-rust-debug.apk"
-            test -s "$APK"
-            timeout 60s adb wait-for-device
-            timeout 10s adb shell service check package | grep -q found
-            timeout 90s adb install --no-streaming -r "$APK"
-            timeout 15s adb shell monkey -p com.cenai.app.rustdebug 1
-            sleep 25
-            timeout 10s adb shell pidof com.cenai.app.rustdebug
-            adb shell svc wifi disable
-            adb shell svc data disable
-            sleep 3
-            gradle :app-rust:connectedDebugAndroidTest --stacktrace
+          script: bash "$GITHUB_WORKSPACE/.github/scripts/verify-lightning-offline.sh"
 
       - name: Generate debug APK SHA-256
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/app-rust-debug.apk.sha256
