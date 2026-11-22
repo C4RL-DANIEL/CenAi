@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, open_google_oauth, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
@@ -201,6 +201,7 @@ enum ChatEvent {
     Finished(u64, u64, Result<String, String>),
     SignedIn(u64, Result<SignInOutcome, String>),
     SignedOut(u64, Result<(), String>),
+    GeminiOAuthCompleted(u64, Result<(), String>),
     OtpSent(u64, Result<String, String>),
     OtpVerified(u64, Result<String, String>),
     PlanFinished(u64, u64, Result<TaskPlan, String>),
@@ -237,6 +238,7 @@ impl ChatEvent {
             | Self::Finished(generation, ..)
             | Self::SignedIn(generation, ..)
             | Self::SignedOut(generation, ..)
+            | Self::GeminiOAuthCompleted(generation, ..)
             | Self::OtpSent(generation, ..)
             | Self::OtpVerified(generation, ..)
             | Self::PlanFinished(generation, ..)
@@ -1231,6 +1233,10 @@ impl WgpuRenderer {
         self.app_state.auth_password_draft.clear();
         self.app_state.auth_status.clear();
         self.app_state.pending_provider_key = None;
+        self.app_state.gemini_oauth_client_id_draft.clear();
+        self.app_state.gemini_oauth_status.clear();
+        self.app_state.pending_gemini_oauth_start = None;
+        self.app_state.pending_gemini_oauth_disconnect = false;
         self.app_state.pending_project_create = None;
         self.app_state.pending_artifact = None;
         self.app_state.pending_artifact_open = None;
@@ -1296,6 +1302,25 @@ impl WgpuRenderer {
 
     pub fn take_open_url(&mut self) -> Option<String> {
         self.app_state.pending_open_url.take()
+    }
+
+    pub fn handle_google_oauth_callback(&mut self, callback: String) {
+        if callback.len() > 8 * 1024 {
+            self.app_state.gemini_oauth_status = "Google sign-in callback was too large.".into();
+            return;
+        }
+        let Some(api) = self.api.clone() else {
+            self.app_state.gemini_oauth_status = "Sign in to CenAI before connecting Google.".into();
+            return;
+        };
+        let sender = self.response_tx.clone();
+        let generation = self.account_generation;
+        self.app_state.gemini_oauth_status = "Verifying Google sign-in and exchanging tokens…".into();
+        let task = self.runtime.spawn(async move {
+            let result = api.complete_google_gemini_oauth(&callback).await;
+            let _ = sender.send(ChatEvent::GeminiOAuthCompleted(generation, result));
+        });
+        self.track_task(task);
     }
 
     pub fn handle_agent_action_result(&mut self, name: String, success: bool, message: String) {
@@ -1999,6 +2024,35 @@ impl WgpuRenderer {
             });
             self.track_task(task);
         }
+        if let Some(client_id) = self.app_state.pending_gemini_oauth_start.take() {
+            self.app_state.gemini_oauth_status = match self.api.as_ref() {
+                Some(api) => match api.begin_google_gemini_oauth(&client_id) {
+                    Ok(url) => {
+                        #[cfg(target_os = "android")]
+                        if let Some(app) = self.android_app.as_ref() {
+                            open_google_oauth(app.clone(), url);
+                            "Opening Google's secure sign-in page…".into()
+                        } else {
+                            "Android browser adapter is unavailable.".into()
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        { let _ = url; "Google OAuth is available only on Android.".into() }
+                    }
+                    Err(error) => format!("Could not start Google sign-in: {error}"),
+                },
+                None => "Sign in to CenAI before connecting Google.".into(),
+            };
+        }
+        if self.app_state.pending_gemini_oauth_disconnect {
+            self.app_state.pending_gemini_oauth_disconnect = false;
+            self.app_state.gemini_oauth_status = match self.api.as_ref() {
+                Some(api) => match api.disconnect_google_gemini_oauth() {
+                    Ok(()) => "Google OAuth tokens removed from this account's secure vault.".into(),
+                    Err(error) => format!("Could not disconnect Google: {error}"),
+                },
+                None => "Secure account service is unavailable.".into(),
+            };
+        }
         if let Some((provider, key)) = self.app_state.pending_provider_key.take() {
             self.app_state.provider_key_status = match self.api.as_ref() {
                 Some(api) => match api.save_provider_key(&provider, &key) {
@@ -2216,6 +2270,12 @@ impl WgpuRenderer {
                         }
                         Err(error) => self.app_state.auth_status = format!("Sign-in failed: {error}"),
                     }
+                }
+                ChatEvent::GeminiOAuthCompleted(_, result) => {
+                    self.app_state.gemini_oauth_status = match result {
+                        Ok(()) => "Google account connected. OAuth tokens are encrypted and stored for this CenAI account.".into(),
+                        Err(error) => format!("Google sign-in failed: {error}"),
+                    };
                 }
                 ChatEvent::SignedOut(_, result) => {
                     match result {
