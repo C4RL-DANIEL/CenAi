@@ -103,7 +103,9 @@ class SecureKeyStore(context: Context) {
             val name = "api_key_${provider.name.lowercase()}"
             if (scoped.getString(name, null) != null) continue
             val legacy = prefs.getString(name, null)
-                ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null
+                ?: if (provider == Provider.OPENAI) {
+                    prefs.getString("api_key", null) ?: prefs.getString("secret_api_key", null)
+                } else null
                 ?: continue
             val clear = decrypt(legacy)
             if (clear.isNotBlank()) saveApiKey(clear, provider, ownerId)
