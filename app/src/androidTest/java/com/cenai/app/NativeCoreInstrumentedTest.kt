@@ -43,6 +43,9 @@ class NativeCoreInstrumentedTest {
         assertEquals("calculate", toolCall.getString("name"))
         assertEquals("2+2", toolCall.getJSONObject("arguments").getString("expression"))
 
+        val targets = JSONArray(NativeCore.selectProviderTargets("OPENAI", true, false, """["OPENAI","GEMINI"]"""))
+        assertEquals(2, targets.length())
+        assertEquals("OPENAI", targets.getString(0))
         val transport = JSONObject(NativeCore.buildProviderRequestConfig("GEMINI", "gemini-test", "key", false, "", "{}"))
         assertTrue(transport.getString("url").contains("gemini-test"))
         assertEquals("key", transport.getJSONObject("headers").getString("x-goog-api-key"))
