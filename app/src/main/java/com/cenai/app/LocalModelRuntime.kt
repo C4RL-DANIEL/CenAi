@@ -24,7 +24,7 @@ import java.io.FileOutputStream
 class LocalModelRuntime(context: Context) {
     private val app = context.applicationContext
     private val modelDir = File(app.filesDir, "models")
-    val modelFile: File get() = File(modelDir, "cenai-local.litertlm")
+    val modelFile: File get() = File(modelDir, "lightning.litertlm")
     private val cacheDir = File(app.cacheDir, "litertlm").apply { mkdirs() }
     private val mutex = Mutex()
     private var engine: Engine? = null
@@ -83,7 +83,7 @@ class LocalModelRuntime(context: Context) {
             "Choose a LiteRT-LM .litertlm model file."
         }
         modelDir.mkdirs()
-        val temporary = File(modelDir, "cenai-local.importing")
+        val temporary = File(modelDir, "lightning.importing")
         try {
             val input = app.contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("Android could not open the selected model file.")
@@ -107,7 +107,7 @@ class LocalModelRuntime(context: Context) {
                 // Keep the previous working model until the new import has been
                 // promoted successfully. A failed rename must not destroy the
                 // user's only installed offline model.
-                val backup = File(modelDir, "cenai-local.previous")
+                val backup = File(modelDir, "lightning.previous")
                 if (backup.exists() && !backup.delete()) {
                     throw IllegalStateException("Could not prepare the model backup.")
                 }
@@ -135,8 +135,9 @@ class LocalModelRuntime(context: Context) {
 
     suspend fun stream(messages: List<ChatMessage>, onDelta: (String) -> Unit): String =
         withContext(Dispatchers.IO) {
+            val bundledReady = installBundledModelIfMissing()
             mutex.withLock {
-                check(installBundledModelIfMissing() || isModelInstalled()) { "The bundled Lightning model is not present in this app build." }
+                check(bundledReady || isModelInstalled()) { "The bundled Lightning model is not present in this app build." }
                 val activeEngine = ensureEngineLocked()
                 val system = messages.firstOrNull { it.role == "system" }?.content.orEmpty()
                 val history = messages.filter { it.role != "system" }.dropLast(1).mapNotNull { message ->
