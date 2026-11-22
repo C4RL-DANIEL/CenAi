@@ -456,6 +456,9 @@ impl WorkspaceStore {
                 return Err("Workspace backup conversation exceeds supported limits".into());
             }
         }
+        if payload.conversation_catalog.iter().any(|metadata| !conversation_ids.contains(&metadata.id)) {
+            return Err("Workspace backup conversation catalog references missing history".into());
+        }
         for automation in &payload.automations {
             if !automation_ids.insert(automation.id.clone()) {
                 return Err("Workspace backup contains duplicate automation identifiers".into());
@@ -539,6 +542,8 @@ impl WorkspaceStore {
             return Err(error);
         }
 
+        let catalog_path = self.conversation_catalog_path();
+        let previous_catalog = if catalog_path.exists() { Some(self.read_storage(&catalog_path)?) } else { None };
         if previous.exists() { fs::remove_dir_all(&previous).map_err(|error| error.to_string())?; }
         if conversation_previous.exists() { fs::remove_dir_all(&conversation_previous).map_err(|error| error.to_string())?; }
         let had_current = current.exists();
@@ -573,8 +578,6 @@ impl WorkspaceStore {
             return Err(error.to_string());
         }
 
-        let catalog_path = self.conversation_catalog_path();
-        let previous_catalog = if catalog_path.exists() { Some(self.read_storage(&catalog_path)?) } else { None };
         let catalog_bytes = serde_json::to_vec_pretty(&restored_catalog).map_err(|error| error.to_string())?;
         if let Err(error) = self.write_atomic(&catalog_path, &catalog_bytes) {
             let _ = fs::remove_dir_all(&current);
@@ -1127,6 +1130,7 @@ mod tests {
             crate::ui::model::Message { id: 1, role: crate::ui::model::MessageRole::User, body: "Remember this private conversation".into(), streaming: false },
             crate::ui::model::Message { id: 2, role: crate::ui::model::MessageRole::Assistant, body: "It stays in this account backup.".into(), streaming: false },
         ]).unwrap();
+        source.upsert_conversation_metadata("primary", "Private conversation title", 1234).unwrap();
         source.save_task_plan(TaskPlan {
             id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
                             events: Vec::new(),
@@ -1147,6 +1151,7 @@ mod tests {
         assert_eq!(restored.task_plans().unwrap(), source.task_plans().unwrap());
         assert_eq!(restored.automations().unwrap(), source.automations().unwrap());
         assert_eq!(restored.load_conversation("primary").unwrap(), source.load_conversation("primary").unwrap());
+        assert_eq!(restored.list_conversations().unwrap(), source.list_conversations().unwrap());
         assert_eq!(restored.read_artifact("backup-artifact").unwrap(), b"secret workspace file");
         let _ = fs::remove_dir_all(source_root);
         let _ = fs::remove_dir_all(restored_root);
