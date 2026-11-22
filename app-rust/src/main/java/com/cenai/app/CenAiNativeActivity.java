@@ -4,6 +4,14 @@ import android.app.NativeActivity;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
+import android.content.SharedPreferences;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import java.security.KeyStore;
 import android.os.Build;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -46,6 +54,72 @@ public final class CenAiNativeActivity extends NativeActivity {
         Uri uri = intent.getData();
         if ("com.cenai.app".equals(uri.getScheme()) && "/oauth2redirect".equals(uri.getPath())) {
             nativeOnOAuthCallback(uri.toString());
+        }
+    }
+
+    /**
+     * Exports the previous Kotlin app's encrypted account and provider secrets
+     * for a one-time in-process migration into the Rust-owned Keystore vault.
+     * Values are never logged or written to disk in plaintext.
+     */
+    public String exportLegacySecureStore() {
+        org.json.JSONObject result = new org.json.JSONObject();
+        org.json.JSONObject keys = new org.json.JSONObject();
+        try {
+            SharedPreferences prefs = getSharedPreferences("cenai_private", MODE_PRIVATE);
+            KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            SecretKey legacyKey = (SecretKey) store.getKey("cenai_aes_key_v1", null);
+            if (legacyKey == null) return "{}";
+            result.put("access_token", decryptLegacy(prefs.getString("secret_supabase_access_token", null), legacyKey));
+            result.put("refresh_token", decryptLegacy(prefs.getString("secret_supabase_refresh_token", null), legacyKey));
+            result.put("account_email", prefs.getString("supabase_account_email", ""));
+            result.put("email_verified", "true".equals(prefs.getString("cenai_email_verified", "false")));
+            for (String provider : new String[]{"openai", "deepseek", "claude", "gemini", "custom"}) {
+                String encrypted = prefs.getString("api_key_" + provider, null);
+                String value = decryptLegacy(encrypted, legacyKey);
+                if (!value.isEmpty()) keys.put(provider, value);
+            }
+            String defaultKey = decryptLegacy(prefs.getString("api_key", null), legacyKey);
+            if (!defaultKey.isEmpty() && !keys.has("openai")) keys.put("openai", defaultKey);
+            result.put("provider_keys", keys);
+            return result.toString();
+        } catch (Exception error) {
+            android.util.Log.w("CenAI", "Legacy secure-store migration export unavailable; original data was retained.");
+            return "{}";
+        }
+    }
+
+    private String decryptLegacy(String encoded, SecretKey key) throws Exception {
+        if (encoded == null || encoded.isEmpty()) return "";
+        byte[] packed = Base64.decode(encoded, Base64.NO_WRAP);
+        if (packed.length <= 12) return "";
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, packed, 0, 12));
+        return new String(cipher.doFinal(packed, 12, packed.length - 12), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Called only after Rust confirms the imported vault data is durable. */
+    public void clearLegacySecureStoreAfterMigration() {
+        try {
+            SharedPreferences prefs = getSharedPreferences("cenai_private", MODE_PRIVATE);
+            prefs.edit()
+                .remove("secret_supabase_access_token")
+                .remove("secret_supabase_refresh_token")
+                .remove("supabase_account_email")
+                .remove("cenai_email_verified")
+                .remove("api_key")
+                .remove("api_key_openai")
+                .remove("api_key_deepseek")
+                .remove("api_key_claude")
+                .remove("api_key_gemini")
+                .remove("api_key_custom")
+                .apply();
+            KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            store.deleteEntry("cenai_aes_key_v1");
+        } catch (Exception error) {
+            android.util.Log.w("CenAI", "Legacy secure-store cleanup could not be completed.");
         }
     }
 
