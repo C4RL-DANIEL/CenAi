@@ -4,7 +4,7 @@ This file is the handoff record for the ongoing full Rust migration. It is not a
 
 ## Rust core currently implemented
 
-- \`agent.rs\`: Rust-owned tool catalog and JSON schemas, allowlist/approval policy, structured tool-call parsing, assistant-turn classification, tool-guide generation, and safe local tool execution.
+- \`agent.rs\`: Rust-owned tool catalog and JSON schemas, allowlist/approval policy, structured tool-call parsing, assistant-turn classification, bounded agent-step policy, tool-continuation prompts, tool-guide generation, and safe local tool execution.
 - \`auth.rs\`: signup/sign-in/refresh payload validation, Supabase session decoding, and six-digit email OTP validation.
 - \`context.rs\`: bounded assembly of system instructions, account memory, local retrieval and tool guidance.
 - \`knowledge.rs\`: local retrieval/ranking over only the active account's supplied conversation context.
