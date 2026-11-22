@@ -12,8 +12,9 @@ data class Conversation(
     var updatedAt: Long = System.currentTimeMillis()
 )
 
-class ChatStore(context: Context) {
-    private val prefs = context.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
+class ChatStore(context: Context, ownerId: String = "guest") {
+    private val namespace = ownerId.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "guest" }
+    private val prefs = context.getSharedPreferences("cenai_history_$namespace", Context.MODE_PRIVATE)
 
     fun load(): MutableList<Conversation> {
         val raw = prefs.getString("conversations", "[]") ?: "[]"
