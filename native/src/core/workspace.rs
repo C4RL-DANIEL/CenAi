@@ -255,6 +255,32 @@ impl WorkspaceStore {
         Ok(entries)
     }
 
+    pub fn upsert_conversation_metadata(&self, conversation_id: &str, title: &str, updated_at_unix_ms: u64) -> Result<(), String> {
+        if !safe_segment(conversation_id) || title.len() > 512 {
+            return Err("Conversation metadata is invalid".into());
+        }
+        let _guard = self.lock_index()?;
+        let path = self.conversation_catalog_path();
+        let mut entries: Vec<ConversationMetadata> = if path.exists() {
+            serde_json::from_slice(&self.read_storage(&path)?)
+                .map_err(|error| format!("Conversation catalog is invalid: {error}"))?
+        } else { Vec::new() };
+        if let Some(existing) = entries.iter_mut().find(|item| item.id == conversation_id) {
+            existing.updated_at_unix_ms = updated_at_unix_ms;
+            if existing.title.trim().is_empty() && !title.trim().is_empty() {
+                existing.title = title.trim().to_owned();
+            }
+        } else {
+            entries.push(ConversationMetadata {
+                id: conversation_id.to_owned(),
+                title: if title.trim().is_empty() { "New chat".into() } else { title.trim().to_owned() },
+                updated_at_unix_ms,
+            });
+        }
+        let bytes = serde_json::to_vec_pretty(&entries).map_err(|error| error.to_string())?;
+        self.write_atomic(&path, &bytes)
+    }
+
     /// Imports legacy Kotlin history into the authenticated, encrypted workspace.
     /// Existing Rust conversations are never overwritten. Re-running after a crash
     /// is safe: message files are durable before catalog metadata is committed.
