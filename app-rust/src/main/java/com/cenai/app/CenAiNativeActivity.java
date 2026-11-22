@@ -82,6 +82,18 @@ public final class CenAiNativeActivity extends NativeActivity {
             }
             String defaultKey = decryptLegacy(prefs.getString("api_key", null), legacyKey);
             if (!defaultKey.isEmpty() && !keys.has("openai")) keys.put("openai", defaultKey);
+            // Migrate only durable OAuth credentials. An in-flight PKCE state
+            // is intentionally discarded so an old browser redirect cannot be replayed.
+            String googleClientId = prefs.getString("google_oauth_client_id", "");
+            if (!googleClientId.isEmpty()) keys.put("gemini_oauth_client_id", googleClientId);
+            String geminiAccess = decryptLegacy(prefs.getString("secret_gemini_oauth_access_token", null), legacyKey);
+            String geminiRefresh = decryptLegacy(prefs.getString("secret_gemini_oauth_refresh_token", null), legacyKey);
+            if (!geminiAccess.isEmpty()) keys.put("gemini_oauth_access_token", geminiAccess);
+            if (!geminiRefresh.isEmpty()) keys.put("gemini_oauth_refresh_token", geminiRefresh);
+            long expiryMillis = 0L;
+            try { expiryMillis = Long.parseLong(prefs.getString("gemini_oauth_expires_at", "0")); }
+            catch (NumberFormatException ignored) { }
+            if (expiryMillis > 0L) keys.put("gemini_oauth_expires_at_ms", Long.toString(expiryMillis));
             result.put("provider_keys", keys);
             return result.toString();
         } catch (Exception error) {
@@ -114,6 +126,12 @@ public final class CenAiNativeActivity extends NativeActivity {
                 .remove("api_key_claude")
                 .remove("api_key_gemini")
                 .remove("api_key_custom")
+                .remove("secret_google_oauth_verifier")
+                .remove("secret_google_oauth_state")
+                .remove("secret_gemini_oauth_access_token")
+                .remove("secret_gemini_oauth_refresh_token")
+                .remove("google_oauth_client_id")
+                .remove("gemini_oauth_expires_at")
                 .apply();
             KeyStore store = KeyStore.getInstance("AndroidKeyStore");
             store.load(null);
