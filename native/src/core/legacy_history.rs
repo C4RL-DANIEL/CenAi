@@ -16,7 +16,6 @@ pub struct LegacyConversation {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 pub struct LegacyMessage {
     pub role: String,
-    #[serde(alias = "content")]
     pub content: String,
 }
 fn default_title() -> String { "New chat".into() }
@@ -66,7 +65,7 @@ pub fn parse_legacy_history(json: &str) -> Result<Vec<ImportedConversation>, Str
             id: conversation.id, title: conversation.title, updated_at_unix_ms: conversation.updated_at, messages,
         });
     }
-    imported.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
+    imported.sort_by_key(|a| std::cmp::Reverse(a.updated_at_unix_ms));
     Ok(imported)
 }
 
