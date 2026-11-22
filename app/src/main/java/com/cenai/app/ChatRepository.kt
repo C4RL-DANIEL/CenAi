@@ -169,24 +169,9 @@ class ChatRepository(
         }
     }
 
-    private fun parseDelta(provider: Provider, raw: String): String = runCatching {
-        val obj = JSONObject(raw)
-        when (provider) {
-            Provider.CLAUDE -> if (obj.stringOrEmpty("type") == "content_block_delta")
-                obj.optJSONObject("delta")?.stringOrEmpty("text").orEmpty() else ""
-            Provider.GEMINI -> {
-                val parts = obj.optJSONArray("candidates")?.optJSONObject(0)
-                    ?.optJSONObject("content")?.optJSONArray("parts") ?: return@runCatching ""
-                buildString {
-                    for (index in 0 until parts.length()) {
-                        append(parts.optJSONObject(index)?.stringOrEmpty("text").orEmpty())
-                    }
-                }
-            }
-            else -> obj.optJSONArray("choices")?.optJSONObject(0)
-                ?.optJSONObject("delta")?.stringOrEmpty("content").orEmpty()
-        }
-    }.getOrDefault("").takeUnless { it == "null" }.orEmpty()
+    private fun parseDelta(provider: Provider, raw: String): String =
+        NativeCore.parseProviderDelta(provider.name, raw)
+
 }
 
 /** JSONObject.optString() may stringify JSONObject.NULL as the literal word "null". */
