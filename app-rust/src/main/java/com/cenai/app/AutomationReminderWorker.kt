@@ -45,7 +45,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
             .setAutoCancel(true)
             .build()
         return try {
-            manager.notify(inputData.getInt(NOTIFICATION_ID_KEY, id.hashCode()), notification)
+            manager.notify(inputData.getInt(AutomationReminderWorker.NOTIFICATION_ID_KEY, id.hashCode()), notification)
             Result.success()
         } catch (_: SecurityException) {
             // POST_NOTIFICATIONS may be denied; do not retry forever or bypass the permission.
@@ -66,7 +66,7 @@ object AutomationReminderBridge {
         val name = workName(ownerScope, taskId)
         val notificationId = name.hashCode()
         val request = OneTimeWorkRequestBuilder<AutomationReminderWorker>()
-            .setInputData(Data.Builder().putInt(NOTIFICATION_ID_KEY, notificationId).build())
+            .setInputData(Data.Builder().putInt(AutomationReminderWorker.NOTIFICATION_ID_KEY, notificationId).build())
             .setInitialDelay(delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
