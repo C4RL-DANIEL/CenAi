@@ -55,6 +55,9 @@ class NativeCoreInstrumentedTest {
         assertEquals(1, NativeCore.compareVersions("v1.2.0+build.1", "1.1.9"))
         assertEquals(-1, NativeCore.compareVersions("1.0.0-beta.1", "1.0.0"))
         assertEquals(0, NativeCore.compareVersions("1.0.0+first", "1.0.0+second"))
+        assertEquals("cloud_access_token", NativeCore.providerCredentialSource("CENAI_CLOUD", true))
+        assertEquals("google_oauth", NativeCore.providerCredentialSource("GEMINI", true))
+        assertEquals("provider_api_key", NativeCore.providerCredentialSource("OPENAI", false))
 
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
