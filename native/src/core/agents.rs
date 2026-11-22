@@ -1,5 +1,6 @@
 //! Persistent task-plan state machine; execution is delegated to authorized tools.
 use serde::{Deserialize, Serialize};
+use crate::core::permissions::{approval_policy, ApprovalDecision, OperationClass};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -162,6 +163,50 @@ impl TaskPlan {
         self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?.status = StepStatus::WaitingForApproval;
         self.record_event(Some(step_id), TaskExecutionEventKind::ApprovalRequested, None);
         Ok(())
+    }
+
+    /// Applies the central permission policy before a step can enter execution.
+    /// Sensitive, external-account and destructive operations require a fresh
+    /// per-step approval event even when a broad capability was previously granted.
+    pub fn authorize_and_begin_step(
+        &mut self,
+        step_id: u64,
+        class: OperationClass,
+        explicitly_granted: bool,
+    ) -> Result<ApprovalDecision, &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let step = self.steps.iter().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        if step.status != StepStatus::Pending
+            || !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate|
+                candidate.id == *dependency && candidate.status == StepStatus::Completed)) {
+            return Err("Task step is not ready to be authorized");
+        }
+
+        let decision = approval_policy(class, explicitly_granted);
+        if decision == ApprovalDecision::Deny {
+            return Err("Operation is denied by the permission policy");
+        }
+
+        let requires_fresh_approval = matches!(
+            class,
+            OperationClass::ExternalAccount | OperationClass::Sensitive | OperationClass::Destructive
+        );
+        let has_fresh_approval = self.events.iter().rev().find(|event| event.step_id == Some(step_id)
+            && matches!(event.kind, TaskExecutionEventKind::ApprovalGranted | TaskExecutionEventKind::ApprovalDenied))
+            .is_some_and(|event| event.kind == TaskExecutionEventKind::ApprovalGranted);
+
+        if decision == ApprovalDecision::RequireUserApproval
+            && !(requires_fresh_approval && explicitly_granted && has_fresh_approval) {
+            self.request_step_approval(step_id)?;
+            return Ok(ApprovalDecision::RequireUserApproval);
+        }
+        if requires_fresh_approval && (!explicitly_granted || !has_fresh_approval) {
+            self.request_step_approval(step_id)?;
+            return Ok(ApprovalDecision::RequireUserApproval);
+        }
+
+        self.begin_step(step_id)?;
+        Ok(ApprovalDecision::Allow)
     }
 
     pub fn resolve_step_approval(&mut self, step_id: u64, approved: bool) -> Result<(), &'static str> {
@@ -386,6 +431,61 @@ mod tests {
         plan.begin_step(2).unwrap();
         plan.complete_step(2).unwrap();
         assert_eq!(plan.steps[1].status, StepStatus::Completed);
+    }
+
+    #[test]
+    fn coordinated_step_authorization_requires_fresh_approval_for_sensitive_actions() {
+        let mut plan = TaskPlan {
+            id: "task-permission-coordination".into(),
+            goal: "Coordinate protected work".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Read local context".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Developer, title: "Modify external account".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::ReadOnly, true).unwrap(),
+            ApprovalDecision::Allow
+        );
+        plan.complete_step(1).unwrap();
+
+        assert_eq!(
+            plan.authorize_and_begin_step(2, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        assert_eq!(plan.steps[1].status, StepStatus::WaitingForApproval);
+        plan.resolve_step_approval(2, true).unwrap();
+
+        assert_eq!(
+            plan.authorize_and_begin_step(2, OperationClass::ExternalAccount, true).unwrap(),
+            ApprovalDecision::Allow
+        );
+        assert_eq!(plan.steps[1].status, StepStatus::Running);
+        assert!(plan.validate_persisted().is_ok());
+    }
+
+    #[test]
+    fn denied_per_action_approval_cannot_be_bypassed_by_a_broad_grant() {
+        let mut plan = TaskPlan {
+            id: "task-denied-permission".into(),
+            goal: "Protect account actions".into(),
+            stopped: false,
+            events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Delete remote data".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None,
+            }],
+        };
+        assert_eq!(
+            plan.authorize_and_begin_step(1, OperationClass::Destructive, true).unwrap(),
+            ApprovalDecision::RequireUserApproval
+        );
+        plan.resolve_step_approval(1, false).unwrap();
+        assert!(plan.authorize_and_begin_step(1, OperationClass::Destructive, true).is_err());
+        assert_eq!(plan.steps[0].status, StepStatus::Cancelled);
     }
 
     #[test]
