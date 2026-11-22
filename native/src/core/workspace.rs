@@ -269,8 +269,11 @@ impl WorkspaceStore {
         } else { Vec::new() };
         if let Some(existing) = entries.iter_mut().find(|item| item.id == conversation_id) {
             existing.updated_at_unix_ms = updated_at_unix_ms;
-            if existing.title.trim().is_empty() && !title.trim().is_empty() {
-                existing.title = title.trim().to_owned();
+            let next_title = title.trim();
+            if !next_title.is_empty()
+                && (existing.title.trim().is_empty()
+                    || (existing.title.trim() == "New chat" && next_title != "New chat")) {
+                existing.title = next_title.to_owned();
             }
         } else {
             entries.push(ConversationMetadata {
@@ -1426,6 +1429,21 @@ mod legacy_history_workspace_tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(1);
         std::env::temp_dir().join(format!("cenai-legacy-history-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
+    }
+
+    #[test]
+    fn conversation_metadata_promotes_placeholder_title_once() {
+        let root = std::env::temp_dir().join(format!("cenai-title-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(root.clone(), "account-a").unwrap();
+        store.upsert_conversation_metadata("chat-1", "New chat", 10).unwrap();
+        store.upsert_conversation_metadata("chat-1", "How to build an app", 20).unwrap();
+        store.upsert_conversation_metadata("chat-1", "A later message must not rename it", 30).unwrap();
+        let catalog = store.list_conversations().unwrap();
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].title, "How to build an app");
+        assert_eq!(catalog[0].updated_at_unix_ms, 30);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
