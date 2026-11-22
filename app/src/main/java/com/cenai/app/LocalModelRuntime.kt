@@ -19,7 +19,7 @@ import java.io.FileOutputStream
 
 /**
  * Private, on-device language model runtime. Model weights remain in app-private
- * storage and are never uploaded. Import a compatible .litertlm file to use it.
+ * storage and are never uploaded. The fixed Lightning model is copied from APK assets on first use.
  */
 class LocalModelRuntime(context: Context) {
     private val app = context.applicationContext
@@ -32,6 +32,51 @@ class LocalModelRuntime(context: Context) {
 
     fun isModelInstalled(): Boolean = modelFile.isFile && modelFile.length() > 1_000_000L
     fun modelSizeBytes(): Long = if (isModelInstalled()) modelFile.length() else 0L
+
+
+    /** Installs the fixed Lightning model shipped in APK assets without asking the user to import it. */
+    suspend fun installBundledModelIfMissing(): Boolean = withContext(Dispatchers.IO) {
+        if (isModelInstalled()) return@withContext true
+        val source = try {
+            app.assets.open("models/lightning.litertlm")
+        } catch (_: Throwable) {
+            return@withContext false
+        }
+        modelDir.mkdirs()
+        val temporary = File(modelDir, "lightning.bundle.tmp")
+        try {
+            var copied = 0L
+            source.use { input ->
+                FileOutputStream(temporary).use { output ->
+                    val buffer = ByteArray(1024 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        require(copied <= 2_500_000_000L) { "Bundled Lightning model exceeds the supported size." }
+                        output.write(buffer, 0, count)
+                    }
+                    output.fd.sync()
+                }
+            }
+            require(copied > 1_000_000L) { "Bundled Lightning model is missing or incomplete." }
+            mutex.withLock {
+                if (isModelInstalled()) {
+                    temporary.delete()
+                    true
+                } else {
+                    closeEngineLocked()
+                    if (!temporary.renameTo(modelFile)) {
+                        throw IllegalStateException("Could not install the bundled Lightning model into private app storage.")
+                    }
+                    true
+                }
+            }
+        } catch (_: Throwable) {
+            temporary.delete()
+            false
+        }
+    }
 
     suspend fun importModel(uri: Uri, displayName: String): Long = withContext(Dispatchers.IO) {
         require(displayName.lowercase().endsWith(".litertlm")) {
@@ -91,7 +136,7 @@ class LocalModelRuntime(context: Context) {
     suspend fun stream(messages: List<ChatMessage>, onDelta: (String) -> Unit): String =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                check(isModelInstalled()) { "Import a .litertlm model in Settings before using Offline AI." }
+                check(installBundledModelIfMissing() || isModelInstalled()) { "The bundled Lightning model is not present in this app build." }
                 val activeEngine = ensureEngineLocked()
                 val system = messages.firstOrNull { it.role == "system" }?.content.orEmpty()
                 val history = messages.filter { it.role != "system" }.dropLast(1).mapNotNull { message ->
