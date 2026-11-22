@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 class ChatRepository(private val vault: SecureKeyStore) {
+    private fun ownerId(): String = vault.get("supabase_user_id", "guest").ifBlank { "guest" }
     private val client = OkHttpClient.Builder()
         .connectTimeout(25, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -46,7 +47,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val credential = when {
             provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
             oauthCredential.first.isNotBlank() -> oauthCredential
-            else -> vault.apiKey(provider, vault.get("supabase_user_id", "guest").ifBlank { "guest" }) to false
+            else -> vault.apiKey(provider, ownerId()) to false
         }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
@@ -107,105 +108,48 @@ class ChatRepository(private val vault: SecureKeyStore) {
 
     private fun buildRequest(p: Provider, model: String, base: String, msgs: List<ChatMessage>, key: String, oauth: Boolean): Request {
         require(model.isNotBlank()) { "Enter a model ID in Settings." }
-        val system = msgs.firstOrNull { it.role == "system" }?.content
-        val conversation = msgs.filter { it.role != "system" }
-        val builder: Request.Builder
-        val payload: JSONObject
-        when (p) {
-            Provider.CENAI_CLOUD -> {
-                require(!msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) { "CenAI Cloud currently supports text-only chat. Choose another provider for image attachments." }
-                val list = JSONArray()
-                var remainingChars = 78000
-                msgs.filter { it.role in setOf("system", "user", "assistant", "tool") }.takeLast(50).forEach { message ->
-                    if (remainingChars > 0) {
-                        val content = message.content.take(minOf(20000, remainingChars))
-                        if (content.isNotBlank()) {
-                            val role = if (message.role == "tool") "assistant" else message.role
-                            list.put(JSONObject().put("role", role).put("content", content))
-                            remainingChars -= content.length
-                        }
-                    }
-                }
-                payload = JSONObject().put("model", model).put("stream", false)
-                    .put("max_tokens", (vault.get("max_tokens", "1024").toIntOrNull() ?: 1024).coerceIn(1, 1024))
-                    .put("messages", list)
-                builder = Request.Builder().url("https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions")
-                    .header("Authorization", "Bearer " + key)
+        val accountId = ownerId()
+        val maxTokens = vault.getUser(accountId, "max_tokens", "4096").toIntOrNull() ?: 4096
+        val messagesJson = JSONArray().apply {
+            msgs.forEach { message ->
+                put(JSONObject().put("role", message.role).put("content", message.content))
             }
-            Provider.CLAUDE -> {
-                val list = JSONArray()
-                conversation.forEach { message ->
-                    val blocks = JSONArray()
-                    message.visionParts().forEach { (kind, value) ->
-                        if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
-                        else blocks.put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", kind).put("data", value)))
-                    }
-                    list.put(JSONObject().put("role", message.role).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
-                }
-                payload = JSONObject().put("model", model)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
-                    .put("stream", true).put("messages", list)
-                if (!system.isNullOrBlank()) payload.put("system", system)
-                builder = Request.Builder().url("https://api.anthropic.com/v1/messages")
-                    .header("x-api-key", key).header("anthropic-version", "2023-06-01")
-            }
+        }
+        val encoded = NativeCore.buildProviderPayload(
+            p.name,
+            model,
+            maxTokens,
+            messagesJson.toString(),
+            vault.getUser(accountId, "custom_params", "{}")
+        )
+        val error = runCatching { JSONObject(encoded).optString("error") }.getOrDefault("")
+        require(error.isBlank()) { error.ifBlank { "Rust could not build the provider request." } }
+        val payload = JSONObject(encoded)
+
+        val builder = when (p) {
+            Provider.CENAI_CLOUD -> Request.Builder().url("https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions")
+                .header("Authorization", "Bearer " + key)
+            Provider.CLAUDE -> Request.Builder().url("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", key).header("anthropic-version", "2023-06-01")
             Provider.GEMINI -> {
-                val contents = JSONArray()
-                conversation.forEach { message ->
-                    val parts = JSONArray()
-                    message.visionParts().forEach { (kind, value) ->
-                        if (kind == "text") parts.put(JSONObject().put("text", value))
-                        else parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", kind).put("data", value)))
-                    }
-                    contents.put(JSONObject().put("role", if (message.role == "assistant") "model" else "user").put("parts", parts))
-                }
-                payload = JSONObject().put("contents", contents)
-                    .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
-                if (!system.isNullOrBlank()) payload.put("systemInstruction",
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-                builder = Request.Builder().url(if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse" else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
-                if (oauth) builder.header("Authorization", "Bearer $key").header("x-goog-user-project", vault.get("google_cloud_project_id"))
+                val request = Request.Builder().url(
+                    if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse"
+                    else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key"
+                )
+                if (oauth) request.header("Authorization", "Bearer $key")
+                    .header("x-goog-user-project", vault.get("google_cloud_project_id"))
+                request
             }
             else -> {
                 val urlBase = if (p == Provider.CUSTOM) base else p.baseUrl
                 require(urlBase.startsWith("https://")) { "API URL must use HTTPS." }
-                val maxTokens = vault.get("max_tokens", "4096").toIntOrNull() ?: 4096
-                val containsImages = msgs.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }
-                if (!containsImages) {
-                    val rustMessages = JSONArray()
-                    msgs.forEach { message ->
-                        rustMessages.put(JSONObject().put("role", message.role).put("content", message.content))
-                    }
-                    val encoded = NativeCore.buildOpenAiChatPayload(model, maxTokens, rustMessages.toString())
-                    val error = runCatching { JSONObject(encoded).optString("error") }.getOrDefault("")
-                    require(error.isBlank()) { error }
-                    payload = JSONObject(encoded)
-                } else {
-                    val list = JSONArray()
-                    msgs.forEach { message ->
-                        val blocks = JSONArray()
-                        message.visionParts().forEach { (kind, value) ->
-                            if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
-                            else blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$kind;base64,$value")))
-                        }
-                        val content: Any = if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks
-                        list.put(JSONObject().put("role", message.role).put("content", content))
-                    }
-                    payload = JSONObject().put("model", model).put("stream", true)
-                        .put("max_tokens", maxTokens)
-                        .put("messages", list)
-                }
-                builder = Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
+                Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $key")
             }
         }
-        if (p == Provider.CUSTOM) {
-            runCatching { JSONObject(vault.get("custom_params", "{}")) }.getOrNull()?.let { params ->
-                params.keys().forEach { name -> if (name !in setOf("model", "messages", "stream")) payload.put(name, params.get(name)) }
-            }
-        }
+
         if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
-            runCatching { JSONObject(vault.get("custom_headers", "{}")) }.getOrNull()?.let { headers ->
+            runCatching { JSONObject(vault.getUser(accountId, "custom_headers", "{}")) }.getOrNull()?.let { headers ->
                 headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }
             }
         }
@@ -245,21 +189,3 @@ class ChatRepository(private val vault: SecureKeyStore) {
 /** JSONObject.optString() may stringify JSONObject.NULL as the literal word "null". */
 private fun JSONObject.stringOrEmpty(name: String): String =
     (opt(name) as? String).orEmpty()
-
-
-/** Converts user-selected image markers into provider-native vision payloads. */
-private val CENAI_IMAGE_MARKER = Regex("""\[\[CENAI_IMAGE\|([^|]+)\|([A-Za-z0-9+/=]+)]]""")
-
-private fun ChatMessage.visionParts(): List<Pair<String, String>> {
-    val result = mutableListOf<Pair<String, String>>()
-    var cursor = 0
-    CENAI_IMAGE_MARKER.findAll(content).forEach { match ->
-        val before = content.substring(cursor, match.range.first)
-        if (before.isNotBlank()) result += "text" to before
-        result += match.groupValues[1] to match.groupValues[2]
-        cursor = match.range.last + 1
-    }
-    val tail = content.substring(cursor)
-    if (tail.isNotBlank() || result.isEmpty()) result += "text" to tail
-    return result
-}
