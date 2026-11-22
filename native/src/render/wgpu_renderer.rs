@@ -1614,6 +1614,7 @@ impl WgpuRenderer {
                         }
                         let messages = self.app_state.conversation.messages().cloned().collect::<Vec<_>>();
                         let reminder_saved = store.save_conversation("primary", &messages).is_ok();
+                        let mut acknowledgement_succeeded = false;
                         if reminder_saved {
                             self.last_saved_message_count = messages.len();
                             let mut acknowledgement_error = None;
@@ -1626,7 +1627,7 @@ impl WgpuRenderer {
                                     break;
                                 }
                             }
-                            let acknowledgement_succeeded = acknowledgement_error.is_none();
+                            acknowledgement_succeeded = acknowledgement_error.is_none();
                             self.app_state.automation_status = if let Some(error) = acknowledgement_error {
                                 format!("Reminder saved, but scheduler acknowledgement failed and will retry: {error}")
                             } else {
