@@ -61,11 +61,21 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     private fun saveSession(data: JSONObject, email: String) {
         vault.putSecret("supabase_access_token", data.optString("access_token"))
         vault.putSecret("supabase_refresh_token", data.optString("refresh_token"))
-        vault.put("supabase_user_id", data.optJSONObject("user")?.optString("id").orEmpty())
+        val ownerId = data.optJSONObject("user")?.optString("id").orEmpty()
+        vault.put("supabase_user_id", ownerId)
+        if (ownerId.isNotBlank()) {
+            vault.putUserSecret(ownerId, "supabase_access_token", data.optString("access_token"))
+            vault.putUserSecret(ownerId, "supabase_refresh_token", data.optString("refresh_token"))
+        }
         vault.put("supabase_account_email", data.optJSONObject("user")?.optString("email")?.ifBlank { email } ?: email)
     }
 
     fun signOut() {
+        val ownerId = vault.get("supabase_user_id")
+        if (ownerId.isNotBlank()) {
+            vault.putUserSecret(ownerId, "supabase_access_token", "")
+            vault.putUserSecret(ownerId, "supabase_refresh_token", "")
+        }
         vault.putSecret("supabase_access_token", "")
         vault.putSecret("supabase_refresh_token", "")
         vault.put("supabase_user_id", "")
