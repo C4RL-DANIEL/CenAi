@@ -79,7 +79,7 @@ object AutomationReminderBridge {
 
     private fun workName(ownerScope: String, taskId: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest("$ownerScope:$taskId".toByteArray(Charsets.UTF_8))
-        val token = digest.joinToString("") { "%02x".format(it) }
+        val token = digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
         return "cenai_automation_$token"
     }
 }
