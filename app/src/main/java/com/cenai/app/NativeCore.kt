@@ -128,4 +128,7 @@ object NativeCore {
 
     /** Builds conversation titles from message history in Rust. */
     external fun conversationTitle(messagesJson: String): String
+
+    /** Resolves model and endpoint settings from Rust provider defaults and account values. */
+    external fun resolveProviderSettings(provider: String, selectedProvider: String, selectedModel: String, selectedBaseUrl: String, storedModel: String, storedBaseUrl: String): String
 }
