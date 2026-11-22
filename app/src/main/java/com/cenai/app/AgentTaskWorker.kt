@@ -99,9 +99,16 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             throw cancelled
         } catch (error: Exception) {
             val message = (error.message ?: error.javaClass.simpleName).take(500)
-            prefs.edit().putString("status_$taskId", "Failed: $message").apply()
-            postNotification(taskId, "Failed", message)
-            if (error is IOException && runAttemptCount < 3) Result.retry() else Result.failure()
+            val foregroundRestricted = error.javaClass.simpleName == "ForegroundServiceStartNotAllowedException"
+            if (foregroundRestricted && runAttemptCount < 6) {
+                prefs.edit().putString("status_$taskId", "Waiting for Android background allowance").apply()
+                postNotification(taskId, "Waiting", "Android temporarily restricted background execution. WorkManager will retry.")
+                Result.retry()
+            } else {
+                prefs.edit().putString("status_$taskId", "Failed: $message").apply()
+                postNotification(taskId, "Failed", message)
+                if (error is IOException && runAttemptCount < 3) Result.retry() else Result.failure()
+            }
         }
     }
 
