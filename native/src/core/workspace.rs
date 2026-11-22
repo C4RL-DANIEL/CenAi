@@ -910,6 +910,7 @@ mod tests {
                         title: "Verify concurrent persistence".into(),
                         status: StepStatus::Pending,
                         depends_on: Vec::new(),
+                        output: None,
                     }],
                     stopped: false,
                 }, index).unwrap();
@@ -965,8 +966,10 @@ mod tests {
             goal: "Build a tested feature".into(),
             stopped: false,
             steps: vec![
-                crate::core::agents::TaskStep { id: 1, role: crate::core::agents::AgentRole::Developer, title: "Implement".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![] },
-                crate::core::agents::TaskStep { id: 2, role: crate::core::agents::AgentRole::Tester, title: "Test".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![1] },
+                crate::core::agents::TaskStep { id: 1, role: crate::core::agents::AgentRole::Developer, title: "Implement".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                crate::core::agents::TaskStep { id: 2, role: crate::core::agents::AgentRole::Tester, title: "Test".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         store.save_task_plan(plan.clone(), 100).unwrap();
@@ -1010,7 +1013,8 @@ mod tests {
         ]).unwrap();
         source.save_task_plan(TaskPlan {
             id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
-            steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new() }],
+            steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new()
+                        output: None, }],
         }, 10).unwrap();
         source.save_automation(Automation {
             id: "backup-automation".into(), owner_scope: owner.into(), title: "Daily report".into(),
