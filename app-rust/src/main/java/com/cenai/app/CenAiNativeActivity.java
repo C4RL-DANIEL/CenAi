@@ -119,6 +119,72 @@ public final class CenAiNativeActivity extends NativeActivity {
         }
     }
 
+    /**
+     * Opens Android's package installer only after verifying the package ID and
+     * matching the APK signing certificate to the currently installed app.
+     */
+    public boolean installVerifiedUpdate(String absolutePath) {
+        try {
+            File updateDirectory = new File(getFilesDir(), "updates").getCanonicalFile();
+            File apk = new File(absolutePath).getCanonicalFile();
+            if (!apk.isFile() || !apk.getPath().startsWith(updateDirectory.getPath() + File.separator)) {
+                throw new IllegalArgumentException("Update file is outside CenAI's private update directory.");
+            }
+            @SuppressWarnings("deprecation")
+            int flags = Build.VERSION.SDK_INT >= 28
+                ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+            PackageManager manager = getPackageManager();
+            PackageInfo archive = manager.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+            if (archive == null || !getPackageName().equals(archive.packageName)) {
+                throw new IllegalArgumentException("Downloaded APK is not a valid CenAI package.");
+            }
+            PackageInfo installed = manager.getPackageInfo(getPackageName(), flags);
+            java.util.Set<String> expected = signerFingerprints(installed);
+            java.util.Set<String> actual = signerFingerprints(archive);
+            if (expected.isEmpty() || !expected.equals(actual)) {
+                throw new SecurityException("APK signing certificate does not match this installation. Update blocked.");
+            }
+            if (Build.VERSION.SDK_INT >= 26 && !manager.canRequestPackageInstalls()) {
+                Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(settings);
+                return false;
+            }
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(
+                this, getPackageName() + ".fileprovider", apk);
+            Intent install = new Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(install);
+            return true;
+        } catch (Exception error) {
+            android.util.Log.e("CenAI", "Verified update installation was blocked", error);
+            return false;
+        }
+    }
+
+    private java.util.Set<String> signerFingerprints(PackageInfo info) throws Exception {
+        android.content.pm.Signature[] signatures;
+        if (Build.VERSION.SDK_INT >= 28) {
+            if (info.signingInfo == null) return java.util.Collections.emptySet();
+            signatures = info.signingInfo.getApkContentsSigners();
+        } else {
+            @SuppressWarnings("deprecation")
+            android.content.pm.Signature[] legacy = info.signatures;
+            signatures = legacy;
+        }
+        java.util.Set<String> result = new java.util.HashSet<>();
+        if (signatures == null) return result;
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        for (android.content.pm.Signature signature : signatures) {
+            byte[] hash = digest.digest(signature.toByteArray());
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte value : hash) hex.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+            result.add(hex.toString());
+        }
+        return result;
+    }
+
     /** Called only when the user enables scheduled reminders in CenAI. */
     public void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33 && !notificationPermissionRequested
