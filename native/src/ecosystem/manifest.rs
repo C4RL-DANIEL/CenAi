@@ -168,6 +168,52 @@ impl CapabilityRegistry {
         Ok(())
     }
 
+    /// Create an explicit per-account grant. Every scope must be both declared and requested.
+    pub fn create_grant(
+        &self,
+        user_scope: &str,
+        app_id: &str,
+        scopes: impl IntoIterator<Item = String>,
+    ) -> Result<UserCapabilityGrant, ManifestError> {
+        if !valid_user_uuid(user_scope) {
+            return Err(ManifestError::InvalidScope);
+        }
+        let manifest = self.manifests.get(app_id).ok_or(ManifestError::EmptyAppId)?;
+        let granted_scopes = scopes.into_iter().collect::<HashSet<_>>();
+        if granted_scopes.is_empty() || granted_scopes.len() > MAX_DECLARATIONS {
+            return Err(ManifestError::TooManyScopes);
+        }
+        for scope in &granted_scopes {
+            if !valid_scope_token(scope) { return Err(ManifestError::InvalidScope); }
+            if !manifest.capabilities.iter().any(|declared| declared == scope)
+                || !manifest.requested_scopes.iter().any(|requested| requested == scope) {
+                return Err(ManifestError::InvalidScope);
+            }
+        }
+        Ok(UserCapabilityGrant {
+            user_scope: user_scope.to_owned(),
+            app_id: app_id.to_owned(),
+            granted_scopes,
+            revoked: false,
+        })
+    }
+
+    /// Revoke a grant only for the authenticated account that owns it.
+    pub fn revoke_grant(
+        &self,
+        user_scope: &str,
+        grant: &mut UserCapabilityGrant,
+    ) -> Result<(), ManifestError> {
+        if !valid_user_uuid(user_scope) || grant.user_scope != user_scope {
+            return Err(ManifestError::InvalidScope);
+        }
+        if !self.manifests.contains_key(&grant.app_id) {
+            return Err(ManifestError::EmptyAppId);
+        }
+        grant.revoked = true;
+        Ok(())
+    }
+
     pub fn authorize(
         &self,
         user_scope: &str,
@@ -298,4 +344,18 @@ mod tests {
         app.capabilities = (0..=MAX_DECLARATIONS).map(|index| format!("capability.{index}")).collect();
         assert_eq!(app.validate(1), Err(ManifestError::TooManyCapabilities));
     }
+
+    #[test]
+    fn registry_creates_only_requested_grants_and_revokes_for_owner() {
+        let mut registry = CapabilityRegistry::new(vec!["cenai.firstparty".into()]);
+        registry.register(manifest(), 1).unwrap();
+        let user = "550e8400-e29b-41d4-a716-446655440011";
+        let mut grant = registry.create_grant(user, "com.cenai.notes", vec!["notes.read".into()]).unwrap();
+        assert!(registry.authorize(user, &grant, "notes.read"));
+        assert!(registry.create_grant(user, "com.cenai.notes", vec!["account:admin".into()]).is_err());
+        assert!(registry.revoke_grant("550e8400-e29b-41d4-a716-446655440012", &mut grant).is_err());
+        registry.revoke_grant(user, &mut grant).unwrap();
+        assert!(!registry.authorize(user, &grant, "notes.read"));
+    }
+
 }
