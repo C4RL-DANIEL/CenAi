@@ -71,13 +71,14 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             for (step in 0..3) {
                 val turn = repository.stream(provider, model, base, history) { }
                 lastTurn = turn
-                val call = runtime.parseToolCall(turn)
-                if (call == null) {
+                val decision = runtime.parseAgentStep(turn)
+                if (decision.kind == "error") error(decision.arguments.optString("message", "Agent response could not be parsed."))
+                if (decision.kind != "tool") {
                     response = turn
                     finished = true
                     break
                 }
-                val execution = runtime.execute(call.first, call.second)
+                val execution = runtime.execute(decision.name, decision.arguments)
                 if (!execution.completed) {
                     response = "The scheduled agent could not complete a requested tool action: " + execution.output
                     finished = true
