@@ -122,4 +122,7 @@ object NativeCore {
     external fun maxAgentSteps(): Int
     external fun buildToolContinuationPrompt(toolName: String, output: String, scheduled: Boolean): String
     external fun agentStepLimitMessage(lastOutput: String, scheduled: Boolean): String
+
+    /** Checks Google OAuth token freshness and refresh margin in Rust. */
+    external fun googleOAuthAccessTokenUsable(accessToken: String, expiresAt: String, nowMs: Long): Boolean
 }
