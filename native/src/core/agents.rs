@@ -181,6 +181,7 @@ impl TaskPlan {
 
     fn request_step_approval_with_binding(&mut self, step_id: u64, binding: Option<&str>) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is paused"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
             .is_some_and(|step| step.status == StepStatus::Pending
                 && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
