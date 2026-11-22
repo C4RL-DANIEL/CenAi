@@ -925,3 +925,18 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_monitorFailureCategory(
         Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_providerMetadata(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+) -> jstring {
+    let Some(name_value) = read_java_string(&mut env, &name) else { return std::ptr::null_mut(); };
+    let output = match providers::provider_metadata(&name_value) {
+        Ok(value) => value,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
