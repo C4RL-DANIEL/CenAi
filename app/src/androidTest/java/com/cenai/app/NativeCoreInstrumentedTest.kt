@@ -58,6 +58,12 @@ class NativeCoreInstrumentedTest {
         assertEquals("cloud_access_token", NativeCore.providerCredentialSource("CENAI_CLOUD", true))
         assertEquals("google_oauth", NativeCore.providerCredentialSource("GEMINI", true))
         assertEquals("provider_api_key", NativeCore.providerCredentialSource("OPENAI", false))
+        val quotaReset = JSONObject(NativeCore.evaluateDailyUsage("2026-11-22", "2026-11-21", "9", "2"))
+        assertTrue(quotaReset.getBoolean("allowed"))
+        assertTrue(quotaReset.getBoolean("reset"))
+        assertEquals(1, quotaReset.getInt("next_count"))
+        val quotaBlocked = JSONObject(NativeCore.evaluateDailyUsage("today", "today", "2", "2"))
+        assertTrue(!quotaBlocked.getBoolean("allowed"))
 
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
