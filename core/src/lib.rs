@@ -579,3 +579,29 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_buildProviderRequestConfig(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildToolGuide(
+    mut env: JNIEnv,
+    _class: JClass,
+    enabled_tools_json: JString,
+    planning_enabled: jboolean,
+    allow_device_actions: jboolean,
+) -> jstring {
+    let Some(enabled_value) = read_java_string(&mut env, &enabled_tools_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match agent::build_tool_guide(
+        &enabled_value,
+        planning_enabled != 0,
+        allow_device_actions != 0,
+    ) {
+        Ok(guide) => guide,
+        Err(error) => format!("ERROR:{error}"),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
