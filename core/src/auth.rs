@@ -189,3 +189,34 @@ mod constant_time_state_tests {
         assert!(!constant_time_eq(b"same-state", b"different"));
     }
 }
+
+
+pub fn generate_oauth_pkce() -> Result<String, String> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let verifier = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    let state = uuid::Uuid::new_v4().simple().to_string();
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    Ok(json!({
+        "verifier": verifier,
+        "state": state,
+        "challenge": challenge
+    }).to_string())
+}
+
+#[cfg(test)]
+mod pkce_tests {
+    use super::generate_oauth_pkce;
+    use serde_json::Value;
+
+    #[test]
+    fn creates_valid_high_entropy_pkce_values() {
+        let generated: Value = serde_json::from_str(&generate_oauth_pkce().unwrap()).unwrap();
+        assert_eq!(generated["verifier"].as_str().unwrap().len(), 64);
+        assert_eq!(generated["state"].as_str().unwrap().len(), 32);
+        assert_eq!(generated["challenge"].as_str().unwrap().len(), 43);
+        assert_ne!(generated["state"], generated["verifier"]);
+    }
+}
