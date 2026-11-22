@@ -786,6 +786,8 @@ impl CenAiApi {
 
     /// Exchanges a validated one-time callback code and stores tokens encrypted.
     pub async fn complete_google_gemini_oauth(&self, callback: &str) -> Result<(), String> {
+        let account_id = self.vault.account_id()?;
+        if account_id.is_empty() { return Err("Sign in to CenAI before connecting Google.".into()); }
         let state = self.vault.provider_key("gemini_oauth_state")?;
         let code = crate::core::google_oauth::validate_callback(callback, &state)
             .map_err(str::to_owned)?;
@@ -815,6 +817,9 @@ impl CenAiApi {
         if access.is_empty() || access.len() > 16 * 1024 || !(60..=86_400).contains(&expires) {
             return Err("Google returned an incomplete or invalid token response.".into());
         }
+        if self.vault.account_id()? != account_id {
+            return Err("The active CenAI account changed during Google sign-in; tokens were not stored.".into());
+        }
         self.vault.save_provider_key("gemini_oauth_access", access)?;
         if !refresh.is_empty() {
             if refresh.len() > 16 * 1024 { return Err("Google refresh token exceeds the supported limit.".into()); }
@@ -828,6 +833,8 @@ impl CenAiApi {
 
     /// Returns a usable OAuth access token, refreshing it before expiry when possible.
     pub async fn google_gemini_access_token(&self) -> Result<String, String> {
+        let account_id = self.vault.account_id()?;
+        if account_id.is_empty() { return Err("Sign in to CenAI before using Google Gemini.".into()); }
         let access = self.vault.provider_key("gemini_oauth_access")?;
         let expiry = self.vault.provider_key("gemini_oauth_expiry")?.parse::<i64>().unwrap_or(0);
         if !access.is_empty() && expiry > chrono::Utc::now().timestamp() + 60 {
@@ -855,6 +862,9 @@ impl CenAiApi {
         let expires = token.get("expires_in").and_then(Value::as_i64).unwrap_or(3600);
         if next.is_empty() || next.len() > 16 * 1024 || !(60..=86_400).contains(&expires) {
             return Err("Google returned an incomplete or invalid refresh response.".into());
+        }
+        if self.vault.account_id()? != account_id {
+            return Err("The active CenAI account changed during Google token refresh.".into());
         }
         self.vault.save_provider_key("gemini_oauth_access", next)?;
         self.vault.save_provider_key("gemini_oauth_expiry", &(chrono::Utc::now().timestamp() + expires).to_string())?;
