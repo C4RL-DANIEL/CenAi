@@ -1326,52 +1326,52 @@ impl WgpuRenderer {
             }
         }
         if let Some((plan_id, step_id, action)) = self.app_state.pending_plan_action.take() {
-            let Some(store) = self.workspace.as_ref() else {
-                self.app_state.plan_status = "Sign in and open your private workspace before updating a task plan.".into();
-                return Ok(());
-            };
-            let Some(index) = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id) else {
-                self.app_state.plan_status = "That task plan is no longer available in this account.".into();
-                return Ok(());
-            };
-            let mut updated = self.app_state.task_plans[index].clone();
-            let transition = match action.as_str() {
-                "start" => updated.begin_step(step_id),
-                "request_approval" => updated.request_step_approval(step_id),
-                "approve" => updated.resolve_step_approval(step_id, true),
-                "deny" => updated.resolve_step_approval(step_id, false),
-                "complete" => updated.complete_step(step_id),
-                "fail" => updated.fail_step(step_id),
-                "stop" if step_id == 0 => { updated.stop(); Ok(()) },
-                _ => Err("Unknown task-plan action"),
-            };
-            match transition {
-                Err(error) => self.app_state.plan_status = format!("Task plan was not changed: {error}."),
-                Ok(()) => match updated.validate_persisted() {
-                    Err(error) => self.app_state.plan_status = format!("Task plan state was rejected: {error}."),
-                    Ok(()) => {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        match store.save_task_plan(updated.clone(), now) {
-                            Ok(_) => {
-                                self.app_state.task_plans[index] = updated;
-                                self.app_state.plan_status = match action.as_str() {
-                                    "start" => format!("Step {step_id} marked as started. CenAI has not performed external actions."),
-                                    "request_approval" => format!("Step {step_id} is waiting for your approval."),
-                                    "approve" => format!("Step {step_id} approved. It is ready for you to start."),
-                                    "deny" => format!("Step {step_id} declined and cancelled."),
-                                    "complete" => format!("Step {step_id} marked complete."),
-                                    "fail" => format!("Step {step_id} marked failed. Dependent steps remain blocked."),
-                                    "stop" => "Task plan stopped. All pending work was cancelled.".into(),
-                                    _ => "Task plan updated.".into(),
-                                };
+            if let Some(store) = self.workspace.as_ref() {
+                if let Some(index) = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id) {
+                    let mut updated = self.app_state.task_plans[index].clone();
+                    let transition = match action.as_str() {
+                        "start" => updated.begin_step(step_id),
+                        "request_approval" => updated.request_step_approval(step_id),
+                        "approve" => updated.resolve_step_approval(step_id, true),
+                        "deny" => updated.resolve_step_approval(step_id, false),
+                        "complete" => updated.complete_step(step_id),
+                        "fail" => updated.fail_step(step_id),
+                        "stop" if step_id == 0 => { updated.stop(); Ok(()) },
+                        _ => Err("Unknown task-plan action"),
+                    };
+                    match transition {
+                        Err(error) => self.app_state.plan_status = format!("Task plan was not changed: {error}."),
+                        Ok(()) => match updated.validate_persisted() {
+                            Err(error) => self.app_state.plan_status = format!("Task plan state was rejected: {error}."),
+                            Ok(()) => {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                                match store.save_task_plan(updated.clone(), now) {
+                                    Ok(_) => {
+                                        self.app_state.task_plans[index] = updated;
+                                        self.app_state.plan_status = match action.as_str() {
+                                            "start" => format!("Step {step_id} marked as started. CenAI has not performed external actions."),
+                                            "request_approval" => format!("Step {step_id} is waiting for your approval."),
+                                            "approve" => format!("Step {step_id} approved. It is ready for you to start."),
+                                            "deny" => format!("Step {step_id} declined and cancelled."),
+                                            "complete" => format!("Step {step_id} marked complete."),
+                                            "fail" => format!("Step {step_id} marked failed. Dependent steps remain blocked."),
+                                            "stop" => "Task plan stopped. All pending work was cancelled.".into(),
+                                            _ => "Task plan updated.".into(),
+                                        };
+                                    }
+                                    Err(error) => self.app_state.plan_status = format!("Task plan update could not be saved: {error}"),
+                                }
                             }
-                            Err(error) => self.app_state.plan_status = format!("Task plan update could not be saved: {error}"),
-                        }
+                        },
                     }
-                },
+                } else {
+                    self.app_state.plan_status = "That task plan is no longer available in this account.".into();
+                }
+            } else {
+                self.app_state.plan_status = "Sign in and open your private workspace before updating a task plan.".into();
             }
         }
         if let Some(plan) = self.app_state.pending_checkout_plan.take() {
