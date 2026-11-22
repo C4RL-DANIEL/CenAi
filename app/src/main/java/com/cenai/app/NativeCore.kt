@@ -111,4 +111,7 @@ object NativeCore {
 
     /** Compares release versions in Rust for safe update decisions. */
     external fun compareVersions(left: String, right: String): Int
+
+    /** Chooses the credential source for a provider in Rust. */
+    external fun providerCredentialSource(provider: String, oauthAvailable: Boolean): String
 }
