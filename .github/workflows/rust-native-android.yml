@@ -48,7 +48,6 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         with:
-          # The action's default "tools" SDK package has been retired by Google.
           packages: platform-tools
 
       - name: Install Android SDK and NDK
@@ -113,9 +112,9 @@ jobs:
       - name: Assemble Rust-native debug APK
         run: gradle :app-rust:assembleDebug :app-rust:assembleDebugAndroidTest --stacktrace
 
-      - name: Verify APK contains both native libraries
+      - name: Verify APK contains both native libraries and bundled Lightning model
         run: |
-          APK="$(find app-rust/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          APK="$(find app-rust/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcenai_native.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcenai_native.so'
@@ -136,7 +135,7 @@ jobs:
           test -e /dev/kvm
           sudo chmod 666 /dev/kvm
 
-      - name: Install and launch Rust NativeActivity on API 35
+      - name: Install, launch and test offline Lightning inference on API 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -146,16 +145,35 @@ jobs:
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
           script: |
-            gradle :app-rust:installDebug
-            adb shell monkey -p com.cenai.app.rustdebug 1
+            set -euo pipefail
+            APK="$RUST_NATIVE_APK"
+            timeout 60s adb wait-for-device
+            package_ready=false
+            for attempt in $(seq 1 45); do
+              if timeout 5s adb shell service check package 2>/dev/null | grep -q found; then
+                package_ready=true
+                break
+              fi
+              sleep 2
+            done
+            test "$package_ready" = true
+            installed=false
+            for attempt in 1 2 3; do
+              if timeout 60s adb install --no-streaming -r "$APK"; then
+                installed=true
+                break
+              fi
+              adb reconnect device >/dev/null 2>&1 || true
+              timeout 60s adb wait-for-device
+              sleep 5
+            done
+            test "$installed" = true
+            timeout 15s adb shell monkey -p com.cenai.app.rustdebug 1
             sleep 25
-            adb shell pidof com.cenai.app.rustdebug
-            # Disable both network transports without sending the protected
-            # AIRPLANE_MODE broadcast (Android 15 correctly rejects shell callers).
+            timeout 10s adb shell pidof com.cenai.app.rustdebug
             adb shell svc wifi disable
             adb shell svc data disable
             sleep 3
-            # Exercise the actual bundled-model inference test with network transports off.
             gradle :app-rust:connectedDebugAndroidTest --stacktrace
 
       - name: Generate debug APK SHA-256
