@@ -46,42 +46,11 @@ class UpdateManager(private val context: Context) {
             }
             val latest = release.optString("tag_name").removePrefix("v")
             val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
-            if (compareVersions(latest, current) <= 0) return@withContext null
+            if (NativeCore.compareVersions(latest, current) <= 0) return@withContext null
             UpdateInfo(latest, release.optString("body"), apk.optString("browser_download_url"), digest)
         }
     }
 
-    private fun compareVersions(a: String, b: String): Int {
-        fun parts(value: String): Pair<List<Int>, List<String>?> {
-            val clean = value.removePrefix("v").substringBefore("+")
-            val split = clean.split("-", limit = 2)
-            val core = split[0].split(".").map { it.toIntOrNull() ?: 0 }
-            return core to split.getOrNull(1)?.split(".")
-        }
-        val (aa, ap) = parts(a)
-        val (bb, bp) = parts(b)
-        for (i in 0 until maxOf(aa.size, bb.size)) {
-            val diff = (aa.getOrNull(i) ?: 0).compareTo(bb.getOrNull(i) ?: 0)
-            if (diff != 0) return diff
-        }
-        if (ap == null && bp == null) return 0
-        if (ap == null) return 1
-        if (bp == null) return -1
-        for (i in 0 until maxOf(ap.size, bp.size)) {
-            val x = ap.getOrNull(i) ?: return -1
-            val y = bp.getOrNull(i) ?: return 1
-            val xn = x.toIntOrNull()
-            val yn = y.toIntOrNull()
-            val diff = when {
-                xn != null && yn != null -> xn.compareTo(yn)
-                xn != null -> -1
-                yn != null -> 1
-                else -> x.compareTo(y)
-            }
-            if (diff != 0) return diff
-        }
-        return 0
-    }
 
     suspend fun downloadAndInstall(info: UpdateInfo, onProgress: (Int) -> Unit) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(info.downloadUrl).build()
