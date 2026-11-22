@@ -118,6 +118,11 @@ jobs:
           unzip -l "$APK" | grep -q 'lib/x86_64/libcenai_native.so'
           unzip -l "$APK" | grep -q 'assets/models/lightning.litertlm'
           unzip -l "$APK" | grep -q 'assets/licenses/Apache-2.0.txt'
+          MODEL_HASH="$(unzip -p "$APK" assets/models/lightning.litertlm | sha256sum | cut -d' ' -f1)"
+          test "$MODEL_HASH" = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108"
+          MODEL_SIZE="$(unzip -l "$APK" | awk '$4 == "assets/models/lightning.litertlm" { print $1 }')"
+          test "$MODEL_SIZE" = "613722264"
+          echo "Verified bundled Lightning model in APK: $MODEL_SIZE bytes, SHA-256 $MODEL_HASH" >> "$GITHUB_STEP_SUMMARY"
           echo "RUST_NATIVE_APK=$APK" >> "$GITHUB_ENV"
 
       - name: Enable KVM for emulator
