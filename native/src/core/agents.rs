@@ -156,6 +156,20 @@ impl TaskPlan {
         Ok(())
     }
 
+    /// Re-queues a failed AI step for a deliberate user-initiated retry.
+    /// Any prior output is cleared so a later attempt cannot display stale data.
+    pub fn retry_failed_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        let ready = self.steps.iter().find(|step| step.id == step_id)
+            .is_some_and(|step| step.status == StepStatus::Failed
+                && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
+        if !ready { return Err("Only a failed step with completed prerequisites can be retried"); }
+        let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
+        step.status = StepStatus::Pending;
+        step.output = None;
+        Ok(())
+    }
+
     pub fn fail_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         let step = self.steps.iter_mut().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
         if step.status != StepStatus::Running { return Err("Only a running task step can fail"); }
@@ -352,6 +366,38 @@ mod tests {
         plan.begin_step(1).unwrap();
         plan.complete_step(1).unwrap();
         assert_eq!(plan.ready_steps(), vec![2]);
+    }
+
+    #[test]
+    fn failed_step_can_be_retried_without_unlocking_dependents_or_reusing_output() {
+        let mut plan = TaskPlan {
+            id: "task-failed-retry".into(), goal: "Recover failed work".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+        plan.begin_step(1).unwrap();
+        plan.fail_step(1).unwrap();
+        plan.steps[0].output = Some("stale diagnostic".into());
+        assert!(plan.ready_steps().is_empty());
+        plan.retry_failed_step(1).unwrap();
+        assert_eq!(plan.steps[0].status, StepStatus::Pending);
+        assert_eq!(plan.steps[0].output, None);
+        assert_eq!(plan.ready_steps(), vec![1]);
+        assert!(plan.retry_failed_step(1).is_err());
+        plan.begin_step(1).unwrap();
+        plan.complete_step(1).unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+    }
+
+    #[test]
+    fn stopped_plans_cannot_retry_failed_steps() {
+        let mut plan = TaskPlan {
+            id: "task-stopped-failed-retry".into(), goal: "Recover".into(), stopped: true,
+            steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Recover".into(), status: StepStatus::Failed, depends_on: vec![], output: None }],
+        };
+        assert!(plan.retry_failed_step(1).is_err());
     }
 
     #[test]
