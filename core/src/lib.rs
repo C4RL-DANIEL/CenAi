@@ -799,3 +799,66 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_containsImageMarker(
     let Some(content_value) = read_java_string(&mut env, &content) else { return 0; };
     if providers::contains_image_marker(&content_value) { 1 } else { 0 }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_validateGoogleOAuthClientId(
+    mut env: JNIEnv,
+    _class: JClass,
+    client_id: JString,
+) -> jstring {
+    let Some(value) = read_java_string(&mut env, &client_id) else { return std::ptr::null_mut(); };
+    let output = auth::validate_google_oauth_client_id(&value)
+        .err().unwrap_or_else(|| "OK".to_owned());
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_validateGoogleOAuthCallback(
+    mut env: JNIEnv,
+    _class: JClass,
+    scheme: JString,
+    path: JString,
+    returned_state: JString,
+    expected_state: JString,
+    error: JString,
+    code: JString,
+) -> jstring {
+    let Some(scheme_value) = read_java_string(&mut env, &scheme) else { return std::ptr::null_mut(); };
+    let Some(path_value) = read_java_string(&mut env, &path) else { return std::ptr::null_mut(); };
+    let Some(state_value) = read_java_string(&mut env, &returned_state) else { return std::ptr::null_mut(); };
+    let Some(expected_value) = read_java_string(&mut env, &expected_state) else { return std::ptr::null_mut(); };
+    let Some(error_value) = read_java_string(&mut env, &error) else { return std::ptr::null_mut(); };
+    let Some(code_value) = read_java_string(&mut env, &code) else { return std::ptr::null_mut(); };
+    let output = match auth::validate_google_oauth_callback(
+        &scheme_value, &path_value, &state_value, &expected_value, &error_value, &code_value
+    ) {
+        Ok(code) => serde_json::json!({ "code": code }).to_string(),
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_parseGoogleOAuthToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw_json: JString,
+    now_ms: jlong,
+) -> jstring {
+    let Some(raw_value) = read_java_string(&mut env, &raw_json) else { return std::ptr::null_mut(); };
+    let output = match auth::parse_google_oauth_token(&raw_value, now_ms.max(0) as u64) {
+        Ok(token) => token,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
