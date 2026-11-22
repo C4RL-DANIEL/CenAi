@@ -588,20 +588,22 @@ mod tests {
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Running, depends_on: vec![], output: None },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Running, depends_on: vec![1], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+                TaskStep { id: 3, role: AgentRole::Researcher, title: "Independent research".into(), status: StepStatus::Running, depends_on: vec![], output: None },
             ],
         };
-        assert_eq!(plan.recover_interrupted_steps(), vec![1, 2]);
-        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![1]);
+        assert_eq!(plan.recover_interrupted_steps(), vec![1, 3]);
+        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![1, 3]);
         let retried = plan.retry_interrupted_steps().unwrap();
-        assert_eq!(retried, vec![1]);
+        assert_eq!(retried, vec![1, 3]);
         assert_eq!(plan.steps[0].status, StepStatus::Pending);
         assert_eq!(plan.steps[0].output, None);
-        assert_eq!(plan.steps[1].status, StepStatus::Failed);
+        assert_eq!(plan.steps[1].status, StepStatus::Pending);
+        assert_eq!(plan.steps[2].status, StepStatus::Pending);
         assert!(plan.validate_persisted().is_ok());
         plan.begin_step(1).unwrap();
         plan.complete_step(1).unwrap();
-        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![2]);
+        assert_eq!(plan.ready_steps(), vec![2, 3]);
     }
 
     #[test]
