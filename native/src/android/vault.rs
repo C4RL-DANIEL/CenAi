@@ -8,7 +8,7 @@ use std::{
     sync::Mutex,
 };
 
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
+use base64::{engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD}, Engine as _};
 use jni::{
     objects::{JByteArray, JObject, JValue},
     JNIEnv, JavaVM,
@@ -207,6 +207,44 @@ impl AndroidSecretVault {
 
     pub fn put_secret(&self, name: &str, value: &str) -> Result<(), String> {
         self.put_secrets(&[(name, value)])
+    }
+
+    /// Imports a one-time export from the previous Kotlin Keystore store.
+    /// The legacy refresh token is accepted only when its access-token subject
+    /// is a canonical Supabase UUID; provider keys are immediately re-encrypted
+    /// and moved into that account's scoped Rust vault namespace.
+    pub fn migrate_legacy_export(&self, raw: &str) -> Result<bool, String> {
+        if raw.len() > 64 * 1024 { return Err("Legacy secure-store export exceeds the migration limit".into()); }
+        if !self.get_secret("supabase_account_id")?.is_empty() { return Ok(false); }
+        let value: serde_json::Value = serde_json::from_str(raw)
+            .map_err(|_| "Legacy secure-store export is invalid JSON")?;
+        let access = value.get("access_token").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let refresh = value.get("refresh_token").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if access.is_empty() || refresh.is_empty() { return Ok(false); }
+        let payload = access.split('.').nth(1).ok_or("Legacy access token is not a JWT")?;
+        let decoded = URL_SAFE_NO_PAD.decode(payload).map_err(|_| "Legacy access token payload is invalid")?;
+        let claims: serde_json::Value = serde_json::from_slice(&decoded)
+            .map_err(|_| "Legacy access token claims are invalid")?;
+        let user_id = claims.get("sub").and_then(serde_json::Value::as_str)
+            .ok_or("Legacy access token has no account subject")?;
+        if !valid_supabase_user_id(user_id) {
+            return Err("Legacy access token account identity is invalid".into());
+        }
+        let email = value.get("account_email").and_then(serde_json::Value::as_str).unwrap_or_default();
+        <Self as SessionVault>::save_session(self, access, refresh, user_id, email)?;
+        if value.get("email_verified").and_then(serde_json::Value::as_bool) == Some(true) {
+            <Self as SessionVault>::set_email_verified(self, true)?;
+        }
+        if let Some(keys) = value.get("provider_keys").and_then(serde_json::Value::as_object) {
+            for provider in ["openai", "deepseek", "claude", "gemini", "custom"] {
+                if let Some(key) = keys.get(provider).and_then(serde_json::Value::as_str) {
+                    if !key.trim().is_empty() {
+                        <Self as SessionVault>::save_provider_key(self, provider, key)?;
+                    }
+                }
+            }
+        }
+        Ok(true)
     }
 
     fn scoped_secret_name(&self, namespace: &str, key: &str) -> Result<String, String> {
