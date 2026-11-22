@@ -1088,6 +1088,38 @@ impl WgpuRenderer {
         self.background_tasks.push(task);
     }
 
+    /// Starts every newly-unblocked step only after the preceding result has been persisted.
+    /// Approval-gated, blocked, failed and stopped steps are excluded by TaskPlan::ready_steps.
+    fn start_ready_plan_steps(&mut self, plan_index: usize) -> Result<usize, String> {
+        let api = self.api.clone().ok_or_else(|| "AI service is unavailable".to_owned())?;
+        let store = self.workspace.clone().ok_or_else(|| "Private workspace is unavailable".to_owned())?;
+        let mut plan = self.app_state.task_plans.get(plan_index).cloned()
+            .ok_or_else(|| "Task plan is no longer available".to_owned())?;
+        let ready = plan.ready_steps();
+        if ready.is_empty() { return Ok(0); }
+        for step_id in &ready {
+            plan.begin_step(*step_id).map_err(str::to_owned)?;
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis() as u64;
+        store.save_task_plan(plan.clone(), now)?;
+        self.app_state.task_plans[plan_index] = plan.clone();
+        for step_id in &ready {
+            let sender = self.response_tx.clone();
+            let generation = self.account_generation;
+            let plan_id = plan.id.clone();
+            let step_plan = plan.clone();
+            let step_api = api.clone();
+            let id = *step_id;
+            let task = self.runtime.spawn(async move {
+                let result = CentralBrain::new(step_api).execute_step(&step_plan, id).await;
+                let _ = sender.send(ChatEvent::StepExecuted(generation, plan_id, id, result));
+            });
+            self.track_task(task);
+        }
+        Ok(ready.len())
+    }
+
     fn reset_user_scoped_state(&mut self) {
         for task in self.background_tasks.drain(..) { task.abort(); }
         if let Some(task) = self.voice_synthesis_task.take() { task.abort(); }
@@ -2190,7 +2222,13 @@ impl WgpuRenderer {
                                     let status = updated.steps.iter().find(|step| step.id == step_id).map(|step| step.status);
                                     self.app_state.task_plans[index] = updated;
                                     self.app_state.plan_status = match status {
-                                        Some(crate::core::agents::StepStatus::Completed) => format!("AI step {step_id} completed and its result was saved to Your Work."),
+                                        Some(crate::core::agents::StepStatus::Completed) => {
+                                            match self.start_ready_plan_steps(index) {
+                                                Ok(0) => format!("AI step {step_id} completed and its result was saved to Your Work. No further steps are ready."),
+                                                Ok(count) => format!("AI step {step_id} completed and was saved. Automatically started {count} newly unlocked dependent step(s)."),
+                                                Err(error) => format!("AI step {step_id} completed and was saved, but automatic progression could not start: {error}."),
+                                            }
+                                        }
                                         Some(crate::core::agents::StepStatus::Blocked) => format!("AI step {step_id} is blocked. Its handoff explanation was saved; dependent steps remain locked."),
                                         _ => format!("AI step {step_id} was updated and saved."),
                                     };
