@@ -352,15 +352,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val targetBase = if (target == provider) base else vault.getUser(activeAccountId, "base_url_${target.name}", target.baseUrl)
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
-                    val toolGuide = if (agentPlanning) {
-                        "You may use these allow-listed tools when useful: " + runtime.availableTools().joinToString { it.name + " — " + it.description } +
-                        ". To call one, output exactly [[CENAI_TOOL_CALL]] followed by a JSON object with name and arguments, then [[/CENAI_TOOL_CALL]]. Example: [[CENAI_TOOL_CALL]]{\"name\":\"current_time\",\"arguments\":{}}[[/CENAI_TOOL_CALL]]. Only call listed tools. Device actions are sensitive and require a separate user approval tap in CenAI before Android opens the requested screen. Never claim a device action ran before approval. Do not claim unsupported shell, arbitrary code or file-write actions were performed. Explain tool results to the user."
-                    } else null
+                    val enabledToolsJson = JSONArray().apply { toolEnabled.filterValues { it }.keys.forEach(::put) }.toString()
+                    val toolGuide = if (agentPlanning) NativeCore.buildToolGuide(enabledToolsJson, true, true) else ""
                     val systemContext = NativeCore.buildSystemContext(
                         systemPrompt,
                         agentMemory,
                         localKnowledgeContext,
-                        toolGuide.orEmpty()
+                        toolGuide
                     )
                     val systemMessages = systemContext.takeIf { it.isNotBlank() }
                         ?.let { listOf(ChatMessage("system", it)) }.orEmpty()
