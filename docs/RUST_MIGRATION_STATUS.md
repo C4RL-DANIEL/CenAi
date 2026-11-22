@@ -22,7 +22,7 @@ Scheduled agent work uses a foreground notification while executing and WorkMana
 
 ## Current blockers to a complete release
 
-1. No bundled local-model weight file is present in this repository tree. The existing LiteRT-LM runtime still exposes the import-based model path; the fixed bundled on-device model has not been integrated or verified.
+1. No bundled local-model weight file is present in this repository tree. The user requirement is a private, hidden, fixed, non-replaceable and non-disableable local engine named Lightning; its exact dedicated duty, model identity, architecture, source and license were not specified. The existing LiteRT-LM runtime still exposes an import/enable UI that conflicts with this requirement and must not be shipped as the finished implementation. Do not invent a model or assign Lightning an unapproved duty.
 2. Compose UI and local inference are not yet a full Rust-native implementation. Do not describe the project as a completed Pure Rust rewrite.
 3. A stable release signing keystore is not configured. The release workflow expects repository Actions secrets \`CENAI_KEYSTORE_BASE64\`, \`CENAI_KEYSTORE_PASSWORD\`, \`CENAI_KEY_ALIAS\` and \`CENAI_KEY_PASSWORD\`. Never put signing secrets in source control or chat.
 4. A debug APK or an APK from an earlier commit is not the requested finished release.
