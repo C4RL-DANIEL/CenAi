@@ -290,8 +290,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         messages = next
         val list = conversations.toMutableList()
         val index = list.indexOfFirst { it.id == currentId }
-        val firstPrompt = next.firstOrNull { it.role == "user" }?.content.orEmpty()
-        val title = firstPrompt.take(42).ifBlank { "New chat" }
+        val titleMessages = JSONArray().apply {
+            next.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+        }
+        val title = NativeCore.conversationTitle(titleMessages.toString())
         val conversation = Conversation(currentId, title, next.toMutableList(), System.currentTimeMillis())
         if (index >= 0) list[index] = conversation else list.add(0, conversation)
         conversations = list.sortedByDescending { it.updatedAt }.toMutableList()
