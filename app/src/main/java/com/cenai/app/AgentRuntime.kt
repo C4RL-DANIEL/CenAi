@@ -14,7 +14,10 @@ data class ToolExecution(val toolName: String, val arguments: JSONObject, val ou
 
 class AgentRuntime(
     private val enabledTools: Set<String>? = null,
-    private val arithmeticEvaluator: (String) -> Double = SafeArithmetic::evaluate
+    private val arithmeticEvaluator: (String) -> Double = SafeArithmetic::evaluate,
+    private val policyEvaluator: (String, String) -> String = { name, enabledJson ->
+        NativeCore.evaluateToolPolicy(name, enabledJson)
+    }
 ) {
     private val tools = listOf(
         AgentTool("current_time", "Get the current local date and time.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject())),
@@ -45,8 +48,13 @@ class AgentRuntime(
     }
     private fun JSONObject?.orEmptyJson() = this ?: JSONObject()
     fun execute(name: String, args: JSONObject, approvalGranted: Boolean = false): ToolExecution {
-        val tool = availableTools().firstOrNull { it.name == name } ?: return ToolExecution(name, args, "Tool is disabled or not allow-listed.", false, false)
-        if (tool.risk != ToolRisk.SAFE && !approvalGranted) return ToolExecution(name, args, "User approval is required.", true, false)
+        val enabledJson = enabledTools?.let { org.json.JSONArray().apply { it.forEach(::put) }.toString() } ?: "null"
+        val policy = runCatching { JSONObject(policyEvaluator(name, enabledJson)) }.getOrElse {
+            return ToolExecution(name, args, "Tool policy could not be verified. Action blocked.", false, false)
+        }
+        if (!policy.optBoolean("allowed")) return ToolExecution(name, args, "Tool is disabled or not allow-listed.", false, false)
+        val requiresApproval = policy.optBoolean("requires_approval")
+        if (requiresApproval && !approvalGranted) return ToolExecution(name, args, "User approval is required.", true, false)
         return try {
             val output = when (name) {
                 "current_time" -> ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
