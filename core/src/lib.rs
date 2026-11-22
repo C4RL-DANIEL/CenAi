@@ -6,6 +6,7 @@ pub mod context;
 pub mod auth;
 pub mod monitor;
 pub mod updates;
+pub mod usage;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
@@ -965,6 +966,25 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_providerCredentialSource(
 ) -> jstring {
     let Some(provider_value) = read_java_string(&mut env, &provider) else { return std::ptr::null_mut(); };
     match env.new_string(providers::credential_source(&provider_value, oauth_available != 0)) {
+        Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_evaluateDailyUsage(
+    mut env: JNIEnv,
+    _class: JClass,
+    today: JString,
+    stored_day: JString,
+    stored_count: JString,
+    daily_limit: JString,
+) -> jstring {
+    let Some(today_value) = read_java_string(&mut env, &today) else { return std::ptr::null_mut(); };
+    let Some(day_value) = read_java_string(&mut env, &stored_day) else { return std::ptr::null_mut(); };
+    let Some(count_value) = read_java_string(&mut env, &stored_count) else { return std::ptr::null_mut(); };
+    let Some(limit_value) = read_java_string(&mut env, &daily_limit) else { return std::ptr::null_mut(); };
+    match env.new_string(usage::evaluate_daily_usage(&today_value, &day_value, &count_value, &limit_value)) {
         Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
     }
 }
