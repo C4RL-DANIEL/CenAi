@@ -49,11 +49,23 @@ class AccountIsolationInstrumentedTest {
 
         vault.putUserSecret("account-alpha", "agent_memory", "Alpha memory")
         vault.putUserSecret("account-beta", "agent_memory", "Beta memory")
+        vault.putUserSecret("account-alpha", "custom_headers", """{"x-account":"alpha"}""")
+        vault.putUserSecret("account-beta", "custom_headers", """{"x-account":"beta"}""")
+        vault.putUser("account-alpha", "usage_count", "5")
+        vault.putUser("account-beta", "usage_count", "2")
+        vault.putUser("account-alpha", "cenai_email_verified", "true")
+        vault.putUser("account-beta", "cenai_email_verified", "false")
         vault.saveApiKey("alpha-provider-key", Provider.OPENAI, "account-alpha")
         vault.saveApiKey("beta-provider-key", Provider.OPENAI, "account-beta")
 
         assertEquals("Alpha memory", vault.getUserSecret("account-alpha", "agent_memory"))
         assertEquals("Beta memory", vault.getUserSecret("account-beta", "agent_memory"))
+        assertEquals("""{"x-account":"alpha"}""", vault.getUserSecret("account-alpha", "custom_headers"))
+        assertEquals("""{"x-account":"beta"}""", vault.getUserSecret("account-beta", "custom_headers"))
+        assertEquals("5", vault.getUser("account-alpha", "usage_count"))
+        assertEquals("2", vault.getUser("account-beta", "usage_count"))
+        assertEquals("true", vault.getUser("account-alpha", "cenai_email_verified"))
+        assertEquals("false", vault.getUser("account-beta", "cenai_email_verified"))
         assertEquals("", vault.getUserSecret("guest", "agent_memory"))
         assertEquals("alpha-provider-key", vault.apiKey(Provider.OPENAI, "account-alpha"))
         assertEquals("beta-provider-key", vault.apiKey(Provider.OPENAI, "account-beta"))
@@ -61,6 +73,8 @@ class AccountIsolationInstrumentedTest {
 
         vault.putUserSecret("account-alpha", "agent_memory", "")
         vault.putUserSecret("account-beta", "agent_memory", "")
+        vault.putUserSecret("account-alpha", "custom_headers", "")
+        vault.putUserSecret("account-beta", "custom_headers", "")
         vault.saveApiKey("", Provider.OPENAI, "account-alpha")
         vault.saveApiKey("", Provider.OPENAI, "account-beta")
     }
