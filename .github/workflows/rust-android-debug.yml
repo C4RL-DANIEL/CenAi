@@ -59,6 +59,8 @@ jobs:
           gradle-version: "8.13"
       - name: Build debug APK
         run: gradle --no-daemon :app-rust:assembleDebug
+      - name: Compile retained Kotlin migration compatibility layer
+        run: gradle --no-daemon :app:compileDebugKotlin
       - name: Verify NativeActivity smoke-test script syntax
         run: bash -n .github/scripts/verify-rust-native-activity.sh
       - name: Verify NativeActivity on API 35 emulator
