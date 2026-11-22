@@ -12,7 +12,7 @@ fn read_java_string(env: &mut JNIEnv, input: &JString) -> Option<String> {
 /// - removes control characters other than tabs and line breaks,
 /// - trims surrounding whitespace.
 fn normalize_prompt(value: &str) -> String {
-    let normalized_lines = value.replace("\r\n", "\n").replace('\r', "\n');
+    let normalized_lines = value.replace("\r\n", "\n").replace('\r', "\n");
     let filtered: String = normalized_lines
         .chars()
         .filter(|ch| !ch.is_control() || *ch == '\n' || *ch == '\t')
