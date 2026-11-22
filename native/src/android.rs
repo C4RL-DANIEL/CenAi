@@ -5,7 +5,7 @@ use jni::{objects::{JClass, JObject, JString, JValue}, sys::{jboolean, jint}, JN
 mod vault;
 pub(crate) mod audio;
 use vault::AndroidSecretVault;
-use crate::core::{automations::reminder_notification_tag, guardian::DiagnosticKind, network::{CenAiApi, SessionVault}, workspace::WorkspaceStore};
+use crate::core::{automations::reminder_notification_tag, guardian::DiagnosticKind, network::CenAiApi, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
