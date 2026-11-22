@@ -114,11 +114,6 @@ class SecureKeyStore(context: Context) {
         prefs.edit().putBoolean("legacy_account_migration_v1_done", true).apply()
     }
 
-    fun saveApiKey(value: String) {
-        if (value.isBlank()) prefs.edit().remove("api_key").apply()
-        else prefs.edit().putString("api_key", encrypt(value)).apply()
-    }
-
     fun saveApiKey(value: String, provider: Provider, ownerId: String = "guest") {
         val scoped = accountPrefs(ownerId)
         val name = "api_key_${provider.name.lowercase()}"
