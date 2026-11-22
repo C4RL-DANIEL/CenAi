@@ -3,7 +3,7 @@
 //! Authentication identity must be supplied by the trusted transport adapter (for
 //! example, a verified Supabase session), never trusted from an app-provided field.
 use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::engine::general_purpose::STANDARD;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use super::manifest::{CapabilityRegistry, UserCapabilityGrant};
