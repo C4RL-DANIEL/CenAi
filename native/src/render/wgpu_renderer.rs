@@ -30,6 +30,29 @@ fn conversation_prompt_for_offline(conversation: &crate::ui::model::Conversation
     prompt
 }
 
+#[cfg(target_os = "android")]
+fn schedule_android_automation_reminders(app: &AndroidApp, automations: &[Automation]) {
+    let now = chrono::Utc::now();
+    for automation in automations {
+        if !automation.enabled {
+            cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
+            continue;
+        }
+        let next = automation.pending_scheduled_at
+            .and_then(|timestamp| chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0))
+            .or_else(|| automation.next_run_after(now).ok().flatten());
+        if let Some(next) = next {
+            let delay = (next - now).num_milliseconds().max(0) as u64;
+            schedule_automation_reminder(
+                app.clone(), automation.owner_scope.clone(), automation.id.clone(),
+                automation.title.clone(), delay,
+            );
+        } else {
+            cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
+        }
+    }
+}
+
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
     let records = memories.iter().filter_map(|memory| {
         let content = memory.get("content").and_then(serde_json::Value::as_str)?.trim();
@@ -313,25 +336,8 @@ impl WgpuRenderer {
 
     #[cfg(target_os = "android")]
     fn sync_android_automation_reminders(&self) {
-        let Some(app) = self.android_app.clone() else { return; };
-        let now = chrono::Utc::now();
-        for automation in &self.app_state.automations {
-            if !automation.enabled {
-                cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
-                continue;
-            }
-            let next = automation.pending_scheduled_at
-                .and_then(|timestamp| chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0))
-                .or_else(|| automation.next_run_after(now).ok().flatten());
-            if let Some(next) = next {
-                let delay = (next - now).num_milliseconds().max(0) as u64;
-                schedule_automation_reminder(
-                    app.clone(), automation.owner_scope.clone(), automation.id.clone(),
-                    automation.title.clone(), delay,
-                );
-            } else {
-                cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
-            }
+        if let Some(app) = self.android_app.as_ref() {
+            schedule_android_automation_reminders(app, &self.app_state.automations);
         }
     }
 
@@ -1531,7 +1537,7 @@ impl WgpuRenderer {
                         Ok(()) => {
                             self.app_state.automations = scheduler.snapshot(&self.active_user_id);
                             #[cfg(target_os = "android")]
-                            self.sync_android_automation_reminders();
+                            if let Some(app) = self.android_app.as_ref() { schedule_android_automation_reminders(app, &self.app_state.automations); }
                             self.app_state.automation_status = "Automation saved. Android will schedule a best-effort reminder; task actions still require your approval.".into();
                             self.app_state.automation_id_draft.clear();
                             self.app_state.automation_title_draft.clear();
@@ -1551,7 +1557,7 @@ impl WgpuRenderer {
                     Ok(true) => {
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
                         #[cfg(target_os = "android")]
-                        self.sync_android_automation_reminders();
+                        if let Some(app) = self.android_app.as_ref() { schedule_android_automation_reminders(app, &self.app_state.automations); }
                         self.app_state.automation_status = if enabled { "Automation resumed.".into() } else { "Automation paused.".into() };
                     }
                     Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
@@ -1980,7 +1986,7 @@ impl WgpuRenderer {
                                     self.app_state.automations = self.automation_scheduler.as_ref()
                                         .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
                                     #[cfg(target_os = "android")]
-                                    self.sync_android_automation_reminders();
+                                    if let Some(app) = self.android_app.as_ref() { schedule_android_automation_reminders(app, &self.app_state.automations); }
                                     self.workspace = Some(store);
                                 }
                                 Err(error) => self.app_state.auth_status = format!("Signed in, but workspace could not open: {error}"),
