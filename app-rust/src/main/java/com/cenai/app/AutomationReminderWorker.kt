@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -44,7 +45,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
             .setAutoCancel(true)
             .build()
         return try {
-            manager.notify(id.hashCode(), notification)
+            manager.notify(inputData.getInt(NOTIFICATION_ID_KEY, id.hashCode()), notification)
             Result.success()
         } catch (_: SecurityException) {
             // POST_NOTIFICATIONS may be denied; do not retry forever or bypass the permission.
@@ -54,6 +55,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
 
     companion object {
         const val CHANNEL_ID = "cenai_automation_reminders"
+        const val NOTIFICATION_ID_KEY = "notification_id"
     }
 }
 
@@ -61,11 +63,14 @@ object AutomationReminderBridge {
     @JvmStatic
     fun schedule(context: Context, ownerScope: String, taskId: String, delayMillis: Long) {
         require(ownerScope.isNotBlank() && taskId.isNotBlank())
+        val name = workName(ownerScope, taskId)
+        val notificationId = name.hashCode()
         val request = OneTimeWorkRequestBuilder<AutomationReminderWorker>()
+            .setInputData(Data.Builder().putInt(NOTIFICATION_ID_KEY, notificationId).build())
             .setInitialDelay(delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-            workName(ownerScope, taskId),
+            name,
             ExistingWorkPolicy.REPLACE,
             request
         )
@@ -74,7 +79,10 @@ object AutomationReminderBridge {
     @JvmStatic
     fun cancel(context: Context, ownerScope: String, taskId: String) {
         if (ownerScope.isBlank() || taskId.isBlank()) return
-        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(workName(ownerScope, taskId))
+        val name = workName(ownerScope, taskId)
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(name)
+        val manager = context.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(name.hashCode())
     }
 
     private fun workName(ownerScope: String, taskId: String): String {
