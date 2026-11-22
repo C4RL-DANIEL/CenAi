@@ -78,4 +78,37 @@ class AccountIsolationInstrumentedTest {
         vault.saveApiKey("", Provider.OPENAI, "account-alpha")
         vault.saveApiKey("", Provider.OPENAI, "account-beta")
     }
+
+    @Test
+    fun legacyGlobalDataMigratesOnlyToItsMatchingSignedInAccount() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val global = context.getSharedPreferences("cenai_private", android.content.Context.MODE_PRIVATE)
+        val account = context.getSharedPreferences("cenai_private_legacy-owner", android.content.Context.MODE_PRIVATE)
+        val other = context.getSharedPreferences("cenai_private_other-owner", android.content.Context.MODE_PRIVATE)
+        global.edit().clear().apply()
+        account.edit().clear().apply()
+        other.edit().clear().apply()
+
+        val vault = SecureKeyStore(context)
+        vault.put("supabase_user_id", "legacy-owner")
+        vault.put("provider", "OPENAI")
+        vault.put("custom_headers", """{"x-legacy":"private"}""")
+        vault.putSecret("agent_memory_legacy-owner", "Legacy private memory")
+        vault.saveApiKey("legacy-api-key")
+        vault.migrateLegacyAccountData("legacy-owner")
+
+        assertEquals("OPENAI", vault.getUser("legacy-owner", "provider"))
+        assertEquals("""{"x-legacy":"private"}""", vault.getUserSecret("legacy-owner", "custom_headers"))
+        assertEquals("Legacy private memory", vault.getUserSecret("legacy-owner", "agent_memory"))
+        assertEquals("legacy-api-key", vault.apiKey(Provider.OPENAI, "legacy-owner"))
+
+        vault.migrateLegacyAccountData("other-owner")
+        assertEquals("", vault.getUserSecret("other-owner", "agent_memory"))
+        assertEquals("", vault.apiKey(Provider.OPENAI, "other-owner"))
+
+        global.edit().clear().apply()
+        account.edit().clear().apply()
+        other.edit().clear().apply()
+    }
+
 }
