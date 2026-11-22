@@ -1,6 +1,6 @@
 //! Provider-neutral message transformation and provider payload construction.
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 pub fn build_provider_payload(
     provider: &str,
@@ -249,4 +249,22 @@ mod tests {
         assert!(build_provider_payload("CENAI_CLOUD", "cloud-model", 100, image, "{}").is_err());
         assert!(build_provider_payload("UNKNOWN", "model", 100, &messages(), "{}").is_err());
     }
+
+    #[test]
+    fn maps_image_markers_for_openai_claude_and_gemini() {
+        let image = r#"[{"role":"user","content":"Describe this [[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]]"}]"#;
+        let openai = build_provider_payload("OPENAI", "gpt-vision", 100, image, "{}").unwrap();
+        let value: Value = serde_json::from_str(&openai).unwrap();
+        assert!(value["messages"][0]["content"][1]["image_url"]["url"]
+            .as_str().unwrap().starts_with("data:image/png;base64,"));
+
+        let claude = build_provider_payload("CLAUDE", "claude-vision", 100, image, "{}").unwrap();
+        let value: Value = serde_json::from_str(&claude).unwrap();
+        assert_eq!(value["messages"][0]["content"][1]["source"]["media_type"], "image/png");
+
+        let gemini = build_provider_payload("GEMINI", "gemini-vision", 100, image, "{}").unwrap();
+        let value: Value = serde_json::from_str(&gemini).unwrap();
+        assert_eq!(value["contents"][0]["parts"][1]["inline_data"]["mime_type"], "image/png");
+    }
+
 }
