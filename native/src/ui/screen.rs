@@ -457,9 +457,12 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             let completed = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::Completed).count();
             ui.label(text(
                 if plan.stopped { format!("Stopped · {completed}/{} steps complete", plan.steps.len()) }
+                else if plan.is_paused() { format!("Paused · {completed}/{} steps complete", plan.steps.len()) }
                 else { format!("{completed}/{} steps complete · approval-controlled workflow", plan.steps.len()) },
                 10.0,
-                if plan.stopped { egui::Color32::from_rgb(235, 156, 130) } else { egui::Color32::from_rgb(119, 220, 183) },
+                if plan.stopped { egui::Color32::from_rgb(235, 156, 130) }
+                else if plan.is_paused() { egui::Color32::from_rgb(224, 190, 120) }
+                else { egui::Color32::from_rgb(119, 220, 183) },
             ));
             let ready_count = plan.ready_steps().len();
             if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
@@ -501,7 +504,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                         egui::Color32::from_rgb(140, 154, 190),
                     ));
                 }
-                let ready = step.status == crate::core::agents::StepStatus::Pending
+                let ready = !plan.is_paused() && step.status == crate::core::agents::StepStatus::Pending
                     && step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate|
                         candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed));
                 if let Some(output) = step.output.as_deref() {
@@ -554,6 +557,15 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                         _ => {}
                     }
                 });
+            }
+            if !plan.stopped {
+                if plan.is_paused() {
+                    if ui.button("Resume plan").clicked() {
+                        state.pending_plan_action = Some((plan.id.clone(), 0, "resume".into()));
+                    }
+                } else if ui.button("Pause plan").clicked() {
+                    state.pending_plan_action = Some((plan.id.clone(), 0, "pause".into()));
+                }
             }
             if !plan.stopped && plan.steps.iter().any(|step| matches!(step.status,
                 crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
