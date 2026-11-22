@@ -77,6 +77,9 @@ object NativeCore {
     /** Replaces embedded image bytes with a retrieval-safe marker. */
     external fun stripImageMarkers(content: String): String
 
+    /** Detects valid embedded image payloads in a message. */
+    external fun containsImageMarker(content: String): Boolean
+
     /** Builds a safe provider endpoint and header set in Rust. */
     external fun buildProviderRequestConfig(provider: String, baseUrlOrModel: String, apiKey: String, oauth: Boolean, projectId: String, customHeadersJson: String): String
 
