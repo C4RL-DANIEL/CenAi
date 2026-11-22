@@ -1530,7 +1530,9 @@ impl WgpuRenderer {
                     match scheduler.upsert_and_persist(automation, store) {
                         Ok(()) => {
                             self.app_state.automations = scheduler.snapshot(&self.active_user_id);
-                            self.app_state.automation_status = "Automation saved. A reminder will appear in Conversation when due while CenAI is running; task actions still require your approval.".into();
+                            #[cfg(target_os = "android")]
+                            self.sync_android_automation_reminders();
+                            self.app_state.automation_status = "Automation saved. Android will schedule a best-effort reminder; task actions still require your approval.".into();
                             self.app_state.automation_id_draft.clear();
                             self.app_state.automation_title_draft.clear();
                         }
@@ -1548,6 +1550,8 @@ impl WgpuRenderer {
                 match scheduler.set_enabled_and_persist(&self.active_user_id, &automation_id, enabled, store) {
                     Ok(true) => {
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                        #[cfg(target_os = "android")]
+                        self.sync_android_automation_reminders();
                         self.app_state.automation_status = if enabled { "Automation resumed.".into() } else { "Automation paused.".into() };
                     }
                     Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
@@ -1560,6 +1564,8 @@ impl WgpuRenderer {
                 match scheduler.remove_and_persist(&self.active_user_id, &automation_id, store) {
                     Ok(true) => {
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                        #[cfg(target_os = "android")]
+                        self.sync_android_automation_reminders();
                         self.app_state.automation_status = "Automation deleted.".into();
                     }
                     Ok(false) => self.app_state.automation_status = "Automation was not found in this account.".into(),
@@ -1973,6 +1979,8 @@ impl WgpuRenderer {
                                     self.automation_scheduler = AutomationScheduler::from_workspace(&store).ok();
                                     self.app_state.automations = self.automation_scheduler.as_ref()
                                         .map(|scheduler| scheduler.snapshot(&self.active_user_id)).unwrap_or_default();
+                                    #[cfg(target_os = "android")]
+                                    self.sync_android_automation_reminders();
                                     self.workspace = Some(store);
                                 }
                                 Err(error) => self.app_state.auth_status = format!("Signed in, but workspace could not open: {error}"),
