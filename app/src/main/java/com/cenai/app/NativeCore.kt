@@ -125,4 +125,7 @@ object NativeCore {
 
     /** Checks Google OAuth token freshness and refresh margin in Rust. */
     external fun googleOAuthAccessTokenUsable(accessToken: String, expiresAt: String, nowMs: Long): Boolean
+
+    /** Builds conversation titles from message history in Rust. */
+    external fun conversationTitle(messagesJson: String): String
 }
