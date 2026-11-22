@@ -142,7 +142,6 @@ public final class CenAiNativeActivity extends NativeActivity {
             prefs.edit()
                 .remove("secret_supabase_access_token")
                 .remove("secret_supabase_refresh_token")
-                .remove("supabase_account_email")
                 .remove("cenai_email_verified")
                 .remove("api_key")
                 .remove("api_key_openai")
