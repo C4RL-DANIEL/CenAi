@@ -218,6 +218,26 @@ mod tests {
     }
 
     #[test]
+    fn ready_steps_selects_independent_work_and_excludes_approval_gated_steps() {
+        let mut plan = TaskPlan {
+            id: "parallel-plan".into(), goal: "Research and summarize".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Researcher, title: "Research A".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Researcher, title: "Research B".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
+                TaskStep { id: 3, role: AgentRole::Developer, title: "Combine research".into(), status: StepStatus::Pending, depends_on: vec![1, 2], output: None },
+            ],
+        };
+        assert_eq!(plan.ready_steps(), vec![1, 2]);
+        plan.request_step_approval(1).unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+        plan.steps.iter_mut().find(|step| step.id == 2).unwrap().status = StepStatus::Running;
+        assert!(plan.ready_steps().is_empty());
+        plan.steps.iter_mut().find(|step| step.id == 2).unwrap().status = StepStatus::Completed;
+        plan.steps.iter_mut().find(|step| step.id == 1).unwrap().status = StepStatus::Completed;
+        assert_eq!(plan.ready_steps(), vec![3]);
+    }
+
+    #[test]
     fn planner_cannot_claim_completed_steps_or_create_forward_dependencies() {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,

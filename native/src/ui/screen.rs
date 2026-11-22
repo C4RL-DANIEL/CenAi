@@ -427,6 +427,10 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 10.0,
                 if plan.stopped { egui::Color32::from_rgb(235, 156, 130) } else { egui::Color32::from_rgb(119, 220, 183) },
             ));
+            let ready_count = plan.ready_steps().len();
+            if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
+                state.pending_plan_action = Some((plan.id.clone(), 0, "execute_ready".into()));
+            }
             for step in &plan.steps {
                 ui.separator();
                 ui.horizontal(|ui| {

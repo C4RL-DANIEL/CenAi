@@ -1328,30 +1328,44 @@ impl WgpuRenderer {
             }
         }
         if let Some((plan_id, step_id, action)) = self.app_state.pending_plan_action.take() {
-            if action == "execute" {
+            if action == "execute" || action == "execute_ready" {
                 let api = self.api.clone();
                 let store = self.workspace.clone();
                 let index = self.app_state.task_plans.iter().position(|plan| plan.id == plan_id);
                 match (api, store, index) {
                     (Some(api), Some(store), Some(index)) => {
                         let mut running = self.app_state.task_plans[index].clone();
-                        match running.begin_step(step_id) {
-                            Err(error) => self.app_state.plan_status = format!("AI step could not start: {error}."),
+                        let step_ids = if action == "execute_ready" { running.ready_steps() } else { vec![step_id] };
+                        let transition = if step_ids.is_empty() {
+                            Err("There are no ready steps to run".to_owned())
+                        } else {
+                            step_ids.iter().try_for_each(|id| running.begin_step(*id).map_err(str::to_owned))
+                        };
+                        match transition {
+                            Err(error) => self.app_state.plan_status = format!("AI execution could not start: {error}."),
                             Ok(()) => {
                                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
                                 match store.save_task_plan(running.clone(), now) {
-                                    Err(error) => self.app_state.plan_status = format!("AI step could not be saved before execution: {error}."),
+                                    Err(error) => self.app_state.plan_status = format!("AI steps could not be saved before execution: {error}."),
                                     Ok(_) => {
                                         self.app_state.task_plans[index] = running.clone();
-                                        self.app_state.plan_status = format!("CenAI is working on step {step_id}. No external actions will be performed.");
-                                        let sender = self.response_tx.clone();
-                                        let generation = self.account_generation;
-                                        let task_plan_id = plan_id.clone();
-                                        let task = self.runtime.spawn(async move {
-                                            let result = CentralBrain::new(api).execute_step(&running, step_id).await;
-                                            let _ = sender.send(ChatEvent::StepExecuted(generation, task_plan_id, step_id, result));
-                                        });
-                                        self.track_task(task);
+                                        self.app_state.plan_status = if step_ids.len() == 1 {
+                                            format!("CenAI is working on step {}. No external actions will be performed.", step_ids[0])
+                                        } else {
+                                            format!("CenAI is running {} independent ready steps in parallel. Dependent steps stay locked until their prerequisites complete.", step_ids.len())
+                                        };
+                                        for id in step_ids {
+                                            let sender = self.response_tx.clone();
+                                            let generation = self.account_generation;
+                                            let task_plan_id = plan_id.clone();
+                                            let step_plan = running.clone();
+                                            let step_api = api.clone();
+                                            let task = self.runtime.spawn(async move {
+                                                let result = CentralBrain::new(step_api).execute_step(&step_plan, id).await;
+                                                let _ = sender.send(ChatEvent::StepExecuted(generation, task_plan_id, id, result));
+                                            });
+                                            self.track_task(task);
+                                        }
                                     }
                                 }
                             }
