@@ -1038,9 +1038,8 @@ impl CenAiApi {
         }
         metadata.validate_content(bytes).map_err(str::to_owned)?;
         let api_key = self.vault.provider_key("gemini")?;
-        if api_key.trim().is_empty() {
-            return Err("Add a Google Gemini API key in Settings before analyzing attachments".into());
-        }
+        let oauth = api_key.trim().is_empty();
+        let credential = if oauth { self.google_gemini_access_token().await? } else { api_key };
         let mime = metadata.mime_type.to_ascii_lowercase();
         let content_part = match mime.as_str() {
             "text/plain" | "text/markdown" | "text/csv" => {
@@ -1071,10 +1070,10 @@ impl CenAiApi {
             }],
             "generationConfig": { "temperature": 0.2, "maxOutputTokens": 4096 }
         });
-        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
-            .header("x-goog-api-key", api_key)
-            .json(&payload)
-            .send().await.map_err(|error| format!("Gemini attachment analysis failed: {error}"))?;
+        let mut request = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
+            .json(&payload);
+        request = if oauth { request.bearer_auth(&credential) } else { request.header("x-goog-api-key", &credential) };
+        let response = request.send().await.map_err(|error| format!("Gemini attachment analysis failed: {error}"))?;
         let status = response.status();
         if !status.is_success() {
             return Err(format!("Gemini attachment analysis returned HTTP {}", status.as_u16()));
@@ -1098,9 +1097,8 @@ impl CenAiApi {
             return Err("Voice audio must be a valid WAV file under 20 MB".into());
         }
         let api_key = self.vault.provider_key("gemini")?;
-        if api_key.trim().is_empty() {
-            return Err("Add a Google Gemini API key in Settings before using voice transcription".into());
-        }
+        let oauth = api_key.trim().is_empty();
+        let credential = if oauth { self.google_gemini_access_token().await? } else { api_key };
         let audio = base64::engine::general_purpose::STANDARD.encode(wav_bytes);
         let payload = json!({
             "contents": [{
@@ -1111,10 +1109,10 @@ impl CenAiApi {
             }],
             "generationConfig": { "temperature": 0, "maxOutputTokens": 2048 }
         });
-        let response = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
-            .header("x-goog-api-key", api_key)
-            .json(&payload)
-            .send().await.map_err(|error| format!("Gemini voice request failed: {error}"))?;
+        let mut request = self.provider_client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+            .json(&payload);
+        request = if oauth { request.bearer_auth(&credential) } else { request.header("x-goog-api-key", &credential) };
+        let response = request.send().await.map_err(|error| format!("Gemini voice request failed: {error}"))?;
         let status = response.status();
         if !status.is_success() {
             return Err(format!("Gemini voice transcription returned HTTP {}", status.as_u16()));
