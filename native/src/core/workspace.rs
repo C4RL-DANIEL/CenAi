@@ -1133,4 +1133,62 @@ mod encrypted_workspace_tests {
         assert!(vault.decrypt_workspace_bytes(account, "artifacts/other.bin", &encrypted).is_err());
         assert_eq!(vault.decrypt_workspace_bytes(account, "workspace.json", &encrypted).unwrap(), b"secret");
     }
+
+    #[test]
+    fn ecosystem_registry_persists_account_scoped_manifests_and_revocable_grants() {
+        let root = temp_root();
+        let user = "550e8400-e29b-41d4-a716-446655440031";
+        let store = WorkspaceStore::new(&root, user).unwrap();
+        let manifest = AppManifest {
+            app_id: "com.cenai.notes".into(),
+            publisher_id: "cenai.firstparty".into(),
+            version: "1.0.0".into(),
+            protocol_version: 1,
+            capabilities: vec!["notes.read".into()],
+            requested_scopes: vec!["notes.read".into()],
+        };
+        let grant = UserCapabilityGrant {
+            user_scope: user.into(),
+            app_id: "com.cenai.notes".into(),
+            granted_scopes: std::collections::HashSet::from(["notes.read".into()]),
+            revoked: false,
+        };
+        let trusted = vec!["cenai.firstparty".to_owned()];
+        store.save_ecosystem_state(&[manifest], &[grant], &trusted, 1).unwrap();
+        assert!(store.ecosystem_authorized("com.cenai.notes", "notes.read", &trusted, 1).unwrap());
+        let (manifests, mut grants) = store.load_ecosystem_state().unwrap();
+        assert_eq!(manifests.len(), 1);
+        grants[0].revoked = true;
+        store.save_ecosystem_state(&manifests, &grants, &trusted, 1).unwrap();
+        assert!(!store.ecosystem_authorized("com.cenai.notes", "notes.read", &trusted, 1).unwrap());
+        let other = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440032").unwrap();
+        assert!(!other.ecosystem_authorized("com.cenai.notes", "notes.read", &trusted, 1).unwrap());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ecosystem_registry_rejects_untrusted_publishers_and_undeclared_grants() {
+        let root = temp_root();
+        let user = "550e8400-e29b-41d4-a716-446655440033";
+        let store = WorkspaceStore::new(&root, user).unwrap();
+        let manifest = AppManifest {
+            app_id: "com.cenai.notes".into(),
+            publisher_id: "untrusted.publisher".into(),
+            version: "1.0.0".into(),
+            protocol_version: 1,
+            capabilities: vec!["notes.read".into()],
+            requested_scopes: vec!["notes.read".into()],
+        };
+        let grant = UserCapabilityGrant {
+            user_scope: user.into(),
+            app_id: "com.cenai.notes".into(),
+            granted_scopes: std::collections::HashSet::from(["notes.admin".into()]),
+            revoked: true,
+        };
+        assert!(store.save_ecosystem_state(&[manifest.clone()], &[], &[], 1).is_err());
+        let trusted = vec!["untrusted.publisher".to_owned()];
+        assert!(store.save_ecosystem_state(&[manifest], &[grant], &trusted, 1).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
 }
