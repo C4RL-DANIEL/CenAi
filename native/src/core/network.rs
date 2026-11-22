@@ -773,6 +773,102 @@ impl CenAiApi {
         self.vault.save_provider_key(provider, key)
     }
 
+    /// Starts Google's installed-app OAuth flow. PKCE verifier and state are stored
+    /// only in the account-scoped Android Keystore vault.
+    pub fn begin_google_gemini_oauth(&self, client_id: &str) -> Result<String, String> {
+        let request = crate::core::google_oauth::create_authorization_request(client_id)
+            .map_err(str::to_owned)?;
+        self.vault.save_provider_key("gemini_oauth_client", client_id.trim())?;
+        self.vault.save_provider_key("gemini_oauth_state", &request.state)?;
+        self.vault.save_provider_key("gemini_oauth_verifier", &request.verifier)?;
+        Ok(request.url)
+    }
+
+    /// Exchanges a validated one-time callback code and stores tokens encrypted.
+    pub async fn complete_google_gemini_oauth(&self, callback: &str) -> Result<(), String> {
+        let state = self.vault.provider_key("gemini_oauth_state")?;
+        let code = crate::core::google_oauth::validate_callback(callback, &state)
+            .map_err(str::to_owned)?;
+        let client_id = self.vault.provider_key("gemini_oauth_client")?;
+        let verifier = self.vault.provider_key("gemini_oauth_verifier")?;
+        if client_id.is_empty() || verifier.is_empty() {
+            return Err("Google OAuth setup expired. Start the connection again.".into());
+        }
+        let response = self.provider_client.post("https://oauth2.googleapis.com/token")
+            .form(&[
+                ("client_id", client_id.as_str()),
+                ("code", code.as_str()),
+                ("code_verifier", verifier.as_str()),
+                ("redirect_uri", crate::core::google_oauth::REDIRECT_URI),
+                ("grant_type", "authorization_code"),
+            ])
+            .send().await.map_err(|error| format!("Google token exchange failed: {error}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let _ = response.bytes().await;
+            return Err(format!("Google token exchange failed (HTTP {}).", status.as_u16()));
+        }
+        let token: Value = response.json().await.map_err(|_| "Google returned an invalid token response")?;
+        let access = token.get("access_token").and_then(Value::as_str).unwrap_or_default();
+        let refresh = token.get("refresh_token").and_then(Value::as_str).unwrap_or_default();
+        let expires = token.get("expires_in").and_then(Value::as_i64).unwrap_or(3600);
+        if access.is_empty() || access.len() > 16 * 1024 || !(60..=86_400).contains(&expires) {
+            return Err("Google returned an incomplete or invalid token response.".into());
+        }
+        self.vault.save_provider_key("gemini_oauth_access", access)?;
+        if !refresh.is_empty() {
+            if refresh.len() > 16 * 1024 { return Err("Google refresh token exceeds the supported limit.".into()); }
+            self.vault.save_provider_key("gemini_oauth_refresh", refresh)?;
+        }
+        self.vault.save_provider_key("gemini_oauth_expiry", &(chrono::Utc::now().timestamp() + expires).to_string())?;
+        self.vault.save_provider_key("gemini_oauth_state", "")?;
+        self.vault.save_provider_key("gemini_oauth_verifier", "")?;
+        Ok(())
+    }
+
+    /// Returns a usable OAuth access token, refreshing it before expiry when possible.
+    pub async fn google_gemini_access_token(&self) -> Result<String, String> {
+        let access = self.vault.provider_key("gemini_oauth_access")?;
+        let expiry = self.vault.provider_key("gemini_oauth_expiry")?.parse::<i64>().unwrap_or(0);
+        if !access.is_empty() && expiry > chrono::Utc::now().timestamp() + 60 {
+            return Ok(access);
+        }
+        let refresh = self.vault.provider_key("gemini_oauth_refresh")?;
+        let client_id = self.vault.provider_key("gemini_oauth_client")?;
+        if refresh.is_empty() || client_id.is_empty() {
+            return Err("Connect a Google account to use Gemini OAuth.".into());
+        }
+        let response = self.provider_client.post("https://oauth2.googleapis.com/token")
+            .form(&[
+                ("client_id", client_id.as_str()),
+                ("refresh_token", refresh.as_str()),
+                ("grant_type", "refresh_token"),
+            ])
+            .send().await.map_err(|error| format!("Google token refresh failed: {error}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let _ = response.bytes().await;
+            return Err(format!("Google token refresh failed (HTTP {}). Reconnect the account if needed.", status.as_u16()));
+        }
+        let token: Value = response.json().await.map_err(|_| "Google returned an invalid refresh response")?;
+        let next = token.get("access_token").and_then(Value::as_str).unwrap_or_default();
+        let expires = token.get("expires_in").and_then(Value::as_i64).unwrap_or(3600);
+        if next.is_empty() || next.len() > 16 * 1024 || !(60..=86_400).contains(&expires) {
+            return Err("Google returned an incomplete or invalid refresh response.".into());
+        }
+        self.vault.save_provider_key("gemini_oauth_access", next)?;
+        self.vault.save_provider_key("gemini_oauth_expiry", &(chrono::Utc::now().timestamp() + expires).to_string())?;
+        Ok(next.to_owned())
+    }
+
+    pub fn disconnect_google_gemini_oauth(&self) -> Result<(), String> {
+        for key in ["gemini_oauth_state", "gemini_oauth_verifier", "gemini_oauth_access",
+            "gemini_oauth_refresh", "gemini_oauth_expiry"] {
+            self.vault.save_provider_key(key, "")?;
+        }
+        Ok(())
+    }
+
     pub async fn cloud_chat(&self, payload: &Value) -> Result<Value, String> {
         self.post_authenticated(config::CLOUD_CHAT_URL, payload).await
     }
