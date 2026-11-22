@@ -65,6 +65,15 @@ object NativeCore {
     /** Extracts the assistant message from the CenAI Cloud response envelope. */
     external fun parseCloudResponse(raw: String): String
 
+    /** Validates and builds Supabase auth request payloads in Rust. */
+    external fun buildAuthPayload(action: String, email: String, password: String, refreshToken: String): String
+
+    /** Validates and decodes an authenticated Supabase session in Rust. */
+    external fun parseAuthSession(rawJson: String): String
+
+    /** Returns OK or the validation error for a six-digit email OTP. */
+    external fun validateEmailOtp(code: String): String
+
     /** Replaces embedded image bytes with a retrieval-safe marker. */
     external fun stripImageMarkers(content: String): String
 
