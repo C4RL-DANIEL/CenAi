@@ -64,6 +64,10 @@ class NativeCoreInstrumentedTest {
         assertEquals(1, quotaReset.getInt("next_count"))
         val quotaBlocked = JSONObject(NativeCore.evaluateDailyUsage("today", "today", "2", "2"))
         assertTrue(!quotaBlocked.getBoolean("allowed"))
+        assertEquals(4, NativeCore.maxAgentSteps())
+        assertTrue(NativeCore.buildToolContinuationPrompt("calculate", "14", false).contains("same tool-call format"))
+        assertTrue(NativeCore.buildToolContinuationPrompt("calculate", "14", true).contains("final answer"))
+        assertTrue(NativeCore.agentStepLimitMessage("last", false).contains("Ask me to continue"))
 
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Hello"))
         val payload = JSONObject(
