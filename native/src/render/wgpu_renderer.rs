@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::TaskPlan, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::TaskPlan, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::{lightning_generate, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
@@ -260,6 +260,8 @@ pub struct WgpuRenderer {
     api: Option<CenAiApi>,
     runtime: Handle,
     last_dispatched_message_id: u64,
+    agent_tool_steps: u8,
+    tool_followup_dispatch: bool,
     session_id: String,
     active_user_id: String,
     account_generation: u64,
@@ -476,6 +478,8 @@ impl WgpuRenderer {
             api,
             runtime,
             last_dispatched_message_id: 0,
+            agent_tool_steps: 0,
+            tool_followup_dispatch: false,
             session_id,
             active_user_id,
             account_generation: 0,
@@ -790,6 +794,11 @@ impl WgpuRenderer {
             .last();
         let Some((message_id, _)) = latest else { return; };
         if message_id <= self.last_dispatched_message_id { return; }
+        if self.tool_followup_dispatch {
+            self.tool_followup_dispatch = false;
+        } else {
+            self.agent_tool_steps = 0;
+        }
         self.last_dispatched_message_id = message_id;
         self.app_state.conversation.sending = true;
 
@@ -2359,7 +2368,39 @@ impl WgpuRenderer {
                     self.app_state.conversation.sending = false;
                     match result {
                         Ok(answer) => {
-                            if let Some(stream_id) = self.active_streams.remove(&message_id) {
+                            let stream_id = self.active_streams.remove(&message_id);
+                            let runtime = AgentToolRuntime::default();
+                            let tool_call = runtime.parse_tool_call(&answer).ok().flatten();
+                            if let Some(call) = tool_call {
+                                if let Some(stream_id) = stream_id {
+                                    self.app_state.conversation.replace_stream(stream_id, format!("Running safe local tool: {}…", call.name));
+                                    self.app_state.conversation.finish_stream(stream_id);
+                                }
+                                if self.agent_tool_steps >= 4 {
+                                    self.app_state.conversation.push(MessageRole::Assistant, "The agent reached its four-step tool limit. No additional tool was run.");
+                                } else {
+                                    self.agent_tool_steps += 1;
+                                    let execution = runtime.execute(&call.name, call.arguments, false);
+                                    if execution.completed {
+                                        self.app_state.conversation.push(
+                                            MessageRole::User,
+                                            format!("Tool result for {}: {}\nContinue the task. Use another safe tool if needed, otherwise provide the final answer.", execution.tool_name, execution.output),
+                                        );
+                                        self.tool_followup_dispatch = true;
+                                        self.dispatch_new_message();
+                                    } else if execution.requires_approval {
+                                        self.app_state.conversation.push(
+                                            MessageRole::Assistant,
+                                            format!("This action requires your explicit approval and has not been executed. Requested tool: {}. {}", execution.tool_name, execution.output),
+                                        );
+                                    } else {
+                                        self.app_state.conversation.push(
+                                            MessageRole::Assistant,
+                                            format!("The local tool {} could not complete: {}", execution.tool_name, execution.output),
+                                        );
+                                    }
+                                }
+                            } else if let Some(stream_id) = stream_id {
                                 self.app_state.conversation.finish_stream(stream_id);
                             } else if !answer.is_empty() {
                                 let stream_id = self.app_state.conversation.begin_stream();
