@@ -81,17 +81,22 @@ pub(crate) fn migrate_legacy_history(
     }
     // Keep the old encrypted account store until history import succeeds. Its
     // explicitly verified email is the only authority for ownerless legacy chats.
-    let legacy_identity = export_legacy_secure_store(app)
-        .ok()
-        .and_then(|value| crate::core::legacy_history::verified_legacy_owner_email(&value));
+    let legacy_secure_export = export_legacy_secure_store(app).ok();
+    let legacy_identity = legacy_secure_export.as_deref()
+        .and_then(crate::core::legacy_history::verified_legacy_owner_email);
     let export = export_legacy_conversation_history(app)?;
     if export.trim().is_empty() || export.trim() == "[]" {
-        clear_legacy_secure_store(app)?;
+        if legacy_secure_export.is_some() {
+            clear_legacy_secure_store(app)?;
+        }
         return Ok(0);
     }
     let imported = workspace.import_legacy_conversations(&export, expected_email, legacy_identity.as_deref())?;
-    // Delete the old store only after the encrypted Rust workspace accepted the export.
-    clear_legacy_secure_store(app)?;
+    // Delete the old store only after the encrypted Rust workspace accepted the export,
+    // and only if its contents were successfully read in this migration attempt.
+    if legacy_secure_export.is_some() {
+        clear_legacy_secure_store(app)?;
+    }
     Ok(imported)
 }
 
