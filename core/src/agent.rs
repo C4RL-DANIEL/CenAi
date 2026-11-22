@@ -406,3 +406,53 @@ mod catalog_tests {
         assert_eq!(selected[1]["risk"], "SENSITIVE");
     }
 }
+
+
+/// Builds the constrained tool-use instructions from the same Rust-owned catalog.
+pub fn build_tool_guide(
+    enabled_tools_json: &str,
+    planning_enabled: bool,
+    allow_device_actions: bool,
+) -> Result<String, String> {
+    if !planning_enabled {
+        return Ok(String::new());
+    }
+    let catalog: serde_json::Value = serde_json::from_str(&tool_catalog(enabled_tools_json)?)
+        .map_err(|_| "Rust tool catalog could not be decoded.".to_owned())?;
+    let tools = catalog.as_array().ok_or_else(|| "Rust tool catalog is invalid.".to_owned())?;
+    if tools.is_empty() {
+        return Ok("No tools are enabled. Answer using conversation context only.".to_owned());
+    }
+    let descriptions = tools.iter().map(|tool| {
+        format!(
+            "{} — {}",
+            tool.get("name").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
+            tool.get("description").and_then(serde_json::Value::as_str).unwrap_or("")
+        )
+    }).collect::<Vec<_>>().join(", ");
+    let mut guide = format!(
+        "You may use these allow-listed tools when useful: {descriptions}. To call one, output exactly [[CENAI_TOOL_CALL]] followed by a JSON object with name and arguments, then [[/CENAI_TOOL_CALL]]. Only call listed tools."
+    );
+    if allow_device_actions {
+        guide.push_str(" Device actions are sensitive and require a separate user approval tap in CenAI before Android opens the requested screen. Never claim a device action ran before approval. Do not claim unsupported shell, arbitrary code or file-write actions were performed.");
+    } else {
+        guide.push_str(" This background task cannot execute Android device actions, send messages, access arbitrary files or run shell commands. Never claim external actions you cannot perform.");
+    }
+    guide.push_str(" Explain tool results to the user.");
+    Ok(guide)
+}
+
+#[cfg(test)]
+mod guide_tests {
+    use super::build_tool_guide;
+
+    #[test]
+    fn builds_separate_foreground_and_background_tool_guides() {
+        let foreground = build_tool_guide("null", true, true).unwrap();
+        assert!(foreground.contains("approval tap"));
+        let background = build_tool_guide(r#"["calculate"]"#, true, false).unwrap();
+        assert!(background.contains("cannot execute Android device actions"));
+        assert!(!background.contains("open_dialer"));
+        assert_eq!(build_tool_guide("null", false, true).unwrap(), "");
+    }
+}
