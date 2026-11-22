@@ -170,6 +170,7 @@ jobs:
             app-rust/build/outputs/apk/debug/*.apk.sha256
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
 
       - name: Prepare production signing key
         if: startsWith(github.ref, 'refs/tags/v')
