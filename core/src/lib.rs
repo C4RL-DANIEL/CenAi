@@ -649,3 +649,34 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseAgentStep(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_selectProviderTargets(
+    mut env: JNIEnv,
+    _class: JClass,
+    primary_provider: JString,
+    multi_agent: jboolean,
+    local_model_enabled: jboolean,
+    configured_json: JString,
+) -> jstring {
+    let Some(primary_value) = read_java_string(&mut env, &primary_provider) else {
+        return std::ptr::null_mut();
+    };
+    let Some(configured_value) = read_java_string(&mut env, &configured_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match providers::select_provider_targets(
+        &primary_value,
+        multi_agent != 0,
+        local_model_enabled != 0,
+        &configured_value,
+    ) {
+        Ok(targets) => targets,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
