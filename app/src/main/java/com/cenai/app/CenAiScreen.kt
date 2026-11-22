@@ -310,17 +310,18 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     fun startRequest(requestMessages: List<ChatMessage>) {
         if (busy) return
         val today = java.time.LocalDate.now().toString()
-        if (vault.getUser(activeAccountId, "usage_day") != today) {
-            vault.putUser(activeAccountId, "usage_day", today)
-            vault.putUser(activeAccountId, "usage_count", "0")
-        }
-        val used = vault.getUser(activeAccountId, "usage_count", "0").toIntOrNull() ?: 0
-        val limit = dailyLimit.toIntOrNull() ?: 0
-        if (limit > 0 && used >= limit) {
-            error = "Daily message limit reached. Change it in Settings or try again tomorrow."
+        val usageDecision = JSONObject(NativeCore.evaluateDailyUsage(
+            today,
+            vault.getUser(activeAccountId, "usage_day"),
+            vault.getUser(activeAccountId, "usage_count", "0"),
+            dailyLimit
+        ))
+        if (!usageDecision.optBoolean("allowed")) {
+            error = usageDecision.optString("error", "Daily message limit reached.")
             return
         }
-        vault.putUser(activeAccountId, "usage_count", (used + 1).toString())
+        if (usageDecision.optBoolean("reset")) vault.putUser(activeAccountId, "usage_day", today)
+        vault.putUser(activeAccountId, "usage_count", usageDecision.getInt("next_count").toString())
         val inputText = requestMessages.joinToString("\n") { it.content }
         val inputEstimate = runCatching { NativeCore.estimatePromptTokens(inputText) }
             .getOrDefault(inputText.length / 4)
@@ -490,7 +491,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 appMonitor.recordSucceeded(completedLatency)
                 if (cloud.isSignedIn() && vault.getUser(activeAccountId, "cloud_usage_analytics_consent", "false").toBoolean()) {
                     runCatching {
-                        val outputEstimate = messages.lastOrNull { it.role == "assistant" }?.content?.length?.div(4) ?: 0
+                        val outputEstimate = messages.lastOrNull { it.role == "assistant" }?.content?.let { NativeCore.estimatePromptTokens(it) } ?: 0
                         cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, outputEstimate, completedLatency, "success")
                     }
                 }
