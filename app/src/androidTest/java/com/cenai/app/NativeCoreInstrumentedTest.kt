@@ -23,6 +23,8 @@ class NativeCoreInstrumentedTest {
         assertEquals("Q2VuQUk=", JSONObject(NativeCore.executeSafeTool("base64_encode", """{"text":"CenAI"}""", "", "")).getString("output"))
 
         val catalog = JSONArray(NativeCore.listAgentTools("null"))
+        assertTrue(NativeCore.buildToolGuide("null", true, true).contains("approval tap"))
+        assertTrue(NativeCore.buildToolGuide("""["calculate"]""", true, false).contains("cannot execute Android device actions"))
         assertTrue(catalog.length() >= 13)
         val policy = JSONObject(NativeCore.evaluateToolPolicy("open_dialer", "null"))
         assertTrue(policy.getBoolean("allowed"))
