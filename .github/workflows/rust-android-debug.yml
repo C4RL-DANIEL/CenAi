@@ -63,11 +63,14 @@ jobs:
         run: gradle --no-daemon :app:compileDebugKotlin
       - name: Verify NativeActivity smoke-test script syntax
         run: bash -n .github/scripts/verify-rust-native-activity.sh
+      - name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
       - name: Verify NativeActivity on API 35 emulator
-        env:
-          # GitHub-hosted Linux runners do not expose KVM. Android Emulator refuses
-          # to start with -accel off unless this explicit TCG opt-in is present.
-          ANDROID_I_WANT_MY_TCG: "yes"
         timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -75,7 +78,8 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-boot-timeout: 1500000
+          emulator-boot-timeout: 900000
+          disable-linux-hw-accel: false
           script: bash .github/scripts/verify-rust-native-activity.sh
       - name: Generate checksum
         run: sha256sum app-rust/build/outputs/apk/debug/app-rust-debug.apk > app-rust/build/outputs/apk/debug/SHA256SUMS.txt
