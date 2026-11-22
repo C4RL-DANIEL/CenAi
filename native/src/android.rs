@@ -51,6 +51,7 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
 /// Invoke the fixed, on-device Lightning runtime. This JNI adapter is called only
 /// from a blocking worker; the model policy and fallback decision remain in Rust.
 pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String, String> {
+    crate::core::lightning::validate_prompt(prompt).map_err(str::to_owned)?;
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }
         .map_err(|error| format!("Lightning could not access the Android VM: {error}"))?;
     let mut env = vm.attach_current_thread()
