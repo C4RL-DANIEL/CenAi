@@ -7,11 +7,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.Data
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -38,8 +40,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         val model = inputData.getString(KEY_MODEL).orEmpty().ifBlank { provider.model }
         val base = inputData.getString(KEY_BASE).orEmpty().ifBlank { provider.baseUrl }
         if (taskId.isBlank() || prompt.isBlank()) return Result.failure()
-        prefs.edit().putString("status_$taskId", "Running").apply()
         return try {
+            setForeground(foregroundInfo(taskId))
+            prefs.edit().putString("status_$taskId", "Running").apply()
             val repository = ChatRepository(vault) { ownerId }
             val runtime = AgentRuntime(enabledTools = setOf(
                 "current_time", "current_date", "calculate", "count_words", "text_stats",
@@ -86,6 +89,36 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
             prefs.edit().putString("status_$taskId", "Failed: $message").apply()
             postNotification(taskId, "Failed", message)
             if (error is IOException && runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+
+    private fun foregroundInfo(taskId: String): ForegroundInfo {
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "CenAI agent tasks", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val openApp = PendingIntent.getActivity(
+            applicationContext,
+            taskId.hashCode(),
+            Intent(applicationContext, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("CenAI task running")
+            .setContentText("A scheduled task is working in the background.")
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openApp)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        return if (Build.VERSION.SDK_INT >= 29) {
+            ForegroundInfo(taskId.hashCode(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(taskId.hashCode(), notification)
         }
     }
 
