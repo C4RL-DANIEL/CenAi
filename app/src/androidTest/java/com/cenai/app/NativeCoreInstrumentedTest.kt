@@ -61,6 +61,7 @@ class NativeCoreInstrumentedTest {
             NativeCore.parseProviderDelta("OPENAI", """{"choices":[{"delta":{"content":"Hello"}}]}""")
         )
         assertEquals("Invalid API key", NativeCore.parseProviderError("""{"error":{"message":"Invalid API key"}}"""))
+        assertEquals("Describe [Image attached] please", NativeCore.stripImageMarkers("Describe [[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]] please"))
 
         val conversation = Conversation(
             id = "local-memory",
