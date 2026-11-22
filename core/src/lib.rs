@@ -680,3 +680,19 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_selectProviderTargets(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_parseProviderError(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw: JString,
+) -> jstring {
+    let Some(raw_value) = read_java_string(&mut env, &raw) else {
+        return std::ptr::null_mut();
+    };
+    match env.new_string(providers::parse_provider_error(&raw_value)) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
