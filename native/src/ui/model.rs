@@ -43,7 +43,7 @@ impl Default for ConversationState {
     }
 }
 
-const MAX_CONVERSATION_MESSAGES: usize = 500;
+const MAX_CONVERSATION_MESSAGES: usize = 5000;
 const MAX_MESSAGE_BYTES: usize = 200_000;
 
 fn truncate_utf8(value: &mut String, max_bytes: usize) {
