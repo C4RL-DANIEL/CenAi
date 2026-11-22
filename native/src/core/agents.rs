@@ -186,6 +186,22 @@ impl TaskPlan {
         }
     }
 
+    /// Converts in-flight work from a previous process into a retryable failure.
+    /// It deliberately does not auto-run again: the model request may have completed
+    /// remotely before the process died, so replaying it could duplicate work.
+    pub fn recover_interrupted_steps(&mut self) -> Vec<u64> {
+        if self.stopped { return Vec::new(); }
+        let mut recovered = Vec::new();
+        for step in &mut self.steps {
+            if step.status == StepStatus::Running {
+                step.status = StepStatus::Failed;
+                step.output = Some("Execution was interrupted when CenAI closed or restarted. Review the step, then retry it manually.".into());
+                recovered.push(step.id);
+            }
+        }
+        recovered
+    }
+
     pub fn ready_steps(&self) -> Vec<u64> {
         if self.stopped { return Vec::new(); }
         self.steps.iter().filter(|step| step.status == StepStatus::Pending
@@ -441,6 +457,38 @@ mod tests {
             steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Recover".into(), status: StepStatus::Blocked, depends_on: vec![], output: Some("Blocked".into()) }],
         };
         assert!(plan.retry_blocked_step(1).is_err());
+    }
+
+    #[test]
+    fn interrupted_running_steps_recover_as_retryable_failures_without_unlocking_dependents() {
+        let mut plan = TaskPlan {
+            id: "task-recovery".into(), goal: "Recover safely after restart".into(), stopped: false,
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Running, depends_on: vec![], output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+        assert_eq!(plan.recover_interrupted_steps(), vec![1]);
+        assert_eq!(plan.steps[0].status, StepStatus::Failed);
+        assert!(plan.steps[0].output.as_deref().unwrap().contains("interrupted"));
+        assert!(plan.ready_steps().is_empty());
+        assert!(plan.validate_persisted().is_ok());
+        assert_eq!(plan.recover_interrupted_steps(), Vec::<u64>::new());
+        plan.retry_failed_step(1).unwrap();
+        assert_eq!(plan.ready_steps(), vec![1]);
+        plan.begin_step(1).unwrap();
+        plan.complete_step(1).unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+    }
+
+    #[test]
+    fn stopped_plans_do_not_recover_cancelled_or_running_work() {
+        let mut plan = TaskPlan {
+            id: "task-stopped-recovery".into(), goal: "Keep stopped plans terminal".into(), stopped: true,
+            steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Work".into(), status: StepStatus::Cancelled, depends_on: vec![], output: None }],
+        };
+        assert!(plan.recover_interrupted_steps().is_empty());
+        assert_eq!(plan.steps[0].status, StepStatus::Cancelled);
     }
 
     #[test]

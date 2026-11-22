@@ -463,7 +463,24 @@ impl WgpuRenderer {
                 app_state.conversation.restore_messages(messages);
             }
             app_state.projects = store.projects(false).unwrap_or_default();
-            app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| { let plan = record.plan; plan.validate_persisted().ok().map(|_| plan) }).collect();
+            let mut recovered_count = 0usize;
+            app_state.task_plans = store.task_plans().unwrap_or_default().into_iter().filter_map(|record| {
+                let mut plan = record.plan;
+                if plan.validate_persisted().is_err() { return None; }
+                let recovered = plan.recover_interrupted_steps();
+                recovered_count += recovered.len();
+                if !recovered.is_empty() {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default().as_millis() as u64;
+                    if let Err(error) = store.save_task_plan(plan.clone(), now) {
+                        app_state.plan_status = format!("Recovered {} interrupted step(s) in memory, but could not save recovery: {}", recovered.len(), error);
+                    }
+                }
+                Some(plan)
+            }).collect();
+            if recovered_count > 0 && app_state.plan_status.is_empty() {
+                app_state.plan_status = format!("Recovered {} interrupted agent step(s). They are marked failed and can be retried manually; no work was replayed automatically.", recovered_count);
+            }
         }
         let last_saved_message_count = app_state.conversation.messages().count();
         let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion, app_state.offline_ai_enabled);
