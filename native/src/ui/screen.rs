@@ -444,9 +444,15 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 let ready = step.status == crate::core::agents::StepStatus::Pending
                     && step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate|
                         candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed));
+                if let Some(output) = step.output.as_deref() {
+                    ui.collapsing("AI step result", |ui| { ui.label(text(output, 11.0, egui::Color32::from_rgb(210, 220, 232))); });
+                }
                 ui.horizontal_wrapped(|ui| {
                     match step.status {
                         crate::core::agents::StepStatus::Pending if ready && !plan.stopped => {
+                            if ui.button("Run with AI").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "execute".into()));
+                            }
                             if ui.button("Mark started").clicked() {
                                 state.pending_plan_action = Some((plan.id.clone(), step.id, "start".into()));
                             }
