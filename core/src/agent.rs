@@ -151,3 +151,60 @@ mod tests {
         assert!(evaluate_arithmetic("1e9").is_err());
     }
 }
+
+
+/// The Rust policy registry is authoritative for tool allowlisting and approval gates.
+pub fn tool_policy(name: &str, enabled_tools_json: &str) -> Result<String, String> {
+    use serde_json::{json, Value};
+
+    let risk = match name {
+        "current_time" | "calculate" | "count_words" | "format_json" | "current_date"
+        | "generate_uuid" | "text_stats" | "base64_encode" | "base64_decode" => "safe",
+        "open_url" | "open_dialer" | "share_text" | "open_app_settings" => "sensitive",
+        _ => return Ok(json!({
+            "allowed": false,
+            "risk": "unknown",
+            "requires_approval": false
+        }).to_string()),
+    };
+
+    let enabled: Value = serde_json::from_str(enabled_tools_json)
+        .map_err(|_| "Enabled tool list must be valid JSON.".to_owned())?;
+    let allowed = if enabled.is_null() {
+        true
+    } else {
+        let list = enabled.as_array()
+            .ok_or_else(|| "Enabled tool list must be a JSON array or null.".to_owned())?;
+        list.iter().any(|item| item.as_str() == Some(name))
+    };
+    Ok(json!({
+        "allowed": allowed,
+        "risk": risk,
+        "requires_approval": allowed && risk != "safe"
+    }).to_string())
+
+    #[test]
+    fn tool_policy_enforces_allowlists_and_approval_gates() {
+        let safe: serde_json::Value = serde_json::from_str(
+            &tool_policy("calculate", "null").unwrap()
+        ).unwrap();
+        assert_eq!(safe["allowed"], true);
+        assert_eq!(safe["requires_approval"], false);
+
+        let sensitive: serde_json::Value = serde_json::from_str(
+            &tool_policy("open_dialer", "null").unwrap()
+        ).unwrap();
+        assert_eq!(sensitive["risk"], "sensitive");
+        assert_eq!(sensitive["requires_approval"], true);
+
+        let disabled: serde_json::Value = serde_json::from_str(
+            &tool_policy("share_text", r#"["calculate"]"#).unwrap()
+        ).unwrap();
+        assert_eq!(disabled["allowed"], false);
+        let unknown: serde_json::Value = serde_json::from_str(
+            &tool_policy("run_shell", "null").unwrap()
+        ).unwrap();
+        assert_eq!(unknown["allowed"], false);
+    }
+
+}
