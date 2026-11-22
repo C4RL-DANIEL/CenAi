@@ -188,7 +188,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val context = LocalContext.current
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
     var activeAccountId by remember { mutableStateOf(vault.get("supabase_user_id", "guest").ifBlank { "guest" }) }
-    remember(activeAccountId) { vault.migrateLegacyAccountData(activeAccountId); true }
+    remember(activeAccountId) { runCatching { vault.migrateLegacyAccountData(activeAccountId) }; true }
     var wideDestination by remember { mutableStateOf("Chat") }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
