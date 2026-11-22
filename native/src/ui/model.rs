@@ -522,12 +522,17 @@ mod tests {
         let messages = (0..(MAX_CONVERSATION_MESSAGES + 1)).map(|id| Message {
             id: id as u64 + 1,
             role: MessageRole::Assistant,
-            body: "🙂".repeat(MAX_MESSAGE_BYTES),
+            body: "🙂".repeat(2),
             streaming: true,
         }).collect();
         state.restore_messages(messages);
         assert_eq!(state.messages().count(), MAX_CONVERSATION_MESSAGES);
         assert!(state.messages().all(|message| !message.streaming && message.body.len() <= MAX_MESSAGE_BYTES));
+        let oversized = Message {
+            id: 99, role: MessageRole::Assistant, body: "🙂".repeat(MAX_MESSAGE_BYTES), streaming: false,
+        };
+        state.restore_messages(vec![oversized]);
+        assert!(state.messages().next().unwrap().body.len() <= MAX_MESSAGE_BYTES);
     }
 
     #[test]
