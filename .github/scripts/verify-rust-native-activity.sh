@@ -49,6 +49,29 @@ if [[ -z "$app_pid" ]]; then
   exit 1
 fi
 
+# Install and run the real on-device Lightning test. This verifies that the
+# model is present in the APK, copied into private storage, hash-checked, and
+# able to generate a response without network access.
+TEST_APK="app-rust/build/outputs/apk/androidTest/debug/app-rust-debug-androidTest.apk"
+if [[ ! -s "$TEST_APK" ]]; then
+  echo "Lightning instrumentation APK was not produced." >&2
+  exit 1
+fi
+timeout 120s adb install --no-streaming -r "$TEST_APK"
+test_output="$(timeout 600s adb shell am instrument -w -r \
+  -e class com.cenai.app.LightningOfflineInferenceTest \
+  com.cenai.app.rustdebug.test/androidx.test.runner.AndroidJUnitRunner 2>&1)" || {
+    printf '%s\n' "$test_output" >&2
+    timeout 10s adb logcat -d -t 1600 || true
+    echo "Lightning offline inference instrumentation failed." >&2
+    exit 1
+  }
+printf '%s\n' "$test_output"
+if ! grep -q 'OK (1 test)' <<<"$test_output"; then
+  echo "Lightning offline inference test did not report success." >&2
+  exit 1
+fi
+
 if timeout 10s adb logcat -d -t 1600 | grep -E 'FATAL EXCEPTION.*com\\.cenai\\.app\\.rustdebug|Process: com\\.cenai\\.app\\.rustdebug|Fatal signal [0-9]+.*cenai_native'; then
   timeout 10s adb logcat -d -t 1600 || true
   echo "CenAI NativeActivity emitted a fatal startup error." >&2
