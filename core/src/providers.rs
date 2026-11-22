@@ -512,3 +512,31 @@ mod target_selection_tests {
         assert_eq!(local[0], "OPENAI");
     }
 }
+
+
+/// Extracts a concise provider error message without leaking an entire response body.
+pub fn parse_provider_error(raw: &str) -> String {
+    let fallback: String = raw.trim().chars().take(500).collect();
+    let Ok(value) = serde_json::from_str::<Value>(raw) else { return fallback; };
+    let error = value.get("error");
+    let message = error.and_then(|item| item.as_str())
+        .or_else(|| error.and_then(|item| item.get("message")).and_then(Value::as_str))
+        .or_else(|| error.and_then(|item| item.get("detail")).and_then(Value::as_str))
+        .or_else(|| value.get("error_description").and_then(Value::as_str))
+        .or_else(|| value.get("message").and_then(Value::as_str))
+        .or_else(|| value.get("detail").and_then(Value::as_str));
+    message.map(|text| text.chars().take(500).collect()).unwrap_or(fallback)
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::parse_provider_error;
+
+    #[test]
+    fn extracts_provider_error_messages_with_bounded_fallbacks() {
+        assert_eq!(parse_provider_error(r#"{"error":{"message":"Invalid API key"}}"#), "Invalid API key");
+        assert_eq!(parse_provider_error(r#"{"message":"Rate limited"}"#), "Rate limited");
+        assert_eq!(parse_provider_error("plain provider error"), "plain provider error");
+        assert_eq!(parse_provider_error(&"x".repeat(700)).len(), 500);
+    }
+}
