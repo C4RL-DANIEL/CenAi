@@ -335,9 +335,6 @@ impl WgpuRenderer {
         }
     }
 
-    #[cfg(not(target_os = "android"))]
-    fn sync_android_automation_reminders(&self) {}
-
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone())?;
