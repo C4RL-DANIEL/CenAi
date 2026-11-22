@@ -100,6 +100,23 @@ pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, t
     }));
 }
 
+/// Release the resident Lightning engine when Android backgrounds the app.
+/// The verified model remains in private app storage and is reloaded lazily on the
+/// next local request, avoiding a permanently resident ~600 MB model while idle.
+pub(crate) fn release_lightning_runtime(app: AndroidApp) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { log::warn!("Could not access Android VM to release Lightning"); return; };
+        let Ok(mut env) = vm.attach_current_thread() else { log::warn!("Could not attach JNI thread to release Lightning"); return; };
+        if let Err(error) = env.call_static_method(
+            "com/cenai/app/LightningRuntimeBridge", "release", "()V", &[],
+        ) {
+            log::warn!("Could not release the resident Lightning engine: {error}");
+        }
+    }));
+}
+
 /// Invoke the fixed, on-device Lightning runtime. This JNI adapter is called only
 /// from a blocking worker; the model policy and fallback decision remain in Rust.
 pub(crate) fn lightning_generate(app: AndroidApp, prompt: &str) -> Result<String, String> {
@@ -190,6 +207,11 @@ impl CenAiApplication {
 }
 
 impl ApplicationHandler for CenAiApplication {
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        // Release model memory in the background; the verified model reloads lazily.
+        release_lightning_runtime(self.android_app.clone());
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
