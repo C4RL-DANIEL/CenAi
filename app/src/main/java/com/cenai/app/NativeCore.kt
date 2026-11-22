@@ -59,6 +59,9 @@ object NativeCore {
     /** Parses provider-specific server-sent event payloads in Rust. */
     external fun parseProviderDelta(provider: String, raw: String): String
 
+    /** Extracts a bounded error message from a provider response body. */
+    external fun parseProviderError(raw: String): String
+
     /** Builds a safe provider endpoint and header set in Rust. */
     external fun buildProviderRequestConfig(provider: String, baseUrlOrModel: String, apiKey: String, oauth: Boolean, projectId: String, customHeadersJson: String): String
 
