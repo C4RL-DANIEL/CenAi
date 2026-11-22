@@ -49,6 +49,71 @@ class SecureKeyStore(context: Context) {
         }.getOrDefault("")
     }
 
+    /**
+     * One-time migration of legacy global settings to the currently authenticated account.
+     * It deliberately refuses to migrate when the stored Supabase identity is absent or different,
+     * preventing old account data from being copied into guest mode or a newly signed-in account.
+     */
+    fun migrateLegacyAccountData(ownerId: String) {
+        if (prefs.getBoolean("legacy_account_migration_v1_done", false)) return
+        val storedOwner = prefs.getString("supabase_user_id", "").orEmpty()
+        if (ownerId.isBlank() || ownerId == "guest" || storedOwner != ownerId) {
+            prefs.edit().putBoolean("legacy_account_migration_v1_done", true).apply()
+            return
+        }
+        val scoped = accountPrefs(ownerId)
+        val plainKeys = setOf(
+            "provider", "model", "base_url", "multi_agent", "agent_planning",
+            "daily_request_limit", "speech_rate", "speech_pitch", "speech_language",
+            "speech_input_language", "local_knowledge_enabled", "google_oauth_client_id",
+            "google_cloud_project_id", "beta_display_name", "cloud_usage_analytics_consent",
+            "guardian_cloud_consent", "usage_day", "usage_count", "usage_estimated_tokens",
+            "cenai_email_verified", "max_tokens", "gemini_oauth_expires_at"
+        )
+        val all = prefs.all
+        for ((name, value) in all) {
+            val accountSetting = name in plainKeys ||
+                name.startsWith("model_") || name.startsWith("base_url_") || name.startsWith("tool_enabled_")
+            if (accountSetting && value is String && scoped.getString(name, null) == null) {
+                scoped.edit().putString(name, value).apply()
+            }
+        }
+
+        for (name in listOf("system_prompt", "custom_headers", "custom_params")) {
+            val legacy = prefs.getString(name, null)
+            if (!legacy.isNullOrBlank() && scoped.getString("secret_$name", null) == null) {
+                putUserSecret(ownerId, name, legacy)
+            }
+        }
+        val legacyMemoryName = "agent_memory_$ownerId"
+        val secretNames = setOf(
+            "supabase_access_token", "supabase_refresh_token",
+            "gemini_oauth_access_token", "gemini_oauth_refresh_token",
+            "google_oauth_verifier", "google_oauth_state", legacyMemoryName
+        )
+        for (name in secretNames) {
+            val legacy = prefs.getString("secret_$name", null) ?: continue
+            val targetName = if (name == legacyMemoryName) "agent_memory" else name
+            if (scoped.getString("secret_$targetName", null) == null) {
+                val clear = decrypt(legacy)
+                if (clear.isNotBlank()) putUserSecret(ownerId, targetName, clear)
+            }
+        }
+        for (provider in Provider.entries) {
+            val name = "api_key_${provider.name.lowercase()}"
+            if (scoped.getString(name, null) != null) continue
+            val legacy = prefs.getString(name, null)
+                ?: if (provider == Provider.OPENAI) prefs.getString("api_key", null) else null
+                ?: continue
+            val clear = decrypt(legacy)
+            if (clear.isNotBlank()) saveApiKey(clear, provider, ownerId)
+        }
+        prefs.getString("supabase_account_email", null)?.let { email ->
+            if (scoped.getString("account_email", null) == null) scoped.edit().putString("account_email", email).apply()
+        }
+        prefs.edit().putBoolean("legacy_account_migration_v1_done", true).apply()
+    }
+
     fun saveApiKey(value: String) {
         if (value.isBlank()) prefs.edit().remove("api_key").apply()
         else prefs.edit().putString("api_key", encrypt(value)).apply()
