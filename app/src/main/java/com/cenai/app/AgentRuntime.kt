@@ -69,16 +69,8 @@ class AgentRuntime(private val enabledTools: Set<String>? = null) {
 
 private object SafeArithmetic {
     fun evaluate(source: String): Double {
-        require(source.length in 1..200) { "Expression length must be 1–200 characters." }
-        val parser = Parser(source); val result = parser.expression(); parser.spaces(); require(parser.done()) { "Unexpected input." }; require(result.isFinite()) { "Invalid result." }; return result
-    }
-    private class Parser(private val s: String) {
-        private var i = 0
-        fun done() = i >= s.length
-        fun spaces() { while (i < s.length && s[i].isWhitespace()) i++ }
-        private fun take(c: Char): Boolean { if (i < s.length && s[i] == c) { i++; return true }; return false }
-        fun expression(): Double { var v = term(); while (true) { spaces(); if (take('+')) v += term() else if (take('-')) v -= term() else return v } }
-        private fun term(): Double { var v = factor(); while (true) { spaces(); if (take('*')) v *= factor() else if (take('/')) { val d = factor(); require(d != 0.0) { "Division by zero." }; v /= d } else if (take('%')) { val d = factor(); require(d != 0.0) { "Division by zero." }; v %= d } else return v } }
-        private fun factor(): Double { spaces(); if (take('+')) return factor(); if (take('-')) return -factor(); if (take('(')) { val v = expression(); spaces(); require(take(')')) { "Missing closing parenthesis." }; return v }; val start = i; while (i < s.length && (s[i].isDigit() || s[i] == '.')) i++; require(i > start) { "Expected a number." }; return s.substring(start, i).toDouble() }
+        val result = NativeCore.evaluateArithmetic(source)
+        require(!result.startsWith("ERROR:")) { result.removePrefix("ERROR:") }
+        return result.toDouble()
     }
 }
