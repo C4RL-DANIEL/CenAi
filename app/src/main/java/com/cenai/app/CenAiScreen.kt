@@ -289,7 +289,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         val index = list.indexOfFirst { it.id == currentId }
         val firstPrompt = next.firstOrNull { it.role == "user" }?.content.orEmpty()
         val title = firstPrompt.take(42).ifBlank { "New chat" }
-        val conversation = Conversation(currentId, title, next.toMutableList(), System.currentTimeMillis())
+        // Never retroactively assign ownership to pre-upgrade chats: an account
+        // switch could otherwise attach another person's history to this user.
+        val ownerEmail = if (index >= 0) list[index].ownerEmail else cloud.accountEmail().trim()
+        val conversation = Conversation(currentId, title, next.toMutableList(), System.currentTimeMillis(), ownerEmail)
         if (index >= 0) list[index] = conversation else list.add(0, conversation)
         conversations = list.sortedByDescending { it.updatedAt }.toMutableList()
         store.save(conversations)
