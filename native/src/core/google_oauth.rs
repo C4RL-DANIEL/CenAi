@@ -19,7 +19,7 @@ pub struct AuthorizationRequest {
 pub fn create_authorization_request(client_id: &str) -> Result<AuthorizationRequest, &'static str> {
     let client_id = client_id.trim();
     if client_id.len() > 256 || !client_id.ends_with(".apps.googleusercontent.com")
-        || client_id.contains(['/', '?', '#', '@', '\\n', '\\r']) {
+        || client_id.chars().any(|character| matches!(character, '/' | '?' | '#' | '@' | '\n' | '\r')) {
         return Err("A valid Google OAuth client ID is required");
     }
     let mut verifier_bytes = [0u8; 32];
