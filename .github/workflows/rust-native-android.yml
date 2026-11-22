@@ -111,7 +111,7 @@ jobs:
           gradle-version: "8.13"
 
       - name: Assemble Rust-native debug APK
-        run: gradle :app-rust:assembleDebug --stacktrace
+        run: gradle :app-rust:assembleDebug :app-rust:assembleDebugAndroidTest --stacktrace
 
       - name: Verify APK contains both native libraries
         run: |
