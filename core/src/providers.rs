@@ -428,3 +428,42 @@ mod transport_tests {
         assert!(config["headers"].get("x-bad").is_none());
     }
 }
+
+
+/// Produces a bounded cross-provider synthesis prompt from independent responses.
+pub fn build_synthesis_prompt(user_request: &str, answers_json: &str) -> Result<String, String> {
+    let answers: Value = serde_json::from_str(answers_json)
+        .map_err(|_| "Provider answers must be a JSON array.".to_owned())?;
+    let answers = answers.as_array()
+        .ok_or_else(|| "Provider answers must be a JSON array.".to_owned())?;
+    let mut blocks = Vec::new();
+    let mut remaining = 32_000usize;
+    for answer in answers.iter().take(8) {
+        let Some(answer) = answer.as_str() else { continue; };
+        if remaining == 0 { break; }
+        let excerpt: String = answer.chars().take(remaining.min(8_000)).collect();
+        remaining = remaining.saturating_sub(excerpt.chars().count());
+        if !excerpt.trim().is_empty() { blocks.push(excerpt); }
+    }
+    let request: String = user_request.chars().take(8_000).collect();
+    Ok(format!(
+        "USER REQUEST:\n{request}\n\nCompare these independent AI responses to that request. Produce one clear, accurate, balanced answer. Resolve contradictions where evidence permits, preserve useful disagreements and uncertainty, remove repetition, and do not invent facts.\n\n{}",
+        blocks.join("\n\n---\n\n")
+    ))
+}
+
+#[cfg(test)]
+mod synthesis_tests {
+    use super::build_synthesis_prompt;
+
+    #[test]
+    fn combines_bounded_provider_answers_for_synthesis() {
+        let prompt = build_synthesis_prompt(
+            "Compare options",
+            r#"["Provider A: answer one","Provider B: answer two"]"#
+        ).unwrap();
+        assert!(prompt.contains("USER REQUEST:\nCompare options"));
+        assert!(prompt.contains("Provider A: answer one"));
+        assert!(prompt.contains("Provider B: answer two"));
+    }
+}
