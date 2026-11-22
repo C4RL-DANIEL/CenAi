@@ -602,3 +602,19 @@ mod cloud_response_tests {
         assert!(parse_cloud_response("{}").is_err());
     }
 }
+
+
+pub fn contains_image_marker(content: &str) -> bool {
+    vision_parts(content).iter().any(|(kind, _)| kind == "image")
+}
+
+#[cfg(test)]
+mod image_detection_tests {
+    use super::contains_image_marker;
+
+    #[test]
+    fn detects_only_valid_embedded_image_payloads() {
+        assert!(contains_image_marker("[[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]]"));
+        assert!(!contains_image_marker("[[CENAI_IMAGE|image/png|not-base64]]"));
+    }
+}
