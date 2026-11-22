@@ -294,8 +294,6 @@ pub fn parse_provider_delta(provider: &str, raw: &str) -> String {
             .and_then(Value::as_str).unwrap_or("").to_owned(),
     };
     if delta == "null" { String::new() } else { delta }
-
-    if delta == "null" { String::new() } else { delta }
 }
 
 #[cfg(test)]
