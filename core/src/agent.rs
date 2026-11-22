@@ -272,20 +272,15 @@ pub fn execute_safe_tool(
     if !args.is_object() {
         return Err("Tool arguments must be a JSON object.".to_owned());
     }
-    let text_arg = |key: &str| -> Result<&str, String> {
-        args.get(key).and_then(Value::as_str)
-            .ok_or_else(|| format!("Missing required text argument: {key}"))
-    };
-
     match name {
         "current_time" => Ok(local_time.to_owned()),
         "current_date" => Ok(local_date.to_owned()),
         "calculate" => {
-            let expression = text_arg("expression")?;
+            let expression = required_text(&args, "expression")?;
             Ok(evaluate_arithmetic(expression)?.to_string())
         }
         "count_words" => {
-            let value = text_arg("text")?;
+            let value = required_text(&args, "text")?;
             Ok(json!({
                 "words": value.split_whitespace().count(),
                 "characters": value.chars().count(),
@@ -293,14 +288,14 @@ pub fn execute_safe_tool(
             }).to_string())
         }
         "format_json" => {
-            let value: Value = serde_json::from_str(text_arg("json")?)
+            let value: Value = serde_json::from_str(required_text(&args, "json")?)
                 .map_err(|_| "The supplied text is not valid JSON.".to_owned())?;
             serde_json::to_string_pretty(&value)
                 .map_err(|_| "Could not format the supplied JSON.".to_owned())
         }
         "generate_uuid" => Ok(Uuid::new_v4().to_string()),
         "text_stats" => {
-            let value = text_arg("text")?;
+            let value = required_text(&args, "text")?;
             let lines = if value.is_empty() { 0 } else {
                 value.split('\n').count()
             };
@@ -310,9 +305,9 @@ pub fn execute_safe_tool(
                 "characters": value.chars().count()
             }).to_string())
         }
-        "base64_encode" => Ok(STANDARD.encode(text_arg("text")?.as_bytes())),
+        "base64_encode" => Ok(STANDARD.encode(required_text(&args, "text")?.as_bytes())),
         "base64_decode" => {
-            let decoded = STANDARD.decode(text_arg("value")?)
+            let decoded = STANDARD.decode(required_text(&args, "value")?)
                 .map_err(|_| "The supplied value is not valid Base64.".to_owned())?;
             String::from_utf8(decoded)
                 .map_err(|_| "Decoded Base64 is not valid UTF-8 text.".to_owned())
@@ -354,4 +349,10 @@ mod safe_tool_tests {
         assert!(execute_safe_tool("base64_decode", r#"{"value":"%%%"}"#, "", "").is_err());
         assert!(execute_safe_tool("format_json", r#"{"json":"not json"}"#, "", "").is_err());
     }
+}
+
+
+fn required_text<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
+    args.get(key).and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("Missing required text argument: {key}"))
 }
