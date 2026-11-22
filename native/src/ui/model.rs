@@ -107,6 +107,18 @@ impl ConversationState {
         }
     }
 
+    pub fn replace_stream(&mut self, id: u64, body: impl Into<String>) -> bool {
+        match self.messages.iter_mut().find(|message| message.id == id && message.streaming) {
+            Some(message) => {
+                let mut body = body.into();
+                truncate_utf8(&mut body, MAX_MESSAGE_BYTES);
+                message.body = body;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn finish_stream(&mut self, id: u64) -> bool {
         match self.messages.iter_mut().find(|message| message.id == id && message.streaming) {
             Some(message) => { message.streaming = false; true }
@@ -471,6 +483,16 @@ mod tests {
         state.restore_messages(messages);
         assert_eq!(state.messages().count(), MAX_CONVERSATION_MESSAGES);
         assert!(state.messages().all(|message| !message.streaming && message.body.len() <= MAX_MESSAGE_BYTES));
+    }
+
+    #[test]
+    fn stream_replacement_discards_internal_tool_call_markup() {
+        let mut conversation = ConversationState::default();
+        let stream = conversation.begin_stream();
+        conversation.append_stream(stream, "[[CENAI_TOOL_CALL]]{}[[/CENAI_TOOL_CALL]]");
+        assert!(conversation.replace_stream(stream, "Using a safe local tool…"));
+        assert!(conversation.finish_stream(stream));
+        assert_eq!(conversation.messages().last().unwrap().body, "Using a safe local tool…");
     }
 
     #[test]
