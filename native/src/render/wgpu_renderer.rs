@@ -801,7 +801,10 @@ impl WgpuRenderer {
             let sender = self.response_tx.clone();
             #[cfg(target_os = "android")]
             {
-                let app = self.android_app.clone();
+                let Some(app) = self.android_app.clone() else {
+                    let _ = sender.send(ChatEvent::Finished(generation, message_id, Err("Android application context is unavailable for Lightning.".into())));
+                    return;
+                };
                 let task = self.runtime.spawn(async move {
                     let result = match tokio::task::spawn_blocking(move || lightning_generate(app, &prompt)).await {
                         Ok(Ok(answer)) if !answer.trim().is_empty() => {
@@ -885,7 +888,7 @@ impl WgpuRenderer {
             let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
             let selected_provider = provider.clone();
             let goal = latest_goal.clone();
-            let offline_prompt = latest_goal.clone();
+            let offline_prompt = conversation_prompt_for_offline(&self.app_state.conversation);
             let fallback_sender = sender.clone();
             #[cfg(target_os = "android")]
             let lightning_app = self.android_app.clone();
@@ -929,14 +932,17 @@ impl WgpuRenderer {
                     Err(cloud_error) => {
                         #[cfg(target_os = "android")]
                         {
-                            match tokio::task::spawn_blocking(move || lightning_generate(lightning_app, &offline_prompt)).await {
-                                Ok(Ok(answer)) if !answer.trim().is_empty() => {
-                                    let _ = fallback_sender.send(ChatEvent::Delta(generation, message_id, answer.clone()));
-                                    Ok(answer)
-                                }
-                                Ok(Ok(_)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning returned an empty response.")),
-                                Ok(Err(local_error)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning offline fallback failed ({local_error}).")),
-                                Err(join_error) => Err(format!("Cloud AI failed ({cloud_error}); Lightning worker failed ({join_error}).")),
+                            match lightning_app {
+                                Some(app) => match tokio::task::spawn_blocking(move || lightning_generate(app, &offline_prompt)).await {
+                                    Ok(Ok(answer)) if !answer.trim().is_empty() => {
+                                        let _ = fallback_sender.send(ChatEvent::Delta(generation, message_id, answer.clone()));
+                                        Ok(answer)
+                                    }
+                                    Ok(Ok(_)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning returned an empty response.")),
+                                    Ok(Err(local_error)) => Err(format!("Cloud AI failed ({cloud_error}); Lightning offline fallback failed ({local_error}).")),
+                                    Err(join_error) => Err(format!("Cloud AI failed ({cloud_error}); Lightning worker failed ({join_error}).")),
+                                },
+                                None => Err(format!("Cloud AI failed ({cloud_error}); Android application context is unavailable for Lightning.")),
                             }
                         }
                         #[cfg(not(target_os = "android"))]
