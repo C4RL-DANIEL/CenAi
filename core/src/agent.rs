@@ -236,16 +236,22 @@ pub fn parse_tool_call(response: &str) -> Result<String, String> {
         .unwrap_or_else(|| serde_json::json!({}));
     Ok(serde_json::json!({"name":name,"arguments":arguments}).to_string())
 
+    Ok(serde_json::json!({"name":name,"arguments":arguments}).to_string())
+}
+
+#[cfg(test)]
+mod tool_call_tests {
+    use super::parse_tool_call;
+
     #[test]
     fn parses_only_complete_bounded_tool_call_markers() {
-        let parsed = super::parse_tool_call(
+        let parsed = parse_tool_call(
             r#"Plan [[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"1+2"}}[[/CENAI_TOOL_CALL]] done"#
         ).unwrap();
         let value: serde_json::Value = serde_json::from_str(&parsed).unwrap();
         assert_eq!(value["name"], "calculate");
         assert_eq!(value["arguments"]["expression"], "1+2");
-        assert_eq!(super::parse_tool_call("no tool call").unwrap(), "");
-        assert_eq!(super::parse_tool_call("[[CENAI_TOOL_CALL]]{").unwrap(), "");
+        assert_eq!(parse_tool_call("no tool call").unwrap(), "");
+        assert_eq!(parse_tool_call("[[CENAI_TOOL_CALL]]{").unwrap(), "");
     }
-
 }
