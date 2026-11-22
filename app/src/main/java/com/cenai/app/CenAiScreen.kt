@@ -433,8 +433,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
                 if (multiAgent && successfulTargets.size > 1 && !localModelEnabled) {
                     val synthesisProvider = successfulTargets.first()
-                    val synthesisModel = if (synthesisProvider == provider) model else vault.get("model_${synthesisProvider.name}", synthesisProvider.model)
-                    val synthesisBase = if (synthesisProvider == provider) base else vault.get("base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
+                    val synthesisModel = if (synthesisProvider == provider) model else vault.getUser(activeAccountId, "model_${synthesisProvider.name}", synthesisProvider.model)
+                    val synthesisBase = if (synthesisProvider == provider) base else vault.getUser(activeAccountId, "base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
                     val synthesisPrompt = "USER REQUEST:\n" + queryForKnowledge.take(8_000) +
                         "\n\nCompare these independent AI responses to that request. Produce one clear, accurate, balanced answer. Resolve contradictions where evidence permits, preserve useful disagreements and uncertainty, remove repetition, and do not invent facts.\n\n" +
                         providerAnswers.joinToString("\n\n---\n\n").take(32_000)
@@ -470,7 +470,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
                 val completedLatency = System.currentTimeMillis() - requestStartedAt
                 appMonitor.recordSucceeded(completedLatency)
-                if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                if (cloud.isSignedIn() && vault.getUser(activeAccountId, "cloud_usage_analytics_consent", "false").toBoolean()) {
                     runCatching {
                         val outputEstimate = messages.lastOrNull { it.role == "assistant" }?.content?.length?.div(4) ?: 0
                         cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, outputEstimate, completedLatency, "success")
@@ -482,7 +482,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 } else {
                     val failedLatency = System.currentTimeMillis() - requestStartedAt
                     appMonitor.recordFailed(failedLatency, e)
-                    if (cloud.isSignedIn() && vault.get("cloud_usage_analytics_consent", "false").toBoolean()) {
+                    if (cloud.isSignedIn() && vault.getUser(activeAccountId, "cloud_usage_analytics_consent", "false").toBoolean()) {
                         runCatching { cloud.recordUsageEvent(if (localModelEnabled) "local" else provider.name.lowercase(), if (localModelEnabled) "on-device" else model, inputEstimate, 0, failedLatency, "error", e.javaClass.simpleName) }
                     }
                     error = e.message ?: "Request failed."
@@ -873,8 +873,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var cloudPassword by remember { mutableStateOf("") }
         var cloudStatus by remember { mutableStateOf("") }
         var adminAnalytics by remember { mutableStateOf("") }
-        var usageAnalyticsConsent by remember { mutableStateOf(vault.get("cloud_usage_analytics_consent", "false").toBoolean()) }
-        var guardianCloudConsent by remember { mutableStateOf(vault.get("guardian_cloud_consent", "false").toBoolean()) }
+        var usageAnalyticsConsent by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "cloud_usage_analytics_consent", "false").toBoolean()) }
+        var guardianCloudConsent by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "guardian_cloud_consent", "false").toBoolean()) }
         var cloudBusy by remember { mutableStateOf(false) }
         var paypalBusy by remember { mutableStateOf(false) }
         var paypalStatus by remember { mutableStateOf("Load plans to check current PayPal availability.") }
@@ -884,7 +884,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var cloudSignedIn by remember { mutableStateOf(cloud.isSignedIn()) }
         var otpCode by remember { mutableStateOf("") }
         var emailVerified by remember { mutableStateOf(cloud.isEmailVerified()) }
-        var betaDisplayName by remember { mutableStateOf(vault.get("beta_display_name", "")) }
+        var betaDisplayName by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "beta_display_name", "")) }
         var betaMotivation by remember { mutableStateOf("") }
         var betaApplicationStatus by remember { mutableStateOf("") }
         var expanded by remember { mutableStateOf(false) }
@@ -986,9 +986,9 @@ Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeig
                             Provider.entries.forEach { p ->
                                 DropdownMenuItem(text = { Text(p.label) }, onClick = {
                                     provider = p
-                                    val savedModel = vault.get("model_${p.name}", p.model)
+                                    val savedModel = vault.getUser(activeAccountId, "model_${p.name}", p.model)
                                     model = if (p == Provider.DEEPSEEK && savedModel in setOf("deepseek-chat", "deepseek-reasoner")) p.model else savedModel
-                                    base = vault.get("base_url_${p.name}", p.baseUrl)
+                                    base = vault.getUser(activeAccountId, "base_url_${p.name}", p.baseUrl)
                                     expanded = false
                                 })
                             }
@@ -1177,7 +1177,7 @@ Text("PUBLIC BETA APPLICATION", color = palette.accent, fontSize = 10.sp, fontWe
                                 OutlinedTextField(value = betaMotivation, onValueChange = { betaMotivation = it.take(2000) }, label = { Text("Why do you want to test CenAI?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                                 Text(if (emailVerified) "Your application must contain at least 20 characters. An administrator reviews access requests." else "Verify your email above before submitting a beta application.", color = palette.muted, fontSize = 10.sp)
                                 if (betaApplicationStatus.isNotBlank()) Text("Application status: $betaApplicationStatus", color = palette.accent, fontSize = 12.sp)
-                                Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.put("beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
+                                Button(enabled = !cloudBusy && emailVerified && betaMotivation.trim().length >= 20 && betaDisplayName.isNotBlank(), onClick = { cloudBusy = true; cloudStatus = "Submitting beta application…"; scope.launch { try { cloud.call("apply", JSONObject().put("displayName", betaDisplayName.trim()).put("motivation", betaMotivation.trim()).put("experience", "new")); betaApplicationStatus = "pending"; betaMotivation = ""; vault.putUser(activeAccountId, "beta_display_name", betaDisplayName); cloudStatus = "Your beta application has been submitted." } catch (e: Exception) { cloudStatus = e.message ?: "Application submission failed." } finally { cloudBusy = false } } }, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Please wait…" else "Apply for beta access") }
                             }
                             if (cloudSignedIn) {
                                 HorizontalDivider(color = palette.raised)
@@ -1373,8 +1373,8 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                                     scope.launch {
                                         try {
                                             cloud.setTelemetryConsent(usageAnalyticsConsent, guardianCloudConsent)
-                                            vault.put("cloud_usage_analytics_consent", usageAnalyticsConsent.toString())
-                                            vault.put("guardian_cloud_consent", guardianCloudConsent.toString())
+                                            vault.putUser(activeAccountId, "cloud_usage_analytics_consent", usageAnalyticsConsent.toString())
+                                            vault.putUser(activeAccountId, "guardian_cloud_consent", guardianCloudConsent.toString())
                                             cloudStatus = "Privacy choices saved. Guardian uploads also require the platform owner to enable the Guardian ingestion flag."
                                         } catch (e: Exception) { cloudStatus = e.message ?: "Could not save privacy choices." }
                                         finally { cloudBusy = false }
@@ -1390,8 +1390,8 @@ Text("PRIVACY & OPTIONAL CLOUD DIAGNOSTICS", color = palette.accent, fontSize = 
                     }
                     if (selectedSettingsPage == "Device") {
 Text("USAGE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text("Today: " + vault.get("usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
-                            Text("Estimated input tokens: " + vault.get("usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
+                            Text("Today: " + vault.getUser(activeAccountId, "usage_count", "0") + " requests", color = palette.text, fontWeight = FontWeight.SemiBold)
+                            Text("Estimated input tokens: " + vault.getUser(activeAccountId, "usage_estimated_tokens", "0"), color = palette.muted, fontSize = 11.sp)
                             Text("Token count is a local character-based estimate, not provider billing data.", color = palette.muted, fontSize = 10.sp)
                         }
                     }
@@ -1472,7 +1472,7 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                             Text("Last crash: ${if (guardianSnapshot.lastCrashAt == 0L) "None recorded" else guardianSnapshot.lastCrashCategory + " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(guardianSnapshot.lastCrashAt))}", color = palette.muted, fontSize = 10.sp)
                             Text("Background Guardian: $guardianHistoryCount health samples · scheduled every 15 minutes when Android permits", color = palette.muted, fontSize = 10.sp)
                             Text("Diagnostics stay on-device by default. If you explicitly enable Guardian sharing in your CenAI account privacy settings, only these summary fields are sent; no stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
-                            if (cloud.isSignedIn() && vault.get("guardian_cloud_consent", "false").toBoolean()) {
+                            if (cloud.isSignedIn() && vault.getUser(activeAccountId, "guardian_cloud_consent", "false").toBoolean()) {
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
                                     cloudBusy = true
                                     scope.launch {
