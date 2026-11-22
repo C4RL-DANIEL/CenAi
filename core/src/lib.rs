@@ -862,3 +862,19 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_parseGoogleOAuthToken(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_generateOAuthPkce(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let output = match auth::generate_oauth_pkce() {
+        Ok(values) => values,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
