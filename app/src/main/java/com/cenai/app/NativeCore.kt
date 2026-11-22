@@ -26,6 +26,9 @@ object NativeCore {
     /** Builds an OpenAI-compatible text chat payload in the Rust core. */
     external fun buildOpenAiChatPayload(model: String, maxTokens: Int, messagesJson: String): String
 
+    /** Builds provider-specific text and vision payloads in the Rust core. */
+    external fun buildProviderPayload(provider: String, model: String, maxTokens: Int, messagesJson: String, customParamsJson: String): String
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
