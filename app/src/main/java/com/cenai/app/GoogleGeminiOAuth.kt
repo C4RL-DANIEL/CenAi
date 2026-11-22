@@ -98,8 +98,8 @@ class GoogleGeminiOAuth(
 
     suspend fun credential(): Pair<String, Boolean> = withContext(Dispatchers.IO) {
         val access = getOAuthSecret("gemini_oauth_access_token")
-        val expires = getOAuthValue("gemini_oauth_expires_at", "0").toLongOrNull() ?: 0L
-        if (access.isNotBlank() && expires > System.currentTimeMillis() + 60_000L) return@withContext access to true
+        val expires = getOAuthValue("gemini_oauth_expires_at", "0")
+        if (NativeCore.googleOAuthAccessTokenUsable(access, expires, System.currentTimeMillis())) return@withContext access to true
         val refresh = getOAuthSecret("gemini_oauth_refresh_token")
         val clientId = getOAuthValue("google_oauth_client_id")
         if (refresh.isBlank() || clientId.isBlank()) return@withContext "" to false
