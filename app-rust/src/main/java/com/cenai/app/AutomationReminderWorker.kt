@@ -28,9 +28,12 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
                 description = "Reminds you to review scheduled CenAI tasks. No task action runs automatically."
             }
         )
+        val notificationTag = inputData.getString(AutomationReminderWorker.NOTIFICATION_TAG_KEY)
+            ?.takeIf { it.startsWith("cenai_automation_") }
+            ?: return Result.failure()
         val launch = Intent(applicationContext, CenAiNativeActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            data = Uri.parse("cenai://automation-reminder/${workNameForNotification()}")
+            data = Uri.parse("cenai://automation-reminder/$notificationTag")
         }
         val pending = PendingIntent.getActivity(
             applicationContext,
@@ -47,7 +50,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
             .setAutoCancel(true)
             .build()
         return try {
-            manager.notify(inputData.getString(AutomationReminderWorker.NOTIFICATION_TAG_KEY), 0, notification)
+            manager.notify(notificationTag, 0, notification)
             Result.success()
         } catch (_: SecurityException) {
             // POST_NOTIFICATIONS may be denied; do not retry forever or bypass the permission.
