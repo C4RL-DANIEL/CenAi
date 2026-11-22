@@ -2,13 +2,10 @@ package com.cenai.app
 
 import android.content.Intent
 import android.net.Uri
-import android.util.Base64
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.security.MessageDigest
-import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,12 +28,12 @@ class GoogleGeminiOAuth(
     fun authorizationIntent(clientId: String): Intent {
         val clientValidation = NativeCore.validateGoogleOAuthClientId(clientId)
         require(clientValidation == "OK") { clientValidation }
-        val random = SecureRandom()
-        val verifierBytes = ByteArray(48).also(random::nextBytes)
-        val verifier = Base64.encodeToString(verifierBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        val stateBytes = ByteArray(24).also(random::nextBytes)
-        val state = Base64.encodeToString(stateBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        val challenge = Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        val pkce = JSONObject(NativeCore.generateOAuthPkce())
+        val pkceError = pkce.optString("error")
+        require(pkceError.isBlank()) { pkceError.ifBlank { "Could not generate OAuth PKCE values." } }
+        val verifier = pkce.getString("verifier")
+        val state = pkce.getString("state")
+        val challenge = pkce.getString("challenge")
         putOAuthValue("google_oauth_client_id", clientId)
         putOAuthSecret("google_oauth_verifier", verifier)
         putOAuthSecret("google_oauth_state", state)
