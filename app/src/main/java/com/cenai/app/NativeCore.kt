@@ -74,6 +74,12 @@ object NativeCore {
     /** Returns OK or the validation error for a six-digit email OTP. */
     external fun validateEmailOtp(code: String): String
 
+    /** Validates the Google OAuth client ID and callback state in Rust. */
+    external fun validateGoogleOAuthClientId(clientId: String): String
+    external fun validateGoogleOAuthCallback(scheme: String, path: String, returnedState: String, expectedState: String, error: String, code: String): String
+    /** Parses OAuth token responses and computes expiry timestamps in Rust. */
+    external fun parseGoogleOAuthToken(rawJson: String, nowMs: Long): String
+
     /** Replaces embedded image bytes with a retrieval-safe marker. */
     external fun stripImageMarkers(content: String): String
 
