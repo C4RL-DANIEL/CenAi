@@ -1039,7 +1039,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             }
                             runCatching {
-                                val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base)
+                                val id = AgentTaskWorker.schedule(context, backgroundTaskPrompt.trim(), backgroundTaskDelay.toLong(), provider, model, base, activeAccountId)
                                 backgroundTaskStatus = "Task queued · ID " + id.take(8)
                                 backgroundTaskPrompt = ""
                             }.onFailure { backgroundTaskStatus = it.message ?: "Could not schedule task." }
@@ -1047,7 +1047,7 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Schedule background task") }
                     if (backgroundTaskStatus.isNotBlank()) Text(backgroundTaskStatus, color = palette.accent, fontSize = 11.sp)
-                    val taskPrefs = context.getSharedPreferences(AgentTaskWorker.PREFS, android.content.Context.MODE_PRIVATE).all
+                    val taskPrefs = context.getSharedPreferences(AgentTaskWorker.prefsName(activeAccountId), android.content.Context.MODE_PRIVATE).all
                     val taskEntries = taskPrefs.filterKeys { it.startsWith("status_") }.entries.sortedByDescending { entry ->
                         taskPrefs["completed_" + entry.key.removePrefix("status_")] as? Long ?: (taskPrefs["scheduled_" + entry.key.removePrefix("status_")] as? Long ?: 0L)
                     }.take(5)
@@ -1058,15 +1058,15 @@ Text("AGENT WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = F
 Text("RECENT BACKGROUND TASKS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         taskEntries.forEach { entry ->
                             val id = entry.key.removePrefix("status_")
-                            val taskName = vault.getSecret("scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
+                            val taskName = vault.getUserSecret(activeAccountId, "scheduled_task_prompt_$id").take(90).ifBlank { "Scheduled task" }
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(taskName, color = palette.text, fontSize = 11.sp)
                                 Text((entry.value as? String).orEmpty(), color = palette.muted, fontSize = 10.sp)
-                                vault.getSecret("scheduled_task_result_$id").takeIf { it.isNotBlank() }?.let { result ->
+                                vault.getUserSecret(activeAccountId, "scheduled_task_result_$id").takeIf { it.isNotBlank() }?.let { result ->
                                     Text("Result: " + result.take(700), color = palette.muted, fontSize = 10.sp)
                                 }
                                 if ((entry.value as? String) == "Scheduled" || (entry.value as? String) == "Running") {
-                                    TextButton(onClick = { AgentTaskWorker.cancel(context, id); backgroundTaskStatus = "Task cancelled." }) { Text("Cancel task", color = Color(0xFFFF938B)) }
+                                    TextButton(onClick = { AgentTaskWorker.cancel(context, id, activeAccountId); backgroundTaskStatus = "Task cancelled." }) { Text("Cancel task", color = Color(0xFFFF938B)) }
                                 }
                             }
                         }
