@@ -74,6 +74,32 @@ jobs:
           node --check website/api/admin.js
           node --check website/api/beta.js
           node --check website/api/site-pages.js
+      - name: Cache pinned Lightning model and license
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/assets/models/lightning.litertlm
+            app/src/main/assets/licenses/Apache-2.0.txt
+          key: lightning-qwen3-0.6b-int8-c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+      - name: Download and verify bundled Lightning model
+        env:
+          LIGHTNING_MODEL_URL: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm
+          LIGHTNING_MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+          LIGHTNING_MODEL_SIZE: 613722264
+          LICENSE_URL: https://www.apache.org/licenses/LICENSE-2.0.txt
+        run: |
+          mkdir -p app/src/main/assets/models app/src/main/assets/licenses
+          MODEL=app/src/main/assets/models/lightning.litertlm
+          if [[ ! -s "$MODEL" ]]; then
+            curl --location --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 1200 "$LIGHTNING_MODEL_URL" --output "$MODEL.part"
+            mv "$MODEL.part" "$MODEL"
+          fi
+          echo "$LIGHTNING_MODEL_SHA256  $MODEL" | sha256sum --check -
+          test "$(stat -c%s "$MODEL")" = "$LIGHTNING_MODEL_SIZE"
+          LICENSE=app/src/main/assets/licenses/Apache-2.0.txt
+          if [[ ! -s "$LICENSE" ]]; then
+            curl --location --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 120 "$LICENSE_URL" --output "$LICENSE"
+          fi
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
