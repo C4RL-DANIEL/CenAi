@@ -9,7 +9,8 @@ data class Conversation(
     val id: String = UUID.randomUUID().toString(),
     var title: String = "New chat",
     val messages: MutableList<ChatMessage> = mutableListOf(),
-    var updatedAt: Long = System.currentTimeMillis()
+    var updatedAt: Long = System.currentTimeMillis(),
+    val ownerEmail: String = ""
 )
 
 class ChatStore(context: Context) {
@@ -29,7 +30,8 @@ class ChatStore(context: Context) {
                         val m = msgs.getJSONObject(j)
                         ChatMessage(m.optString("role"), m.optString("content"))
                     },
-                    updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+                    updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
+                    ownerEmail = item.optString("ownerEmail", "")
                 )
             }.sortedByDescending { it.updatedAt }.toMutableList()
         }.getOrDefault(mutableListOf())
@@ -41,7 +43,8 @@ class ChatStore(context: Context) {
             val messages = JSONArray()
             conversation.messages.forEach { messages.put(JSONObject().put("role", it.role).put("content", it.content)) }
             array.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
-                .put("updatedAt", conversation.updatedAt).put("messages", messages))
+                .put("updatedAt", conversation.updatedAt).put("ownerEmail", conversation.ownerEmail)
+                .put("messages", messages))
         }
         prefs.edit().putString("conversations", array.toString()).apply()
     }
