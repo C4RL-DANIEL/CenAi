@@ -40,7 +40,7 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
         if (taskId.isBlank() || prompt.isBlank()) return Result.failure()
         prefs.edit().putString("status_$taskId", "Running").apply()
         return try {
-            val repository = ChatRepository(vault)
+            val repository = ChatRepository(vault) { ownerId }
             val runtime = AgentRuntime(enabledTools = setOf(
                 "current_time", "current_date", "calculate", "count_words", "text_stats",
                 "format_json", "generate_uuid", "base64_encode", "base64_decode"
