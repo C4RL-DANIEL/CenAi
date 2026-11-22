@@ -5,6 +5,7 @@ pub mod storage;
 pub mod context;
 pub mod auth;
 pub mod monitor;
+pub mod updates;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
@@ -939,4 +940,17 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_providerMetadata(
         Err(error) => serde_json::json!({ "error": error }).to_string(),
     };
     match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_compareVersions(
+    mut env: JNIEnv,
+    _class: JClass,
+    left: JString,
+    right: JString,
+) -> jint {
+    let Some(left_value) = read_java_string(&mut env, &left) else { return 0; };
+    let Some(right_value) = read_java_string(&mut env, &right) else { return 0; };
+    updates::compare_versions(&left_value, &right_value)
 }
