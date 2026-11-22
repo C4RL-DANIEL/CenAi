@@ -295,21 +295,27 @@ pub fn parse_provider_delta(provider: &str, raw: &str) -> String {
     };
     if delta == "null" { String::new() } else { delta }
 
+    if delta == "null" { String::new() } else { delta }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::parse_provider_delta;
+
     #[test]
     fn parses_provider_stream_deltas() {
         assert_eq!(
-            super::parse_provider_delta("CLAUDE", r#"{"type":"content_block_delta","delta":{"text":"hello"}}"#),
+            parse_provider_delta("CLAUDE", r#"{"type":"content_block_delta","delta":{"text":"hello"}}"#),
             "hello"
         );
         assert_eq!(
-            super::parse_provider_delta("GEMINI", r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"text":"b"}]}}]}"#),
+            parse_provider_delta("GEMINI", r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"text":"b"}]}}]}"#),
             "ab"
         );
         assert_eq!(
-            super::parse_provider_delta("OPENAI", r#"{"choices":[{"delta":{"content":"world"}}]}"#),
+            parse_provider_delta("OPENAI", r#"{"choices":[{"delta":{"content":"world"}}]}"#),
             "world"
         );
-        assert_eq!(super::parse_provider_delta("OPENAI", "not json"), "");
+        assert_eq!(parse_provider_delta("OPENAI", "not json"), "");
     }
-
 }
