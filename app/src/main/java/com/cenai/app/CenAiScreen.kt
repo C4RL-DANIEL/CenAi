@@ -367,9 +367,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 val successfulTargets = mutableListOf<Provider>()
                 for (target in targets) {
                     try {
-                    val storedTargetModel = if (target == provider) model else vault.getUser(activeAccountId, "model_${target.name}", target.model)
-                    val targetModel = if (target == Provider.DEEPSEEK && storedTargetModel in setOf("deepseek-chat", "deepseek-reasoner")) target.model else storedTargetModel
-                    val targetBase = if (target == provider) base else vault.getUser(activeAccountId, "base_url_${target.name}", target.baseUrl)
+                    val targetSettings = JSONObject(NativeCore.resolveProviderSettings(
+                        target.name, provider.name, model, base,
+                        vault.getUser(activeAccountId, "model_${target.name}", target.model),
+                        vault.getUser(activeAccountId, "base_url_${target.name}", target.baseUrl)
+                    ))
+                    val targetModel = targetSettings.getString("model")
+                    val targetBase = targetSettings.getString("base_url")
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
                     val enabledToolsJson = JSONArray().apply { toolEnabled.filterValues { it }.keys.forEach(::put) }.toString()
@@ -452,8 +456,13 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                 }
                 if (multiAgent && successfulTargets.size > 1 && !localModelEnabled) {
                     val synthesisProvider = successfulTargets.first()
-                    val synthesisModel = if (synthesisProvider == provider) model else vault.getUser(activeAccountId, "model_${synthesisProvider.name}", synthesisProvider.model)
-                    val synthesisBase = if (synthesisProvider == provider) base else vault.getUser(activeAccountId, "base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
+                    val synthesisSettings = JSONObject(NativeCore.resolveProviderSettings(
+                        synthesisProvider.name, provider.name, model, base,
+                        vault.getUser(activeAccountId, "model_${synthesisProvider.name}", synthesisProvider.model),
+                        vault.getUser(activeAccountId, "base_url_${synthesisProvider.name}", synthesisProvider.baseUrl)
+                    ))
+                    val synthesisModel = synthesisSettings.getString("model")
+                    val synthesisBase = synthesisSettings.getString("base_url")
                     val synthesisPrompt = NativeCore.buildSynthesisPrompt(
                         queryForKnowledge,
                         JSONArray().apply { providerAnswers.forEach(::put) }.toString()
