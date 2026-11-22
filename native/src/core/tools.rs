@@ -332,6 +332,32 @@ mod tests {
     }
 
     #[test]
+    fn every_android_side_effect_is_deferred_for_explicit_platform_approval() {
+        let runtime = AgentToolRuntime::default();
+        let actions = [
+            ("open_url", json!({"url":"https://example.com"})),
+            ("open_dialer", json!({"number":"+1 202 555 0100"})),
+            ("share_text", json!({"text":"Share this note"})),
+            ("open_app_settings", json!({})),
+        ];
+        for (name, arguments) in actions {
+            let result = runtime.execute(name, arguments, false);
+            assert!(result.requires_approval, "{name} must request approval");
+            assert!(!result.completed, "{name} must never run in the pure Rust tool executor");
+            assert!(result.output.contains("approval") || result.output.contains("Approved Android action"));
+        }
+    }
+
+    #[test]
+    fn malformed_android_action_arguments_are_rejected_before_approval() {
+        let runtime = AgentToolRuntime::default();
+        assert!(!runtime.execute("open_url", json!({"url":"javascript:alert(1)","extra":true}), false).requires_approval);
+        assert!(!runtime.execute("open_dialer", json!({"number":"+1","unexpected":"x"}), false).requires_approval);
+        assert!(!runtime.execute("share_text", json!({"text":""}), false).requires_approval);
+        assert!(!runtime.execute("open_app_settings", json!({"package":"other.app"}), false).requires_approval);
+    }
+
+    #[test]
     fn disabled_tools_cannot_be_called() {
         let runtime = AgentToolRuntime::new(Some(["current_date".to_owned()].into_iter().collect()));
         assert!(runtime.execute("calculate", json!({"expression":"1+1"}), false).output.contains("not allow-listed"));
