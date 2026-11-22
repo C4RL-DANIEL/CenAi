@@ -48,10 +48,9 @@ class AgentTaskWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 "current_time", "current_date", "calculate", "count_words", "text_stats",
                 "format_json", "generate_uuid", "base64_encode", "base64_decode"
             ))
-            val toolGuide = "You are CenAI's scheduled background agent. Complete the user's task and use these safe local tools when useful: " +
-                runtime.availableTools().joinToString { it.name + " — " + it.description } +
-                ". Tool calls must use [[CENAI_TOOL_CALL]] followed by JSON {name,arguments} and [[/CENAI_TOOL_CALL]]. " +
-                "Background tasks cannot execute Android device actions, send messages, access arbitrary files or run shell commands. Never claim to have performed external actions you cannot perform."
+            val safeToolsJson = org.json.JSONArray().apply { runtime.availableTools().forEach { put(it.name) } }.toString()
+            val toolGuide = NativeCore.buildToolGuide(safeToolsJson, true, false)
+            require(!toolGuide.startsWith("ERROR:")) { toolGuide.removePrefix("ERROR:") }
             val savedConversations = ChatStore(applicationContext, ownerId).load()
             val localKnowledge = if (vault.getUser(ownerId, "local_knowledge_enabled", "false").toBoolean()) {
                 LocalKnowledgeStore().retrieve(prompt, savedConversations, emptyList())
