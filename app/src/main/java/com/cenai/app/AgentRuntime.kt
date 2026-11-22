@@ -12,7 +12,10 @@ enum class ToolRisk { SAFE, SENSITIVE, DESTRUCTIVE }
 data class AgentTool(val name: String, val description: String, val risk: ToolRisk, val parameters: JSONObject)
 data class ToolExecution(val toolName: String, val arguments: JSONObject, val output: String, val requiresApproval: Boolean, val completed: Boolean)
 
-class AgentRuntime(private val enabledTools: Set<String>? = null) {
+class AgentRuntime(
+    private val enabledTools: Set<String>? = null,
+    private val arithmeticEvaluator: (String) -> Double = SafeArithmetic::evaluate
+) {
     private val tools = listOf(
         AgentTool("current_time", "Get the current local date and time.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject())),
         AgentTool("calculate", "Evaluate a basic arithmetic expression.", ToolRisk.SAFE, JSONObject().put("type", "object").put("properties", JSONObject().put("expression", JSONObject().put("type", "string"))).put("required", JSONArray().put("expression"))),
@@ -47,7 +50,7 @@ class AgentRuntime(private val enabledTools: Set<String>? = null) {
         return try {
             val output = when (name) {
                 "current_time" -> ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                "calculate" -> SafeArithmetic.evaluate(args.getString("expression")).toString()
+                "calculate" -> arithmeticEvaluator(args.getString("expression")).toString()
                 "count_words" -> { val value = args.getString("text"); JSONObject().put("words", value.trim().split(Regex("\\s+")).count { it.isNotBlank() }).put("characters", value.length).put("characters_without_spaces", value.count { !it.isWhitespace() }).toString() }
                 "format_json" -> JSONObject(args.getString("json")).toString(2)
                 "current_date" -> LocalDate.now().toString()
