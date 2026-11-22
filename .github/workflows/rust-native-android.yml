@@ -150,6 +150,12 @@ jobs:
             adb shell monkey -p com.cenai.app.rustdebug 1
             sleep 25
             adb shell pidof com.cenai.app.rustdebug
+            # Prove the bundled model generates locally without a cloud/network fallback.
+            adb shell settings put global airplane_mode_on 1
+            adb shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
+            adb shell svc wifi disable || true
+            adb shell svc data disable || true
+            test "$(adb shell settings get global airplane_mode_on | tr -d '\\r')" = "1"
             gradle :app-rust:connectedDebugAndroidTest --stacktrace
 
       - name: Generate debug APK SHA-256
