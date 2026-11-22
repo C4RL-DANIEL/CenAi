@@ -33,6 +33,10 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
+concurrency:
+  group: cenai-android-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
