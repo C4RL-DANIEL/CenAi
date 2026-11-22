@@ -61,6 +61,7 @@ class NativeCoreInstrumentedTest {
             NativeCore.parseProviderDelta("OPENAI", """{"choices":[{"delta":{"content":"Hello"}}]}""")
         )
         assertEquals("Invalid API key", NativeCore.parseProviderError("""{"error":{"message":"Invalid API key"}}"""))
+        assertEquals("Hello from cloud", JSONObject(NativeCore.parseCloudResponse("""{"choices":[{"message":{"content":"Hello from cloud"}}]}""")).getString("content"))
         assertEquals("Describe [Image attached] please", NativeCore.stripImageMarkers("Describe [[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]] please"))
 
         val conversation = Conversation(
