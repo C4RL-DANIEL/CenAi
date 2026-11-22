@@ -1,0 +1,252 @@
+//! Provider-neutral message transformation and provider payload construction.
+
+use serde_json::{json, Map, Value};
+
+pub fn build_provider_payload(
+    provider: &str,
+    model: &str,
+    max_tokens: i32,
+    messages_json: &str,
+    custom_params_json: &str,
+) -> Result<String, String> {
+    if model.trim().is_empty() {
+        return Err("Enter a model ID in Settings.".to_owned());
+    }
+    let parsed: Value = serde_json::from_str(messages_json)
+        .map_err(|_| "Conversation messages could not be decoded.".to_owned())?;
+    let messages = parsed.as_array()
+        .ok_or_else(|| "Conversation messages must be a JSON array.".to_owned())?;
+    if messages.is_empty() {
+        return Err("A conversation must contain at least one message.".to_owned());
+    }
+    let mut normalized = Vec::with_capacity(messages.len());
+    for message in messages {
+        let role = message.get("role").and_then(Value::as_str)
+            .ok_or_else(|| "A conversation message is missing its role.".to_owned())?;
+        if !matches!(role, "system" | "user" | "assistant" | "tool") {
+            return Err(format!("Unsupported conversation role: {role}"));
+        }
+        let content = message.get("content").and_then(Value::as_str)
+            .ok_or_else(|| "A conversation message is missing text content.".to_owned())?;
+        normalized.push((role.to_owned(), sanitize_content(content)));
+    }
+
+    let system = normalized.iter().find(|(role, _)| role == "system")
+        .map(|(_, content)| content.clone()).unwrap_or_default();
+    let conversation: Vec<_> = normalized.iter().filter(|(role, _)| role != "system").collect();
+    let max_tokens = max_tokens.clamp(1, 131072);
+
+    let payload = match provider {
+        "CENAI_CLOUD" => {
+            if normalized.iter().any(|(_, content)| !vision_parts(content).iter().all(|(kind, _)| kind == "text")) {
+                return Err("CenAI Cloud currently supports text-only chat. Choose another provider for image attachments.".to_owned());
+            }
+            let mut list = Vec::new();
+            let mut remaining = 78_000usize;
+            for (role, content) in normalized.iter().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
+                if remaining == 0 { break; }
+                let excerpt: String = content.chars().take(remaining.min(20_000)).collect();
+                if !excerpt.trim().is_empty() {
+                    list.push(json!({
+                        "role": if role == "tool" { "assistant" } else { role },
+                        "content": excerpt
+                    }));
+                    remaining = remaining.saturating_sub(excerpt.chars().count());
+                }
+            }
+            json!({
+                "model": model,
+                "stream": false,
+                "max_tokens": max_tokens.clamp(1, 1024),
+                "messages": list
+            })
+        }
+        "CLAUDE" => {
+            let mut list = Vec::new();
+            for (role, content) in &conversation {
+                let parts = vision_parts(content);
+                let blocks: Vec<Value> = parts.iter().map(|(kind, value)| {
+                    if kind == "text" {
+                        json!({"type":"text","text":value})
+                    } else {
+                        json!({"type":"image","source":{"type":"base64","media_type":kind,"data":value}})
+                    }
+                }).collect();
+                let content_value = if blocks.len() == 1 && blocks[0]["type"] == "text" {
+                    Value::String(content.clone())
+                } else {
+                    Value::Array(blocks)
+                };
+                list.push(json!({"role":role,"content":content_value}));
+            }
+            let mut payload = json!({
+                "model": model,
+                "max_tokens": max_tokens,
+                "stream": true,
+                "messages": list
+            });
+            if !system.is_blank() {
+                payload["system"] = Value::String(system);
+            }
+            payload
+        }
+        "GEMINI" => {
+            let mut contents = Vec::new();
+            for (role, content) in &conversation {
+                let parts: Vec<Value> = vision_parts(content).iter().map(|(kind, value)| {
+                    if kind == "text" {
+                        json!({"text":value})
+                    } else {
+                        json!({"inline_data":{"mime_type":kind,"data":value}})
+                    }
+                }).collect();
+                contents.push(json!({
+                    "role": if role == "assistant" { "model" } else { "user" },
+                    "parts": parts
+                }));
+            }
+            let mut payload = json!({
+                "contents": contents,
+                "generationConfig": {"maxOutputTokens": max_tokens}
+            });
+            if !system.is_blank() {
+                payload["systemInstruction"] = json!({"parts":[{"text":system}]});
+            }
+            payload
+        }
+        "OPENAI" | "DEEPSEEK" | "CUSTOM" => {
+            let mut list = Vec::new();
+            for (role, content) in &normalized {
+                let parts = vision_parts(content);
+                let has_image = parts.iter().any(|(kind, _)| kind != "text");
+                let content_value = if !has_image {
+                    Value::String(content.clone())
+                } else {
+                    let blocks: Vec<Value> = parts.iter().map(|(kind, value)| {
+                        if kind == "text" {
+                            json!({"type":"text","text":value})
+                        } else {
+                            json!({"type":"image_url","image_url":{"url":format!("data:{kind};base64,{value}")}})
+                        }
+                    }).collect();
+                    Value::Array(blocks)
+                };
+                list.push(json!({"role":role,"content":content_value}));
+            }
+            let mut payload = json!({
+                "model": model,
+                "stream": true,
+                "max_tokens": max_tokens,
+                "messages": list
+            });
+            if provider == "CUSTOM" {
+                let custom: Value = serde_json::from_str(custom_params_json)
+                    .map_err(|_| "Custom parameters must be valid JSON.".to_owned())?;
+                let object = custom.as_object()
+                    .ok_or_else(|| "Custom parameters must be a JSON object.".to_owned())?;
+                for (key, value) in object {
+                    if !matches!(key.as_str(), "model" | "messages" | "stream") {
+                        payload[key] = value.clone();
+                    }
+                }
+            }
+            payload
+        }
+        _ => return Err("Unsupported AI provider.".to_owned()),
+    };
+    serde_json::to_string(&payload).map_err(|_| "Could not encode the provider request.".to_owned())
+}
+
+fn sanitize_content(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' {
+            if chars.peek() == Some(&'\n') { chars.next(); }
+            output.push('\n');
+        } else if !ch.is_control() || ch == '\n' || ch == '\t' {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+fn vision_parts(content: &str) -> Vec<(String, String)> {
+    const PREFIX: &str = "[[CENAI_IMAGE|";
+    let mut result = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(relative) = content[cursor..].find(PREFIX) {
+        let start = cursor + relative;
+        let payload_start = start + PREFIX.len();
+        let Some(close_relative) = content[payload_start..].find("]]") else { break; };
+        let close = payload_start + close_relative;
+        let raw = &content[payload_start..close];
+        let mut fields = raw.split('|');
+        let mime = fields.next().unwrap_or("");
+        let data = fields.next().unwrap_or("");
+        let valid = fields.next().is_none()
+            && !mime.is_empty()
+            && mime.len() <= 64
+            && data.len() > 16
+            && data.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '='));
+        if valid {
+            let before = &content[cursor..start];
+            if !before.trim().is_empty() { result.push(("text".to_owned(), before.to_owned())); }
+            result.push((mime.to_owned(), data.to_owned()));
+            cursor = close + 2;
+        } else {
+            cursor = payload_start;
+        }
+    }
+    let tail = &content[cursor..];
+    if !tail.trim().is_empty() || result.is_empty() {
+        result.push(("text".to_owned(), tail.to_owned()));
+    }
+    result
+}
+
+trait Blank {
+    fn is_blank(&self) -> bool;
+}
+impl Blank for String {
+    fn is_blank(&self) -> bool { self.trim().is_empty() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_provider_payload;
+    use serde_json::Value;
+
+    fn messages() -> String {
+        r#"[{"role":"system","content":"Be helpful"},{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi"}]"#.to_owned()
+    }
+
+    #[test]
+    fn builds_openai_and_custom_payloads() {
+        let openai = build_provider_payload("OPENAI", "gpt-test", 100, &messages(), "{}").unwrap();
+        let value: Value = serde_json::from_str(&openai).unwrap();
+        assert_eq!(value["messages"].as_array().unwrap().len(), 3);
+        let custom = build_provider_payload("CUSTOM", "local", 100, &messages(), r#"{"temperature":0.2,"stream":false}"#).unwrap();
+        let value: Value = serde_json::from_str(&custom).unwrap();
+        assert_eq!(value["temperature"], 0.2);
+        assert_eq!(value["stream"], true);
+    }
+
+    #[test]
+    fn builds_claude_and_gemini_system_fields() {
+        let claude = build_provider_payload("CLAUDE", "claude-test", 200, &messages(), "{}").unwrap();
+        let value: Value = serde_json::from_str(&claude).unwrap();
+        assert_eq!(value["system"], "Be helpful");
+        let gemini = build_provider_payload("GEMINI", "gemini-test", 200, &messages(), "{}").unwrap();
+        let value: Value = serde_json::from_str(&gemini).unwrap();
+        assert_eq!(value["systemInstruction"]["parts"][0]["text"], "Be helpful");
+        assert_eq!(value["contents"][1]["role"], "model");
+    }
+
+    #[test]
+    fn rejects_cloud_images_and_unknown_providers() {
+        let image = r#"[{"role":"user","content":"[[CENAI_IMAGE|image/png|YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=]]"}]"#;
+        assert!(build_provider_payload("CENAI_CLOUD", "cloud-model", 100, image, "{}").is_err());
+        assert!(build_provider_payload("UNKNOWN", "model", 100, &messages(), "{}").is_err());
+    }
+}
