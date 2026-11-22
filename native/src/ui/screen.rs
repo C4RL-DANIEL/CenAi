@@ -155,6 +155,12 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(8.0);
     ui.label(text("A little more than a chat.", 25.0, egui::Color32::WHITE).strong());
     ui.label(text("Think it through. Build it. Get it done.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    if !state.agent_action_status.is_empty() {
+        ui.add_space(6.0);
+        surface(ui, |ui| {
+            ui.label(text(&state.agent_action_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        });
+    }
     ui.add_space(16.0);
 
     if state.conversation.messages().next().is_none() {
