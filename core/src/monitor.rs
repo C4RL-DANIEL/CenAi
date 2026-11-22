@@ -57,6 +57,6 @@ mod tests {
     #[test]
     fn stores_only_failure_category_not_error_text() {
         assert_eq!(failure_category("request HTTP 429 private-token", "IOException"), "HTTP 429");
-        assert_eq!(failure_category("private prompt", "SomeVeryLongExceptionNameThatMustBeTruncatedAtFortyEightCharsAndMore"), "SomeVeryLongExceptionNameThatMustBeTruncatedAtFortyEightCharsAnd");
+        assert_eq!(failure_category("private prompt", "SomeVeryLongExceptionNameThatMustBeTruncatedAtFortyEightCharsAndMore"), "SomeVeryLongExceptionNameThatMustBeTruncatedAtFo");
     }
 }
