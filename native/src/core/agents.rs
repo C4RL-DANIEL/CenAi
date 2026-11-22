@@ -565,6 +565,63 @@ mod tests {
     }
 
     #[test]
+    fn execution_history_records_approval_start_and_completion_in_order() {
+        let mut plan = TaskPlan {
+            id: "task-history".into(), goal: "Track every execution transition".into(),
+            stopped: false, events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Implement".into(),
+                status: StepStatus::Pending, depends_on: Vec::new(), output: None,
+            }],
+        };
+        plan.request_step_approval(1).unwrap();
+        plan.resolve_step_approval(1, true).unwrap();
+        plan.begin_step(1).unwrap();
+        plan.complete_step(1).unwrap();
+        let kinds = plan.events.iter().map(|event| event.kind).collect::<Vec<_>>();
+        assert_eq!(kinds, vec![
+            TaskExecutionEventKind::ApprovalRequested,
+            TaskExecutionEventKind::ApprovalGranted,
+            TaskExecutionEventKind::Started,
+            TaskExecutionEventKind::Completed,
+        ]);
+        assert!(plan.events.windows(2).all(|pair| pair[0].sequence < pair[1].sequence));
+        assert!(plan.validate_persisted().is_ok());
+        assert!(plan.validate().is_err());
+        let encoded = serde_json::to_string(&plan).unwrap();
+        let decoded: TaskPlan = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, plan);
+    }
+
+    #[test]
+    fn execution_history_is_bounded_and_rejects_invalid_event_references() {
+        let mut plan = TaskPlan {
+            id: "task-history-bound".into(), goal: "Bound execution history".into(),
+            stopped: false, events: Vec::new(),
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Developer, title: "Work".into(),
+                status: StepStatus::Pending, depends_on: Vec::new(), output: None,
+            }],
+        };
+        for _ in 0..140 {
+            plan.record_event(None, TaskExecutionEventKind::Started, Some("Recorded"));
+        }
+        assert_eq!(plan.events.len(), 128);
+        assert_eq!(plan.events.first().unwrap().sequence, 13);
+        assert!(plan.validate_persisted().is_ok());
+        plan.events[0].step_id = Some(999);
+        assert!(plan.validate_persisted().is_err());
+    }
+
+    #[test]
+    fn older_task_plan_json_defaults_to_empty_execution_history() {
+        let json = r#"{"id":"legacy","goal":"Old saved plan","steps":[{"id":1,"role":"developer","title":"Work","status":"pending","depends_on":[],"output":null}],"stopped":false}"#;
+        let plan: TaskPlan = serde_json::from_str(json).unwrap();
+        assert!(plan.events.is_empty());
+        assert!(plan.validate_persisted().is_ok());
+    }
+
+    #[test]
     fn dependency_cycles_are_rejected() {
         let plan = TaskPlan {
             id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
