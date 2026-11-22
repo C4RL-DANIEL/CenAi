@@ -605,3 +605,27 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_buildToolGuide(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildSynthesisPrompt(
+    mut env: JNIEnv,
+    _class: JClass,
+    user_request: JString,
+    answers_json: JString,
+) -> jstring {
+    let Some(request_value) = read_java_string(&mut env, &user_request) else {
+        return std::ptr::null_mut();
+    };
+    let Some(answers_value) = read_java_string(&mut env, &answers_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match providers::build_synthesis_prompt(&request_value, &answers_value) {
+        Ok(prompt) => prompt,
+        Err(error) => format!("ERROR:{error}"),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
