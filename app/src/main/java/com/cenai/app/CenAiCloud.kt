@@ -92,6 +92,7 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     suspend fun refreshSession(): Boolean {
+        if (vault.get("supabase_user_id").isBlank()) return false
         val refresh = vault.getSecret("supabase_refresh_token")
         if (refresh.isBlank()) return false
         return try {
@@ -198,6 +199,6 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         return ownerId.isNotBlank() && vault.getUser(ownerId, "cenai_email_verified", "false") == "true"
     }
 
-    fun accountEmail(): String = vault.get("supabase_account_email")
-    fun isSignedIn(): Boolean = vault.getSecret("supabase_access_token").isNotBlank()
+    fun accountEmail(): String = if (vault.get("supabase_user_id").isNotBlank()) vault.get("supabase_account_email") else ""
+    fun isSignedIn(): Boolean = vault.get("supabase_user_id").isNotBlank() && vault.getSecret("supabase_access_token").isNotBlank()
 }
