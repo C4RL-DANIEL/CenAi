@@ -795,6 +795,8 @@ impl WgpuRenderer {
 
         let Some(api) = self.api.clone() else {
             let prompt = conversation_prompt_for_offline(&self.app_state.conversation);
+            #[cfg(not(target_os = "android"))]
+            let _ = &prompt;
             let generation = self.account_generation;
             let sender = self.response_tx.clone();
             #[cfg(target_os = "android")]
