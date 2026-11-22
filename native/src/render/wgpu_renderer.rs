@@ -1618,6 +1618,7 @@ impl WgpuRenderer {
                                     break;
                                 }
                             }
+                            let acknowledgement_succeeded = acknowledgement_error.is_none();
                             self.app_state.automation_status = if let Some(error) = acknowledgement_error {
                                 format!("Reminder saved, but scheduler acknowledgement failed and will retry: {error}")
                             } else {
@@ -1630,6 +1631,12 @@ impl WgpuRenderer {
                             self.app_state.automation_status = "A scheduled task is due, but its reminder could not be saved. It will retry.".into();
                         }
                         self.app_state.automations = scheduler.snapshot(&self.active_user_id);
+                        if reminder_saved && acknowledgement_succeeded {
+                            #[cfg(target_os = "android")]
+                            if let Some(app) = self.android_app.as_ref() {
+                                schedule_android_automation_reminders(app, &self.app_state.automations);
+                            }
+                        }
                     }
                     Ok(_) => {}
                     Err(error) => self.app_state.automation_status = format!("Automation scheduler could not persist its run cursor: {error}"),
