@@ -1,0 +1,92 @@
+name: Rust Native Android CI
+
+on:
+  push:
+    branches:
+      - "rewrite/**"
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - ".github/workflows/rust-native-android.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - ".github/workflows/rust-native-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-native-android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: Build Rust NativeActivity APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native -> target
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Compile Rust for Android ABIs
+        working-directory: native
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app-rust/src/main/jniLibs build --release --locked
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Assemble Rust-native debug APK
+        run: gradle :app-rust:assembleDebug --stacktrace
+
+      - name: Verify APK contains both native libraries
+        run: |
+          APK="$(find app-rust/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcenai_native.so'
+          unzip -l "$APK" | grep -q 'lib/x86_64/libcenai_native.so'
+          sha256sum "$APK" > "$APK.sha256"
+
+      - name: Upload Rust-native debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CenAI-rust-native-debug-apk
+          path: |
+            app-rust/build/outputs/apk/debug/*.apk
+            app-rust/build/outputs/apk/debug/*.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
