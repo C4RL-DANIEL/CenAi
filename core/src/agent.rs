@@ -356,3 +356,53 @@ fn required_text<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, 
     args.get(key).and_then(serde_json::Value::as_str)
         .ok_or_else(|| format!("Missing required text argument: {key}"))
 }
+
+
+/// Returns the Rust-owned tool catalog and JSON schemas for the requested allowlist.
+pub fn tool_catalog(enabled_tools_json: &str) -> Result<String, String> {
+    use serde_json::{json, Value};
+
+    let enabled: Value = serde_json::from_str(enabled_tools_json)
+        .map_err(|_| "Enabled tool list must be valid JSON.".to_owned())?;
+    let allowed = |name: &str| -> bool {
+        enabled.is_null() || enabled.as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(name)))
+    };
+    let tools = vec![
+        json!({"name":"current_time","description":"Get the current local date and time.","risk":"SAFE","parameters":{"type":"object","properties":{}}}),
+        json!({"name":"calculate","description":"Evaluate a basic arithmetic expression.","risk":"SAFE","parameters":{"type":"object","properties":{"expression":{"type":"string"}},"required":["expression"]}}),
+        json!({"name":"count_words","description":"Count words and characters in supplied text.","risk":"SAFE","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}),
+        json!({"name":"format_json","description":"Validate and pretty-print JSON supplied by the user.","risk":"SAFE","parameters":{"type":"object","properties":{"json":{"type":"string"}},"required":["json"]}}),
+        json!({"name":"current_date","description":"Get today's local date.","risk":"SAFE","parameters":{"type":"object","properties":{}}}),
+        json!({"name":"generate_uuid","description":"Generate a random UUID.","risk":"SAFE","parameters":{"type":"object","properties":{}}}),
+        json!({"name":"text_stats","description":"Return line, word and character statistics for text.","risk":"SAFE","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}),
+        json!({"name":"base64_encode","description":"Encode supplied text as Base64.","risk":"SAFE","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}),
+        json!({"name":"base64_decode","description":"Decode a Base64 string as UTF-8 text.","risk":"SAFE","parameters":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}),
+        json!({"name":"open_url","description":"Open an HTTP or HTTPS link in Android after the user approves it.","risk":"SENSITIVE","parameters":{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}}),
+        json!({"name":"open_dialer","description":"Open the Android dialer with a phone number filled in; does not place a call.","risk":"SENSITIVE","parameters":{"type":"object","properties":{"number":{"type":"string"}},"required":["number"]}}),
+        json!({"name":"share_text","description":"Open Android's share sheet with text for the user to choose where to send.","risk":"SENSITIVE","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}),
+        json!({"name":"open_app_settings","description":"Open CenAI's Android app settings.","risk":"SENSITIVE","parameters":{"type":"object","properties":{}}}),
+    ];
+    let filtered: Vec<Value> = tools.into_iter()
+        .filter(|tool| allowed(tool["name"].as_str().unwrap_or("")))
+        .collect();
+    serde_json::to_string(&filtered)
+        .map_err(|_| "Could not encode the Rust tool catalog.".to_owned())
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::tool_catalog;
+
+    #[test]
+    fn exposes_only_enabled_rust_tool_descriptors() {
+        let all: serde_json::Value = serde_json::from_str(&tool_catalog("null").unwrap()).unwrap();
+        assert_eq!(all.as_array().unwrap().len(), 13);
+        let selected: serde_json::Value = serde_json::from_str(
+            &tool_catalog(r#"["calculate","open_dialer"]"#).unwrap()
+        ).unwrap();
+        assert_eq!(selected.as_array().unwrap().len(), 2);
+        assert_eq!(selected[0]["name"], "calculate");
+        assert_eq!(selected[1]["risk"], "SENSITIVE");
+    }
+}
