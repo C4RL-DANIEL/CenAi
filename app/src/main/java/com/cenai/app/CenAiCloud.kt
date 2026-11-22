@@ -89,7 +89,6 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         vault.putSecret("supabase_refresh_token", "")
         vault.put("supabase_user_id", "")
         vault.put("supabase_account_email", "")
-        vault.put("cenai_email_verified", "false")
     }
 
     suspend fun refreshSession(): Boolean {
@@ -189,11 +188,15 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val data = post("https://cenai-website.cenai-app.workers.dev/api/email-otp", JSONObject().put("action", "verify").put("code", code), token)
         if (!data.optBoolean("verified")) throw IOException("Email verification was not confirmed.")
-        vault.put("cenai_email_verified", "true")
+        val ownerId = vault.get("supabase_user_id")
+        vault.putUser(ownerId, "cenai_email_verified", "true")
         return data.optString("message", "Email verified.")
     }
 
-    fun isEmailVerified(): Boolean = vault.get("cenai_email_verified") == "true"
+    fun isEmailVerified(): Boolean {
+        val ownerId = vault.get("supabase_user_id")
+        return ownerId.isNotBlank() && vault.getUser(ownerId, "cenai_email_verified", "false") == "true"
+    }
 
     fun accountEmail(): String = vault.get("supabase_account_email")
     fun isSignedIn(): Boolean = vault.getSecret("supabase_access_token").isNotBlank()
