@@ -90,6 +90,6 @@ mod title_tests {
     fn derives_title_from_first_user_message_with_safe_fallback() {
         assert_eq!(conversation_title(r#"[{"role":"assistant","content":"hello"},{"role":"user","content":"A first prompt"}]"#).unwrap(), "A first prompt");
         assert_eq!(conversation_title(r#"[{"role":"user","content":""}]"#).unwrap(), "New chat");
-        assert_eq!(conversation_title(&format!(r#"[{{"role":"user","content":"{}"}}]"#, "x".repeat(80)).unwrap()).unwrap().len(), 42);
+        assert_eq!(conversation_title(&format!(r#"[{{"role":"user","content":"{}"}}]"#, "x".repeat(80))).unwrap().len(), 42);
     }
 }
