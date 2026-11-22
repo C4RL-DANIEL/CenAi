@@ -75,18 +75,25 @@ pub(crate) fn migrate_legacy_history(
     app: &AndroidApp,
     workspace: &WorkspaceStore,
     expected_email: &str,
-    legacy_verified_owner_email: Option<&str>,
 ) -> Result<usize, String> {
     if expected_email.trim().is_empty() {
         return Err("The signed-in account email is unavailable; legacy history was not imported".into());
     }
+    // Keep the old encrypted account store until history import succeeds. Its
+    // explicitly verified email is the only authority for ownerless legacy chats.
+    let legacy_identity = export_legacy_secure_store(app)
+        .ok()
+        .and_then(|value| crate::core::legacy_history::verified_legacy_owner_email(&value));
     let export = export_legacy_conversation_history(app)?;
     if export.trim().is_empty() || export.trim() == "[]" {
+        clear_legacy_secure_store(app)?;
         return Ok(0);
     }
-    workspace.import_legacy_conversations(&export, expected_email, legacy_verified_owner_email)
+    let imported = workspace.import_legacy_conversations(&export, expected_email, legacy_identity.as_deref())?;
+    // Delete the old store only after the encrypted Rust workspace accepted the export.
+    clear_legacy_secure_store(app)?;
+    Ok(imported)
 }
-
 
 
 fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
@@ -550,18 +557,10 @@ pub fn android_main(app: AndroidApp) {
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
     let legacy_secure_export = export_legacy_secure_store(&app).ok();
-    // Capture the old account identity before credential migration clears the legacy
-    // preferences. It can authorize recovery only when the old store explicitly
-    // recorded a verified email and it matches the currently authenticated account.
-    let legacy_verified_owner_email = legacy_secure_export.as_deref()
-        .and_then(crate::core::legacy_history::verified_legacy_owner_email);
     match legacy_secure_export.as_deref() {
         Some(export) if export != "{}" && !export.is_empty() => {
             match vault.migrate_legacy_export(export) {
-                Ok(true) => match clear_legacy_secure_store(&app) {
-                    Ok(()) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault."),
-                    Err(error) => log::warn!("Legacy credentials migrated, but old-store cleanup was deferred: {error}"),
-                },
+                Ok(true) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault; old-store cleanup is deferred until chat migration completes."),
                 Ok(false) => {},
                 Err(error) => log::warn!("Legacy credential migration was deferred; original encrypted data was retained: {error}"),
             }
