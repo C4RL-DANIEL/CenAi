@@ -988,3 +988,40 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_evaluateDailyUsage(
         Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_maxAgentSteps(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    agent::MAX_AGENT_STEPS
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildToolContinuationPrompt(
+    mut env: JNIEnv,
+    _class: JClass,
+    tool_name: JString,
+    output: JString,
+    scheduled: jboolean,
+) -> jstring {
+    let Some(name_value) = read_java_string(&mut env, &tool_name) else { return std::ptr::null_mut(); };
+    let Some(output_value) = read_java_string(&mut env, &output) else { return std::ptr::null_mut(); };
+    match env.new_string(agent::tool_continuation_prompt(&name_value, &output_value, scheduled != 0)) {
+        Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_agentStepLimitMessage(
+    mut env: JNIEnv,
+    _class: JClass,
+    last_output: JString,
+    scheduled: jboolean,
+) -> jstring {
+    let Some(output_value) = read_java_string(&mut env, &last_output) else { return std::ptr::null_mut(); };
+    match env.new_string(agent::step_limit_message(&output_value, scheduled != 0)) {
+        Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut()
+    }
+}
