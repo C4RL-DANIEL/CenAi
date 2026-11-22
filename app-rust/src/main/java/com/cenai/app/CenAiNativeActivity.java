@@ -17,6 +17,7 @@ import java.io.OutputStream;
 import java.util.UUID;
 
 public final class CenAiNativeActivity extends NativeActivity {
+    private static boolean notificationPermissionRequested = false;
     public static final int REQUEST_ATTACHMENT = 8101;
     public static final int REQUEST_BACKUP = 8102;
     private static final long MAX_IMPORT_BYTES = 100L * 1024L * 1024L;
@@ -25,8 +26,9 @@ public final class CenAiNativeActivity extends NativeActivity {
 
     /** Called only when the user enables scheduled reminders in CenAI. */
     public void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 33
+        if (Build.VERSION.SDK_INT >= 33 && !notificationPermissionRequested
             && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionRequested = true;
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 8120);
         }
     }
