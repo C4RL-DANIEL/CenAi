@@ -15,6 +15,12 @@ pub const RUNTIME_VERSION: &str = "0.18.1";
 pub const BACKEND: &str = "cpu";
 pub const LICENSE: &str = "Apache-2.0";
 
+/// A user-selected offline route always wins; without an authenticated cloud
+/// session, the only available chat route is the bundled local model.
+pub fn should_use_local_inference(offline_enabled: bool, account_available: bool) -> bool {
+    offline_enabled || !account_available
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LightningState {
     NotInstalled,
@@ -74,6 +80,14 @@ mod tests {
         assert!(verify_model_metadata(MODEL_BYTES, MODEL_SHA256).is_ok());
         assert!(verify_model_metadata(MODEL_BYTES - 1, MODEL_SHA256).is_err());
         assert!(verify_model_metadata(MODEL_BYTES, "00".repeat(32).as_str()).is_err());
+    }
+
+    #[test]
+    fn explicit_offline_preference_never_routes_chat_to_cloud() {
+        assert!(should_use_local_inference(true, true));
+        assert!(should_use_local_inference(true, false));
+        assert!(!should_use_local_inference(false, true));
+        assert!(should_use_local_inference(false, false));
     }
 
     #[test]
