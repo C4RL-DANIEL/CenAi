@@ -482,10 +482,10 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             }
             if !plan.stopped && plan.steps.iter().any(|step| matches!(step.status,
                 crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
-                | crate::core::agents::StepStatus::WaitingForApproval)) {
-                if ui.button("Stop this plan").clicked() {
-                    state.pending_plan_action = Some((plan.id.clone(), 0, "stop".into()));
-                }
+                | crate::core::agents::StepStatus::WaitingForApproval))
+                && ui.button("Stop this plan").clicked()
+            {
+                state.pending_plan_action = Some((plan.id.clone(), 0, "stop".into()));
             }
         });
         ui.add_space(6.0);
