@@ -1204,8 +1204,7 @@ impl CenAiApi {
         }
         if answer.is_empty() { return Err("Gemini returned no text content.".into()); }
         Ok(answer)
-        
-
+    }
 }
 
 
