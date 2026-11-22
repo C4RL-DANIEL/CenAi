@@ -157,6 +157,15 @@ jobs:
             app/build/outputs/apk/debug/*.apk.sha256
           if-no-files-found: warn
           retention-days: 30
+      - name: Require bundled Lightning model for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          MODEL="app/src/main/assets/models/lightning.litertlm"
+          test -s "$MODEL" || { echo "::error::The bundled Lightning model is missing. Refusing to publish an incomplete release APK."; exit 1; }
+          if head -c 80 "$MODEL" | grep -q 'version https://git-lfs.github.com/spec/v1'; then
+            echo "::error::Lightning model is only a Git LFS pointer, not bundled model weights."; exit 1
+          fi
+          sha256sum "$MODEL" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Prepare release signing key
         if: startsWith(github.ref, 'refs/tags/v')
         env:
