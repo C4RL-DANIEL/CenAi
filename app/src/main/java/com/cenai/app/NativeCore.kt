@@ -50,6 +50,9 @@ object NativeCore {
     /** Parses provider-specific server-sent event payloads in Rust. */
     external fun parseProviderDelta(provider: String, raw: String): String
 
+    /** Builds a safe provider endpoint and header set in Rust. */
+    external fun buildProviderRequestConfig(provider: String, baseUrlOrModel: String, apiKey: String, oauth: Boolean, projectId: String, customHeadersJson: String): String
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
