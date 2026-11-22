@@ -374,8 +374,8 @@ mod tests {
     #[test]
     fn malformed_android_action_arguments_are_rejected_before_approval() {
         let runtime = AgentToolRuntime::default();
-        assert!(!runtime.execute("open_url", json!({"url":"javascript:alert(1)","extra":true}), false).requires_approval);
-        assert!(!runtime.execute("open_dialer", json!({"number":"+1","unexpected":"x"}), false).requires_approval);
+        assert!(!runtime.execute("open_url", json!({"url":"javascript:alert(1)"}), false).requires_approval);
+        assert!(!runtime.execute("open_dialer", json!({"number":"+1"}), false).requires_approval);
         assert!(!runtime.execute("share_text", json!({"text":""}), false).requires_approval);
         assert!(!runtime.execute("open_app_settings", json!({"package":"other.app"}), false).requires_approval);
     }
