@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.work.CoroutineWorker
-import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -21,9 +20,6 @@ import java.util.concurrent.TimeUnit
  */
 class AutomationReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val taskId = inputData.getString(KEY_ID).orEmpty()
-        val title = inputData.getString(KEY_TITLE).orEmpty()
-        if (taskId.isBlank() || title.isBlank()) return Result.failure()
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(CHANNEL_ID, "CenAI automation reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Reminds you to review scheduled CenAI tasks. No task action runs automatically."
@@ -34,7 +30,7 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
         }
         val pending = PendingIntent.getActivity(
             applicationContext,
-            taskId.hashCode(),
+            id.hashCode(),
             launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -56,22 +52,15 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
     }
 
     companion object {
-        const val KEY_ID = "automation_id"
-        const val KEY_TITLE = "automation_title"
         const val CHANNEL_ID = "cenai_automation_reminders"
     }
 }
 
 object AutomationReminderBridge {
     @JvmStatic
-    fun schedule(context: Context, ownerScope: String, taskId: String, title: String, delayMillis: Long) {
-        require(ownerScope.isNotBlank() && taskId.isNotBlank() && title.isNotBlank())
-        val input = Data.Builder()
-            .putString(AutomationReminderWorker.KEY_ID, "$ownerScope:$taskId")
-            .putString(AutomationReminderWorker.KEY_TITLE, title.take(240))
-            .build()
+    fun schedule(context: Context, ownerScope: String, taskId: String, delayMillis: Long) {
+        require(ownerScope.isNotBlank() && taskId.isNotBlank())
         val request = OneTimeWorkRequestBuilder<AutomationReminderWorker>()
-            .setInputData(input)
             .setInitialDelay(delayMillis.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
