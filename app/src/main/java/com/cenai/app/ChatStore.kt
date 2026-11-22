@@ -19,13 +19,14 @@ class ChatStore(context: Context, ownerId: String = "guest") {
 
     fun load(): MutableList<Conversation> {
         var storedValue = prefs.getString("conversations", null)
+        var legacyPrefsToClear: android.content.SharedPreferences? = null
         val globalOwner = vault.get("supabase_user_id")
         if (storedValue == null && globalOwner == namespace) {
             val legacyPrefs = context.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
             val legacy = legacyPrefs.getString("conversations", null)
             if (!legacy.isNullOrBlank()) {
                 storedValue = legacy
-                legacyPrefs.edit().remove("conversations").apply()
+                legacyPrefsToClear = legacyPrefs
             }
         }
         val stored = storedValue ?: "[]"
@@ -52,6 +53,7 @@ class ChatStore(context: Context, ownerId: String = "guest") {
             }
         }.getOrNull() ?: return mutableListOf()
         if (legacyPlaintext) save(parsed)
+        legacyPrefsToClear?.edit()?.remove("conversations")?.apply()
         return parsed
     }
 
