@@ -30,7 +30,7 @@ pub struct ImportedConversation {
     pub messages: Vec<Message>,
 }
 
-pub fn parse_legacy_history(json: &str, expected_owner_email: &str) -> Result<Vec<ImportedConversation>, String> {
+pub fn parse_legacy_history(json: &str, expected_owner_email: &str, legacy_verified_owner_email: Option<&str>) -> Result<Vec<ImportedConversation>, String> {
     let expected_owner_email = expected_owner_email.trim();
     if expected_owner_email.is_empty() || !expected_owner_email.contains('@') {
         return Err("A verified signed-in account is required to import legacy history".into());
@@ -53,8 +53,14 @@ pub fn parse_legacy_history(json: &str, expected_owner_email: &str) -> Result<Ve
             return Err("Legacy conversation export contains duplicate identifiers".into());
         }
         if conversation.title.len() > 512 { return Err("Legacy conversation title is too large".into()); }
-        if conversation.owner_email.trim().is_empty()
-            || !conversation.owner_email.trim().eq_ignore_ascii_case(expected_owner_email) {
+        let recorded_owner = conversation.owner_email.trim();
+        let ownership_matches = if recorded_owner.is_empty() {
+            legacy_verified_owner_email.is_some_and(|legacy_email|
+                legacy_email.trim().eq_ignore_ascii_case(expected_owner_email))
+        } else {
+            recorded_owner.eq_ignore_ascii_case(expected_owner_email)
+        };
+        if !ownership_matches {
             return Err("Legacy conversation ownership is missing or belongs to a different account; original history was retained".into());
         }
         if conversation.messages.len() > 5000 { return Err("Legacy conversation exceeds the message limit".into()); }
@@ -88,7 +94,7 @@ mod tests {
     use super::*;
     #[test]
     fn parses_roles_order_and_timestamps() {
-        let parsed = parse_legacy_history(r#"[{"id":"c1","title":"First","updatedAt":123,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"world"}]}]"#, "owner@example.com").unwrap();
+        let parsed = parse_legacy_history(r#"[{"id":"c1","title":"First","updatedAt":123,"ownerEmail":"owner@example.com","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"world"}]}]"#, "owner@example.com", None).unwrap();
         assert_eq!(parsed[0].updated_at_unix_ms, 123);
         assert_eq!(parsed[0].title, "First");
         assert_eq!(parsed[0].messages[0].role, MessageRole::User);
@@ -96,22 +102,32 @@ mod tests {
     }
     #[test]
     fn rejects_duplicate_ids_malformed_json_and_unknown_roles() {
-        assert!(parse_legacy_history("{", "owner@example.com").is_err());
-        assert!(parse_legacy_history(r#"[{"id":"x","ownerEmail":"owner@example.com","messages":[]},{"id":"x","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com").is_err());
-        assert!(parse_legacy_history(r#"[{"id":"x","ownerEmail":"owner@example.com","messages":[{"role":"tool","content":"x"}]}]"#, "owner@example.com").is_err());
+        assert!(parse_legacy_history("{", "owner@example.com", None).is_err());
+        assert!(parse_legacy_history(r#"[{"id":"x","ownerEmail":"owner@example.com","messages":[]},{"id":"x","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com", None).is_err());
+        assert!(parse_legacy_history(r#"[{"id":"x","ownerEmail":"owner@example.com","messages":[{"role":"tool","content":"x"}]}]"#, "owner@example.com", None).is_err());
     }
     #[test]
     fn refuses_unowned_or_cross_account_history() {
         let legacy = r#"[{"id":"chat","ownerEmail":"alice@example.com","messages":[]}]"#;
-        assert!(parse_legacy_history(legacy, "").is_err());
-        assert!(parse_legacy_history(legacy, "bob@example.com").is_err());
-        assert!(parse_legacy_history(r#"[{"id":"chat","messages":[]}]"#, "alice@example.com").is_err());
-        assert_eq!(parse_legacy_history(legacy, "ALICE@example.com").unwrap().len(), 1);
+        assert!(parse_legacy_history(legacy, "", None).is_err());
+        assert!(parse_legacy_history(legacy, "bob@example.com", None).is_err());
+        assert!(parse_legacy_history(r#"[{"id":"chat","messages":[]}]"#, "alice@example.com", None).is_err());
+        assert_eq!(parse_legacy_history(legacy, "ALICE@example.com", None).unwrap().len(), 1);
     }
     #[test]
+    fn recovers_ownerless_history_only_with_matching_verified_legacy_account() {
+        let unowned = r#"[{"id":"old-chat","messages":[{"role":"user","content":"saved"}]}]"#;
+        assert!(parse_legacy_history(unowned, "alice@example.com", None).is_err());
+        assert!(parse_legacy_history(unowned, "bob@example.com", Some("alice@example.com")).is_err());
+        let recovered = parse_legacy_history(unowned, "alice@example.com", Some("ALICE@example.com")).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].messages[0].body, "saved");
+    }
+
+    #[test]
     fn rejects_path_traversal_and_oversized_messages() {
-        assert!(parse_legacy_history(r#"[{"id":"../escape","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com").is_err());
+        assert!(parse_legacy_history(r#"[{"id":"../escape","ownerEmail":"owner@example.com","messages":[]}]"#, "owner@example.com", None).is_err());
         let json = format!(r#"[{{"id":"x","ownerEmail":"owner@example.com","messages":[{{"role":"user","content":"{}"}}]}}]"#, "x".repeat(200_001));
-        assert!(parse_legacy_history(&json, "owner@example.com").is_err());
+        assert!(parse_legacy_history(&json, "owner@example.com", None).is_err());
     }
 }
