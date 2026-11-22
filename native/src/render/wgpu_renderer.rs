@@ -1513,6 +1513,8 @@ impl WgpuRenderer {
                         "deny" => updated.resolve_step_approval(step_id, false),
                         "complete" => updated.complete_step(step_id),
                         "fail" => updated.fail_step(step_id),
+                        "pause" if step_id == 0 => updated.pause(),
+                        "resume" if step_id == 0 => updated.resume(),
                         "stop" if step_id == 0 => { updated.stop(); Ok(()) },
                         _ => Err("Unknown task-plan action"),
                     };
@@ -1537,6 +1539,8 @@ impl WgpuRenderer {
                                             "deny" => format!("Step {step_id} declined and cancelled."),
                                             "complete" => format!("Step {step_id} marked complete."),
                                             "fail" => format!("Step {step_id} marked failed. Dependent steps remain blocked."),
+                                            "pause" => "Task plan paused. No new steps will start; already-running work may finish.".into(),
+                                            "resume" => "Task plan resumed. Ready steps can now be started.".into(),
                                             "stop" => "Task plan stopped. All pending work was cancelled.".into(),
                                             _ => "Task plan updated.".into(),
                                         };
