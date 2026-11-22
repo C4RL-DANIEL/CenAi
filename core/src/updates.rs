@@ -24,13 +24,11 @@ pub fn compare_versions(a: &str, b: &str) -> i32 {
             Ordering::Equal => {}
         }
     }
-    let (Some(ap), Some(bp)) = (ap, bp) else {
-        return match (ap.is_some(), bp.is_some()) {
-            (false, false) => 0,
-            (false, true) => 1,
-            (true, false) => -1,
-            _ => unreachable!(),
-        };
+    let (ap, bp) = match (ap, bp) {
+        (None, None) => return 0,
+        (None, Some(_)) => return 1,
+        (Some(_), None) => return -1,
+        (Some(ap), Some(bp)) => (ap, bp),
     };
     for index in 0..ap.len().max(bp.len()) {
         let Some(left) = ap.get(index) else { return -1; };
