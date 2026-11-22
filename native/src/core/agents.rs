@@ -16,6 +16,9 @@ pub struct TaskStep {
     pub title: String,
     pub status: StepStatus,
     pub depends_on: Vec<u64>,
+    /// Bounded AI-generated result; it is data, never an executable command.
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -150,8 +153,10 @@ mod tests {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "Test".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Test".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         assert_eq!(plan.ready_steps(), vec![1]);
@@ -167,8 +172,10 @@ mod tests {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "Test".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Test".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         plan.steps[0].status = StepStatus::Completed;
@@ -186,8 +193,10 @@ mod tests {
         let mut plan = TaskPlan {
             id: "task-2".into(), goal: "Run a protected workflow".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "Run external action".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Run external action".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         assert!(plan.begin_step(2).is_err());
@@ -208,9 +217,12 @@ mod tests {
         let mut plan = TaskPlan {
             id: "task-3".into(), goal: "Test denied work".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "External action".into(), status: StepStatus::Pending, depends_on: vec![1] },
-                TaskStep { id: 3, role: AgentRole::QualityReviewer, title: "Review".into(), status: StepStatus::Pending, depends_on: vec![2] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "External action".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
+                TaskStep { id: 3, role: AgentRole::QualityReviewer, title: "Review".into(), status: StepStatus::Pending, depends_on: vec![2]
+                        output: None, },
             ],
         };
         plan.request_step_approval(1).unwrap();
@@ -228,8 +240,10 @@ mod tests {
         let mut plan = TaskPlan {
             id: "task-persist".into(), goal: "Persist execution".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         plan.begin_step(1).unwrap();
@@ -246,8 +260,10 @@ mod tests {
         let plan = TaskPlan {
             id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
             steps: vec![
-                TaskStep { id: 1, role: AgentRole::Developer, title: "A".into(), status: StepStatus::Pending, depends_on: vec![2] },
-                TaskStep { id: 2, role: AgentRole::Tester, title: "B".into(), status: StepStatus::Pending, depends_on: vec![1] },
+                TaskStep { id: 1, role: AgentRole::Developer, title: "A".into(), status: StepStatus::Pending, depends_on: vec![2]
+                        output: None, },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "B".into(), status: StepStatus::Pending, depends_on: vec![1]
+                        output: None, },
             ],
         };
         assert!(plan.validate().is_err());
