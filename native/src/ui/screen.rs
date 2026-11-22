@@ -167,14 +167,16 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
         .take(8)
         .map(|item| (item.id.clone(), item.title.clone()))
         .collect();
-    if !history_items.is_empty() {
-        surface(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(text("RECENT CONVERSATIONS", 9.0, egui::Color32::from_rgb(143, 154, 180)).strong());
-                if ui.add_enabled(!state.conversation.sending, egui::Button::new("+ New chat")).clicked() {
-                    state.pending_new_conversation = true;
-                }
-            });
+    surface(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(text("RECENT CONVERSATIONS", 9.0, egui::Color32::from_rgb(143, 154, 180)).strong());
+            if ui.add_enabled(!state.conversation.sending, egui::Button::new("+ New chat")).clicked() {
+                state.pending_new_conversation = true;
+            }
+        });
+        if history_items.is_empty() {
+            ui.label(text("Your saved conversations will appear here.", 10.0, egui::Color32::from_rgb(143, 154, 180)));
+        } else {
             ui.horizontal_wrapped(|ui| {
                 for (id, title) in &history_items {
                     let label = if title.trim().is_empty() { "New chat" } else { title.as_str() };
@@ -184,9 +186,9 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                     }
                 }
             });
-        });
-        ui.add_space(8.0);
-    }
+        }
+    });
+    ui.add_space(8.0);
 
     if state.conversation.messages().next().is_none() {
         surface(ui, |ui| {
