@@ -58,6 +58,26 @@ pub struct TaskPlan {
 }
 
 impl TaskPlan {
+    pub fn is_paused(&self) -> bool {
+        self.events.iter().rev().find(|event| event.step_id.is_none()
+            && matches!(event.kind, TaskExecutionEventKind::PlanPaused | TaskExecutionEventKind::PlanResumed | TaskExecutionEventKind::PlanStopped))
+            .is_some_and(|event| event.kind == TaskExecutionEventKind::PlanPaused)
+    }
+
+    pub fn pause(&mut self) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is already paused"); }
+        self.record_event(None, TaskExecutionEventKind::PlanPaused, None);
+        Ok(())
+    }
+
+    pub fn resume(&mut self) -> Result<(), &'static str> {
+        if self.stopped { return Err("Task plan is stopped"); }
+        if !self.is_paused() { return Err("Task plan is not paused"); }
+        self.record_event(None, TaskExecutionEventKind::PlanResumed, None);
+        Ok(())
+    }
+
     fn record_event(&mut self, step_id: Option<u64>, kind: TaskExecutionEventKind, detail: Option<&str>) {
         let sequence = self.events.last().map_or(1, |event| event.sequence.saturating_add(1));
         let timestamp_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
@@ -144,6 +164,7 @@ impl TaskPlan {
 
     pub fn begin_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is paused"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
             .is_some_and(|step| step.status == StepStatus::Pending
                 && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
@@ -179,6 +200,7 @@ impl TaskPlan {
         explicitly_granted: bool,
     ) -> Result<ApprovalDecision, &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is paused"); }
         let step = self.steps.iter().find(|step| step.id == step_id).ok_or("Task step does not exist")?;
         if step.status != StepStatus::Pending
             || !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate|
@@ -264,6 +286,7 @@ impl TaskPlan {
     /// The old blocker explanation is cleared so a new execution cannot inherit stale output.
     pub fn retry_blocked_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is paused"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
             .is_some_and(|step| step.status == StepStatus::Blocked
                 && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
@@ -279,6 +302,7 @@ impl TaskPlan {
     /// Any prior output is cleared so a later attempt cannot display stale data.
     pub fn retry_failed_step(&mut self, step_id: u64) -> Result<(), &'static str> {
         if self.stopped { return Err("Task plan is stopped"); }
+        if self.is_paused() { return Err("Task plan is paused"); }
         let ready = self.steps.iter().find(|step| step.id == step_id)
             .is_some_and(|step| step.status == StepStatus::Failed
                 && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)));
@@ -293,7 +317,7 @@ impl TaskPlan {
     /// Returns interrupted steps that can safely be retried now. Only steps
     /// with a recorded interruption and completed prerequisites are eligible.
     pub fn interrupted_steps_ready_to_retry(&self) -> Vec<u64> {
-        if self.stopped { return Vec::new(); }
+        if self.stopped || self.is_paused() { return Vec::new(); }
         self.steps.iter().filter(|step| {
             step.status == StepStatus::Failed
                 && self.events.iter().any(|event| event.step_id == Some(step.id)
@@ -355,7 +379,7 @@ impl TaskPlan {
     }
 
     pub fn ready_steps(&self) -> Vec<u64> {
-        if self.stopped { return Vec::new(); }
+        if self.stopped || self.is_paused() { return Vec::new(); }
         self.steps.iter().filter(|step| step.status == StepStatus::Pending
             && step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)))
             .map(|step| step.id).collect()
