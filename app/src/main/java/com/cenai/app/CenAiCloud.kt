@@ -160,19 +160,15 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     suspend fun setTelemetryConsent(usageAnalytics: Boolean, guardian: Boolean) {
-        telemetryCall(JSONObject().put("action","consent").put("usageAnalytics",usageAnalytics).put("guardian",guardian))
+        telemetryCall(JSONObject(NativeCore.buildConsentTelemetryPayload(usageAnalytics, guardian)))
     }
 
     suspend fun recordUsageEvent(provider: String, model: String, inputTokens: Int, outputTokens: Int, latencyMs: Long, status: String, errorCode: String = "") {
-        telemetryCall(JSONObject().put("action","usage").put("provider",provider).put("model",model)
-            .put("inputTokens",inputTokens).put("outputTokens",outputTokens).put("latencyMs",latencyMs)
-            .put("status",status).put("errorCode",errorCode.take(80)))
+        telemetryCall(JSONObject(NativeCore.buildUsageTelemetryPayload(provider, model, inputTokens, outputTokens, latencyMs, status, errorCode)))
     }
 
     suspend fun sendGuardianReport(appVersion: String, androidVersion: String, batteryPercent: Int, availableRamMb: Long, freeStorageMb: Long, network: String, crashCategory: String) {
-        telemetryCall(JSONObject().put("action","guardian").put("appVersion",appVersion).put("androidVersion",androidVersion)
-            .put("batteryPercent",batteryPercent).put("availableRamMb",availableRamMb).put("freeStorageMb",freeStorageMb)
-            .put("network",network).put("crashCategory",crashCategory.take(64)))
+        telemetryCall(JSONObject(NativeCore.buildGuardianTelemetryPayload(appVersion, androidVersion, batteryPercent, availableRamMb, freeStorageMb, network, crashCategory)))
     }
 
     suspend fun sendEmailOtp(): String {
