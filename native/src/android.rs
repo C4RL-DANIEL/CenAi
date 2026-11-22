@@ -50,6 +50,25 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
     local
 }
 
+fn export_legacy_secure_store(app: &AndroidApp) -> Result<String, String> {
+    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
+    let activity = activity_local(&mut env, app).map_err(|error| error.to_string())?;
+    let value = env.call_method(&activity, "exportLegacySecureStore", "()Ljava/lang/String;", &[])
+        .map_err(|error| error.to_string())?.l().map_err(|error| error.to_string())?;
+    let value = JString::from(value);
+    env.get_string(&value).map(|value| value.into()).map_err(|error| error.to_string())
+}
+
+fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
+    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
+    let activity = activity_local(&mut env, app).map_err(|error| error.to_string())?;
+    env.call_method(&activity, "clearLegacySecureStoreAfterMigration", "()V", &[])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub(crate) fn current_app_version(app: &AndroidApp) -> Result<String, String> {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
     let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
@@ -487,6 +506,20 @@ pub fn android_main(app: AndroidApp) {
         Ok(vault) => Arc::new(vault),
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
+    match export_legacy_secure_store(&app) {
+        Ok(export) if export != "{}" && !export.is_empty() => {
+            match vault.migrate_legacy_export(&export) {
+                Ok(true) => match clear_legacy_secure_store(&app) {
+                    Ok(()) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault."),
+                    Err(error) => log::warn!("Legacy credentials migrated, but old-store cleanup was deferred: {error}"),
+                },
+                Ok(false) => {},
+                Err(error) => log::warn!("Legacy credential migration was deferred; original encrypted data was retained: {error}"),
+            }
+        }
+        Ok(_) => {},
+        Err(error) => log::warn!("Legacy secure-store export was unavailable; original data was retained: {error}"),
+    }
     let workspace_root = app.internal_data_path().unwrap_or_default();
     let api = CenAiApi::new(vault).ok();
     // Always construct the workspace through the authenticated API so its
