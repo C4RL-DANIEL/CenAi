@@ -94,7 +94,7 @@ class AccountIsolationInstrumentedTest {
         vault.put("provider", "OPENAI")
         vault.put("custom_headers", """{"x-legacy":"private"}""")
         vault.putSecret("agent_memory_legacy-owner", "Legacy private memory")
-        vault.saveApiKey("legacy-api-key")
+        vault.putSecret("api_key", "legacy-api-key")
         vault.migrateLegacyAccountData("legacy-owner")
 
         assertEquals("OPENAI", vault.getUser("legacy-owner", "provider"))
