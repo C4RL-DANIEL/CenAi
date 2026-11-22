@@ -559,7 +559,11 @@ impl WorkspaceStore {
             return Err("Ecosystem Engine registry limit reached".into());
         }
         let mut registry = CapabilityRegistry::new(trusted_publishers.iter().cloned());
+        let mut manifest_ids = std::collections::HashSet::new();
         for manifest in manifests {
+            if !manifest_ids.insert(manifest.app_id.clone()) {
+                return Err("Ecosystem registry contains a duplicate app identifier".into());
+            }
             registry.register(manifest.clone(), supported_protocol)
                 .map_err(|error| format!("Invalid or untrusted app manifest: {error:?}"))?;
         }
@@ -572,8 +576,11 @@ impl WorkspaceStore {
             if grant.granted_scopes.len() > 64 {
                 return Err("Ecosystem grant exceeds the scope limit".into());
             }
-            if !grant.revoked && grant.granted_scopes.iter().any(|scope| {
-                !registry.authorize(&self.user_identity, grant, scope)
+            let manifest = manifests.iter().find(|manifest| manifest.app_id == grant.app_id)
+                .ok_or("Ecosystem grant references an unregistered app")?;
+            if grant.granted_scopes.iter().any(|scope| {
+                !manifest.capabilities.iter().any(|declared| declared == scope)
+                    || !manifest.requested_scopes.iter().any(|requested| requested == scope)
             }) {
                 return Err("Ecosystem grant exceeds the registered manifest scopes".into());
             }
