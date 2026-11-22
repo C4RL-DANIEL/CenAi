@@ -43,7 +43,7 @@ class ChatRepository(
         require(preparedMessages.all { NativeCore.isPromptWithinLimit(it.content, 3_000_000) }) {
             "A conversation message exceeds CenAI's 3,000,000-character safety limit."
         }
-        if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && preparedMessages.any { CENAI_IMAGE_MARKER.containsMatchIn(it.content) }) {
+        if (provider == Provider.DEEPSEEK && model !in setOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp") && preparedMessages.any { NativeCore.containsImageMarker(it.content) }) {
             throw IllegalArgumentException("DeepSeek image understanding requires the deepseek-flash model. Update the model ID in Settings.")
         }
         val oauthCredential = if (provider == Provider.GEMINI) GoogleGeminiOAuth(vault) { ownerId() }.credential() else "" to false
@@ -161,6 +161,3 @@ class ChatRepository(
 /** JSONObject.optString() may stringify JSONObject.NULL as the literal word "null". */
 private fun JSONObject.stringOrEmpty(name: String): String =
     (opt(name) as? String).orEmpty()
-
-/** Marker used only for fast capability checks; Rust performs provider payload parsing. */
-private val CENAI_IMAGE_MARKER = Regex("""\[\[CENAI_IMAGE\|([^|]+)\|([A-Za-z0-9+/=]+)]]""")
