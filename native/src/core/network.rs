@@ -884,16 +884,16 @@ impl CenAiApi {
             .map_err(str::to_owned)?;
         let code = crate::core::google_oauth::validate_callback(callback, &state)
             .map_err(str::to_owned)?;
-        // Consume the callback state before any network I/O. A retry must start
-        // a fresh browser authorization instead of replaying the same redirect.
-        self.vault.save_provider_key("gemini_oauth_state", "")?;
-        self.vault.save_provider_key("gemini_oauth_verifier", "")?;
-        self.vault.save_provider_key("gemini_oauth_started_at", "")?;
+        // Read the PKCE verifier before consuming it. Consume the callback state
+        // and verifier before network I/O so a copied redirect cannot be replayed.
         let client_id = self.vault.provider_key("gemini_oauth_client")?;
         let verifier = self.vault.provider_key("gemini_oauth_verifier")?;
         if client_id.is_empty() || verifier.is_empty() {
             return Err("Google OAuth setup expired. Start the connection again.".into());
         }
+        self.vault.save_provider_key("gemini_oauth_state", "")?;
+        self.vault.save_provider_key("gemini_oauth_verifier", "")?;
+        self.vault.save_provider_key("gemini_oauth_started_at", "")?;
         let response = self.provider_client.post("https://oauth2.googleapis.com/token")
             .form(&[
                 ("client_id", client_id.as_str()),
