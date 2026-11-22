@@ -198,10 +198,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
     var speechOutputReady by remember { mutableStateOf(false) }
-    var speechRate by remember { mutableFloatStateOf(vault.get("speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
-    var speechPitch by remember { mutableFloatStateOf(vault.get("speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
-    var speechLanguage by remember { mutableStateOf(vault.get("speech_language", "device")) }
-    var speechInputLanguage by remember { mutableStateOf(vault.get("speech_input_language", "device")) }
+    var speechRate by remember(activeAccountId) { mutableFloatStateOf(vault.getUser(activeAccountId, "speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
+    var speechPitch by remember(activeAccountId) { mutableFloatStateOf(vault.getUser(activeAccountId, "speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
+    var speechLanguage by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "speech_language", "device")) }
+    var speechInputLanguage by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "speech_input_language", "device")) }
     val textToSpeech = remember { TextToSpeech(context) { status -> speechOutputReady = status == TextToSpeech.SUCCESS } }
     LaunchedEffect(speechOutputReady, speechRate, speechPitch, speechLanguage) {
         if (speechOutputReady) {
@@ -238,7 +238,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var dailyLimit by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "daily_request_limit", "0")) }
     var updateChannel by remember { mutableStateOf(vault.get("update_channel", "stable")) }
     var systemPrompt by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "system_prompt")) }
-    var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getSecret("agent_memory_$activeAccountId")) }
+    var agentMemory by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "agent_memory")) }
     var customHeaders by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "custom_headers").ifBlank { "{}" }) }
     var customParams by remember(activeAccountId) { mutableStateOf(vault.getUserSecret(activeAccountId, "custom_params").ifBlank { "{}" }) }
     var maxTokens by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "max_tokens", "4096")) }
@@ -309,7 +309,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         if (busy) return
         val today = java.time.LocalDate.now().toString()
         if (vault.getUser(activeAccountId, "usage_day") != today) {
-            vault.put("usage_day", today)
+            vault.putUser(activeAccountId, "usage_day", today)
             vault.putUser(activeAccountId, "usage_count", "0")
         }
         val used = vault.getUser(activeAccountId, "usage_count", "0").toIntOrNull() ?: 0
@@ -710,7 +710,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                 }
                                 Spacer(Modifier.weight(1f))
                                 val configured = !providerKeys[provider].isNullOrBlank() ||
-                                    (provider == Provider.GEMINI && (vault.getSecret("gemini_oauth_access_token").isNotBlank() || vault.getSecret("gemini_oauth_refresh_token").isNotBlank()))
+                                    (provider == Provider.GEMINI && (vault.getUserSecret(activeAccountId, "gemini_oauth_access_token").isNotBlank() || vault.getUserSecret(activeAccountId, "gemini_oauth_refresh_token").isNotBlank()))
                                 val stateLabel = when {
                                     localModelEnabled && localModelReady -> "OFFLINE"
                                     configured -> "READY"
@@ -1583,24 +1583,28 @@ Text("SOFTWARE UPDATE", color = palette.accent, fontSize = 10.sp, fontWeight = F
             confirmButton = { TextButton(onClick = {
                 Provider.entries.forEach { p -> vault.saveApiKey(providerKeys[p].orEmpty(), p, activeAccountId) }
                 onUiStyleChange(uiStyle)
-                vault.put("provider", provider.name)
-                vault.put("model", model); vault.put("model_${provider.name}", model)
-                vault.put("base_url", base); vault.put("base_url_${provider.name}", base)
-                vault.put("multi_agent", multiAgent.toString())
+                vault.putUser(activeAccountId, "provider", provider.name)
+                vault.putUser(activeAccountId, "model", model)
+                vault.putUser(activeAccountId, "base_url", base)
+                vault.putUser(activeAccountId, "model_${provider.name}", model)
+                vault.putUser(activeAccountId, "base_url_${provider.name}", base)
+                vault.putUser(activeAccountId, "multi_agent", multiAgent.toString())
                 vault.putUser(activeAccountId, "agent_planning", agentPlanning.toString())
-                vault.put("google_oauth_client_id", googleOAuthClientId)
-                vault.put("google_cloud_project_id", googleCloudProjectId)
+                vault.putUser(activeAccountId, "google_oauth_client_id", googleOAuthClientId)
+                vault.putUser(activeAccountId, "google_cloud_project_id", googleCloudProjectId)
                 vault.putUser(activeAccountId, "daily_request_limit", dailyLimit.ifBlank { "0" })
-                vault.put("speech_rate", speechRate.toString())
-                vault.put("speech_pitch", speechPitch.toString())
-                vault.put("speech_language", speechLanguage.ifBlank { "device" })
-                vault.put("speech_input_language", speechInputLanguage.ifBlank { "device" })
+                vault.putUser(activeAccountId, "speech_rate", speechRate.toString())
+                vault.putUser(activeAccountId, "speech_pitch", speechPitch.toString())
+                vault.putUser(activeAccountId, "speech_language", speechLanguage.ifBlank { "device" })
+                vault.putUser(activeAccountId, "speech_input_language", speechInputLanguage.ifBlank { "device" })
                 vault.putUser(activeAccountId, "local_knowledge_enabled", localKnowledgeEnabled.toString())
+                vault.putUser(activeAccountId, "tool_enabled_map", JSONObject(toolEnabled as Map<*, *>).toString())
                 vault.put("local_model_enabled", localModelEnabled.toString())
                 vault.put("update_channel", updateChannel)
-                vault.putUser(activeAccountId, "provider", provider.name); vault.putUser(activeAccountId, "model", model); vault.putUser(activeAccountId, "base_url", base); vault.putUser(activeAccountId, "multi_agent", multiAgent.toString());
-                vault.putUser(activeAccountId, "model_${provider.name}", model)
-                vault.putUser(activeAccountId, "base_url_${provider.name}", base) vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt); vault.putSecret("agent_memory_$activeAccountId", agentMemory.trim()); vault.putUserSecret(activeAccountId, "custom_headers", customHeaders); vault.putUserSecret(activeAccountId, "custom_params", customParams)
+                vault.putUserSecret(activeAccountId, "system_prompt", systemPrompt)
+                vault.putUserSecret(activeAccountId, "agent_memory", agentMemory.trim())
+                vault.putUserSecret(activeAccountId, "custom_headers", customHeaders)
+                vault.putUserSecret(activeAccountId, "custom_params", customParams)
                 vault.putUser(activeAccountId, "max_tokens", maxTokens.ifBlank { "4096" })
                 settings = false
             }) { Text("Save settings", color = palette.accent) } },
