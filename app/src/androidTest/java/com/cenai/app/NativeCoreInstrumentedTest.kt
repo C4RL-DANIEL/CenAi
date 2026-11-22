@@ -25,6 +25,8 @@ class NativeCoreInstrumentedTest {
         val catalog = JSONArray(NativeCore.listAgentTools("null"))
         assertTrue(NativeCore.buildToolGuide("null", true, true).contains("approval tap"))
         assertTrue(NativeCore.buildToolGuide("""["calculate"]""", true, false).contains("cannot execute Android device actions"))
+        val synthesis = NativeCore.buildSynthesisPrompt("Compare", """["A: first","B: second"]""")
+        assertTrue(synthesis.contains("A: first") && synthesis.contains("B: second"))
         assertTrue(catalog.length() >= 13)
         val policy = JSONObject(NativeCore.evaluateToolPolicy("open_dialer", "null"))
         assertTrue(policy.getBoolean("allowed"))
