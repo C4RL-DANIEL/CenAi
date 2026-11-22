@@ -348,8 +348,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         busy = true
         error = ""
         persist(requestMessages)
-        val queryForKnowledge = requestMessages.lastOrNull { it.role == "user" }?.content.orEmpty()
-            .replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]")
+        val queryForKnowledge = NativeCore.stripImageMarkers(
+            requestMessages.lastOrNull { it.role == "user" }?.content.orEmpty()
+        )
         appMonitor.recordStarted()
         monitorSnapshot = appMonitor.snapshot()
         val requestStartedAt = System.currentTimeMillis()
