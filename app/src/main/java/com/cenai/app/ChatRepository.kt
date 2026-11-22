@@ -123,7 +123,7 @@ class ChatRepository(
             model,
             maxTokens,
             messagesJson.toString(),
-            vault.getUser(accountId, "custom_params", "{}")
+            vault.getUserSecret(accountId, "custom_params").ifBlank { "{}" }
         )
         val error = runCatching { JSONObject(encoded).optString("error") }.getOrDefault("")
         require(error.isBlank()) { error.ifBlank { "Rust could not build the provider request." } }
@@ -152,7 +152,7 @@ class ChatRepository(
         }
 
         if (p == Provider.CUSTOM || p == Provider.CLAUDE) {
-            runCatching { JSONObject(vault.getUser(accountId, "custom_headers", "{}")) }.getOrNull()?.let { headers ->
+            runCatching { JSONObject(vault.getUserSecret(accountId, "custom_headers").ifBlank { "{}" }) }.getOrNull()?.let { headers ->
                 headers.keys().forEach { name -> builder.header(name, headers.optString(name)) }
             }
         }
