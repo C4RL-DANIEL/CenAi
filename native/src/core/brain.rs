@@ -17,7 +17,7 @@ impl CentralBrain {
         if user_id.trim().is_empty() { return Err("Sign in before running an AI task step.".into()); }
         let step = plan.steps.iter().find(|step| step.id == step_id).ok_or("The requested task step does not exist.")?;
         if step.status != crate::core::agents::StepStatus::Running { return Err("A task step must be started before AI execution.".into()); }
-        if !step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed && candidate.output.is_some())) {
+        if !step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed)) {
             return Err("Every prerequisite must have a saved result before this step can run.".into());
         }
         let prerequisites = plan.steps.iter().filter(|candidate| step.depends_on.contains(&candidate.id))
