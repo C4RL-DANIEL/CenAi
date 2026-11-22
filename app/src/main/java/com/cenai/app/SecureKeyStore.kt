@@ -67,6 +67,22 @@ class SecureKeyStore(context: Context) {
         return if (ownerId == "guest") decrypt(if (provider == Provider.OPENAI) prefs.getString("api_key", null) else prefs.getString("api_key_${provider.name.lowercase()}", null)) else ""
     }
 
+    fun putUserSecret(ownerId: String, name: String, value: String) {
+        val scoped = accountPrefs(ownerId)
+        if (value.isBlank()) scoped.edit().remove("secret_" + name).apply()
+        else scoped.edit().putString("secret_" + name, encrypt(value)).apply()
+    }
+
+    fun getUserSecret(ownerId: String, name: String): String =
+        decrypt(accountPrefs(ownerId).getString("secret_" + name, null))
+
+    fun putUser(ownerId: String, name: String, value: String) {
+        accountPrefs(ownerId).edit().putString(name, value).apply()
+    }
+
+    fun getUser(ownerId: String, name: String, fallback: String = ""): String =
+        accountPrefs(ownerId).getString(name, fallback) ?: fallback
+
     fun putSecret(name: String, value: String) { if (value.isBlank()) prefs.edit().remove("secret_" + name).apply() else prefs.edit().putString("secret_" + name, encrypt(value)).apply() }
     fun getSecret(name: String): String = decrypt(prefs.getString("secret_" + name, null))
     fun put(name: String, value: String) { prefs.edit().putString(name, value).apply() }
