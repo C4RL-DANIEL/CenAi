@@ -317,3 +317,111 @@ mod stream_tests {
         assert_eq!(parse_provider_delta("OPENAI", "not json"), "");
     }
 }
+
+
+/// Builds the HTTP transport configuration for a provider; network I/O stays on Android.
+pub fn build_provider_request_config(
+    provider: &str,
+    base_url: &str,
+    api_key: &str,
+    oauth: bool,
+    project_id: &str,
+    custom_headers_json: &str,
+) -> Result<String, String> {
+    use serde_json::{json, Map, Value};
+
+    let mut headers = Map::new();
+    headers.insert("Accept".to_owned(), Value::String("text/event-stream".to_owned()));
+    headers.insert("Content-Type".to_owned(), Value::String("application/json".to_owned()));
+
+    let url = match provider {
+        "CENAI_CLOUD" => {
+            headers.insert("Authorization".to_owned(), Value::String(format!("Bearer {api_key}")));
+            "https://cenai-website.aglibotcarldaniel.workers.dev/api/ai/chat/completions".to_owned()
+        }
+        "CLAUDE" => {
+            headers.insert("x-api-key".to_owned(), Value::String(api_key.to_owned()));
+            headers.insert("anthropic-version".to_owned(), Value::String("2023-06-01".to_owned()));
+            "https://api.anthropic.com/v1/messages".to_owned()
+        }
+        "GEMINI" => {
+            if oauth {
+                headers.insert("Authorization".to_owned(), Value::String(format!("Bearer {api_key}")));
+                if !project_id.trim().is_empty() {
+                    headers.insert("x-goog-user-project".to_owned(), Value::String(project_id.to_owned()));
+                }
+            } else {
+                headers.insert("x-goog-api-key".to_owned(), Value::String(api_key.to_owned()));
+            }
+            format!("https://generativelanguage.googleapis.com/v1beta/models/{base_url}:streamGenerateContent?alt=sse")
+        }
+        "OPENAI" | "DEEPSEEK" | "CUSTOM" => {
+            if !base_url.starts_with("https://") {
+                return Err("API URL must use HTTPS.".to_owned());
+            }
+            headers.insert("Authorization".to_owned(), Value::String(format!("Bearer {api_key}")));
+            format!("{}/chat/completions", base_url.trim_end_matches('/'))
+        }
+        _ => return Err("Unsupported AI provider.".to_owned()),
+    };
+
+    if matches!(provider, "CUSTOM" | "CLAUDE") {
+        let custom: Value = serde_json::from_str(custom_headers_json)
+            .map_err(|_| "Custom headers must be valid JSON.".to_owned())?;
+        let object = custom.as_object()
+            .ok_or_else(|| "Custom headers must be a JSON object.".to_owned())?;
+        for (name, value) in object {
+            let Some(value) = value.as_str() else { continue; };
+            let lower = name.to_ascii_lowercase();
+            if matches!(lower.as_str(), "host" | "content-length" | "connection" | "authorization" | "x-api-key" | "x-goog-api-key") {
+                continue;
+            }
+            if name.is_empty() || name.len() > 128
+                || !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_|~".contains(&byte))
+                || value.chars().any(|ch| ch.is_control())
+            {
+                continue;
+            }
+            headers.insert(name.clone(), Value::String(value.to_owned()));
+        }
+    }
+    serde_json::to_string(&json!({"url":url,"headers":headers}))
+        .map_err(|_| "Could not encode provider transport configuration.".to_owned())
+}
+
+
+#[cfg(test)]
+mod transport_tests {
+    use super::build_provider_request_config;
+    use serde_json::Value;
+
+    #[test]
+    fn builds_secure_provider_transport_configurations() {
+        let claude: Value = serde_json::from_str(
+            &build_provider_request_config("CLAUDE", "", "secret", false, "", "{}").unwrap()
+        ).unwrap();
+        assert_eq!(claude["url"], "https://api.anthropic.com/v1/messages");
+        assert_eq!(claude["headers"]["x-api-key"], "secret");
+
+        let gemini: Value = serde_json::from_str(
+            &build_provider_request_config("GEMINI", "gemini-test", "key", false, "", "{}").unwrap()
+        ).unwrap();
+        assert_eq!(gemini["headers"]["x-goog-api-key"], "key");
+        assert!(gemini["url"].as_str().unwrap().contains("gemini-test"));
+
+        assert!(build_provider_request_config("CUSTOM", "http://unsafe.local", "key", false, "", "{}").is_err());
+    }
+
+    #[test]
+    fn custom_headers_cannot_override_auth_or_inject_control_chars() {
+        let config: Value = serde_json::from_str(
+            &build_provider_request_config(
+                "CUSTOM", "https://example.com/v1", "key", false, "",
+                r#"{"x-extra":"ok","Authorization":"Bearer other","x-bad":"line\\nbreak"}"#
+            ).unwrap()
+        ).unwrap();
+        assert_eq!(config["headers"]["x-extra"], "ok");
+        assert_eq!(config["headers"]["Authorization"], "Bearer key");
+        assert!(config["headers"].get("x-bad").is_none());
+    }
+}
