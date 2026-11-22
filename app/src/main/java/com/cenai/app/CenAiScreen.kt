@@ -216,7 +216,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localKnowledge = remember { LocalKnowledgeStore() }
     val appMonitor = remember { AppMonitor(context) }
     var localKnowledgeEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "local_knowledge_enabled", "false").toBoolean()) }
-    var localModelEnabled by remember { mutableStateOf(vault.get("local_model_enabled", "false").toBoolean()) }
+    var localModelEnabled by remember { mutableStateOf(vault.get("local_model_enabled", "true").toBoolean()) }
     var localModelReady by remember { mutableStateOf(localModelRuntime.isModelInstalled()) }
     var guardianSnapshot by remember { mutableStateOf(guardian.snapshot()) }
     var guardianHistoryCount by remember { mutableIntStateOf(context.getSharedPreferences("cenai_guardian_history", android.content.Context.MODE_PRIVATE).getString("samples", "").orEmpty().lineSequence().count { it.isNotBlank() }) }
@@ -266,8 +266,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     LaunchedEffect(localModelRuntime) {
         val ready = localModelRuntime.installBundledModelIfMissing()
         localModelReady = ready
-        localModelEnabled = ready
-        vault.put("local_model_enabled", ready.toString())
+        if (!ready && localModelEnabled) {
+            localModelEnabled = false
+            vault.put("local_model_enabled", "false")
+        }
     }
     LaunchedEffect(Unit) { appMonitor.recordEvent("app_start"); monitorSnapshot = appMonitor.snapshot() }
 
