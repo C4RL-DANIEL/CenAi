@@ -44,8 +44,7 @@ fn schedule_android_automation_reminders(app: &AndroidApp, automations: &[Automa
         if let Some(next) = next {
             let delay = (next - now).num_milliseconds().max(0) as u64;
             schedule_automation_reminder(
-                app.clone(), automation.owner_scope.clone(), automation.id.clone(),
-                automation.title.clone(), delay,
+                app.clone(), automation.owner_scope.clone(), automation.id.clone(), delay,
             );
         } else {
             cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
