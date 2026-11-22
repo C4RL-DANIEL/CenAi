@@ -392,6 +392,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pause_and_resume_are_durable_and_gate_new_execution() {
+        let mut plan = TaskPlan {
+            id: "pause-plan".into(), goal: "Pause safely".into(), stopped: false, events: Vec::new(),
+            steps: vec![
+                TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: Vec::new(), output: None },
+                TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
+            ],
+        };
+        assert!(!plan.is_paused());
+        assert_eq!(plan.ready_steps(), vec![1]);
+        plan.pause().unwrap();
+        assert!(plan.is_paused());
+        assert!(plan.ready_steps().is_empty());
+        assert!(plan.begin_step(1).is_err());
+        assert!(plan.request_step_approval(1).is_err());
+        plan.validate_persisted().unwrap();
+
+        let restored: TaskPlan = serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
+        assert!(restored.is_paused());
+        plan.resume().unwrap();
+        assert!(!plan.is_paused());
+        assert_eq!(plan.ready_steps(), vec![1]);
+        plan.begin_step(1).unwrap();
+        plan.pause().unwrap();
+        assert_eq!(plan.steps[0].status, StepStatus::Running);
+        assert!(plan.ready_steps().is_empty());
+        plan.complete_step(1).unwrap();
+        plan.resume().unwrap();
+        assert_eq!(plan.ready_steps(), vec![2]);
+        plan.stop();
+        assert!(plan.resume().is_err());
+    }
+
+    #[test]
     fn dependencies_gate_execution_and_stop_is_terminal() {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
