@@ -47,6 +47,9 @@ jobs:
           java-version: "17"
 
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default "tools" SDK package has been retired by Google.
+          packages: platform-tools
 
       - name: Install Android SDK and NDK
         run: |
