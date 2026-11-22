@@ -13,6 +13,9 @@ class NativeCoreInstrumentedTest {
     @Test
     fun rustJniExportsCoverChatAgentProviderAndLocalRetrieval() {
         assertEquals("14", NativeCore.evaluateArithmetic("2 + 3 * 4"))
+        val systemContext = NativeCore.buildSystemContext("rules", "memory", "facts", "tools")
+        assertTrue(systemContext.indexOf("rules") < systemContext.indexOf("memory"))
+        assertTrue(systemContext.contains("ON-DEVICE RETRIEVAL CONTEXT"))
         val normalized = JSONArray(NativeCore.normalizeConversations("""[{"id":"x","title":"Test","messages":[{"role":"user","content":"hello"}]}]"""))
         assertEquals("x", normalized.getJSONObject(0).getString("id"))
         val count = JSONObject(NativeCore.executeSafeTool("count_words", """{"text":"one two"}""", "", ""))
