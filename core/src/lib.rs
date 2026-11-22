@@ -2,6 +2,7 @@ pub mod agent;
 pub mod knowledge;
 pub mod providers;
 pub mod storage;
+pub mod telemetry;
 pub mod context;
 pub mod auth;
 pub mod monitor;
@@ -1074,5 +1075,58 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_resolveProviderSettings(
         Ok(value) => value,
         Err(error) => serde_json::json!({"error":error}).to_string(),
     };
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildConsentTelemetryPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    usage_analytics: jboolean,
+    guardian: jboolean,
+) -> jstring {
+    let output = telemetry::build_consent_payload(usage_analytics != 0, guardian != 0);
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildUsageTelemetryPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    provider: JString,
+    model: JString,
+    input_tokens: jint,
+    output_tokens: jint,
+    latency_ms: jlong,
+    status: JString,
+    error_code: JString,
+) -> jstring {
+    let Some(provider_value) = read_java_string(&mut env, &provider) else { return std::ptr::null_mut(); };
+    let Some(model_value) = read_java_string(&mut env, &model) else { return std::ptr::null_mut(); };
+    let Some(status_value) = read_java_string(&mut env, &status) else { return std::ptr::null_mut(); };
+    let Some(error_value) = read_java_string(&mut env, &error_code) else { return std::ptr::null_mut(); };
+    let output = telemetry::build_usage_payload(&provider_value, &model_value, input_tokens, output_tokens, latency_ms, &status_value, &error_value);
+    match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildGuardianTelemetryPayload(
+    mut env: JNIEnv,
+    _class: JClass,
+    app_version: JString,
+    android_version: JString,
+    battery_percent: jint,
+    available_ram_mb: jlong,
+    free_storage_mb: jlong,
+    network: JString,
+    crash_category: JString,
+) -> jstring {
+    let Some(app_value) = read_java_string(&mut env, &app_version) else { return std::ptr::null_mut(); };
+    let Some(android_value) = read_java_string(&mut env, &android_version) else { return std::ptr::null_mut(); };
+    let Some(network_value) = read_java_string(&mut env, &network) else { return std::ptr::null_mut(); };
+    let Some(crash_value) = read_java_string(&mut env, &crash_category) else { return std::ptr::null_mut(); };
+    let output = telemetry::build_guardian_payload(&app_value, &android_value, battery_percent, available_ram_mb, free_storage_mb, &network_value, &crash_value);
     match env.new_string(output) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
 }
