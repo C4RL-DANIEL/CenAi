@@ -79,6 +79,8 @@ object NativeCore {
     external fun validateGoogleOAuthCallback(scheme: String, path: String, returnedState: String, expectedState: String, error: String, code: String): String
     /** Parses OAuth token responses and computes expiry timestamps in Rust. */
     external fun parseGoogleOAuthToken(rawJson: String, nowMs: Long): String
+    /** Generates PKCE verifier, state and SHA-256 challenge in Rust. */
+    external fun generateOAuthPkce(): String
 
     /** Replaces embedded image bytes with a retrieval-safe marker. */
     external fun stripImageMarkers(content: String): String
