@@ -61,6 +61,10 @@ pub fn parse_legacy_history(json: &str) -> Result<Vec<ImportedConversation>, Str
             };
             messages.push(Message { id: index as u64 + 1, role, body: message.content, streaming: false });
         }
+        let encoded_size = serde_json::to_vec(&messages).map_err(|error| error.to_string())?.len();
+        if encoded_size > 8 * 1024 * 1024 {
+            return Err("Legacy conversation exceeds the 8 MB local history limit".into());
+        }
         imported.push(ImportedConversation {
             id: conversation.id, title: conversation.title, updated_at_unix_ms: conversation.updated_at, messages,
         });
