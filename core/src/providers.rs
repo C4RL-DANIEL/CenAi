@@ -322,7 +322,7 @@ mod stream_tests {
 /// Builds the HTTP transport configuration for a provider; network I/O stays on Android.
 pub fn build_provider_request_config(
     provider: &str,
-    base_url: &str,
+    base_url_or_model: &str,
     api_key: &str,
     oauth: bool,
     project_id: &str,
@@ -353,14 +353,17 @@ pub fn build_provider_request_config(
             } else {
                 headers.insert("x-goog-api-key".to_owned(), Value::String(api_key.to_owned()));
             }
-            format!("https://generativelanguage.googleapis.com/v1beta/models/{base_url}:streamGenerateContent?alt=sse")
+            if base_url_or_model.is_empty() || !base_url_or_model.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')) {
+                return Err("Gemini model ID contains unsupported characters.".to_owned());
+            }
+            format!("https://generativelanguage.googleapis.com/v1beta/models/{base_url_or_model}:streamGenerateContent?alt=sse")
         }
         "OPENAI" | "DEEPSEEK" | "CUSTOM" => {
-            if !base_url.starts_with("https://") {
+            if !base_url_or_model.starts_with("https://") {
                 return Err("API URL must use HTTPS.".to_owned());
             }
             headers.insert("Authorization".to_owned(), Value::String(format!("Bearer {api_key}")));
-            format!("{}/chat/completions", base_url.trim_end_matches('/'))
+            format!("{}/chat/completions", base_url_or_model.trim_end_matches('/'))
         }
         _ => return Err("Unsupported AI provider.".to_owned()),
     };
