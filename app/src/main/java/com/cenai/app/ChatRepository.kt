@@ -189,3 +189,6 @@ class ChatRepository(private val vault: SecureKeyStore) {
 /** JSONObject.optString() may stringify JSONObject.NULL as the literal word "null". */
 private fun JSONObject.stringOrEmpty(name: String): String =
     (opt(name) as? String).orEmpty()
+
+/** Marker used only for fast capability checks; Rust performs provider payload parsing. */
+private val CENAI_IMAGE_MARKER = Regex("""\[\[CENAI_IMAGE\|([^|]+)\|([A-Za-z0-9+/=]+)]]""")
