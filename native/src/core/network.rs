@@ -1130,12 +1130,21 @@ impl CenAiApi {
         Ok(transcript)
     }
 
-    pub async fn stream_gemini<F>(&self, request: &ChatRequest, api_key: &str, mut on_delta: F) -> Result<String, String>
-    where
-        F: FnMut(&str) + Send,
-    {
+    pub async fn stream_gemini<F>(&self, request: &ChatRequest, api_key: &str, on_delta: F) -> Result<String, String>
+    where F: FnMut(&str) + Send {
+        self.stream_gemini_with_auth(request, api_key, false, on_delta).await
+    }
+
+    pub async fn stream_gemini_oauth<F>(&self, request: &ChatRequest, access_token: &str, on_delta: F) -> Result<String, String>
+    where F: FnMut(&str) + Send {
+        self.stream_gemini_with_auth(request, access_token, true, on_delta).await
+    }
+
+    async fn stream_gemini_with_auth<F>(&self, request: &ChatRequest, credential: &str, oauth: bool, mut on_delta: F) -> Result<String, String>
+    where F: FnMut(&str) + Send {
+
         request.validate()?;
-        if api_key.trim().is_empty() { return Err("Gemini API key is missing.".into()); }
+        if credential.trim().is_empty() { return Err("Gemini API key is missing.".into()); }
         if request.model.is_empty() || !request.model.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') {
             return Err("Gemini model identifier is invalid.".into());
         }
@@ -1158,11 +1167,15 @@ impl CenAiApi {
             payload["systemInstruction"] = json!({ "parts": [{ "text": system_parts.join("\n\n") }] });
         }
         let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse", request.model);
-        let response = self.provider_client.post(url)
-            .header("x-goog-api-key", api_key)
+        let mut request_builder = self.provider_client.post(url)
             .header(header::ACCEPT, "text/event-stream")
-            .json(&payload)
-            .send().await.map_err(|error| error.to_string())?;
+            .json(&payload);
+        request_builder = if oauth {
+            request_builder.bearer_auth(credential)
+        } else {
+            request_builder.header("x-goog-api-key", credential)
+        };
+        let response = request_builder.send().await.map_err(|error| error.to_string())?;
         if !response.status().is_success() {
             return Self::decode_response(response).await.map(|_| String::new());
         }
@@ -1189,7 +1202,7 @@ impl CenAiApi {
         }
         if answer.is_empty() { return Err("Gemini returned no text content.".into()); }
         Ok(answer)
-    }
+        
 
 }
 
