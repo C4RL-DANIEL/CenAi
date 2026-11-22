@@ -1039,3 +1039,15 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_googleOAuthAccessTokenUsabl
     let Some(expiry_value) = read_java_string(&mut env, &expires_at) else { return 0; };
     if auth::google_oauth_access_token_usable(&access_value, &expiry_value, now_ms.max(0) as u64) { 1 } else { 0 }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_conversationTitle(
+    mut env: JNIEnv,
+    _class: JClass,
+    messages_json: JString,
+) -> jstring {
+    let Some(raw) = read_java_string(&mut env, &messages_json) else { return std::ptr::null_mut(); };
+    let title = storage::conversation_title(&raw).unwrap_or_else(|_| "New chat".to_owned());
+    match env.new_string(title) { Ok(value) => value.into_raw(), Err(_) => std::ptr::null_mut() }
+}
