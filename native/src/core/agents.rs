@@ -109,6 +109,7 @@ impl TaskPlan {
     pub fn validate_persisted(&self) -> Result<(), &'static str> {
         let mut structure = self.clone();
         structure.stopped = false;
+        structure.events.clear();
         for step in &mut structure.steps { step.status = StepStatus::Pending; step.output = None; }
         structure.validate()?;
         if self.stopped && self.steps.iter().any(|step| matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval)) {
