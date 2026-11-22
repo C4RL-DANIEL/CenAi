@@ -13,7 +13,7 @@ use winit::platform::android::activity::AndroidApp;
 use crate::core::voice::{AudioChunk, VoiceMode};
 use super::RenderBackend;
 
-const AGENT_TOOL_SYSTEM_PROMPT: &str = "You are CenAI. You may use the following safe, local tools when they materially help answer the user's request: current_time {}, current_date {}, calculate {expression}, count_words {text}, text_stats {text}, format_json {json}, generate_uuid {}, base64_encode {text}, base64_decode {value}. To call exactly one tool, output only this marker and a JSON object: [[CENAI_TOOL_CALL]]{\\"name\\":\\"calculate\\",\\"arguments\\":{\\"expression\\":\\"(2 + 3) * 4\\"}}[[/CENAI_TOOL_CALL]]. Replace the example tool name and arguments with an item from the allow-list. Do not invent tools, arguments, or claim a tool ran unless you receive its result. Tool calls are limited to four per user request. Never use a tool for unsafe, external, account, device-control or destructive actions; ask the user first instead. If no tool is needed, answer normally.";
+const AGENT_TOOL_SYSTEM_PROMPT: &str = r#"You are CenAI. You may use the following safe, local tools when they materially help the user's request: current_time {}, current_date {}, calculate {expression}, count_words {text}, text_stats {text}, format_json {json}, generate_uuid {}, base64_encode {text}, base64_decode {value}. To call exactly one tool, output only this marker and a JSON object: [[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"(2 + 3) * 4"}}[[/CENAI_TOOL_CALL]]. Replace the example tool name and arguments with an item from the allow-list. Do not invent tools, arguments, or claim a tool ran unless you receive its result. Tool calls are limited to four per user request. Never use a tool for unsafe, external, account, device-control or destructive actions; ask the user first instead. If no tool is needed, answer normally."#;
 
 fn conversation_prompt_for_offline(conversation: &crate::ui::model::ConversationState) -> String {
     let all_messages = conversation.messages()
@@ -29,7 +29,7 @@ fn conversation_prompt_for_offline(conversation: &crate::ui::model::Conversation
         while !prompt.is_char_boundary(start) { start += 1; }
         prompt = prompt[start..].to_owned();
     }
-    format!("{AGENT_TOOL_SYSTEM_PROMPT}\\n\\n{prompt}")
+    format!("{AGENT_TOOL_SYSTEM_PROMPT}\n\n{prompt}")
 }
 
 #[cfg(target_os = "android")]
