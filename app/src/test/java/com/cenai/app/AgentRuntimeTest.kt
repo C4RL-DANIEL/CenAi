@@ -37,9 +37,10 @@ class AgentRuntimeTest {
 
     @Test
     fun safeCalculatorExecutesAllowListedArithmetic() {
-        val runtime = AgentRuntime(arithmeticEvaluator = { expression ->
-            assertEquals("2 + 3 * 4", expression)
-            14.0
+        val runtime = AgentRuntime(safeToolExecutor = { name, args, _, _ ->
+            assertEquals("calculate", name)
+            assertEquals("2 + 3 * 4", args.getString("expression"))
+            "14.0"
         }, policyEvaluator = ::testPolicy)
         val result = runtime.execute("calculate", JSONObject().put("expression", "2 + 3 * 4"))
         assertTrue(result.completed)
