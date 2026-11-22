@@ -48,6 +48,14 @@ public final class CenAiNativeActivity extends NativeActivity {
         }
     }
 
+    public String getInstalledVersionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception error) {
+            return "0.0.0";
+        }
+    }
+
     /** Opens only Google's official OAuth authorization endpoint. */
     public boolean openGoogleOAuth(String value) {
         try {
