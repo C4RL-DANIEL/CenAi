@@ -86,29 +86,15 @@ pub(crate) fn migrate_legacy_history(
         .and_then(crate::core::legacy_history::verified_legacy_owner_email);
     let export = export_legacy_conversation_history(app)?;
     if export.trim().is_empty() || export.trim() == "[]" {
-        if legacy_secure_export.is_some() {
-            clear_legacy_secure_store(app)?;
-        }
         return Ok(0);
     }
-    let imported = workspace.import_legacy_conversations(&export, expected_email, legacy_identity.as_deref())?;
-    // Delete the old store only after the encrypted Rust workspace accepted the export,
-    // and only if its contents were successfully read in this migration attempt.
-    if legacy_secure_export.is_some() {
-        clear_legacy_secure_store(app)?;
-    }
-    Ok(imported)
+    // Keep the original encrypted preferences as a rollback source until the
+    // account, provider-key and conversation migrations all have device-level
+    // verification. Re-import is idempotent and cannot overwrite Rust chats.
+    workspace.import_legacy_conversations(&export, expected_email, legacy_identity.as_deref())
 }
 
 
-fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
-    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
-    let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
-    let activity = activity_local(&mut env, app).map_err(|error| error.to_string())?;
-    env.call_method(&activity, "clearLegacySecureStoreAfterMigration", "()V", &[])
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
 
 pub(crate) fn current_app_version(app: &AndroidApp) -> Result<String, String> {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
@@ -565,7 +551,7 @@ pub fn android_main(app: AndroidApp) {
     match legacy_secure_export.as_deref() {
         Some(export) if export != "{}" && !export.is_empty() => {
             match vault.migrate_legacy_export(export) {
-                Ok(true) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault; old-store cleanup is deferred until chat migration completes."),
+                Ok(true) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault; old-store cleanup remains deferred until device-level migration verification."),
                 Ok(false) => {},
                 Err(error) => log::warn!("Legacy credential migration was deferred; original encrypted data was retained: {error}"),
             }
