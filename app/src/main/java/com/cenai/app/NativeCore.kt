@@ -32,6 +32,9 @@ object NativeCore {
     /** Validates and canonicalizes the encrypted conversation store in Rust. */
     external fun normalizeConversations(rawJson: String): String
 
+    /** Builds bounded per-account context for local and remote model requests. */
+    external fun buildSystemContext(systemPrompt: String, approvedMemory: String, localKnowledge: String, toolGuide: String): String
+
     /** Normalizes line endings and removes unsafe control characters from message bodies. */
     external fun normalizeMessageContent(input: String): String
 
