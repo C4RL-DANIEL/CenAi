@@ -251,7 +251,7 @@ impl WorkspaceStore {
         let bytes = self.read_storage(&path)?;
         let mut entries: Vec<ConversationMetadata> = serde_json::from_slice(&bytes)
             .map_err(|error| format!("Conversation catalog is invalid: {error}"))?;
-        entries.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
+        entries.sort_by_key(|a| std::cmp::Reverse(a.updated_at_unix_ms));
         Ok(entries)
     }
 
