@@ -46,7 +46,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
         val credential = when {
             provider == Provider.CENAI_CLOUD -> vault.getSecret("supabase_access_token") to false
             oauthCredential.first.isNotBlank() -> oauthCredential
-            else -> vault.apiKey(provider) to false
+            else -> vault.apiKey(provider, vault.get("supabase_user_id", "guest").ifBlank { "guest" }) to false
         }
         val key = credential.first
         require(key.isNotBlank()) { "Connect a Google account or add an API key in Settings." }
