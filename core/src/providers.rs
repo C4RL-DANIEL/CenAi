@@ -268,3 +268,48 @@ mod tests {
     }
 
 }
+
+
+/// Parses one server-sent event payload into a provider-neutral text delta.
+pub fn parse_provider_delta(provider: &str, raw: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return String::new();
+    };
+    let delta = match provider {
+        "CLAUDE" => {
+            if value.get("type").and_then(Value::as_str) == Some("content_block_delta") {
+                value.get("delta").and_then(|v| v.get("text")).and_then(Value::as_str).unwrap_or("").to_owned()
+            } else {
+                String::new()
+            }
+        }
+        "GEMINI" => {
+            let Some(parts) = value.get("candidates").and_then(|v| v.get(0))
+                .and_then(|v| v.get("content")).and_then(|v| v.get("parts"))
+                .and_then(Value::as_array) else { return String::new(); };
+            parts.iter().filter_map(|part| part.get("text").and_then(Value::as_str)).collect::<String>()
+        }
+        _ => value.get("choices").and_then(|v| v.get(0))
+            .and_then(|v| v.get("delta")).and_then(|v| v.get("content"))
+            .and_then(Value::as_str).unwrap_or("").to_owned(),
+    };
+    if delta == "null" { String::new() } else { delta }
+
+    #[test]
+    fn parses_provider_stream_deltas() {
+        assert_eq!(
+            super::parse_provider_delta("CLAUDE", r#"{"type":"content_block_delta","delta":{"text":"hello"}}"#),
+            "hello"
+        );
+        assert_eq!(
+            super::parse_provider_delta("GEMINI", r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"text":"b"}]}}]}"#),
+            "ab"
+        );
+        assert_eq!(
+            super::parse_provider_delta("OPENAI", r#"{"choices":[{"delta":{"content":"world"}}]}"#),
+            "world"
+        );
+        assert_eq!(super::parse_provider_delta("OPENAI", "not json"), "");
+    }
+
+}
