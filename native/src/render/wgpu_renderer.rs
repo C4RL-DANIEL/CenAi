@@ -2324,6 +2324,12 @@ impl WgpuRenderer {
                             match self.api.as_ref().ok_or_else(|| "Account service is unavailable.".to_owned())
                                 .and_then(|service| service.workspace_store(self.workspace_root.join("cenai-workspace"))) {
                                 Ok(store) => {
+                                    #[cfg(target_os = "android")]
+                                    if let Some(app) = self.android_app.as_ref() {
+                                        if let Err(error) = crate::android::migrate_legacy_history(app, &store) {
+                                            log::warn!("Deferred legacy history migration failed safely: {error}");
+                                        }
+                                    }
                                     self.app_state.conversation_history = store.list_conversations().unwrap_or_default();
                                     self.app_state.active_conversation_id = "primary".into();
                                     if let Ok(messages) = store.load_conversation("primary") { self.app_state.conversation.restore_messages(messages); }
