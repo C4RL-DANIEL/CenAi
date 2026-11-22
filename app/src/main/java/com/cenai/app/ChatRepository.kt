@@ -79,10 +79,10 @@ class ChatRepository(
                     try {
                         if (provider == Provider.CENAI_CLOUD) {
                             val raw = res.body?.string().orEmpty()
-                            val data = JSONObject(raw)
-                            val answer = data.optJSONArray("choices")?.optJSONObject(0)
-                                ?.optJSONObject("message")?.stringOrEmpty("content").orEmpty()
-                            if (answer.isBlank()) throw IOException(data.optString("error", "CenAI Cloud returned an empty response."))
+                            val parsed = JSONObject(NativeCore.parseCloudResponse(raw))
+                            val error = parsed.optString("error")
+                            if (error.isNotBlank()) throw IOException(error)
+                            val answer = parsed.optString("content")
                             if (continuation.isActive) onDelta(answer)
                             if (continuation.isActive) continuation.resume(answer)
                             return
