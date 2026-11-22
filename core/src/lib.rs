@@ -359,3 +359,27 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_buildProviderPayload(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_evaluateToolPolicy(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+    enabled_tools_json: JString,
+) -> jstring {
+    let Some(name_value) = read_java_string(&mut env, &name) else {
+        return std::ptr::null_mut();
+    };
+    let Some(enabled_value) = read_java_string(&mut env, &enabled_tools_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match agent::tool_policy(&name_value, &enabled_value) {
+        Ok(policy) => policy,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
