@@ -325,7 +325,21 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         val totalEstimate = vault.getUser(activeAccountId, "usage_estimated_tokens", "0").toLongOrNull() ?: 0L
         vault.putUser(activeAccountId, "usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
-        val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getUserSecret(activeAccountId, "gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
+        val configuredTargets = Provider.entries.filter {
+            !providerKeys[it].isNullOrBlank() ||
+                (it == Provider.GEMINI && vault.getUserSecret(activeAccountId, "gemini_oauth_access_token").isNotBlank()) ||
+                (it == Provider.CENAI_CLOUD && cloud.isSignedIn())
+        }
+        val selectedTargetsJson = NativeCore.selectProviderTargets(
+            provider.name,
+            multiAgent,
+            localModelEnabled,
+            JSONArray().apply { configuredTargets.forEach { put(it.name) } }.toString()
+        )
+        val selectionError = runCatching { JSONObject(selectedTargetsJson).optString("error") }.getOrDefault("")
+        require(selectionError.isBlank()) { selectionError.ifBlank { "Rust could not select provider targets." } }
+        val selectedTargets = JSONArray(selectedTargetsJson)
+        val targets = List(selectedTargets.length()) { Provider.parse(selectedTargets.getString(it)) }
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
