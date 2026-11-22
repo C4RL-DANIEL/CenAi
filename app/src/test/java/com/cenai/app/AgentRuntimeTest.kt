@@ -27,7 +27,10 @@ class AgentRuntimeTest {
 
     @Test
     fun safeCalculatorExecutesAllowListedArithmetic() {
-        val runtime = AgentRuntime()
+        val runtime = AgentRuntime(arithmeticEvaluator = { expression ->
+            assertEquals("2 + 3 * 4", expression)
+            14.0
+        })
         val result = runtime.execute("calculate", JSONObject().put("expression", "2 + 3 * 4"))
         assertTrue(result.completed)
         assertEquals("14.0", result.output)
