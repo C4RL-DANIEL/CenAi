@@ -535,3 +535,47 @@ pub extern "system" fn Java_com_cenai_app_NativeCore_buildSystemContext(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_buildProviderRequestConfig(
+    mut env: JNIEnv,
+    _class: JClass,
+    provider: JString,
+    base_url: JString,
+    api_key: JString,
+    oauth: jboolean,
+    project_id: JString,
+    custom_headers_json: JString,
+) -> jstring {
+    let Some(provider_value) = read_java_string(&mut env, &provider) else {
+        return std::ptr::null_mut();
+    };
+    let Some(base_value) = read_java_string(&mut env, &base_url) else {
+        return std::ptr::null_mut();
+    };
+    let Some(key_value) = read_java_string(&mut env, &api_key) else {
+        return std::ptr::null_mut();
+    };
+    let Some(project_value) = read_java_string(&mut env, &project_id) else {
+        return std::ptr::null_mut();
+    };
+    let Some(headers_value) = read_java_string(&mut env, &custom_headers_json) else {
+        return std::ptr::null_mut();
+    };
+    let output = match providers::build_provider_request_config(
+        &provider_value,
+        &base_value,
+        &key_value,
+        oauth != 0,
+        &project_value,
+        &headers_value,
+    ) {
+        Ok(config) => config,
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    };
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
