@@ -1,6 +1,7 @@
 package com.cenai.app
 
 import android.content.Context
+import android.system.Os
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -101,8 +102,9 @@ object LightningRuntimeBridge {
             }
             check(sha256(temporary) == MODEL_SHA256) { "Bundled Lightning model failed SHA-256 verification." }
             closeEngineLocked()
-            if (target.exists()) check(target.delete()) { "Could not replace the previous Lightning model." }
-            check(temporary.renameTo(target)) { "Could not install Lightning into private app storage." }
+            // POSIX rename atomically replaces the previous model on the same filesystem.
+            // A crash cannot leave the app with the old model deleted and no new model installed.
+            Os.rename(temporary.absolutePath, target.absolutePath)
             verifiedFingerprint = "${target.absolutePath}:${target.length()}:${target.lastModified()}"
             true
         } catch (error: Throwable) {
