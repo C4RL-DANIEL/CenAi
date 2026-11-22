@@ -1140,6 +1140,27 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Google Gemini account connection", 15.0, egui::Color32::WHITE).strong());
+        ui.label(text("Use Google's OAuth authorization-code flow with PKCE. Your refresh token is encrypted in the account-scoped Android Keystore vault.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.gemini_oauth_client_id_draft)
+            .hint_text("Google OAuth client ID (.apps.googleusercontent.com)")
+            .desired_width(f32::INFINITY));
+        ui.horizontal(|ui| {
+            if ui.button("Connect Google account").clicked() {
+                state.pending_gemini_oauth_start = Some(state.gemini_oauth_client_id_draft.trim().to_owned());
+                state.gemini_oauth_status = "Preparing secure Google sign-in…".into();
+            }
+            if ui.button("Disconnect Google").clicked() {
+                state.pending_gemini_oauth_disconnect = true;
+                state.gemini_oauth_status = "Disconnecting Google account…".into();
+            }
+        });
+        if !state.gemini_oauth_status.is_empty() {
+            ui.label(text(&state.gemini_oauth_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("CenAI account", 16.0, egui::Color32::WHITE).strong());
         if state.account_email.is_empty() {
             ui.label(text("Sign in with an existing CenAI account. New accounts are provisioned through the authorized CenAI Discord process; registration is not available in this app.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
