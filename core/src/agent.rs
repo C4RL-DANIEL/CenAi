@@ -183,6 +183,17 @@ pub fn tool_policy(name: &str, enabled_tools_json: &str) -> Result<String, Strin
         "requires_approval": allowed && risk != "safe"
     }).to_string())
 
+    Ok(json!({
+        "allowed": allowed,
+        "risk": risk,
+        "requires_approval": allowed && risk != "safe"
+    }).to_string())
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::tool_policy;
+
     #[test]
     fn tool_policy_enforces_allowlists_and_approval_gates() {
         let safe: serde_json::Value = serde_json::from_str(
@@ -206,5 +217,4 @@ pub fn tool_policy(name: &str, enabled_tools_json: &str) -> Result<String, Strin
         ).unwrap();
         assert_eq!(unknown["allowed"], false);
     }
-
 }
