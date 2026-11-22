@@ -649,3 +649,27 @@ mod provider_metadata_tests {
         assert!(provider_metadata("UNKNOWN").is_err());
     }
 }
+
+/// Chooses the account credential channel without exposing credential values to the UI layer.
+pub fn credential_source(provider: &str, oauth_available: bool) -> &'static str {
+    if provider == "CENAI_CLOUD" {
+        "cloud_access_token"
+    } else if oauth_available {
+        "google_oauth"
+    } else {
+        "provider_api_key"
+    }
+}
+
+#[cfg(test)]
+mod credential_source_tests {
+    use super::credential_source;
+
+    #[test]
+    fn selects_cloud_oauth_and_provider_key_channels() {
+        assert_eq!(credential_source("CENAI_CLOUD", true), "cloud_access_token");
+        assert_eq!(credential_source("GEMINI", true), "google_oauth");
+        assert_eq!(credential_source("OPENAI", false), "provider_api_key");
+        assert_eq!(credential_source("GEMINI", false), "provider_api_key");
+    }
+}
