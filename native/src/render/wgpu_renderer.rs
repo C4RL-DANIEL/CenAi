@@ -2989,7 +2989,7 @@ impl WgpuRenderer {
         if message_count != self.last_saved_message_count {
             if let Some(store) = &self.workspace {
                 let messages: Vec<_> = self.app_state.conversation.messages().cloned().collect();
-                if let Err(error) = store.save_conversation("primary", &messages) {
+                if let Err(error) = store.save_conversation(&self.app_state.active_conversation_id, &messages) {
                     log::warn!("Local conversation autosave failed: {error}");
                 }
             }
