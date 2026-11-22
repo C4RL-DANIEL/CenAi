@@ -10,6 +10,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,6 +25,7 @@ object LightningRuntimeBridge {
     private const val MODEL_BYTES = 613_722_264L
     private const val MODEL_SHA256 = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108"
     private const val MAX_PROMPT_BYTES = 32_000
+    internal const val MAX_RESPONSE_CHARS = 24_000
     private val mutex = Mutex()
     private var engine: Engine? = null
     private var loadedPath: String? = null
@@ -62,7 +64,19 @@ object LightningRuntimeBridge {
                 )
                 try {
                     val answer = StringBuilder()
-                    conversation.sendMessageAsync(prompt).collect { part -> answer.append(part.toString()) }
+                    // Stop consuming the model stream at a hard bound instead of allowing
+                    // a runaway generation to grow the app's heap without limit.
+                    conversation.sendMessageAsync(prompt)
+                        .takeWhile { part ->
+                            val remaining = MAX_RESPONSE_CHARS - answer.length
+                            if (remaining <= 0) {
+                                false
+                            } else {
+                                answer.append(part.toString().take(remaining))
+                                answer.length < MAX_RESPONSE_CHARS
+                            }
+                        }
+                        .collect { }
                     answer.toString()
                 } finally {
                     conversation.close()

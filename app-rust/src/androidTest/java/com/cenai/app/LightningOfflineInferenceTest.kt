@@ -15,6 +15,7 @@ class LightningOfflineInferenceTest {
         assertTrue("Lightning must verify its private model copy.", LightningRuntimeBridge.isReady(context))
         val response = LightningRuntimeBridge.generate(context, "Reply with one short greeting.")
         assertTrue("Offline Lightning inference returned an empty response.", response.isNotBlank())
+        assertTrue("Offline Lightning response exceeded its memory-safety bound.", response.length <= LightningRuntimeBridge.MAX_RESPONSE_CHARS)
         LightningRuntimeBridge.release()
     }
 }
