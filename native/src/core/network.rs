@@ -861,11 +861,15 @@ impl CenAiApi {
     /// Starts Google's installed-app OAuth flow. PKCE verifier and state are stored
     /// only in the account-scoped Android Keystore vault.
     pub fn begin_google_gemini_oauth(&self, client_id: &str) -> Result<String, String> {
+        if self.vault.account_id()?.is_empty() {
+            return Err("Sign in to CenAI before connecting Google.".into());
+        }
         let request = crate::core::google_oauth::create_authorization_request(client_id)
             .map_err(str::to_owned)?;
         self.vault.save_provider_key("gemini_oauth_client", client_id.trim())?;
         self.vault.save_provider_key("gemini_oauth_state", &request.state)?;
         self.vault.save_provider_key("gemini_oauth_verifier", &request.verifier)?;
+        self.vault.save_provider_key("gemini_oauth_started_at", &chrono::Utc::now().timestamp().to_string())?;
         Ok(request.url)
     }
 
@@ -874,8 +878,17 @@ impl CenAiApi {
         let account_id = self.vault.account_id()?;
         if account_id.is_empty() { return Err("Sign in to CenAI before connecting Google.".into()); }
         let state = self.vault.provider_key("gemini_oauth_state")?;
+        let started_at = self.vault.provider_key("gemini_oauth_started_at")?
+            .parse::<i64>().unwrap_or(0);
+        crate::core::google_oauth::validate_authorization_age(started_at, chrono::Utc::now().timestamp())
+            .map_err(str::to_owned)?;
         let code = crate::core::google_oauth::validate_callback(callback, &state)
             .map_err(str::to_owned)?;
+        // Consume the callback state before any network I/O. A retry must start
+        // a fresh browser authorization instead of replaying the same redirect.
+        self.vault.save_provider_key("gemini_oauth_state", "")?;
+        self.vault.save_provider_key("gemini_oauth_verifier", "")?;
+        self.vault.save_provider_key("gemini_oauth_started_at", "")?;
         let client_id = self.vault.provider_key("gemini_oauth_client")?;
         let verifier = self.vault.provider_key("gemini_oauth_verifier")?;
         if client_id.is_empty() || verifier.is_empty() {
@@ -911,8 +924,6 @@ impl CenAiApi {
             self.vault.save_provider_key("gemini_oauth_refresh", refresh)?;
         }
         self.vault.save_provider_key("gemini_oauth_expiry", &(chrono::Utc::now().timestamp() + expires).to_string())?;
-        self.vault.save_provider_key("gemini_oauth_state", "")?;
-        self.vault.save_provider_key("gemini_oauth_verifier", "")?;
         Ok(())
     }
 
@@ -961,8 +972,8 @@ impl CenAiApi {
     }
 
     pub fn disconnect_google_gemini_oauth(&self) -> Result<(), String> {
-        for key in ["gemini_oauth_state", "gemini_oauth_verifier", "gemini_oauth_access",
-            "gemini_oauth_refresh", "gemini_oauth_expiry"] {
+        for key in ["gemini_oauth_state", "gemini_oauth_verifier", "gemini_oauth_started_at",
+            "gemini_oauth_client", "gemini_oauth_access", "gemini_oauth_refresh", "gemini_oauth_expiry"] {
             self.vault.save_provider_key(key, "")?;
         }
         Ok(())
