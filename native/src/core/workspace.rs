@@ -1356,3 +1356,62 @@ mod encrypted_workspace_tests {
     }
 
 }
+
+#[cfg(test)]
+mod legacy_history_workspace_tests {
+    use super::*;
+    fn temp_root() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        std::env::temp_dir().join(format!("cenai-legacy-history-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
+    }
+
+    #[test]
+    fn legacy_history_import_is_idempotent_and_preserves_metadata() {
+        let root = temp_root();
+        let owner = "550e8400-e29b-41d4-a716-446655440091";
+        let store = WorkspaceStore::new(&root, owner).unwrap();
+        let legacy = r#"[{"id":"old-chat-1","title":"My old chat","updatedAt":1700000000123,"messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"welcome"}]},{"id":"old-chat-2","title":"Another chat","updatedAt":1700000000999,"messages":[]}]"#;
+        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 2);
+        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 0);
+        let catalog = store.list_conversations().unwrap();
+        assert_eq!(catalog.len(), 2);
+        assert_eq!(catalog[0].id, "old-chat-2");
+        assert_eq!(catalog[1].title, "My old chat");
+        assert_eq!(catalog[1].updated_at_unix_ms, 1700000000123);
+        let messages = store.load_conversation("old-chat-1").unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, crate::ui::model::MessageRole::User);
+        assert_eq!(messages[1].body, "welcome");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_legacy_history_writes_nothing_and_accounts_are_isolated() {
+        let root = temp_root();
+        let owner = "550e8400-e29b-41d4-a716-446655440092";
+        let other = "550e8400-e29b-41d4-a716-446655440093";
+        let store = WorkspaceStore::new(&root, owner).unwrap();
+        assert!(store.import_legacy_conversations(r#"[{"id":"../bad","messages":[]}]"#).is_err());
+        assert!(store.list_conversations().unwrap().is_empty());
+        store.import_legacy_conversations(r#"[{"id":"safe-id","title":"Safe","updatedAt":10,"messages":[{"role":"user","content":"private"}]}]"#).unwrap();
+        let other_store = WorkspaceStore::new(&root, other).unwrap();
+        assert!(other_store.list_conversations().unwrap().is_empty());
+        assert!(other_store.load_conversation("safe-id").unwrap().is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn interrupted_import_can_be_retried_without_overwriting_existing_rust_chat() {
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440094").unwrap();
+        store.save_conversation("same-id", &[crate::ui::model::Message {
+            id: 1, role: crate::ui::model::MessageRole::User, body: "Rust version".into(), streaming: false,
+        }]).unwrap();
+        let legacy = r#"[{"id":"same-id","title":"Legacy","updatedAt":22,"messages":[{"role":"user","content":"old version"}]}]"#;
+        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 1);
+        assert_eq!(store.import_legacy_conversations(legacy).unwrap(), 0);
+        assert_eq!(store.load_conversation("same-id").unwrap()[0].body, "Rust version");
+        let _ = fs::remove_dir_all(root);
+    }
+}
