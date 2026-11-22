@@ -111,6 +111,20 @@ public final class CenAiNativeActivity extends NativeActivity {
         return new String(cipher.doFinal(packed, 12, packed.length - 12), java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * Exports the legacy conversation JSON without mutating or deleting it.
+     * Rust validates every identifier, role, message and size before import.
+     */
+    public String exportLegacyConversationHistory() {
+        try {
+            SharedPreferences prefs = getSharedPreferences("cenai_history", MODE_PRIVATE);
+            return prefs.getString("conversations", "[]");
+        } catch (Exception error) {
+            android.util.Log.w("CenAI", "Legacy conversation history export unavailable; original data was retained.");
+            return "[]";
+        }
+    }
+
     /** Called only after Rust confirms the imported vault data is durable. */
     public void clearLegacySecureStoreAfterMigration() {
         try {
