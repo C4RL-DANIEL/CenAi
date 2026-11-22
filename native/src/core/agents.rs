@@ -41,7 +41,7 @@ impl TaskPlan {
         if ids.len() != self.steps.len() { return Err("Task step identifiers must be unique"); }
         if self.steps.iter().any(|step| {
             step.id == 0 || step.title.trim().is_empty() || step.title.len() > 240
-                || step.status != StepStatus::Pending || step.depends_on.len() > 12
+                || step.status != StepStatus::Pending || step.output.is_some() || step.depends_on.len() > 12
                 || {
                     let unique: std::collections::HashSet<u64> = step.depends_on.iter().copied().collect();
                     unique.len() != step.depends_on.len()
@@ -74,6 +74,9 @@ impl TaskPlan {
             return Err("Stopped task plans cannot contain active steps");
         }
         for step in &self.steps {
+            if step.output.as_ref().is_some_and(|output| output.is_empty() || output.len() > 24_000) {
+                return Err("A task step result is empty or exceeds the 24 KB limit");
+            }
             if !matches!(step.status, StepStatus::Pending | StepStatus::Cancelled)
                 && !step.depends_on.iter().all(|dependency| self.steps.iter().any(|candidate| candidate.id == *dependency && candidate.status == StepStatus::Completed)) {
                 return Err("A task step cannot advance before all dependencies complete");
