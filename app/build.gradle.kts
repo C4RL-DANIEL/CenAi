@@ -4,6 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
+    androidResources {
+        noCompress += "litertlm"
+    }
+
     namespace = "com.cenai.app"
     compileSdk = 35
     compileOptions {
