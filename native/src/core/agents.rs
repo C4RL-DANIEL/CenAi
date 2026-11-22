@@ -259,6 +259,28 @@ mod tests {
     }
 
     #[test]
+    fn persisted_step_results_are_bounded_and_new_plans_cannot_smuggle_outputs() {
+        let mut plan = TaskPlan {
+            id: "task-output".into(), goal: "Produce a saved result".into(), stopped: false,
+            steps: vec![TaskStep {
+                id: 1, role: AgentRole::Researcher, title: "Research".into(),
+                status: StepStatus::Pending, depends_on: Vec::new(), output: None,
+            }],
+        };
+        plan.steps[0].output = Some("untrusted pre-filled result".into());
+        assert!(plan.validate().is_err());
+        plan.steps[0].output = None;
+        plan.begin_step(1).unwrap();
+        plan.steps[0].output = Some("A verified bounded result".into());
+        plan.complete_step(1).unwrap();
+        assert!(plan.validate_persisted().is_ok());
+        plan.steps[0].output = Some("x".repeat(24_001));
+        assert!(plan.validate_persisted().is_err());
+        plan.steps[0].output = Some(String::new());
+        assert!(plan.validate_persisted().is_err());
+    }
+
+    #[test]
     fn dependency_cycles_are_rejected() {
         let plan = TaskPlan {
             id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
