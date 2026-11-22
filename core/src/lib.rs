@@ -1,3 +1,5 @@
+pub mod agent;
+
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -260,5 +262,25 @@ mod tests {
     fn preserves_unicode_character_boundaries() {
         assert_eq!(estimate_prompt_tokens("你好"), 1);
         assert_eq!(normalize_prompt("  你好  "), "你好");
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_NativeCore_evaluateArithmetic(
+    mut env: JNIEnv,
+    _class: JClass,
+    input: JString,
+) -> jstring {
+    let Some(expression) = read_java_string(&mut env, &input) else {
+        return std::ptr::null_mut();
+    };
+    let result = match agent::evaluate_arithmetic(&expression) {
+        Ok(value) => value.to_string(),
+        Err(error) => format!("ERROR:{error}"),
+    };
+    match env.new_string(result) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
     }
 }
