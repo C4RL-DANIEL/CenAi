@@ -416,15 +416,19 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             ui.label(text("No agent plans yet. Turn on Planning mode in chat to create a structured proposal.", 11.0, egui::Color32::from_rgb(140, 154, 190)));
         }
     });
-    for plan in &state.task_plans {
+    let plans = state.task_plans.clone();
+    for plan in plans {
         surface(ui, |ui| {
             ui.label(text(&plan.goal, 14.0, egui::Color32::WHITE).strong());
+            let completed = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::Completed).count();
             ui.label(text(
-                if plan.stopped { "Stopped" } else { "Saved proposal · not executed" },
+                if plan.stopped { format!("Stopped · {completed}/{} steps complete", plan.steps.len()) }
+                else { format!("{completed}/{} steps complete · approval-controlled workflow", plan.steps.len()) },
                 10.0,
                 if plan.stopped { egui::Color32::from_rgb(235, 156, 130) } else { egui::Color32::from_rgb(119, 220, 183) },
             ));
             for step in &plan.steps {
+                ui.separator();
                 ui.horizontal(|ui| {
                     ui.label(text(format!("#{} · {:?}", step.id, step.role), 10.0, egui::Color32::from_rgb(165, 184, 220)));
                     ui.label(text(format!("{:?}", step.status), 10.0, egui::Color32::from_rgb(190, 198, 220)));
@@ -437,9 +441,53 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                         egui::Color32::from_rgb(140, 154, 190),
                     ));
                 }
+                let ready = step.status == crate::core::agents::StepStatus::Pending
+                    && step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate|
+                        candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed));
+                ui.horizontal_wrapped(|ui| {
+                    match step.status {
+                        crate::core::agents::StepStatus::Pending if ready && !plan.stopped => {
+                            if ui.button("Mark started").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "start".into()));
+                            }
+                            if ui.button("Request approval").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "request_approval".into()));
+                            }
+                        }
+                        crate::core::agents::StepStatus::WaitingForApproval if !plan.stopped => {
+                            if ui.button("Approve step").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "approve".into()));
+                            }
+                            if ui.button("Decline").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "deny".into()));
+                            }
+                        }
+                        crate::core::agents::StepStatus::Running if !plan.stopped => {
+                            if ui.button("Mark complete").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "complete".into()));
+                            }
+                            if ui.button("Mark failed").clicked() {
+                                state.pending_plan_action = Some((plan.id.clone(), step.id, "fail".into()));
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+            if !plan.stopped && plan.steps.iter().any(|step| matches!(step.status,
+                crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
+                | crate::core::agents::StepStatus::WaitingForApproval)) {
+                if ui.button("Stop this plan").clicked() {
+                    state.pending_plan_action = Some((plan.id.clone(), 0, "stop".into()));
+                }
             }
         });
         ui.add_space(6.0);
+    }
+    if !state.plan_status.is_empty() {
+        surface(ui, |ui| {
+            ui.label(text(&state.plan_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        });
     }
     if let Some(artifact_id) = open_artifact {
         state.pending_artifact_open = Some(artifact_id);
@@ -509,7 +557,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         for plan in &state.task_plans {
             surface(ui, |ui| {
                 ui.label(text(&plan.goal, 15.0, egui::Color32::WHITE).strong());
-                ui.label(text(format!("{} steps · Plan only · Not executed", plan.steps.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                ui.label(text(format!("{} steps · {}", plan.steps.len(), if plan.stopped { "Stopped" } else { "Tracked in approval workflow" }), 10.0, egui::Color32::from_rgb(140, 154, 190)));
                 for step in &plan.steps {
                     ui.label(text(format!("○  {:?} — {}", step.role, step.title), 11.0, egui::Color32::from_rgb(163, 174, 203)));
                 }
