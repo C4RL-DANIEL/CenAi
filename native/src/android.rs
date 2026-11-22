@@ -211,14 +211,21 @@ pub fn android_main(app: AndroidApp) {
         Ok(vault) => Arc::new(vault),
         Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
     };
-    let account_id = vault.account_id().unwrap_or_default();
     let workspace_root = app.internal_data_path().unwrap_or_default();
-    let workspace = if account_id.is_empty() {
-        None
-    } else {
-        app.internal_data_path().and_then(|root| WorkspaceStore::new(root.join("cenai-workspace"), &account_id).ok())
-    };
     let api = CenAiApi::new(vault).ok();
+    // Always construct the workspace through the authenticated API so its
+    // index, conversations and artifacts use the Android Keystore-backed
+    // account/path-bound encryption adapter. Never fall back to plaintext.
+    let workspace = match (&api, app.internal_data_path()) {
+        (Some(api), Some(root)) => match api.workspace_store(root.join("cenai-workspace")) {
+            Ok(workspace) => Some(workspace),
+            Err(error) => {
+                log::error!("Encrypted workspace initialization failed: {error}");
+                None
+            }
+        },
+        _ => None,
+    };
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(error) => { log::error!("Async runtime initialization failed: {error}"); return; }
