@@ -87,14 +87,7 @@ pub(crate) fn migrate_legacy_history(
     workspace.import_legacy_conversations(&export, expected_email, legacy_verified_owner_email)
 }
 
-fn verified_legacy_owner_email(export: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(export).ok()?;
-    if value.get("email_verified").and_then(serde_json::Value::as_bool) != Some(true) {
-        return None;
-    }
-    let email = value.get("account_email").and_then(serde_json::Value::as_str)?.trim();
-    (email.contains('@') && email.len() <= 320).then(|| email.to_owned())
-}
+
 
 fn clear_legacy_secure_store(app: &AndroidApp) -> Result<(), String> {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
@@ -561,7 +554,7 @@ pub fn android_main(app: AndroidApp) {
     // preferences. It can authorize recovery only when the old store explicitly
     // recorded a verified email and it matches the currently authenticated account.
     let legacy_verified_owner_email = legacy_secure_export.as_deref()
-        .and_then(verified_legacy_owner_email);
+        .and_then(crate::core::legacy_history::verified_legacy_owner_email);
     match legacy_secure_export.as_deref() {
         Some(export) if export != "{}" && !export.is_empty() => {
             match vault.migrate_legacy_export(export) {
