@@ -1120,11 +1120,9 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                     state.update_status = format!("Downloading CenAI {}…", update.version);
                 }
             }
-            if !state.update_download_path.is_empty() {
-                if ui.button("Install update").clicked() {
-                    state.pending_update_install = true;
-                    state.update_status = "Verifying the installed signing certificate and opening Android installer…".into();
-                }
+            if !state.update_download_path.is_empty() && ui.button("Install update").clicked() {
+                state.pending_update_install = true;
+                state.update_status = "Verifying the installed signing certificate and opening Android installer…".into();
             }
         });
         if let Some(update) = state.available_update.as_ref() {
