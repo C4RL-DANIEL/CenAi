@@ -73,6 +73,14 @@ class NativeCoreInstrumentedTest {
         assertTrue(!NativeCore.googleOAuthAccessTokenUsable("", "999999", 1000L))
         assertEquals("first title", NativeCore.conversationTitle("[{\"role\":\"user\",\"content\":\"first title\"}]"))
 
+        val telemetryUsage = JSONObject(NativeCore.buildUsageTelemetryPayload("local", "offline", -1, 3, -1L, "success", "x".repeat(100)))
+        assertEquals(0, telemetryUsage.getInt("inputTokens"))
+        assertEquals(0, telemetryUsage.getLong("latencyMs"))
+        assertEquals(80, telemetryUsage.getString("errorCode").length)
+        val telemetryGuardian = JSONObject(NativeCore.buildGuardianTelemetryPayload("1.0", "16", 150, -1L, 200L, "wifi", "x".repeat(80)))
+        assertEquals(100, telemetryGuardian.getInt("batteryPercent"))
+        assertEquals(64, telemetryGuardian.getString("crashCategory").length)
+
         val primarySettings = JSONObject(NativeCore.resolveProviderSettings("OPENAI", "OPENAI", "custom-model", "https://custom.example/v1", "", ""))
         assertEquals("custom-model", primarySettings.getString("model"))
         val deepSeekSettings = JSONObject(NativeCore.resolveProviderSettings("DEEPSEEK", "OPENAI", "", "", "deepseek-chat", ""))
