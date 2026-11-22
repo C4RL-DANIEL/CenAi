@@ -32,6 +32,9 @@ object NativeCore {
     /** Builds provider-specific text and vision payloads in the Rust core. */
     external fun buildProviderPayload(provider: String, model: String, maxTokens: Int, messagesJson: String, customParamsJson: String): String
 
+    /** Parses provider-specific server-sent event payloads in Rust. */
+    external fun parseProviderDelta(provider: String, raw: String): String
+
     /** Approximate 1-token-per-4-characters hint; never use for billing or hard limits. */
     external fun estimatePromptTokens(input: String): Int
 
