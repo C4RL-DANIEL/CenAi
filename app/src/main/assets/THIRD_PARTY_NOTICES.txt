@@ -1,0 +1,22 @@
+Third-party model notice
+=======================
+
+CenAI bundles the LiteRT-LM INT8 conversion of Qwen3-0.6B as its fixed
+"Lightning" on-device model.
+
+Model: Qwen3-0.6B (dynamic INT8 weights, float KV cache)
+Artifact: Qwen3-0.6B.litertlm
+Publisher: litert-community
+Model source: https://huggingface.co/litert-community/Qwen3-0.6B
+Pinned revision: e6687177e00897731e7716267eebd4eba0dde7c2
+Artifact source:
+https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm
+Artifact size: 613,722,264 bytes
+SHA-256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+License: Apache License 2.0
+Full license text: assets/licenses/Apache-2.0.txt
+
+The underlying Qwen3-0.6B model is from the Qwen Team. The LiteRT-LM
+conversion is distributed by LiteRT Community. CenAI's "Lightning" name is
+an internal product label for this bundled model and does not imply
+ownership of the upstream model or its trademarks.
