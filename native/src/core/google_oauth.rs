@@ -8,6 +8,16 @@ use sha2::{Digest, Sha256};
 pub const REDIRECT_URI: &str = "com.cenai.app:/oauth2redirect";
 pub const SCOPE: &str = "https://www.googleapis.com/auth/generative-language.retriever https://www.googleapis.com/auth/cloud-platform";
 const MAX_CALLBACK_BYTES: usize = 8 * 1024;
+pub const MAX_AUTHORIZATION_AGE_SECONDS: i64 = 10 * 60;
+
+/// Rejects stale authorization attempts so a copied redirect cannot be replayed indefinitely.
+pub fn validate_authorization_age(started_at_unix_seconds: i64, now_unix_seconds: i64) -> Result<(), &'static str> {
+    if started_at_unix_seconds <= 0 || now_unix_seconds < started_at_unix_seconds
+        || now_unix_seconds.saturating_sub(started_at_unix_seconds) > MAX_AUTHORIZATION_AGE_SECONDS {
+        return Err("Google sign-in request expired. Start the connection again");
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizationRequest {
@@ -106,6 +116,14 @@ mod tests {
         assert!(validate_callback(&format!("{REDIRECT_URI}?state={state}&code=a&code=b"), &state).is_err());
         assert!(validate_callback(&format!("{REDIRECT_URI}?state={state}&error=access_denied"), &state).is_err());
         assert!(validate_callback(&format!("com.cenai.app://evil/oauth2redirect?state={state}&code=abc"), &state).is_err());
+    }
+
+    #[test]
+    fn authorization_requests_expire_after_ten_minutes() {
+        assert!(validate_authorization_age(1_000, 1_599).is_ok());
+        assert!(validate_authorization_age(1_000, 1_601).is_err());
+        assert!(validate_authorization_age(1_000, 999).is_err());
+        assert!(validate_authorization_age(0, 1_000).is_err());
     }
 
     #[test]
