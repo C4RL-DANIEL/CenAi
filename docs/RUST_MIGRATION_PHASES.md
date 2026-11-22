@@ -78,7 +78,7 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 ### Implemented foundations
 
 - Rust task plans enforce unique IDs, bounded steps, valid dependencies and explicit approval states.
-- Per-action approvals are bound to the exact operation risk class and step description; changing either invalidates the prior approval and requires a new review.
+- Per-action approvals are bound to the exact operation risk class and step description, consumed by one execution attempt, and invalidated after failure/retry; changing either also requires a new review.
 - Rust tool definitions and parsing validate bounded structured tool calls.
 - Safe local tools (date/time, arithmetic, text statistics, JSON formatting, UUID and Base64) execute from an app-owned allow-list.
 - Chat orchestration runs up to four safe tool calls per request and returns results to the model for a final response.
