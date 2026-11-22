@@ -76,7 +76,7 @@ fn compare_versions(left: &Version, right: &Version) -> std::cmp::Ordering {
     }
 }
 
-fn valid_release_download_url(value: &str) -> bool {
+pub fn valid_release_download_url(value: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(value) else { return false; };
     url.scheme() == "https" && url.host_str() == Some("github.com")
         && url.path().starts_with("/C4RL-DANIEL/CenAi/releases/download/")
