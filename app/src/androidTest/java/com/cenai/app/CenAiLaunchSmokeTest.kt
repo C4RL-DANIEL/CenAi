@@ -16,10 +16,10 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CenAiLaunchSmokeTest {
-    @get:Rule
+    @get:Rule(order = 0)
     val notificationPermission = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
 
-    @get:Rule
+    @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
     private fun selectSettingsPage(page: String) {
