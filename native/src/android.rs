@@ -1,6 +1,6 @@
 //! Android NativeActivity entrypoint. All application UI and rendering live in Rust.
 use std::{collections::VecDeque, sync::{Arc, Mutex, OnceLock}};
-use jni::{objects::{JClass, JObject, JString, JValue}, sys::jint, JNIEnv, JavaVM};
+use jni::{objects::{JClass, JObject, JString, JValue}, sys::{jboolean, jint}, JNIEnv, JavaVM};
 
 mod vault;
 pub(crate) mod audio;
@@ -20,6 +20,7 @@ use crate::render::wgpu_renderer::WgpuRenderer;
 #[derive(Debug)]
 enum AndroidPlatformEvent {
     FilePicked { request_code: i32, path: String, mime_type: String, display_name: String, error: String },
+    AgentActionResult { name: String, success: bool, message: String },
 }
 
 static PLATFORM_EVENTS: OnceLock<Mutex<VecDeque<AndroidPlatformEvent>>> = OnceLock::new();
@@ -46,6 +47,90 @@ fn activity_local<'local>(env: &mut JNIEnv<'local>, app: &AndroidApp) -> jni::er
     let local = env.new_local_ref(&global);
     std::mem::forget(global);
     local
+}
+
+/// Dispatch a model-requested Android action only after the native approval dialog
+/// has explicitly authorized this one request. Validate the exact argument shape again
+/// at the platform boundary before crossing JNI.
+pub(crate) fn execute_approved_agent_action(app: AndroidApp, name: String, arguments: serde_json::Value) {
+    let object = arguments.as_object();
+    let value = match name.as_str() {
+        "open_url" if object.is_some_and(|o| o.len() == 1 && o.contains_key("url")) => {
+            let Some(url) = arguments.get("url").and_then(serde_json::Value::as_str) else {
+                log::warn!("Rejected approved URL action with invalid arguments"); return;
+            };
+            if url.len() > 4096 || !url::Url::parse(url).ok().is_some_and(|parsed| {
+                matches!(parsed.scheme(), "https" | "http") && parsed.host_str().is_some()
+                    && parsed.username().is_empty() && parsed.password().is_none()
+            }) {
+                log::warn!("Rejected approved URL action outside the HTTP(S) allowlist"); return;
+            }
+            url.to_owned()
+        }
+        "open_dialer" if object.is_some_and(|o| o.len() == 1 && o.contains_key("number")) => {
+            let Some(number) = arguments.get("number").and_then(serde_json::Value::as_str) else {
+                log::warn!("Rejected approved dialer action with invalid arguments"); return;
+            };
+            if !(4..=32).contains(&number.len()) || !number.chars().all(|c|
+                c.is_ascii_digit() || "+*#(). -".contains(c)) {
+                log::warn!("Rejected approved dialer action with invalid number"); return;
+            }
+            number.to_owned()
+        }
+        "share_text" if object.is_some_and(|o| o.len() == 1 && o.contains_key("text")) => {
+            let Some(text) = arguments.get("text").and_then(serde_json::Value::as_str) else {
+                log::warn!("Rejected approved share action with invalid arguments"); return;
+            };
+            if text.trim().is_empty() || text.len() > 64 * 1024 {
+                log::warn!("Rejected approved share action outside the size limit"); return;
+            }
+            text.to_owned()
+        }
+        "open_app_settings" if object.is_some_and(serde_json::Map::is_empty) => String::new(),
+        _ => {
+            log::warn!("Rejected unsupported or malformed approved Android action");
+            return;
+        }
+    };
+
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else {
+            push_platform_event(AndroidPlatformEvent::AgentActionResult {
+                name, success: false, message: "Android runtime is unavailable.".into(),
+            });
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            push_platform_event(AndroidPlatformEvent::AgentActionResult {
+                name, success: false, message: "Could not attach to the Android runtime.".into(),
+            });
+            return;
+        };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else {
+            push_platform_event(AndroidPlatformEvent::AgentActionResult {
+                name, success: false, message: "CenAI activity is unavailable.".into(),
+            });
+            return;
+        };
+        let result = (|| -> jni::errors::Result<()> {
+            let action = env.new_string(&name)?;
+            let value = env.new_string(&value)?;
+            env.call_method(
+                &activity,
+                "performAgentAction",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+                &[JValue::Object(&action), JValue::Object(&value)],
+            )?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            push_platform_event(AndroidPlatformEvent::AgentActionResult {
+                name, success: false, message: format!("Android action bridge failed: {error}"),
+            });
+        }
+    }));
 }
 
 /// Schedule a persistent OS-managed reminder for a user-owned automation.
@@ -158,6 +243,17 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnFilePicked
         mime_type: java_string(&mut env, mime_type),
         display_name: java_string(&mut env, display_name),
         error: java_string(&mut env, error),
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnPlatformActionResult(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, name: JString<'_>, success: jboolean, message: JString<'_>,
+) {
+    push_platform_event(AndroidPlatformEvent::AgentActionResult {
+        name: java_string(&mut env, name),
+        success: success != 0,
+        message: java_string(&mut env, message),
     });
 }
 
@@ -284,6 +380,9 @@ impl ApplicationHandler for CenAiApplication {
                                     8102 => renderer.handle_backup_file_import(path, error),
                                     _ => log::warn!("Ignoring unknown Android file picker request {request_code}"),
                                 }
+                            }
+                            AndroidPlatformEvent::AgentActionResult { name, success, message } => {
+                                renderer.handle_agent_action_result(name, success, message);
                             }
                         }
                     }
