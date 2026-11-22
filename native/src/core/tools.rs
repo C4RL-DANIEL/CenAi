@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use chrono::{Local, NaiveDate};
+use chrono::Local;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -123,7 +123,7 @@ fn definitions() -> Vec<ToolDefinition> {
     let no_args = json!({"type":"object","properties":{},"additionalProperties":false});
     let string_arg = |name: &str| json!({
         "type":"object",
-        "properties":{name:{"type":"string","maxLength":MAX_TOOL_TEXT_BYTES}},
+        "properties":{(name):{"type":"string","maxLength":MAX_TOOL_TEXT_BYTES}},
         "required":[name],
         "additionalProperties":false
     });
