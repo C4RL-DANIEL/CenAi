@@ -561,7 +561,7 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             let has_active_work = plan.steps.iter().any(|step| matches!(step.status,
                 crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
                 | crate::core::agents::StepStatus::WaitingForApproval));
-            if !plan.stopped && has_active_work {
+            if !plan.stopped && (plan.is_paused() || has_active_work) {
                 if plan.is_paused() {
                     if ui.button("Resume plan").clicked() {
                         state.pending_plan_action = Some((plan.id.clone(), 0, "resume".into()));
