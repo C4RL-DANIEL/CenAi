@@ -50,6 +50,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Four primary Rust-owned destinations: Conversation, Your Work, Connections and Settings, with WGPU/egui rendering, animated GPU background, responsive layouts and account-scoped appearance preferences.
 - Supabase existing-account sign-in, token refresh, email OTP, TOTP MFA, registration-policy checks and account-generation guards against stale asynchronous results.
 - Managed CenAI Cloud chat client and Workers AI quota reservation/recording source; BYOK adapters currently cover OpenAI-compatible, DeepSeek, Anthropic and Gemini paths. The model catalogue and model-selection experience remain limited.
+- Explicit per-account Offline AI preference: when enabled, new chat prompts route directly to the bundled Lightning runtime and skip cloud/provider calls; without an authenticated cloud session, local Lightning is the only chat route. The preference is saved through the authenticated user-settings service.
 - Per-account encrypted workspace persistence using the Android Keystore-backed vault, atomic metadata writes, encrypted attachment storage, safe artifact IDs and SHA-256 validation.
 - Project creation, archive state, artifact save/open/delete and task-plan persistence in the local workspace.
 - Passphrase-protected Argon2id/AES-256-GCM backup export/import, plus authenticated encrypted backup upload/download to the account's private Supabase Storage object. This is backup/restore, not continuous cross-device synchronization.
@@ -63,6 +64,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 ## Still required before release
 
 - Complete the model/provider catalogue, per-model configuration and capability metadata; add subscription status, entitlement resolution and enforcement across managed AI, tools and premium features. Existing Stripe/PayPal checkout and webhook source is not proof that live entitlements are configured.
+- Validate the explicit Offline AI preference and local-only network boundary on API 35 emulator and the REDMI Pad 2 Pro, including account switch/sign-out behavior and repeated inference.
 - Finish project workflows beyond local CRUD: robust artifact type previews, versions, imports/exports, collaboration and recovery UX.
 - Implement continuous encrypted cross-device workspace synchronization with conflict resolution, deletion propagation and offline queue/retry. Current upload/download is encrypted backup/restore only.
 - Add MCP registry discovery and publisher verification/revocation at the service boundary. Build an actual remote sandbox executor in isolated per-user containers; current `sandbox.rs` validates requests and output policy but does not execute jobs.
