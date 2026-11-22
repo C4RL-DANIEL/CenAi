@@ -1100,6 +1100,12 @@ impl WgpuRenderer {
         self.app_state.pending_mfa_enroll = false;
         self.app_state.pending_mfa_verify = false;
         self.app_state.pending_mfa_unenroll = None;
+        #[cfg(target_os = "android")]
+        if let Some(app) = self.android_app.as_ref() {
+            for automation in &self.app_state.automations {
+                cancel_automation_reminder(app.clone(), self.active_user_id.clone(), automation.id.clone());
+            }
+        }
         self.app_state.automations.clear();
         self.app_state.automation_status.clear();
         self.app_state.pending_automation_save = false;
