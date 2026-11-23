@@ -69,6 +69,15 @@ class BackgroundTaskWorkerTest {
         val work = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("cenai_background_cognitive_periodic").get()
         assertTrue(work.isNotEmpty())
+        val immediate = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_background_cognitive_immediate").get()
+        assertTrue(immediate.isNotEmpty())
         BackgroundTaskBridge.cancel(context)
+        val cancelledPeriodic = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_background_cognitive_periodic").get()
+        val cancelledImmediate = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_background_cognitive_immediate").get()
+        assertTrue(cancelledPeriodic.all { it.state == androidx.work.WorkInfo.State.CANCELLED })
+        assertTrue(cancelledImmediate.all { it.state == androidx.work.WorkInfo.State.CANCELLED })
     }
 }

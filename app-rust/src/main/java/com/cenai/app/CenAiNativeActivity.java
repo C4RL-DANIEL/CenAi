@@ -42,6 +42,9 @@ public final class CenAiNativeActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         GuardianRuntimeBridge.install(this);
         GuardianWorker.schedule(this);
+        // Register Rust cognitive work with Android's persistent scheduler.
+        // Rust checks persisted user consent and safely no-ops without an eligible plan.
+        BackgroundTaskBridge.schedule(this);
         handleOAuthIntent(getIntent());
         handleAutomationReminderIntent(getIntent());
     }
