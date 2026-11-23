@@ -99,9 +99,9 @@ fn append_local_knowledge_context(mut prompt: String, context: &str) -> String {
 
 fn provider_defaults(provider: &str) -> (&'static str, &'static str) {
     match provider {
-        "deepseek" => ("deepseek-chat", "https://api.deepseek.com"),
-        "anthropic" => ("claude-sonnet-4-5", "https://api.anthropic.com"),
-        "gemini" => ("gemini-2.5-flash", "https://generativelanguage.googleapis.com"),
+        "deepseek" => ("deepseek-flash", "https://api.deepseek.com"),
+        "anthropic" => ("claude-sonnet-5-5", "https://api.anthropic.com"),
+        "gemini" => ("gemini-3.8-flash", "https://generativelanguage.googleapis.com"),
         "custom" => ("", ""),
         _ => ("gpt-4.1-mini", "https://api.openai.com/v1"),
     }
