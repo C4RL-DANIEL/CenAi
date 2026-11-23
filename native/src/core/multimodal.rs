@@ -660,6 +660,38 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_attachment_replacements_keep_metadata_and_bytes_consistent() {
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("cenai-attachment-race-{}-{unique}", std::process::id()));
+        let owner = "550e8400-e29b-41d4-a716-446655440010";
+        let left = AttachmentStore::new(&root, owner).unwrap();
+        let right = AttachmentStore::new(&root, owner).unwrap();
+        let left_bytes = b"\\x89PNG\\r\\n\\x1a\\nleft-version";
+        let right_bytes = b"\\x89PNG\\r\\n\\x1a\\nright-version";
+        let metadata = |bytes: &[u8]| AttachmentMetadata {
+            id: "shared_image".into(), file_name: "shared.png".into(), mime_type: "image/png".into(),
+            kind: AttachmentKind::Image, byte_length: bytes.len() as u64,
+            sha256: Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect(),
+        };
+        let left_metadata = metadata(left_bytes);
+        let right_metadata = metadata(right_bytes);
+        for _ in 0..32 {
+            let left_store = left.clone();
+            let right_store = right.clone();
+            let left_metadata = left_metadata.clone();
+            let right_metadata = right_metadata.clone();
+            let left_thread = std::thread::spawn(move || left_store.save(&left_metadata, left_bytes).unwrap());
+            let right_thread = std::thread::spawn(move || right_store.save(&right_metadata, right_bytes).unwrap());
+            left_thread.join().unwrap();
+            right_thread.join().unwrap();
+            let saved = left.list().unwrap();
+            assert_eq!(saved.len(), 1);
+            assert!(left.load(&saved[0]).is_ok(), "metadata and bytes must be from the same atomic save");
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn attachment_store_is_atomic_account_scoped_and_revalidates_content() {
         let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let root = std::env::temp_dir().join(format!("cenai-attachments-{}-{unique}", std::process::id()));
