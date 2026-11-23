@@ -363,7 +363,7 @@ pub struct WgpuRenderer {
     workspace: Option<WorkspaceStore>,
     attachment_store: Option<AttachmentStore>,
     last_saved_message_count: usize,
-    last_saved_preferences: (bool, bool, bool, bool),
+    last_saved_preferences: (bool, bool, bool, bool, bool),
     last_saved_voice_language: String,
     workspace_root: PathBuf,
     guardian: GuardianMonitor,
@@ -518,6 +518,7 @@ impl WgpuRenderer {
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
             app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
             app_state.local_knowledge_enabled = service.user_setting("local_knowledge_enabled").is_ok_and(|value| value == "true");
+            app_state.multi_agent_enabled = service.user_setting("multi_agent_enabled").is_ok_and(|value| value == "true");
             let (default_model, default_endpoint) = provider_defaults(&app_state.provider_key_provider);
             app_state.provider_model_draft = service.user_setting(&provider_setting_key(&app_state.provider_key_provider, "model"))
                 .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_model.to_owned());
@@ -561,7 +562,7 @@ impl WgpuRenderer {
         let last_dispatched_message_id = app_state.conversation.messages()
             .filter(|message| message.role == MessageRole::User)
             .map(|message| message.id).max().unwrap_or(0);
-        let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion, app_state.offline_ai_enabled, app_state.local_knowledge_enabled);
+        let last_saved_preferences = (app_state.light_mode, app_state.reduced_motion, app_state.offline_ai_enabled, app_state.local_knowledge_enabled, app_state.multi_agent_enabled);
         let last_saved_voice_language = app_state.voice_language.clone();
         let session_id = new_session_id();
         let active_user_id = api.as_ref().and_then(|service| service.account_id().ok()).unwrap_or_default();
@@ -1426,7 +1427,8 @@ impl WgpuRenderer {
         self.app_state.reduced_motion = false;
         self.app_state.offline_ai_enabled = false;
         self.app_state.local_knowledge_enabled = false;
-        self.last_saved_preferences = (false, false, false, false);
+        self.app_state.multi_agent_enabled = false;
+        self.last_saved_preferences = (false, false, false, false, false);
         self.app_state.voice_language = "English".into();
         self.last_saved_voice_language = "English".into();
         self.app_state.account_email.clear();
@@ -1720,14 +1722,15 @@ impl WgpuRenderer {
                 }
             }
         }
-        let preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled);
+        let preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled, self.app_state.multi_agent_enabled);
         if preferences != self.last_saved_preferences {
             if let Some(service) = &self.api {
                 let light_saved = service.save_user_setting("light_mode", if preferences.0 { "true" } else { "false" }).is_ok();
                 let motion_saved = service.save_user_setting("reduced_motion", if preferences.1 { "true" } else { "false" }).is_ok();
                 let offline_saved = service.save_user_setting("offline_ai_enabled", if preferences.2 { "true" } else { "false" }).is_ok();
                 let knowledge_saved = service.save_user_setting("local_knowledge_enabled", if preferences.3 { "true" } else { "false" }).is_ok();
-                if light_saved && motion_saved && offline_saved && knowledge_saved {
+                let multi_agent_saved = service.save_user_setting("multi_agent_enabled", if preferences.4 { "true" } else { "false" }).is_ok();
+                if light_saved && motion_saved && offline_saved && knowledge_saved && multi_agent_saved {
                     self.last_saved_preferences = preferences;
                 }
             }
@@ -2639,7 +2642,8 @@ impl WgpuRenderer {
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
                                 self.app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
                                 self.app_state.local_knowledge_enabled = service.user_setting("local_knowledge_enabled").is_ok_and(|value| value == "true");
-                                self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled);
+                                self.app_state.multi_agent_enabled = service.user_setting("multi_agent_enabled").is_ok_and(|value| value == "true");
+                                self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled, self.app_state.multi_agent_enabled);
                                 if let Ok(language) = service.user_setting("voice_language") {
                                     if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                                         self.app_state.voice_language = language;
