@@ -310,7 +310,8 @@ fn read_zip_entry<R: Read + std::io::Seek>(
         return Err(format!("Archive entry {name} exceeds the extraction size limit"));
     }
     let mut bytes = Vec::with_capacity(file.size() as usize);
-    file.read_to_end(&mut bytes).map_err(|error| format!("Archive entry {name} could not be read: {error}"))?;
+    file.take(max_bytes as u64 + 1).read_to_end(&mut bytes)
+        .map_err(|error| format!("Archive entry {name} could not be read: {error}"))?;
     if bytes.len() > max_bytes {
         return Err(format!("Archive entry {name} exceeds the extraction size limit"));
     }
