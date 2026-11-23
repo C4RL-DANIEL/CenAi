@@ -1633,6 +1633,44 @@ impl WgpuRenderer {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             screen::render(ctx, &mut self.app_state, time);
         });
+        if std::mem::take(&mut self.app_state.pending_provider_config_load) {
+            let provider = self.app_state.provider_key_provider.clone();
+            let (default_model, default_endpoint) = provider_defaults(&provider);
+            let model_key = provider_setting_key(&provider, "model");
+            let endpoint_key = provider_setting_key(&provider, "endpoint");
+            let saved_model = self.api.as_ref().and_then(|api| api.user_setting(&model_key).ok());
+            let saved_endpoint = self.api.as_ref().and_then(|api| api.user_setting(&endpoint_key).ok());
+            self.app_state.provider_model_draft = saved_model.filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| default_model.to_owned());
+            self.app_state.provider_endpoint_draft = saved_endpoint.unwrap_or_else(|| default_endpoint.to_owned());
+            self.app_state.provider_config_status.clear();
+        }
+        if let Some((provider, model, endpoint)) = self.app_state.pending_provider_config_save.take() {
+            let model = model.trim();
+            let endpoint = endpoint.trim();
+            let compatible = matches!(provider.as_str(), "openai" | "deepseek" | "custom");
+            let validation = if model.is_empty() || model.len() > 128 || model.chars().any(char::is_control) {
+                Err("Enter a valid model identifier of 1–128 characters.".to_owned())
+            } else if compatible && validate_provider_endpoint(endpoint).is_err() {
+                Err("OpenAI-compatible endpoints must be valid public HTTPS URLs without credentials, query strings or fragments.".to_owned())
+            } else {
+                Ok(())
+            };
+            match (validation, self.api.as_ref()) {
+                (Err(error), _) => self.app_state.provider_config_status = error,
+                (Ok(()), Some(api)) => {
+                    let model_key = provider_setting_key(&provider, "model");
+                    let endpoint_key = provider_setting_key(&provider, "endpoint");
+                    let saved_model = api.save_user_setting(&model_key, model);
+                    let saved_endpoint = if compatible { api.save_user_setting(&endpoint_key, endpoint) } else { Ok(()) };
+                    self.app_state.provider_config_status = match (saved_model, saved_endpoint) {
+                        (Ok(()), Ok(())) => format!("{provider} model configuration saved securely on this device."),
+                        (Err(error), _) | (_, Err(error)) => format!("Could not save provider configuration: {error}"),
+                    };
+                }
+                (Ok(()), None) => self.app_state.provider_config_status = "Secure local settings are unavailable.".into(),
+            }
+        }
         if let Some((name, arguments)) = self.app_state.pending_agent_action_execute.take() {
             if name == "sandbox_run" {
                 let request_result = (|| -> Result<SandboxRequest, String> {
