@@ -1,4 +1,4 @@
-name: Rust Android Debug APK
+name: Experimental Rust Native Android Debug APK
 
 on:
   push:
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cenai-rust-native-debug
+          name: cenai-rust-native-experimental-debug
           path: |
             app-rust/build/outputs/apk/debug/app-rust-debug.apk
             app-rust/build/outputs/apk/debug/SHA256SUMS.txt
