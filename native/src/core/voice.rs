@@ -197,6 +197,11 @@ impl VoicePipeline {
         Ok(self.audio.finish())
     }
 
+    /// Drains additional bounded chunks produced by a single large platform callback.
+    pub fn drain_pending_chunks(&mut self) -> Vec<AudioChunk> {
+        self.audio.drain_ready_chunks()
+    }
+
     pub fn stop(&mut self) -> VoiceEvent { self.session.stop() }
 }
 
