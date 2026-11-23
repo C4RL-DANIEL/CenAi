@@ -93,6 +93,7 @@ pub struct VoiceAudioBuffer {
     silence_samples: usize,
     speech_active: bool,
     samples: Vec<i16>,
+    ready_chunks: std::collections::VecDeque<AudioChunk>,
 }
 
 impl VoiceAudioBuffer {
@@ -110,6 +111,7 @@ impl VoiceAudioBuffer {
             silence_samples: 0,
             speech_active: false,
             samples: Vec::new(),
+            ready_chunks: std::collections::VecDeque::new(),
         })
     }
 
@@ -118,23 +120,38 @@ impl VoiceAudioBuffer {
         if frame.sample_rate_hz != self.sample_rate_hz {
             return Err("Audio frame sample rate changed during the voice session");
         }
-        if frame.rms_level() >= 500 {
-            self.speech_active = true;
-            self.silence_samples = 0;
-        } else if self.speech_active {
-            self.silence_samples = self.silence_samples.saturating_add(frame.samples.len());
-        } else {
-            return Ok(None);
+        let speech = frame.rms_level() >= 500;
+        // Split oversized platform buffers into bounded chunks instead of allowing
+        // a single callback to exceed the configured provider payload limit.
+        for part in frame.samples.chunks(self.max_samples) {
+            if speech {
+                self.speech_active = true;
+                self.silence_samples = 0;
+            } else if self.speech_active {
+                self.silence_samples = self.silence_samples.saturating_add(part.len());
+            } else {
+                continue;
+            }
+            self.samples.extend_from_slice(part);
+            if self.samples.len() >= self.max_samples
+                || self.silence_samples >= self.silence_samples_to_flush
+            {
+                if let Some(chunk) = self.take_chunk() {
+                    self.ready_chunks.push_back(chunk);
+                }
+            }
         }
-        self.samples.extend(frame.samples);
-        if self.samples.len() >= self.max_samples || self.silence_samples >= self.silence_samples_to_flush {
-            return Ok(self.take_chunk());
-        }
-        Ok(None)
+        Ok(self.ready_chunks.pop_front())
+    }
+
+    /// Returns chunks queued when one oversized platform callback crossed
+    /// multiple configured chunk boundaries.
+    pub fn drain_ready_chunks(&mut self) -> Vec<AudioChunk> {
+        self.ready_chunks.drain(..).collect()
     }
 
     pub fn finish(&mut self) -> Option<AudioChunk> {
-        self.take_chunk()
+        self.ready_chunks.pop_front().or_else(|| self.take_chunk())
     }
 
     fn take_chunk(&mut self) -> Option<AudioChunk> {
@@ -314,6 +331,22 @@ mod tests {
         assert_eq!(chunk.duration_ms(), 500);
         assert!(chunk.speech_detected);
         assert!(VoiceAudioBuffer::new(16_000, 100).is_err());
+    }
+
+    #[test]
+    fn voice_audio_buffer_splits_oversized_platform_frames_without_exceeding_chunk_limit() {
+        let mut buffer = VoiceAudioBuffer::new(16_000, 500).unwrap();
+        let oversized = AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![1200; 64_000],
+        };
+        let first = buffer.push_frame(oversized).unwrap().unwrap();
+        assert_eq!(first.duration_ms(), 500);
+        let remaining = buffer.drain_ready_chunks();
+        assert_eq!(remaining.len(), 7);
+        assert!(remaining.iter().all(|chunk| chunk.duration_ms() <= 500));
+        assert!(remaining.iter().all(|chunk| chunk.speech_detected));
     }
 
     #[test]
