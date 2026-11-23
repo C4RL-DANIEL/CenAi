@@ -1,4 +1,3 @@
-import { Sandbox, Snapshot } from "@vercel/sandbox";
 import { isAbsolute, resolve, sep } from "node:path";
 
 const ALLOWED_COMMANDS = new Set([
@@ -108,6 +107,7 @@ export default async function handler(req, res) {
 
   let runId = null;
   let sandbox = null;
+  let SnapshotApi = null;
   let previousSnapshotId = null;
   let workspaceSaved = false;
   const startedAt = Date.now();
@@ -129,7 +129,14 @@ export default async function handler(req, res) {
     const restoreSnapshotId = typeof previousSnapshotId === "string" && /^snap_[A-Za-z0-9_-]{8,96}$/.test(previousSnapshotId)
       ? previousSnapshotId
       : baseSnapshotId;
-    sandbox = await Sandbox.create({
+    // Load the Node-only SDK only after method, request and account checks. A
+    // module-load failure must not crash the whole function before it can return
+    // a clear 401/405 response to unauthenticated probes or browser requests.
+    const sandboxSdk = await import("@vercel/sandbox");
+    const SandboxApi = sandboxSdk.Sandbox;
+    SnapshotApi = sandboxSdk.Snapshot;
+    if (!SandboxApi || !SnapshotApi) throw new Error("Vercel Sandbox SDK exports are unavailable");
+    sandbox = await SandboxApi.create({
       source: { type: "snapshot", snapshotId: restoreSnapshotId },
       region: "sin1",
       resources: { vcpus: 1 },
@@ -148,7 +155,7 @@ export default async function handler(req, res) {
     sandbox = null; // snapshot() stops the microVM automatically
     // A shared base image is never an account-owned workspace snapshot and must never be deleted here.
     if (shouldDeletePreviousSnapshot(previousSnapshotId, newSnapshot.snapshotId, baseSnapshotId)) {
-      try { await (await Snapshot.get({ snapshotId: previousSnapshotId })).delete(); } catch { /* Expired snapshots are harmless; retention cleanup is best effort. */ }
+      try { await (await SnapshotApi.get({ snapshotId: previousSnapshotId })).delete(); } catch { /* Expired snapshots are harmless; retention cleanup is best effort. */ }
     }
     const exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 1;
     const durationMs = Math.min(120_000, Date.now() - startedAt);
