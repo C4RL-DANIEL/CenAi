@@ -241,6 +241,281 @@ impl AttachmentStore {
 
 }
 
+
+const MAX_EXTRACTED_TEXT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_ARCHIVE_TOTAL_BYTES: usize = 10 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 2_000;
+
+fn push_bounded_text(output: &mut String, value: &str) -> Result<(), String> {
+    if output.len().saturating_add(value.len()) > MAX_EXTRACTED_TEXT_BYTES {
+        return Err("Extracted document text exceeds the 2 MB analysis limit".into());
+    }
+    output.push_str(value);
+    Ok(())
+}
+
+fn xml_tag_is(name: &[u8], local_name: &[u8]) -> bool {
+    name == local_name || name.rsplit(|byte| *byte == b':').next() == Some(local_name)
+}
+
+fn append_xml_text(output: &mut String, value: &quick_xml::events::BytesText<'_>) -> Result<(), String> {
+    let decoded = value.decode().map_err(|error| format!("Office XML text could not be decoded: {error}"))?;
+    let unescaped = quick_xml::escape::unescape(decoded.as_ref())
+        .map_err(|error| format!("Office XML entity was invalid: {error}"))?;
+    push_bounded_text(output, unescaped.as_ref())
+}
+
+fn xml_document_text(xml: &[u8]) -> Result<String, String> {
+    if xml.len() > MAX_EXTRACTED_TEXT_BYTES * 2 {
+        return Err("Office XML document exceeds the extraction limit".into());
+    }
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    let mut output = String::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(element)) if xml_tag_is(element.name().as_ref(), b"p") => {
+                if !output.is_empty() && !output.ends_with('\n') { output.push('\n'); }
+            }
+            Ok(Event::Empty(element)) if xml_tag_is(element.name().as_ref(), b"tab") => output.push('\t'),
+            Ok(Event::Empty(element)) if xml_tag_is(element.name().as_ref(), b"br") => output.push('\n'),
+            Ok(Event::Text(value)) => append_xml_text(&mut output, &value)?,
+            Ok(Event::CData(value)) => {
+                let decoded = value.decode().map_err(|error| format!("Office XML CDATA could not be decoded: {error}"))?;
+                push_bounded_text(&mut output, decoded.as_ref())?;
+            }
+            Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"p") => output.push('\n'),
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(error) => return Err(format!("Office XML document is malformed: {error}")),
+        }
+        buffer.clear();
+    }
+    Ok(output.trim().to_owned())
+}
+
+fn read_zip_entry<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, String> {
+    let mut file = match archive.by_name(name) {
+        Ok(file) => file,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(error) => return Err(format!("Document archive could not be read: {error}")),
+    };
+    if file.size() > max_bytes as u64 {
+        return Err(format!("Archive entry {name} exceeds the extraction size limit"));
+    }
+    let mut bytes = Vec::with_capacity(file.size() as usize);
+    file.read_to_end(&mut bytes).map_err(|error| format!("Archive entry {name} could not be read: {error}"))?;
+    if bytes.len() > max_bytes {
+        return Err(format!("Archive entry {name} exceeds the extraction size limit"));
+    }
+    Ok(Some(bytes))
+}
+
+fn archive_names<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<(String, u64)>, String> {
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("Document archive contains too many entries".into());
+    }
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(|error| format!("Document archive entry is invalid: {error}"))?;
+        entries.push((file.name().to_owned(), file.size()));
+    }
+    Ok(entries)
+}
+
+fn extract_docx(bytes: &[u8]) -> Result<String, String> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!("Word document archive is invalid: {error}"))?;
+    let xml = read_zip_entry(&mut archive, "word/document.xml", MAX_EXTRACTED_TEXT_BYTES * 2)?
+        .ok_or("Word document does not contain its main document body")?;
+    xml_document_text(&xml)
+}
+
+fn extract_pptx(bytes: &[u8]) -> Result<String, String> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!("PowerPoint document archive is invalid: {error}"))?;
+    let mut slides = archive_names(&mut archive)?.into_iter()
+        .filter(|(name, _)| name.starts_with("ppt/slides/slide") && name.ends_with(".xml"))
+        .collect::<Vec<_>>();
+    slides.sort_by_key(|(name, _)| {
+        name.rsplit("slide").next().and_then(|value| value.strip_suffix(".xml"))
+            .and_then(|number| number.parse::<u32>().ok()).unwrap_or(u32::MAX)
+    });
+    if slides.is_empty() { return Err("PowerPoint document contains no readable slides".into()); }
+    let mut output = String::new();
+    for (name, _) in slides {
+        let xml = read_zip_entry(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2)?
+            .ok_or("PowerPoint slide disappeared while reading")?;
+        let text = xml_document_text(&xml)?;
+        if !text.is_empty() {
+            push_bounded_text(&mut output, &format!("{name}:\n{text}\n\n"))?;
+        }
+    }
+    if output.trim().is_empty() { return Err("PowerPoint document contains no extractable slide text".into()); }
+    Ok(output.trim().to_owned())
+}
+
+fn parse_shared_strings(xml: &[u8]) -> Result<Vec<String>, String> {
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    let mut strings = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(element)) if xml_tag_is(element.name().as_ref(), b"si") => {
+                current.clear();
+                in_string = true;
+            }
+            Ok(Event::Text(value)) if in_string => append_xml_text(&mut current, &value)?,
+            Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"si") => {
+                strings.push(std::mem::take(&mut current));
+                in_string = false;
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(error) => return Err(format!("Spreadsheet shared strings are malformed: {error}")),
+        }
+        buffer.clear();
+    }
+    Ok(strings)
+}
+
+fn parse_worksheet_cells(xml: &[u8], shared_strings: &[String]) -> Result<String, String> {
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    let mut output = String::new();
+    let mut cell_type = String::new();
+    let mut cell_value = String::new();
+    let mut in_cell = false;
+    let mut in_value = false;
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(element)) if xml_tag_is(element.name().as_ref(), b"c") => {
+                in_cell = true;
+                cell_value.clear();
+                cell_type.clear();
+                for attribute in element.attributes().with_checks(false) {
+                    let attribute = attribute.map_err(|error| format!("Spreadsheet cell attribute is invalid: {error}"))?;
+                    if attribute.key.as_ref() == b"t" {
+                        cell_type = attribute.unescape_value().map_err(|error| error.to_string())?.into_owned();
+                    }
+                }
+            }
+            Ok(Event::Start(element)) if in_cell
+                && (xml_tag_is(element.name().as_ref(), b"v") || xml_tag_is(element.name().as_ref(), b"t")) => in_value = true,
+            Ok(Event::Text(value)) if in_cell && in_value => append_xml_text(&mut cell_value, &value)?,
+            Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"v")
+                || xml_tag_is(element.name().as_ref(), b"t") => in_value = false,
+            Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"c") && in_cell => {
+                let value = if cell_type == "s" {
+                    cell_value.trim().parse::<usize>().ok()
+                        .and_then(|index| shared_strings.get(index)).cloned().unwrap_or_default()
+                } else {
+                    cell_value.trim().to_owned()
+                };
+                if !value.is_empty() {
+                    push_bounded_text(&mut output, &value)?;
+                    output.push('\t');
+                }
+                in_cell = false;
+                in_value = false;
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(error) => return Err(format!("Spreadsheet worksheet is malformed: {error}")),
+        }
+        buffer.clear();
+    }
+    Ok(output)
+}
+
+fn extract_xlsx(bytes: &[u8]) -> Result<String, String> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!("Spreadsheet archive is invalid: {error}"))?;
+    let shared_strings = read_zip_entry(&mut archive, "xl/sharedStrings.xml", MAX_EXTRACTED_TEXT_BYTES * 2)?
+        .map(|xml| parse_shared_strings(&xml)).transpose()?.unwrap_or_default();
+    let mut sheets = archive_names(&mut archive)?.into_iter()
+        .filter(|(name, _)| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
+        .collect::<Vec<_>>();
+    sheets.sort_by_key(|(name, _)| {
+        name.rsplit("sheet").next().and_then(|value| value.strip_suffix(".xml"))
+            .and_then(|number| number.parse::<u32>().ok()).unwrap_or(u32::MAX)
+    });
+    if sheets.is_empty() { return Err("Spreadsheet contains no readable worksheets".into()); }
+    let mut output = String::new();
+    for (index, (name, _)) in sheets.into_iter().enumerate() {
+        let xml = read_zip_entry(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2)?
+            .ok_or("Spreadsheet worksheet disappeared while reading")?;
+        let values = parse_worksheet_cells(&xml, &shared_strings)?;
+        if !values.trim().is_empty() {
+            push_bounded_text(&mut output, &format!("Sheet {}:\n{}\n", index + 1, values))?;
+        }
+    }
+    if output.trim().is_empty() { return Err("Spreadsheet contains no extractable cell text".into()); }
+    Ok(output.trim().to_owned())
+}
+
+fn safe_archive_entry(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('/')
+        && !name.contains('\\')
+        && !name.chars().any(char::is_control)
+        && name.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+fn is_supported_text_extension(name: &str) -> bool {
+    matches!(name.rsplit('.').next().unwrap_or_default().to_ascii_lowercase().as_str(),
+        "txt" | "md" | "markdown" | "csv" | "json" | "xml" | "html" | "htm"
+        | "rs" | "py" | "js" | "ts" | "kt" | "java" | "toml" | "yaml" | "yml"
+        | "sql" | "sh" | "css" | "c" | "h" | "cpp" | "go" | "rb")
+}
+
+fn extract_zip_text(bytes: &[u8]) -> Result<String, String> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| format!("ZIP archive is invalid: {error}"))?;
+    let entries = archive_names(&mut archive)?;
+    let mut output = String::new();
+    let mut total_bytes = 0usize;
+    for (name, size) in entries {
+        if !safe_archive_entry(&name) || !is_supported_text_extension(&name) || size == 0
+            || size > MAX_ARCHIVE_ENTRY_BYTES as u64 {
+            continue;
+        }
+        if total_bytes.saturating_add(size as usize) > MAX_ARCHIVE_TOTAL_BYTES { break; }
+        let Some(content) = read_zip_entry(&mut archive, &name, MAX_ARCHIVE_ENTRY_BYTES)? else { continue; };
+        total_bytes = total_bytes.saturating_add(content.len());
+        let Ok(text) = std::str::from_utf8(&content) else { continue; };
+        push_bounded_text(&mut output, &format!("File: {name}\n{text}\n\n"))?;
+    }
+    if output.trim().is_empty() {
+        return Err("ZIP archive contains no supported UTF-8 text files under the extraction limits".into());
+    }
+    Ok(output.trim().to_owned())
+}
+
+/// Extracts safe text from modern Office documents and text-only ZIP archives.
+/// Extraction is read-only, in-memory, size-bounded and rejects archive path traversal.
+pub fn extract_document_text(mime_type: &str, bytes: &[u8]) -> Result<String, String> {
+    match mime_type.to_ascii_lowercase().as_str() {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => extract_docx(bytes),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => extract_pptx(bytes),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => extract_xlsx(bytes),
+        "application/zip" => extract_zip_text(bytes),
+        "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint" =>
+            Err("Legacy binary Office documents are not supported; save as DOCX, XLSX or PPTX and try again.".into()),
+        _ => Err("This document format does not have a local text extractor.".into()),
+    }
+}
+
 fn valid_account_uuid(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36
