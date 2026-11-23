@@ -79,7 +79,7 @@ impl AttachmentMetadata {
             "image/avif" | "image/heic" | "video/mp4" | "video/quicktime" | "audio/mp4" =>
                 bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
             "application/pdf" => bytes.starts_with(b"%PDF-"),
-            "application/zip" => bytes.starts_with(b"PK\\x03\\x04") || bytes.starts_with(b"PK\\x05\\x06"),
+            "application/zip" => bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06"),
             "application/rtf" => bytes.starts_with(b"{\\rtf"),
             "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint"
             | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
