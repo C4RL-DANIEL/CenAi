@@ -1290,7 +1290,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Response budget", 16.0, egui::Color32::WHITE).strong());
-        ui.label(text("Set the maximum output-token budget for provider responses. Managed CenAI Cloud and multi-provider consensus apply their own safety caps.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Set the maximum output-token budget for provider responses. Managed CenAI Cloud and multi-provider consensus apply their own safety caps; Offline Lightning uses its model runtime budget.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::Slider::new(&mut state.max_response_tokens, 256..=8_192).step_by(256.0).text("Maximum tokens"));
         if ui.button("Save response budget").clicked() {
             state.pending_max_response_tokens_save = Some(state.max_response_tokens);
