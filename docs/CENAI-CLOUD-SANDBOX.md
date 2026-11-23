@@ -30,7 +30,7 @@
 }
 ```
 
-The API does not accept environment variables, arbitrary network host lists, or absolute working directories. The Rust client performs the same account-scope and request validation before sending the request; the server independently repeats the security checks.
+The API does not accept environment variables, arbitrary network host lists, or absolute working directories. The Rust client performs the same account-scope and request validation before sending the request; the server independently repeats the security checks. The AI agent can also request `sandbox_run`, but every such command pauses at the approval dialog; only after the user approves does Rust dispatch the remote command and feed its result back into the agent's next turn.
 
 ## Snapshot lifecycle
 

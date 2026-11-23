@@ -1460,12 +1460,13 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
         let mut open = true;
         let mut approved = false;
         let mut denied = false;
-        egui::Window::new("Approve Android action")
+        let is_sandbox = tool_name == "sandbox_run";
+        egui::Window::new(if is_sandbox { "Approve cloud sandbox command" } else { "Approve Android action" })
             .collapsible(false)
             .resizable(true)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label(text("CenAI is requesting permission to perform this action on your device.", 12.0, egui::Color32::WHITE));
+                ui.label(text(if is_sandbox { "CenAI wants to execute a command in your private isolated cloud workspace." } else { "CenAI is requesting permission to perform this action on your device." }, 12.0, egui::Color32::WHITE));
                 ui.add_space(6.0);
                 ui.label(text(format!("Action: {tool_name}"), 11.0, accent()).strong());
                 let mut details = serde_json::to_string_pretty(&arguments).unwrap_or_else(|_| "{}".into());
@@ -1473,7 +1474,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
                     ui.add(egui::TextEdit::multiline(&mut details).desired_width(360.0).interactive(false));
                 });
                 ui.add_space(8.0);
-                ui.label(text("Approve only if the destination and content are correct. CenAI will not place calls; the dialer opens without calling.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.label(text(if is_sandbox { "This runs remotely, not on your Android device. It can modify this account's saved workspace, has restricted network access, and receives no device permissions or credentials." } else { "Approve only if the destination and content are correct. CenAI will not place calls; the dialer opens without calling." }, 10.0, egui::Color32::from_rgb(220, 184, 121)));
                 ui.horizontal(|ui| {
                     if ui.button("Approve once").clicked() { approved = true; }
                     if ui.button("Deny").clicked() { denied = true; }
@@ -1482,10 +1483,10 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
         if approved {
             state.pending_agent_action_execute = Some((tool_name, arguments));
             state.pending_agent_action = None;
-            state.agent_action_status = "Action approved once. Waiting for Android to open the requested destination…".into();
+            state.agent_action_status = if is_sandbox { "Cloud sandbox command approved once. Starting remote execution…".into() } else { "Action approved once. Waiting for Android to open the requested destination…".into() };
         } else if denied || !open {
             state.pending_agent_action = None;
-            state.agent_action_status = "Android action denied. Nothing was opened or shared.".into();
+            state.agent_action_status = if is_sandbox { "Cloud sandbox command denied. Nothing was executed.".into() } else { "Android action denied. Nothing was opened or shared.".into() };
         }
     }
 }

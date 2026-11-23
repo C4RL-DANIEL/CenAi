@@ -125,6 +125,7 @@ impl AgentToolRuntime {
                 STANDARD.decode(value).map_err(|_| "Base64 input is invalid".to_owned())
                     .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "Base64 payload is not valid UTF-8".to_owned()))
             }),
+            "sandbox_run" => Err("Sandbox execution must be dispatched by the account-scoped approval bridge.".to_owned()),
             // These require an Android activity and an explicit approval UI; never run in this pure Rust executor.
             "open_url" | "open_dialer" | "share_text" | "open_app_settings" => {
                 return execution(name, arguments, "Approved Android action must be dispatched by the foreground platform bridge.", true, false);
@@ -140,6 +141,31 @@ impl AgentToolRuntime {
 
 fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
     let object = arguments.as_object().ok_or("Tool arguments must be a JSON object")?;
+    if name == "sandbox_run" {
+        let required = ["command", "arguments", "project_id", "working_directory"];
+        if object.len() != required.len() || required.iter().any(|key| !object.contains_key(*key)) {
+            return Err("Sandbox arguments do not match the exact allow-listed schema".into());
+        }
+        let command = object.get("command").and_then(Value::as_str).ok_or("Sandbox command must be a string")?;
+        let allowed = ["bash", "sh", "cargo", "rustc", "python3", "python", "node", "npm", "npx", "git", "go", "make", "cmake", "java", "javac", "gradle", "ls", "cat", "find", "grep", "sed", "awk", "pwd", "mkdir", "cp", "mv", "rm", "touch", "tar", "unzip", "zip", "which", "head", "tail", "wc", "file"];
+        if !allowed.contains(&command) { return Err("Sandbox command is not in the allowlist".into()); }
+        let args = object.get("arguments").and_then(Value::as_array).ok_or("Sandbox arguments must be a JSON string array")?;
+        if args.len() > 128 || args.iter().any(|value| value.as_str().is_none_or(|arg| arg.len() > 4096 || arg.contains('\0'))) {
+            return Err("Sandbox arguments exceed the allowed limits".into());
+        }
+        let project_id = object.get("project_id").and_then(Value::as_str).ok_or("Sandbox project ID must be a string")?;
+        if project_id.is_empty() || project_id.len() > 80 || !project_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+            return Err("Sandbox project ID is invalid".into());
+        }
+        let working_directory = object.get("working_directory").and_then(Value::as_str).ok_or("Sandbox working directory must be a string")?;
+        use std::path::{Component, Path};
+        if working_directory.is_empty() || working_directory.len() > 512 || working_directory.contains('\\') || working_directory.contains('\0')
+            || Path::new(working_directory).is_absolute()
+            || Path::new(working_directory).components().any(|part| matches!(part, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+            return Err("Sandbox working directory must remain inside the project workspace".into());
+        }
+        return Ok(());
+    }
     let expected: &[(&str, bool)] = match name {
         "current_time" | "current_date" | "generate_uuid" | "open_app_settings" => &[],
         "calculate" => &[("expression", true)],
@@ -196,6 +222,17 @@ fn definitions() -> Vec<ToolDefinition> {
         "required":[name],
         "additionalProperties":false
     });
+    let sandbox_args = json!({
+        "type":"object",
+        "properties":{
+            "command":{"type":"string","maxLength":80},
+            "arguments":{"type":"array","items":{"type":"string","maxLength":4096},"maxItems":128},
+            "project_id":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,80}$"},
+            "working_directory":{"type":"string","maxLength":512}
+        },
+        "required":["command","arguments","project_id","working_directory"],
+        "additionalProperties":false
+    });
     [
         ("current_time", "Get the current local date and time.", ToolRisk::Safe, no_args.clone()),
         ("current_date", "Get today's local date.", ToolRisk::Safe, no_args.clone()),
@@ -210,6 +247,7 @@ fn definitions() -> Vec<ToolDefinition> {
         ("open_dialer", "Open Android dialer with a number; does not place a call.", ToolRisk::Sensitive, string_arg("number")),
         ("share_text", "Open Android share sheet after user approval.", ToolRisk::Sensitive, string_arg("text")),
         ("open_app_settings", "Open CenAI Android app settings.", ToolRisk::Sensitive, no_args),
+        ("sandbox_run", "Run an allow-listed development command in the user's private cloud sandbox after explicit approval.", ToolRisk::Sensitive, sandbox_args),
     ].into_iter().map(|(name, description, risk, parameters)| ToolDefinition {
         name: name.into(), description: description.into(), risk, parameters,
     }).collect()
@@ -342,6 +380,27 @@ mod tests {
         assert!(!runtime.execute("calculate", json!({"expression":"1+1","unexpected":"ignored"}), false).completed);
         assert!(!runtime.execute("current_time", json!({"unexpected":true}), false).completed);
         assert!(!runtime.execute("base64_encode", json!({}), false).completed);
+    }
+
+    #[test]
+    fn sandbox_commands_require_explicit_user_approval() {
+        let runtime = AgentToolRuntime::default();
+        let args = json!({"command":"cargo","arguments":["--version"],"project_id":"default","working_directory":"."});
+        let result = runtime.execute("sandbox_run", args, false);
+        assert!(result.requires_approval);
+        assert!(!result.completed);
+        assert!(result.output.contains("approval"));
+    }
+
+    #[test]
+    fn sandbox_tool_rejects_unallowlisted_commands_and_path_traversal() {
+        let runtime = AgentToolRuntime::default();
+        let bad_command = runtime.execute("sandbox_run", json!({"command":"sudo","arguments":[],"project_id":"default","working_directory":"."}), false);
+        assert!(!bad_command.requires_approval);
+        assert!(!bad_command.completed);
+        let bad_path = runtime.execute("sandbox_run", json!({"command":"pwd","arguments":[],"project_id":"default","working_directory":"../../etc"}), false);
+        assert!(!bad_path.requires_approval);
+        assert!(!bad_path.completed);
     }
 
     #[test]
