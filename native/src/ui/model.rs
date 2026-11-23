@@ -180,6 +180,8 @@ pub struct AppState {
     pub light_mode: bool,
     /// Force all new chat requests through the bundled on-device Lightning model.
     pub offline_ai_enabled: bool,
+    /// Opt-in retrieval of relevant excerpts from this account's saved chats.
+    pub local_knowledge_enabled: bool,
     pub guardian_snapshot: Option<GuardianSnapshot>,
     pub guardian_consent: bool,
     pub pending_guardian_consent: Option<bool>,
@@ -347,6 +349,7 @@ impl Default for AppState {
             reduced_motion: false,
             light_mode: false,
             offline_ai_enabled: false,
+            local_knowledge_enabled: false,
             guardian_snapshot: None,
             guardian_consent: false,
             pending_guardian_consent: None,
