@@ -43,4 +43,30 @@ mod tests {
         assert_eq!(approval_policy(OperationClass::ReadOnly, true), ApprovalDecision::Allow);
         assert_eq!(approval_policy(OperationClass::Reversible, true), ApprovalDecision::Allow);
     }
+
+    #[test]
+    fn ungranted_read_and_reversible_operations_require_approval() {
+        assert_eq!(
+            approval_policy(OperationClass::ReadOnly, false),
+            ApprovalDecision::RequireUserApproval
+        );
+        assert_eq!(
+            approval_policy(OperationClass::Reversible, false),
+            ApprovalDecision::RequireUserApproval
+        );
+    }
+
+    #[test]
+    fn dangerous_operations_require_approval_even_without_a_grant() {
+        for class in [
+            OperationClass::ExternalAccount,
+            OperationClass::Sensitive,
+            OperationClass::Destructive,
+        ] {
+            assert_eq!(
+                approval_policy(class, false),
+                ApprovalDecision::RequireUserApproval
+            );
+        }
+    }
 }
