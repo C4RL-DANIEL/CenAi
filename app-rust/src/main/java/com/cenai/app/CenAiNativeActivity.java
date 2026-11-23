@@ -45,6 +45,8 @@ public final class CenAiNativeActivity extends NativeActivity {
         // Register Rust cognitive work with Android's persistent scheduler.
         // Rust checks persisted user consent and safely no-ops without an eligible plan.
         BackgroundTaskBridge.schedule(this);
+        // Reconcile OS reminder jobs with the Rust-owned automation schedule.
+        AutomationReminderBridge.scheduleRefresh(this);
         handleOAuthIntent(getIntent());
         handleAutomationReminderIntent(getIntent());
     }
