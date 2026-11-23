@@ -10,10 +10,18 @@ import androidx.activity.compose.setContent
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        GuardianMonitor(applicationContext).installCrashRecorder()
-        GuardianWorker.schedule(applicationContext)
+
+        // Render the stable Compose UI immediately. Optional background services
+        // must never hold the first frame hostage or prevent the app from opening.
         val vault = SecureKeyStore(applicationContext)
         setContent { CenAiScreen(vault) }
+
+        val guardian = GuardianMonitor(applicationContext)
+        runCatching { guardian.installCrashRecorder() }
+            .onFailure { android.util.Log.w("CenAI", "Guardian crash recorder unavailable; continuing UI startup.", it) }
+        runCatching { GuardianWorker.schedule(applicationContext) }
+            .onFailure { android.util.Log.w("CenAI", "Guardian scheduling unavailable; continuing UI startup.", it) }
+
         handleOAuthCallback(intent, vault)
     }
 
