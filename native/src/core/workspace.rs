@@ -1124,8 +1124,10 @@ mod tests {
         let root = temp_root();
         let _ = fs::remove_dir_all(&root);
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440010").unwrap();
-        let project_store = store.clone();
-        let task_store = store.clone();
+        // Model the independent WorkspaceStore instances created by foreground
+        // rendering and a separate WorkManager JNI invocation.
+        let project_store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440010").unwrap();
+        let task_store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440010").unwrap();
 
         let projects = std::thread::spawn(move || {
             for index in 0..24 {
