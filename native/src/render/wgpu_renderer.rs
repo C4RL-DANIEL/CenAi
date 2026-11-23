@@ -503,11 +503,13 @@ impl WgpuRenderer {
     }
 
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
-        // Android vendor Vulkan drivers are not equally reliable. Start with
-        // GLES/EGL (widely supported by Android's system compositor), then
-        // retry Vulkan if GLES cannot create a compatible surface/device.
+        // The Adreno GLES driver on the target Redmi/Flute device crashes
+        // inside libGLESv2_adreno during wgpu Queue::submit. Do not select GLES
+        // at all on Android: use the native Vulkan driver, which is the supported
+        // hardware path on this Adreno platform. A GLES fallback would merely
+        // re-enter the same known process-crashing driver path at first frame.
         #[cfg(target_os = "android")]
-        let backend_order = [wgpu::Backends::GL, wgpu::Backends::VULKAN];
+        let backend_order = [wgpu::Backends::VULKAN];
         #[cfg(not(target_os = "android"))]
         let backend_order = [wgpu::Backends::all()];
 
