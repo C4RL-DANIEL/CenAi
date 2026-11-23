@@ -1273,7 +1273,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Assistant instructions", 16.0, egui::Color32::WHITE).strong());
-        ui.label(text("Set your preferred tone, response style and task-specific guidance. These instructions are saved encrypted on this device and included in requests sent to your selected provider. They remain subordinate to CenAI safety rules and permission checks.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Set your preferred tone, response style and task-specific guidance. These instructions are saved encrypted on this device and included in requests sent to your selected provider(s), including every provider used in consensus mode. They remain subordinate to CenAI safety rules and permission checks.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::multiline(&mut state.system_prompt_draft)
             .hint_text("For example: Explain technical changes clearly, prefer concise answers, and show commands before destructive operations.")
             .desired_rows(5)
