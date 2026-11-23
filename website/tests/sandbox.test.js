@@ -1,6 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseRequest, redact, shouldDeletePreviousSnapshot } from "../api/sandbox.js";
+import handler, { parseRequest, redact, shouldDeletePreviousSnapshot } from "../api/sandbox.js";
+
+
+function mockResponse() {
+  return {
+    statusCode: 200,
+    headers: {},
+    payload: null,
+    ended: false,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(payload) { this.payload = payload; return this; },
+    end() { this.ended = true; return this; }
+  };
+}
+
+test("sandbox route returns method errors without loading the Node-only SDK", async () => {
+  const response = mockResponse();
+  await handler({ method: "GET", headers: {} }, response);
+  assert.equal(response.statusCode, 405);
+  assert.equal(response.payload.error, "Method not allowed");
+});
+
+test("sandbox route rejects unauthenticated execution before creating a microVM", async () => {
+  const response = mockResponse();
+  await handler({ method: "POST", headers: {}, body: { command: "pwd", arguments: [] } }, response);
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.payload.error, "A valid CenAI session is required");
+});
 
 test("accepts bounded commands in a project-scoped working directory", () => {
   const request = parseRequest({
