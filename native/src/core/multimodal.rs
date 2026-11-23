@@ -83,7 +83,7 @@ impl AttachmentMetadata {
                 bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
             "application/pdf" => bytes.starts_with(b"%PDF-"),
             "application/zip" => bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06"),
-            "application/rtf" => bytes.starts_with(b"{\\rtf"),
+            "application/rtf" => bytes.starts_with(b"{\rtf"),
             "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint"
             | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -666,8 +666,8 @@ mod tests {
         let owner = "550e8400-e29b-41d4-a716-446655440010";
         let left = AttachmentStore::new(&root, owner).unwrap();
         let right = AttachmentStore::new(&root, owner).unwrap();
-        let left_bytes = b"\\x89PNG\\r\\n\\x1a\\nleft-version";
-        let right_bytes = b"\\x89PNG\\r\\n\\x1a\\nright-version";
+        let left_bytes = b"\x89PNG\r\n\x1a\nleft-version";
+        let right_bytes = b"\x89PNG\r\n\x1a\nright-version";
         let metadata = |bytes: &[u8]| AttachmentMetadata {
             id: "shared_image".into(), file_name: "shared.png".into(), mime_type: "image/png".into(),
             kind: AttachmentKind::Image, byte_length: bytes.len() as u64,
