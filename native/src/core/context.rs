@@ -295,7 +295,7 @@ mod tests {
         let records = vec![
             record(owner, "memory", None, ContextKind::PersonalMemory, "Prefers concise responses"),
             record(owner, "memory", None, ContextKind::PersonalMemory, "CenAI Android Rust renderer project"),
-            record(owner, "memory", None, ContextKind::PersonalMemory, "Uses a tablet for Android development"),
+            record(owner, "memory", None, ContextKind::PersonalMemory, "Enjoys baking sourdough bread"),
             record(owner, "research", None, ContextKind::FeatureData, "Feature data is not personal memory"),
         ];
         let ranked = rank_personal_memories(owner, "Continue the CenAI Android Rust project", &records, 8, 100);
