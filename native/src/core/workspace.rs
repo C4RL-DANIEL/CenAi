@@ -187,7 +187,7 @@ impl WorkspaceStore {
     }
 
     fn migrate_plaintext_files(&self) -> Result<(), String> {
-        let mut files = vec![self.index_path.clone()];
+        let mut files = vec![self.index_path.clone(), self.conversation_catalog_path()];
         for directory in [self.user_root.join("artifacts"), self.user_root.join("conversations")] {
             if !directory.exists() { continue; }
             for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
@@ -1467,10 +1467,19 @@ mod encrypted_workspace_tests {
         let account = "550e8400-e29b-41d4-a716-446655440000";
         let plain = WorkspaceStore::new(&root, account).unwrap();
         plain.save_project(Project { id: "private-project".into(), name: "Private Project".into(), description: "secret metadata".into(), created_at_unix_ms: 1, updated_at_unix_ms: 1, archived: false, artifacts: Vec::new() }).unwrap();
+        plain.upsert_conversation_metadata("legacy-chat", "Legacy conversation", 42).unwrap();
+        plain.save_conversation("legacy-chat", &[crate::ui::model::Message {
+            id: 1, role: crate::ui::model::MessageRole::User, body: "legacy private message".into(), streaming: false,
+        }]).unwrap();
         drop(plain);
         let vault: Arc<dyn SessionVault> = Arc::new(TestVault { account: account.into() });
         let encrypted = WorkspaceStore::new_encrypted(&root, account, vault.clone()).unwrap();
         assert_eq!(encrypted.projects(false).unwrap()[0].name, "Private Project");
+        assert_eq!(encrypted.list_conversations().unwrap()[0].title, "Legacy conversation");
+        assert_eq!(encrypted.load_conversation("legacy-chat").unwrap()[0].body, "legacy private message");
+        let catalog_bytes = fs::read(encrypted.conversation_catalog_path()).unwrap();
+        assert!(catalog_bytes.starts_with(WORKSPACE_CIPHER_MAGIC));
+        assert!(!catalog_bytes.windows(b"Legacy conversation".len()).any(|window| window == b"Legacy conversation"));
         encrypted.save_artifact("private-project", "artifact-1", "private.txt", "text/plain", b"private artifact bytes").unwrap();
         assert_eq!(encrypted.read_artifact("artifact-1").unwrap(), b"private artifact bytes");
         let stored_index = fs::read(&encrypted.index_path).unwrap();
