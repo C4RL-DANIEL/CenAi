@@ -41,7 +41,13 @@ public final class CenAiNativeActivity extends NativeActivity {
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         GuardianRuntimeBridge.install(this);
-        GuardianWorker.schedule(this);
+        // Health sampling is optional. A WorkManager initialization or database
+        // failure must never prevent the NativeActivity from starting.
+        try {
+            GuardianWorker.schedule(this);
+        } catch (RuntimeException error) {
+            android.util.Log.w("CenAI", "Guardian scheduling unavailable; continuing app startup.", error);
+        }
         handleOAuthIntent(getIntent());
         handleAutomationReminderIntent(getIntent());
     }
