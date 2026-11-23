@@ -1311,6 +1311,13 @@ impl WgpuRenderer {
         self.app_state.mcp_reviewed = false;
         self.app_state.mcp_status.clear();
         self.app_state.mcp_call_result.clear();
+        self.app_state.pending_sandbox_run = false;
+        self.app_state.sandbox_command_draft = "cargo".into();
+        self.app_state.sandbox_arguments_draft = "[\"--version\"]".into();
+        self.app_state.sandbox_project_id_draft = "default".into();
+        self.app_state.sandbox_working_directory_draft = ".".into();
+        self.app_state.sandbox_status.clear();
+        self.app_state.sandbox_output.clear();
         self.app_state.ecosystem_apps.clear();
         self.app_state.ecosystem_status.clear();
         self.app_state.ecosystem_app_id_draft.clear();
