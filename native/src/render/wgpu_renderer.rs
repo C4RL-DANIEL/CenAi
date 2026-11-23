@@ -1043,7 +1043,7 @@ impl WgpuRenderer {
             let current_conversation_id = self.app_state.active_conversation_id.clone();
             let query = latest_goal.clone();
             #[cfg(not(target_os = "android"))]
-            let _ = (&prompt, local_knowledge_enabled, &local_knowledge_store, &current_conversation_id, &query);
+            let _ = (&prompt, &custom_prompt, local_knowledge_enabled, &local_knowledge_store, &current_conversation_id, &query);
             let generation = self.account_generation;
             let sender = self.response_tx.clone();
             #[cfg(target_os = "android")]
