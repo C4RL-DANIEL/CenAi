@@ -40,6 +40,8 @@ public final class CenAiNativeActivity extends NativeActivity {
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        GuardianRuntimeBridge.install(this);
+        GuardianWorker.schedule(this);
         handleOAuthIntent(getIntent());
         handleAutomationReminderIntent(getIntent());
     }
