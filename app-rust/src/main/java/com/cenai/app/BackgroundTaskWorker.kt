@@ -11,6 +11,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import android.util.Log
 
 /**
  * Best-effort OS-managed worker. Rust executes only plans with explicit
@@ -24,7 +26,13 @@ class BackgroundTaskWorker(context: Context, params: WorkerParameters) : Corouti
         } catch (_: UnsatisfiedLinkError) {
             Result.retry()
         } catch (_: SecurityException) {
+            // A revoked Android permission is not a transient runtime failure.
             Result.failure()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w("CenAI-Background", "Background cognitive work failed; WorkManager will retry.", error)
+            Result.retry()
         }
     }
 
