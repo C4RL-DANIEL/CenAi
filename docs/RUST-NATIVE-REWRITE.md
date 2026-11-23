@@ -54,6 +54,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Opt-in local conversation knowledge: bounded relevance ranking retrieves excerpts from encrypted saved chats for cloud, offline and planning requests; the active chat is excluded, and Settings explains that cloud providers receive selected excerpts when cloud routing is used.
 - Multi-provider consensus mode: independently queries every configured provider connection and synthesizes responses; each provider uses its own credential/model/endpoint. This mode is answer-only and does not execute tools or device actions.
 - Encrypted custom assistant instructions with bounded length, included in cloud/offline/planning prompts and explicitly subordinate to CenAI safety and permission rules.
+- Encrypted per-account response-token budget (256–8,192) for BYOK requests; managed Cloud and consensus requests retain tighter caps, while Lightning keeps its runtime-specific budget.
 - Per-account encrypted workspace persistence using the Android Keystore-backed vault, atomic metadata writes, encrypted attachment storage, safe artifact IDs and SHA-256 validation.
 - Project creation, archive state, artifact save/open/delete and task-plan persistence in the local workspace.
 - Passphrase-protected Argon2id/AES-256-GCM backup export/import, plus authenticated encrypted backup upload/download to the account's private Supabase Storage object. This is backup/restore, not continuous cross-device synchronization.
