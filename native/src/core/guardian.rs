@@ -18,17 +18,22 @@ fn sanitize_label(value: &str, limit: usize) -> String {
         "secret", "token", "password", "private", "credential", "authorization",
         "apikey", "api_key", "bearer", "cookie", "session", "refresh",
     ];
+    // Check the complete original label before tokenizing. Checking only split
+    // words misses compound forms such as "api_key" and "access-token".
+    let normalized = value.to_ascii_lowercase();
+    if SENSITIVE.iter().any(|sensitive| normalized.contains(sensitive)) {
+        return String::new();
+    }
     value.split(|character: char| !character.is_ascii_alphanumeric())
         .filter(|word| {
-            let lower = word.to_ascii_lowercase();
             !word.is_empty()
                 && word.len() <= 32
-                && !SENSITIVE.iter().any(|sensitive| lower.contains(sensitive))
                 // Long mixed alphanumeric fragments are commonly keys, hashes or opaque identifiers.
                 && !(word.len() >= 20 && word.chars().any(|c| c.is_ascii_alphabetic()) && word.chars().any(|c| c.is_ascii_digit()))
         })
         .take(8)
-        .collect::<String>()
+        .collect::<Vec<_>>()
+        .join("_")
         .chars().take(limit).collect()
 }
 
@@ -236,9 +241,13 @@ mod tests {
     #[test]
     fn guardian_sanitizes_diagnostic_labels() {
         let event = DiagnosticEvent::sanitized(DiagnosticKind::ApiFailure, "chat/api?token=secret", "HTTP 401: private", 42);
-        assert_eq!(event.component, "chatapi");
-        assert_eq!(event.code, "HTTP401");
+        assert_eq!(event.component, "");
+        assert_eq!(event.code, "HTTP_401");
         let serialized = serde_json::to_string(&event).unwrap();
         assert!(!serialized.contains("secret"));
+        let compound = DiagnosticEvent::sanitized(DiagnosticKind::ApiFailure, "provider", "api_key=sk_test_123", 43);
+        assert_eq!(compound.code, "");
+        let separated = DiagnosticEvent::sanitized(DiagnosticKind::Network, "network interface", "connection timeout", 44);
+        assert_eq!(separated.component, "network_interface");
     }
 }
