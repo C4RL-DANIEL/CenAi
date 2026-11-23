@@ -685,8 +685,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             if (messages.isEmpty()) {
                 Column(
                     Modifier
-                        .fillMaxSize()
                         .widthIn(max = if (isTabletLayout) 880.dp else 640.dp)
+                        .fillMaxWidth()
+                        .align(Alignment.CenterHorizontally)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = if (isTabletLayout) 28.dp else 18.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.Center
