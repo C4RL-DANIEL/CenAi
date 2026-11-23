@@ -518,6 +518,11 @@ impl WgpuRenderer {
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
             app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
             app_state.local_knowledge_enabled = service.user_setting("local_knowledge_enabled").is_ok_and(|value| value == "true");
+            let (default_model, default_endpoint) = provider_defaults(&app_state.provider_key_provider);
+            app_state.provider_model_draft = service.user_setting(&provider_setting_key(&app_state.provider_key_provider, "model"))
+                .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_model.to_owned());
+            app_state.provider_endpoint_draft = service.user_setting(&provider_setting_key(&app_state.provider_key_provider, "endpoint"))
+                .unwrap_or_else(|_| default_endpoint.to_owned());
             if let Ok(language) = service.user_setting("voice_language") {
                 if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
                     app_state.voice_language = language;
@@ -1398,6 +1403,11 @@ impl WgpuRenderer {
         self.app_state.task_plans.clear();
         self.app_state.provider_key_draft.clear();
         self.app_state.provider_key_status.clear();
+        self.app_state.provider_model_draft = "gpt-4.1-mini".into();
+        self.app_state.provider_endpoint_draft = "https://api.openai.com/v1".into();
+        self.app_state.provider_config_status.clear();
+        self.app_state.pending_provider_config_load = false;
+        self.app_state.pending_provider_config_save = None;
         self.app_state.guardian_consent = false;
         self.app_state.personal_memory_enabled = false;
         self.app_state.include_memory_for_request = false;
@@ -2620,6 +2630,7 @@ impl WgpuRenderer {
                                 self.track_task(task);
                             }
                             self.app_state.guardian_consent = self.api.as_ref().is_some_and(CenAiApi::guardian_consent);
+                            self.app_state.pending_provider_config_load = true;
                             if let Some(service) = &self.api {
                                 self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
