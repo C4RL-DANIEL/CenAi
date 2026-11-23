@@ -49,7 +49,7 @@ function envReady(env, keys) {
   return keys.every((key) => typeof env[key] === "string" && env[key].length > 0);
 }
 
-const CENAI_SANDBOX_BACKEND = "https://cenai-website-git-rewrite-rust-n-e95b48-carls-projects-e4dd61db.vercel.app/api/sandbox";
+const CENAI_SANDBOX_BACKEND = "https://cenai-website.vercel.app/api/sandbox";
 
 async function sandboxProxy(request) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
