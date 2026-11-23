@@ -320,16 +320,17 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             error = "Daily message limit reached. Change it in Settings or try again tomorrow."
             return
         }
-        vault.put("usage_count", (used + 1).toString())
         val inputEstimate = requestMessages.sumOf { it.content.length } / 4
-        val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
-        vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         if (localModelEnabled && !localModelReady) { error = "Import a compatible .litertlm model in Settings before enabling Offline AI."; return }
         val targets = if (localModelEnabled) listOf(provider) else if (multiAgent) Provider.entries.filter { !providerKeys[it].isNullOrBlank() || (it == Provider.GEMINI && vault.getSecret("gemini_oauth_access_token").isNotBlank()) || (it == Provider.CENAI_CLOUD && cloud.isSignedIn()) } else listOf(provider)
         if (targets.isEmpty()) {
             error = "Add at least one provider API key to use multi-agent mode."
             return
         }
+        // Count usage only after local-model and provider configuration checks pass.
+        vault.put("usage_count", (used + 1).toString())
+        val totalEstimate = vault.get("usage_estimated_tokens", "0").toLongOrNull() ?: 0L
+        vault.put("usage_estimated_tokens", (totalEstimate + inputEstimate).toString())
         busy = true
         error = ""
         persist(requestMessages)
