@@ -130,7 +130,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                         if (kind == "text") blocks.put(JSONObject().put("type", "text").put("text", value))
                         else blocks.put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", kind).put("data", value)))
                     }
-                    list.put(JSONObject().put("role", message.role).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
+                    list.put(JSONObject().put("role", providerCompatibleRole(p, message.role)).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
                 }
                 payload = JSONObject().put("model", model)
                     .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
@@ -167,7 +167,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                         else blocks.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$kind;base64,$value")))
                     }
                     val content: Any = if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks
-                    list.put(JSONObject().put("role", message.role).put("content", content))
+                    list.put(JSONObject().put("role", providerCompatibleRole(p, message.role)).put("content", content))
                 }
                 payload = JSONObject().put("model", model).put("stream", true)
                     .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
@@ -240,3 +240,8 @@ private fun ChatMessage.visionParts(): List<Pair<String, String>> {
     if (tail.isNotBlank() || result.isEmpty()) result += "text" to tail
     return result
 }
+
+
+/** Tool results are sent as user context; these requests do not use provider-native tool-call envelopes. */
+internal fun providerCompatibleRole(provider: Provider, role: String): String =
+    if (role == "tool" && provider in setOf(Provider.CLAUDE, Provider.OPENAI, Provider.DEEPSEEK, Provider.CUSTOM)) "user" else role
