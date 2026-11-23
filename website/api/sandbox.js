@@ -24,7 +24,7 @@ export function shouldDeletePreviousSnapshot(previousSnapshotId, nextSnapshotId,
     && previousSnapshotId !== sharedBaseSnapshotId;
 }
 const SESSION_TIMEOUT_MS = 55_000;
-const DEFAULT_BASE_SNAPSHOT_ID = "snap_aDgjD0mjRVpRav21NkrK9OKCNLq7";
+const DEFAULT_BASE_SNAPSHOT_ID = "snap_P9PmDJ8xGmMCwSWiMZMYB0sz7CA4";
 export const config = { maxDuration: 60 };
 
 function send(res, status, payload) {
