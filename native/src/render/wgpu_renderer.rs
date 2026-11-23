@@ -556,6 +556,7 @@ impl WgpuRenderer {
             app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
             app_state.local_knowledge_enabled = service.user_setting("local_knowledge_enabled").is_ok_and(|value| value == "true");
             app_state.multi_agent_enabled = service.user_setting("multi_agent_enabled").is_ok_and(|value| value == "true");
+            app_state.system_prompt_draft = service.user_setting("system_prompt").unwrap_or_default();
             let (default_model, default_endpoint) = provider_defaults(&app_state.provider_key_provider);
             app_state.provider_model_draft = service.user_setting(&provider_setting_key(&app_state.provider_key_provider, "model"))
                 .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_model.to_owned());
@@ -1638,6 +1639,9 @@ impl WgpuRenderer {
         self.app_state.offline_ai_enabled = false;
         self.app_state.local_knowledge_enabled = false;
         self.app_state.multi_agent_enabled = false;
+        self.app_state.system_prompt_draft.clear();
+        self.app_state.system_prompt_status.clear();
+        self.app_state.pending_system_prompt_save = None;
         self.last_saved_preferences = (false, false, false, false, false);
         self.app_state.voice_language = "English".into();
         self.last_saved_voice_language = "English".into();
@@ -1872,6 +1876,18 @@ impl WgpuRenderer {
                 .unwrap_or_else(|| default_model.to_owned());
             self.app_state.provider_endpoint_draft = saved_endpoint.unwrap_or_else(|| default_endpoint.to_owned());
             self.app_state.provider_config_status.clear();
+        }
+        if let Some(prompt) = self.app_state.pending_system_prompt_save.take() {
+            if prompt.len() > 8_000 || prompt.contains('\0') {
+                self.app_state.system_prompt_status = "Instructions must be at most 8,000 characters and cannot contain NUL.".into();
+            } else if let Some(api) = self.api.as_ref() {
+                self.app_state.system_prompt_status = match api.save_user_setting("system_prompt", &prompt) {
+                    Ok(()) => "Assistant instructions saved securely on this device.".into(),
+                    Err(error) => format!("Could not save assistant instructions: {error}"),
+                };
+            } else {
+                self.app_state.system_prompt_status = "Secure local settings are unavailable.".into();
+            }
         }
         if let Some((provider, model, endpoint)) = self.app_state.pending_provider_config_save.take() {
             let model = model.trim();
@@ -2861,6 +2877,7 @@ impl WgpuRenderer {
                                 self.app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
                                 self.app_state.local_knowledge_enabled = service.user_setting("local_knowledge_enabled").is_ok_and(|value| value == "true");
                                 self.app_state.multi_agent_enabled = service.user_setting("multi_agent_enabled").is_ok_and(|value| value == "true");
+                                self.app_state.system_prompt_draft = service.user_setting("system_prompt").unwrap_or_default();
                                 self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled, self.app_state.multi_agent_enabled);
                                 if let Ok(language) = service.user_setting("voice_language") {
                                     if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
