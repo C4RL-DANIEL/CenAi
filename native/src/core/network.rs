@@ -7,7 +7,7 @@ use reqwest::{header, Client, StatusCode};
 use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 
-use crate::core::{config, multimodal::AttachmentStore, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, sandbox::{SandboxJobState, SandboxJobSummary, SandboxRequest}, workspace::WorkspaceStore};
+use crate::core::{config, multimodal::{extract_document_text, AttachmentStore}, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, sandbox::{SandboxJobState, SandboxJobSummary, SandboxRequest}, workspace::WorkspaceStore};
 
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
@@ -1236,9 +1236,15 @@ impl CenAiApi {
                     return Err("Text attachment exceeds the 2 MB inline analysis limit".into());
                 }
                 let text = std::str::from_utf8(bytes).map_err(|_| "Text attachment is not valid UTF-8")?;
-                json!({ "text": format!("Attachment: {}\n\n{}", metadata.file_name, text) })
+                json!({ "text": format!("Attachment: {}\\n\\n{}", metadata.file_name, text) })
             }
-            "audio/wav" | "audio/x-wav" => return self.transcribe_audio_gemini(bytes).await,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            | "application/zip" => {
+                let text = extract_document_text(&mime, bytes)?;
+                json!({ "text": format!("Attachment: {}\\n\\nExtracted document content:\\n{}", metadata.file_name, text) })
+            }
             "image/png" | "image/jpeg" | "image/webp" | "application/pdf" => {
                 if bytes.len() > 20 * 1024 * 1024 {
                     return Err("Image and PDF attachments must be no larger than 20 MB for inline analysis".into());
@@ -1248,7 +1254,27 @@ impl CenAiApi {
                     "data": base64::engine::general_purpose::STANDARD.encode(bytes)
                 } })
             }
-            _ => return Err("This attachment type is not yet supported by the Gemini inline analyzer".into()),
+            "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp4" | "audio/aac"
+            | "audio/ogg" | "audio/flac" | "audio/webm" => {
+                if bytes.len() > 20 * 1024 * 1024 {
+                    return Err("Audio attachments must be no larger than 20 MB for inline analysis".into());
+                }
+                let audio_mime = if mime == "audio/x-wav" { "audio/wav" } else { mime.as_str() };
+                json!({ "inline_data": {
+                    "mime_type": audio_mime,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes)
+                } })
+            }
+            "video/mp4" | "video/quicktime" | "video/webm" => {
+                if bytes.len() > 20 * 1024 * 1024 {
+                    return Err("Video attachments must be no larger than 20 MB for inline analysis".into());
+                }
+                json!({ "inline_data": {
+                    "mime_type": mime,
+                    "data": base64::engine::general_purpose::STANDARD.encode(bytes)
+                } })
+            }
+            _ => return Err("This attachment type is not supported by the Gemini inline analyzer. Convert legacy Office files to DOCX, XLSX or PPTX.".into()),
         };
         let payload = json!({
             "contents": [{
