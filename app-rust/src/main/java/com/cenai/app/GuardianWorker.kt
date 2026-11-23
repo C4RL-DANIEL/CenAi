@@ -66,5 +66,10 @@ class GuardianWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request
             )
         }
+
+        @JvmStatic
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WORK_NAME)
+        }
     }
 }

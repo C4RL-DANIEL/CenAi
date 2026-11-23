@@ -12,6 +12,19 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class BackgroundTaskWorkerTest {
     @Test
+    fun guardianSamplingUsesPersistentWorkManagerSchedulingAndCanBeRevoked() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        GuardianWorker.schedule(context)
+        val work = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_rust_guardian_periodic").get()
+        assertTrue(work.isNotEmpty())
+        GuardianWorker.cancel(context)
+        val cancelled = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_rust_guardian_periodic").get()
+        assertTrue(cancelled.all { it.state == androidx.work.WorkInfo.State.CANCELLED })
+    }
+
+    @Test
     fun headlessVaultCanBeOpenedFromApplicationContextWithoutAnActivity() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // A clean test install has no signed-in session, so Rust must safely no-op.
