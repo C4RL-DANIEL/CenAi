@@ -9,8 +9,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
@@ -66,7 +68,33 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
     }
 }
 
+class AutomationScheduleRefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result = try {
+        if (nativeRefreshAutomationSchedules(applicationContext) >= 0) Result.success() else Result.retry()
+    } catch (_: UnsatisfiedLinkError) { Result.retry() } catch (_: SecurityException) { Result.failure() }
+
+    companion object {
+        init { System.loadLibrary("cenai_native") }
+        @JvmStatic external fun nativeRefreshAutomationSchedules(context: Context): Int
+    }
+}
+
 object AutomationReminderBridge {
+    private const val UNIQUE_REFRESH = "cenai_automation_schedule_refresh"
+
+    @JvmStatic
+    fun scheduleRefresh(context: Context) {
+        val request = PeriodicWorkRequestBuilder<AutomationScheduleRefreshWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
+            UNIQUE_REFRESH, ExistingPeriodicWorkPolicy.KEEP, request
+        )
+    }
+
+    @JvmStatic
+    fun cancelRefresh(context: Context) {
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(UNIQUE_REFRESH)
+    }
+
     @JvmStatic
     fun schedule(context: Context, notificationTag: String, delayMillis: Long) {
         require(isValidNotificationTag(notificationTag))

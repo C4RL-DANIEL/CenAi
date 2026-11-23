@@ -1,11 +1,11 @@
 //! Android NativeActivity entrypoint. All application UI and rendering live in Rust.
 use std::{collections::VecDeque, sync::{Arc, Mutex, OnceLock}};
-use jni::{objects::{JClass, JObject, JString, JValue}, sys::{jboolean, jint}, JNIEnv, JavaVM};
+use jni::{objects::{JClass, JObject, JString, JValue}, sys::{jboolean, jint, jlong}, JNIEnv, JavaVM};
 
 mod vault;
 pub(crate) mod audio;
 use vault::AndroidSecretVault;
-use crate::core::{automations::reminder_notification_tag, brain::CentralBrain, guardian::DiagnosticKind, network::CenAiApi, workspace::WorkspaceStore};
+use crate::core::{automations::{reminder_notification_tag, AutomationScheduler}, brain::CentralBrain, guardian::DiagnosticKind, network::CenAiApi, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
@@ -247,6 +247,35 @@ pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, t
     }));
 }
 
+/// Reconcile recurring automation reminders in Android's durable WorkManager queue.
+pub(crate) fn schedule_automation_schedule_refresh_worker(app: AndroidApp) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { log::error!("Could not attach to Android VM to schedule automation refresh"); return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        if let Err(error) = env.call_static_method(
+            "com/cenai/app/AutomationReminderBridge", "scheduleRefresh", "(Landroid/content/Context;)V",
+            &[JValue::Object(&activity)],
+        ) { log::warn!("Could not schedule recurring CenAI automation reconciliation: {error}"); }
+    }));
+}
+
+pub(crate) fn cancel_automation_schedule_refresh_worker(app: AndroidApp) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        if let Err(error) = env.call_static_method(
+            "com/cenai/app/AutomationReminderBridge", "cancelRefresh", "(Landroid/content/Context;)V",
+            &[JValue::Object(&activity)],
+        ) { log::warn!("Could not cancel recurring CenAI automation reconciliation: {error}"); }
+    }));
+}
+
 /// Schedule OS-managed background cognitive work. The Rust worker executes
 /// only explicitly authorized research/analysis/writing steps; it has no tools.
 pub(crate) fn schedule_background_task_worker(app: AndroidApp) {
@@ -375,6 +404,62 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnOAuthCallb
     let callback = java_string(&mut env, callback);
     if callback.len() <= 8 * 1024 {
         push_platform_event(AndroidPlatformEvent::OAuthCallback(callback));
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_AutomationScheduleRefreshWorker_nativeRefreshAutomationSchedules(
+    mut env: JNIEnv<'_>, _class: JClass<'_>, context: JObject<'_>,
+) -> jint {
+    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Info));
+    let result = (|| -> Result<usize, String> {
+        let vault = AndroidSecretVault::new_from_context(&mut env, &context)?;
+        let files_dir = vault.files_dir().to_path_buf();
+        let api = CenAiApi::new(Arc::new(vault)).map_err(|error| error.to_string())?;
+        if !api.has_session() { return Ok(0); }
+        let owner_scope = api.account_id()?;
+        if owner_scope.is_empty() { return Ok(0); }
+        let workspace = api.workspace_store(files_dir.join("cenai-workspace"))?;
+        let mut scheduler = AutomationScheduler::from_workspace(&workspace)?;
+        let now = chrono::Utc::now();
+        let due = scheduler.poll_due_and_persist(now, &workspace)?;
+        let automations = workspace.automations()?;
+        let mut scheduled = 0usize;
+        for automation in automations {
+            if automation.owner_scope != owner_scope { continue; }
+            let Some(tag) = reminder_notification_tag(&owner_scope, &automation.id) else { continue; };
+            if !automation.enabled {
+                let tag_value = env.new_string(&tag).map_err(|error| error.to_string())?;
+                env.call_static_method(
+                    "com/cenai/app/AutomationReminderBridge", "cancel", "(Landroid/content/Context;Ljava/lang/String;)V",
+                    &[JValue::Object(&context), JValue::Object(&tag_value)],
+                ).map_err(|error| error.to_string())?;
+                continue;
+            }
+            let just_became_due = due.iter().any(|trigger| trigger.automation_id == automation.id && trigger.owner_scope == owner_scope);
+            let next = if just_became_due {
+                Some(now)
+            } else if automation.pending_scheduled_at.is_some() {
+                // A prior notification is pending; avoid creating a 15-minute notification loop.
+                None
+            } else {
+                automation.next_run_after(now).map_err(str::to_owned)?
+            };
+            let Some(next) = next else { continue; };
+            let delay = (next - now).num_milliseconds().max(0) as jlong;
+            let tag_value = env.new_string(&tag).map_err(|error| error.to_string())?;
+            env.call_static_method(
+                "com/cenai/app/AutomationReminderBridge", "schedule",
+                "(Landroid/content/Context;Ljava/lang/String;J)V",
+                &[JValue::Object(&context), JValue::Object(&tag_value), JValue::Long(delay)],
+            ).map_err(|error| error.to_string())?;
+            scheduled += 1;
+        }
+        Ok(scheduled)
+    })();
+    match result {
+        Ok(count) => count.min(i32::MAX as usize) as jint,
+        Err(error) => { log::warn!("CenAI automation schedule refresh deferred: {error}"); -1 }
     }
 }
 

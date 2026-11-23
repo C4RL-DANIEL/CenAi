@@ -19,6 +19,22 @@ class BackgroundTaskWorkerTest {
     }
 
     @Test
+    fun automationScheduleRefreshUsesPersistentWorkManagerScheduling() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        AutomationReminderBridge.scheduleRefresh(context)
+        val work = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_automation_schedule_refresh").get()
+        assertTrue(work.isNotEmpty())
+        AutomationReminderBridge.cancelRefresh(context)
+    }
+
+    @Test
+    fun headlessAutomationRefreshSafelyNoOpsWithoutASignedInSession() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertEquals(0, AutomationScheduleRefreshWorker.nativeRefreshAutomationSchedules(context))
+    }
+
+    @Test
     fun backgroundWorkUsesPersistentWorkManagerScheduling() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         BackgroundTaskBridge.schedule(context)

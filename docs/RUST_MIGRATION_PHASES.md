@@ -120,15 +120,15 @@ Do not remove `:app` or its source files until the parity audit is complete and 
 
 - Rust automation definitions use owner UUIDs, validated UTC cron schedules, persisted cursors, pause/resume and approval-required due occurrences.
 - A narrow Android WorkManager adapter schedules durable one-shot reminders for the next occurrence; notifications are generic and contain no task title or private prompt.
+- A periodic WorkManager reconciliation worker wakes a headless Rust runtime, persists due occurrences before dispatch, and restores future reminders after process death or reboot. It does not execute automations or external actions.
 - Reminder notifications only open CenAI for review. They never execute the automation or any external action.
 - Guardian diagnostics and procfs metric parsers are implemented in Rust and sampled while the native app is active.
 - Background task and Guardian policy is privacy-first; scheduled work is not allowed to silently execute external or destructive actions.
 
 ### Still required
 
-- A WorkManager worker that wakes the Rust runtime to process a due occurrence and persist its approval request while the app is not running; the current worker is reminder-only.
-- A full user-visible approval screen for scheduled actions, including notification deep-link routing to the exact pending task.
-- Reboot recovery, rescheduling of recurring schedules when the user does not open the reminder, and retry semantics for permission-denied notifications.
+- A full user-visible approval screen for scheduled actions, including notification deep-link routing to the exact pending task and durable approval/denial resolution.
+- Physical reboot, Doze, notification-permission denial, and repeated-worker tests on Android 15/16 and Xiaomi HyperOS; WorkManager is persistent but still best-effort under OS/OEM limits.
 - Lifecycle, memory, battery and network constraints tested on Android 15/16 and Xiaomi HyperOS.
 - No implementation can promise uninterrupted 24/7 execution: force-stop, Doze, OEM restrictions and Android background-start rules remain authoritative.
 

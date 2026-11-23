@@ -6,7 +6,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, sandbox::{SandboxJobSummary, SandboxQuota, SandboxRequest}, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
-use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, schedule_background_task_worker, cancel_background_task_worker, execute_approved_agent_action, open_google_oauth, install_verified_update, current_app_version, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
+use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, schedule_automation_schedule_refresh_worker, cancel_automation_schedule_refresh_worker, schedule_background_task_worker, cancel_background_task_worker, execute_approved_agent_action, open_google_oauth, install_verified_update, current_app_version, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
@@ -51,6 +51,11 @@ fn schedule_android_automation_reminders(app: &AndroidApp, automations: &[Automa
         } else {
             cancel_automation_reminder(app.clone(), automation.owner_scope.clone(), automation.id.clone());
         }
+    }
+    if automations.iter().any(|automation| automation.enabled) {
+        schedule_automation_schedule_refresh_worker(app.clone());
+    } else {
+        cancel_automation_schedule_refresh_worker(app.clone());
     }
 }
 
