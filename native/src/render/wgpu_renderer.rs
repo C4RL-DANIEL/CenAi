@@ -1250,7 +1250,7 @@ impl WgpuRenderer {
                         let request = ChatRequest {
                             model,
                             messages: multi_messages.clone(),
-                            max_tokens: response_tokens,
+                            max_tokens: response_tokens.min(2_048),
                             stream: true,
                         };
                         let delta_sender = sender.clone();
@@ -1314,7 +1314,7 @@ impl WgpuRenderer {
                                 ChatMessage { role: "system".into(), content: "You are CenAI's cross-provider synthesis coordinator. Be precise, transparent about disagreement and concise. Do not call tools or perform actions.".into() },
                                 ChatMessage { role: "user".into(), content: synthesis_prompt },
                             ],
-                            max_tokens: response_tokens,
+                            max_tokens: response_tokens.min(2_048),
                             stream: true,
                         };
                         let heading = format!("\n\nCross-provider synthesis ({synthesis_provider})\n\n");
