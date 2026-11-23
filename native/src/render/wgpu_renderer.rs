@@ -70,7 +70,7 @@ fn local_knowledge_context(store: &WorkspaceStore, query: &str, current_conversa
             .rev().take(12).collect::<Vec<_>>().into_iter().rev()
             .map(|message| {
                 let mut excerpt = message.body.chars().take(1800).collect::<String>();
-                if excerpt.len() < message.body.len() { excerpt.push_str("…"); }
+                if excerpt.len() < message.body.len() { excerpt.push('…'); }
                 format!("{}: {}", if message.role == MessageRole::User { "User" } else { "Assistant" }, excerpt)
             })
             .collect::<Vec<_>>().join("\n");
