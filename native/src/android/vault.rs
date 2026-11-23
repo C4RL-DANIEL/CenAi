@@ -32,6 +32,27 @@ fn valid_supabase_user_id(value: &str) -> bool {
         })
 }
 
+fn supported_user_setting_key(key: &str) -> bool {
+    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "voice_language") {
+        return true;
+    }
+    let parts = key.split('_').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts[0] == "provider"
+        && matches!(parts[1], "model" | "endpoint")
+        && matches!(parts[2], "openai" | "deepseek" | "anthropic" | "gemini" | "custom")
+}
+
+fn valid_user_setting_value(key: &str, value: &str) -> bool {
+    match key {
+        "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" => matches!(value, "true" | "false"),
+        "voice_language" => matches!(value, "Chinese" | "English" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian"),
+        _ if key.starts_with("provider_model_") => !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control),
+        _ if key.starts_with("provider_endpoint_") => value.len() <= 2048 && !value.chars().any(char::is_control),
+        _ => false,
+    }
+}
+
 fn valid_workspace_relative_path(value: &str) -> bool {
     !value.is_empty() && value.len() <= 256 && !value.starts_with('/')
         && !value.contains('\\') && !value.contains('\n') && !value.contains('\r')
@@ -411,7 +432,7 @@ impl SessionVault for AndroidSecretVault {
     }
 
     fn user_setting(&self, key: &str) -> Result<String, String> {
-        if !matches!(key, "light_mode" | "reduced_motion") {
+        if !supported_user_setting_key(key) {
             return Err("Unsupported account preference".into());
         }
         let name = self.scoped_secret_name("settings", key)?;
@@ -419,7 +440,7 @@ impl SessionVault for AndroidSecretVault {
     }
 
     fn set_user_setting(&self, key: &str, value: &str) -> Result<(), String> {
-        if !matches!(key, "light_mode" | "reduced_motion") || !matches!(value, "true" | "false") {
+        if !supported_user_setting_key(key) || !valid_user_setting_value(key, value) {
             return Err("Unsupported account preference value".into());
         }
         let name = self.scoped_secret_name("settings", key)?;
@@ -438,7 +459,26 @@ impl SessionVault for AndroidSecretVault {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::valid_supabase_user_id;
+    use super::{supported_user_setting_key, valid_supabase_user_id, valid_user_setting_value};
+
+    #[test]
+    fn account_preferences_allow_only_known_keys_and_typed_values() {
+        for key in ["light_mode", "reduced_motion", "offline_ai_enabled", "local_knowledge_enabled"] {
+            assert!(supported_user_setting_key(key));
+            assert!(valid_user_setting_value(key, "true"));
+            assert!(!valid_user_setting_value(key, "yes"));
+        }
+        assert!(valid_user_setting_key("voice_language"));
+        assert!(valid_user_setting_value("voice_language", "English"));
+        assert!(!valid_user_setting_value("voice_language", "Klingon"));
+        assert!(supported_user_setting_key("provider_model_custom"));
+        assert!(valid_user_setting_value("provider_model_custom", "vendor-model-v1"));
+        assert!(supported_user_setting_key("provider_endpoint_custom"));
+        assert!(valid_user_setting_value("provider_endpoint_custom", "https://api.example.com/v1"));
+        assert!(!supported_user_setting_key("provider_secret_openai"));
+        assert!(!supported_user_setting_key("provider_model_unknown"));
+        assert!(!valid_user_setting_value("provider_model_custom", "bad\\nmodel"));
+    }
 
     #[test]
     fn only_canonical_supabase_uuid_identities_are_accepted() {
