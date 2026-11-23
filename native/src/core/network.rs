@@ -1236,14 +1236,14 @@ impl CenAiApi {
                     return Err("Text attachment exceeds the 2 MB inline analysis limit".into());
                 }
                 let text = std::str::from_utf8(bytes).map_err(|_| "Text attachment is not valid UTF-8")?;
-                json!({ "text": format!("Attachment: {}\\n\\n{}", metadata.file_name, text) })
+                json!({ "text": format!("Attachment: {}\n\n{}", metadata.file_name, text) })
             }
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             | "application/zip" => {
                 let text = extract_document_text(&mime, bytes)?;
-                json!({ "text": format!("Attachment: {}\\n\\nExtracted document content:\\n{}", metadata.file_name, text) })
+                json!({ "text": format!("Attachment: {}\n\nExtracted document content:\n{}", metadata.file_name, text) })
             }
             "image/png" | "image/jpeg" | "image/webp" | "application/pdf" => {
                 if bytes.len() > 20 * 1024 * 1024 {
