@@ -33,7 +33,7 @@ fn valid_supabase_user_id(value: &str) -> bool {
 }
 
 fn supported_user_setting_key(key: &str) -> bool {
-    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" | "voice_language") {
+    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" | "active_provider" | "voice_language") {
         return true;
     }
     let parts = key.split('_').collect::<Vec<_>>();
@@ -46,6 +46,7 @@ fn supported_user_setting_key(key: &str) -> bool {
 fn valid_user_setting_value(key: &str, value: &str) -> bool {
     match key {
         "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" => matches!(value, "true" | "false"),
+        "active_provider" => matches!(value, "openai" | "deepseek" | "anthropic" | "gemini" | "custom"),
         "voice_language" => matches!(value, "Chinese" | "English" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian"),
         _ if key.starts_with("provider_model_") => !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control),
         _ if key.starts_with("provider_endpoint_") => value.len() <= 2048 && !value.chars().any(char::is_control),
