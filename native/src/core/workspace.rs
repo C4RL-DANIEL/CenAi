@@ -1,7 +1,7 @@
 //! Per-account durable workspace with atomic metadata writes and path-safe artifacts.
 use std::{
     fs::{self, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -197,13 +197,18 @@ impl WorkspaceStore {
         }
         for path in files {
             if !path.exists() { continue; }
-            let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-            if bytes.starts_with(WORKSPACE_CIPHER_MAGIC) {
-                let relative = self.relative_key(&path)?;
-                self.decode_storage_bytes(&relative, &bytes)?;
-            } else {
-                self.write_atomic(&path, &bytes)?;
+            // Inspect only the envelope prefix on startup. Decrypting every artifact
+            // just to discover that it is already encrypted would load large files into
+            // memory and repeat expensive AES-GCM work on every app launch.
+            let mut prefix = vec![0u8; WORKSPACE_CIPHER_MAGIC.len()];
+            let mut file = fs::File::open(&path).map_err(|error| error.to_string())?;
+            let prefix_len = file.read(&mut prefix).map_err(|error| error.to_string())?;
+            if prefix_len == WORKSPACE_CIPHER_MAGIC.len() && prefix == WORKSPACE_CIPHER_MAGIC {
+                continue;
             }
+            drop(file);
+            let plaintext = fs::read(&path).map_err(|error| error.to_string())?;
+            self.write_atomic(&path, &plaintext)?;
         }
         Ok(())
     }
