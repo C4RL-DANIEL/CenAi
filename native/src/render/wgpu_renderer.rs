@@ -464,14 +464,22 @@ impl WgpuRenderer {
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone())?;
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| anyhow::anyhow!("No compatible GPU adapter was found"))?;
+        // Android tablets and vendor GPU drivers differ widely. Prefer the
+        // hardware adapter, but retry a software/fallback adapter before giving
+        // up so devices with restricted GPU drivers can still display the UI.
+        let adapter_options = |force_fallback_adapter| wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter,
+        };
+        let adapter = match instance.request_adapter(&adapter_options(false)).await {
+            Some(adapter) => adapter,
+            None => {
+                log::warn!("CenAI hardware GPU adapter unavailable; trying a fallback adapter");
+                instance.request_adapter(&adapter_options(true)).await
+                    .ok_or_else(|| anyhow::anyhow!("No compatible hardware or fallback GPU adapter was found"))?
+            }
+        };
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("CenAI GPU device"),
