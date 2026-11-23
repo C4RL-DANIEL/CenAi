@@ -735,24 +735,44 @@ pub fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
+    // A Keystore failure must not silently terminate NativeActivity before
+    // the user sees anything. Keep storage/auth unavailable (never plaintext),
+    // but continue far enough to render the app's recoverable startup/login UI.
     let vault = match AndroidSecretVault::new(app.clone()) {
-        Ok(vault) => Arc::new(vault),
-        Err(error) => { log::error!("Secure vault initialization failed: {error}"); return; }
+        Ok(vault) => Some(Arc::new(vault)),
+        Err(error) => {
+            log::error!("Secure vault initialization failed; starting with account storage unavailable: {error}");
+            None
+        }
     };
-    let legacy_secure_export = export_legacy_secure_store(&app).ok();
-    match legacy_secure_export.as_deref() {
-        Some(export) if export != "{}" && !export.is_empty() => {
+    let legacy_secure_export = if vault.is_some() {
+        export_legacy_secure_store(&app).ok()
+    } else {
+        None
+    };
+    match (vault.as_ref(), legacy_secure_export.as_deref()) {
+        (Some(vault), Some(export)) if export != "{}" && !export.is_empty() => {
             match vault.migrate_legacy_export(export) {
                 Ok(true) => log::info!("Legacy Kotlin credentials migrated into the Rust account vault; old-store cleanup remains deferred until device-level migration verification."),
                 Ok(false) => {},
                 Err(error) => log::warn!("Legacy credential migration was deferred; original encrypted data was retained: {error}"),
             }
         }
-        Some(_) => {},
-        None => log::warn!("Legacy secure-store export was unavailable; original data was retained."),
+        (Some(_), Some(_)) => {},
+        (_, None) => log::warn!("Legacy secure-store export was unavailable; original data was retained."),
+        (None, Some(_)) => log::warn!("Legacy credentials were left untouched because the Rust Keystore vault is unavailable."),
     }
     let workspace_root = app.internal_data_path().unwrap_or_default();
-    let api = CenAiApi::new(vault).ok();
+    let api = match vault {
+        Some(vault) => match CenAiApi::new(vault) {
+            Ok(api) => Some(api),
+            Err(error) => {
+                log::error!("Account service initialization failed; continuing to the recovery UI: {error}");
+                None
+            }
+        },
+        None => None,
+    };
     // Always construct the workspace through the authenticated API so its
     // index, conversations and artifacts use the Android Keystore-backed
     // account/path-bound encryption adapter. Never fall back to plaintext.
