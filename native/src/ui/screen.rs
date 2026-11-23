@@ -1289,6 +1289,19 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Response budget", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Set the maximum output-token budget for provider responses. Managed CenAI Cloud and multi-provider consensus apply their own safety caps.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::Slider::new(&mut state.max_response_tokens, 256..=8_192).step_by(256.0).text("Maximum tokens"));
+        if ui.button("Save response budget").clicked() {
+            state.pending_max_response_tokens_save = Some(state.max_response_tokens);
+            state.max_response_tokens_status = "Saving response budget…".into();
+        }
+        if !state.max_response_tokens_status.is_empty() {
+            ui.label(text(&state.max_response_tokens_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Google Gemini account connection", 15.0, egui::Color32::WHITE).strong());
         ui.label(text("Use Google's OAuth authorization-code flow with PKCE. Your refresh token is encrypted in the account-scoped Android Keystore vault.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::singleline(&mut state.gemini_oauth_client_id_draft)
