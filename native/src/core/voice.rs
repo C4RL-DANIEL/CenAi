@@ -393,8 +393,10 @@ mod tests {
         }).unwrap().unwrap();
         assert_eq!(first.duration_ms(), 500);
         let queued = pipeline.drain_pending_chunks();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].duration_ms(), 500);
+        // 32,000 samples at 16 kHz produce four 500 ms chunks:
+        // one returned immediately and three queued for the caller.
+        assert_eq!(queued.len(), 3);
+        assert!(queued.iter().all(|chunk| chunk.duration_ms() == 500));
         assert!(queued.iter().all(|chunk| chunk.speech_detected));
     }
 
