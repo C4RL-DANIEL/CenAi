@@ -269,6 +269,8 @@ const MAX_EXTRACTED_TEXT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ARCHIVE_TOTAL_BYTES: usize = 10 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 2_000;
+const MAX_OFFICE_XML_BYTES: usize = 16 * 1024 * 1024;
+const MAX_OFFICE_PARTS: usize = 256;
 
 fn push_bounded_text(output: &mut String, value: &str) -> Result<(), String> {
     if output.len().saturating_add(value.len()) > MAX_EXTRACTED_TEXT_BYTES {
@@ -357,6 +359,27 @@ fn read_zip_entry<R: Read + std::io::Seek>(
     Ok(Some(bytes))
 }
 
+fn read_zip_entry_budgeted<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+    max_entry_bytes: usize,
+    remaining_bytes: &mut usize,
+) -> Result<Option<Vec<u8>>, String> {
+    let size = match archive.by_name(name) {
+        Ok(file) => file.size(),
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(error) => return Err(format!("Document archive could not be read: {error}")),
+    };
+    if size > max_entry_bytes as u64 || size > *remaining_bytes as u64 {
+        return Err("Office document exceeds the aggregate XML extraction limit".into());
+    }
+    let content = read_zip_entry(archive, name, max_entry_bytes)?;
+    if let Some(content) = &content {
+        *remaining_bytes = remaining_bytes.saturating_sub(content.len());
+    }
+    Ok(content)
+}
+
 fn archive_names<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<(String, u64)>, String> {
     if archive.len() > MAX_ARCHIVE_ENTRIES {
         return Err("Document archive contains too many entries".into());
@@ -388,9 +411,13 @@ fn extract_pptx(bytes: &[u8]) -> Result<String, String> {
             .and_then(|number| number.parse::<u32>().ok()).unwrap_or(u32::MAX)
     });
     if slides.is_empty() { return Err("PowerPoint document contains no readable slides".into()); }
+    if slides.len() > MAX_OFFICE_PARTS {
+        return Err("PowerPoint document contains too many slides for safe local extraction".into());
+    }
+    let mut remaining_xml_bytes = MAX_OFFICE_XML_BYTES;
     let mut output = String::new();
     for (name, _) in slides {
-        let xml = read_zip_entry(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2)?
+        let xml = read_zip_entry_budgeted(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2, &mut remaining_xml_bytes)?
             .ok_or("PowerPoint slide disappeared while reading")?;
         let text = xml_document_text(&xml)?;
         if !text.is_empty() {
@@ -489,8 +516,10 @@ fn parse_worksheet_cells(xml: &[u8], shared_strings: &[String]) -> Result<String
 fn extract_xlsx(bytes: &[u8]) -> Result<String, String> {
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| format!("Spreadsheet archive is invalid: {error}"))?;
-    let shared_strings = read_zip_entry(&mut archive, "xl/sharedStrings.xml", MAX_EXTRACTED_TEXT_BYTES * 2)?
-        .map(|xml| parse_shared_strings(&xml)).transpose()?.unwrap_or_default();
+    let mut remaining_xml_bytes = MAX_OFFICE_XML_BYTES;
+    let shared_strings = read_zip_entry_budgeted(
+        &mut archive, "xl/sharedStrings.xml", MAX_EXTRACTED_TEXT_BYTES * 2, &mut remaining_xml_bytes,
+    )?.map(|xml| parse_shared_strings(&xml)).transpose()?.unwrap_or_default();
     let mut sheets = archive_names(&mut archive)?.into_iter()
         .filter(|(name, _)| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
         .collect::<Vec<_>>();
@@ -499,9 +528,12 @@ fn extract_xlsx(bytes: &[u8]) -> Result<String, String> {
             .and_then(|number| number.parse::<u32>().ok()).unwrap_or(u32::MAX)
     });
     if sheets.is_empty() { return Err("Spreadsheet contains no readable worksheets".into()); }
+    if sheets.len() > MAX_OFFICE_PARTS {
+        return Err("Spreadsheet contains too many worksheets for safe local extraction".into());
+    }
     let mut output = String::new();
     for (index, (name, _)) in sheets.into_iter().enumerate() {
-        let xml = read_zip_entry(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2)?
+        let xml = read_zip_entry_budgeted(&mut archive, &name, MAX_EXTRACTED_TEXT_BYTES * 2, &mut remaining_xml_bytes)?
             .ok_or("Spreadsheet worksheet disappeared while reading")?;
         let values = parse_worksheet_cells(&xml, &shared_strings)?;
         if !values.trim().is_empty() {
@@ -781,6 +813,19 @@ mod tests {
         let text = extract_document_text("application/zip", &bytes).unwrap();
         assert!(text.contains("safe project notes"));
         assert!(!text.contains("must not be exposed"));
+    }
+
+    #[test]
+    fn office_extraction_rejects_excessive_slide_counts_before_decompression() {
+        let slides = (1..=MAX_OFFICE_PARTS + 1).map(|index| {
+            (format!("ppt/slides/slide{index}.xml"), b"<p:sld/>".to_vec())
+        }).collect::<Vec<_>>();
+        let references = slides.iter().map(|(name, bytes)| (name.as_str(), bytes.as_slice())).collect::<Vec<_>>();
+        let bytes = make_zip(&references);
+        assert!(extract_document_text(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            &bytes,
+        ).unwrap_err().contains("too many slides"));
     }
 
     #[test]
