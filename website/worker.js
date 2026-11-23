@@ -427,6 +427,35 @@ function streamAiChatResponse(upstream, env, token, reservation, model, inputTok
 }
 __name(streamAiChatResponse, "streamAiChatResponse");
 
+async function readRequestTextLimited(request, maxBytes) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("Request body exceeds the configured limit.");
+        return null;
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 async function cloudVoiceStatus(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"]) || !env.AI || typeof env.AI.run !== "function") {
@@ -458,8 +487,13 @@ async function cloudVoiceSpeech(request, env, ctx) {
   if (!token) return json(401, { error: "Sign in to CenAI before using cloud voice." });
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
-  const rawBody = await request.text();
-  if (rawBody.length > 16384) return json(413, { error: "Voice request exceeds the 16 KB limit." });
+  let rawBody;
+  try {
+    rawBody = await readRequestTextLimited(request, 16384);
+  } catch {
+    return json(400, { error: "Voice request must contain valid UTF-8 JSON." });
+  }
+  if (rawBody === null) return json(413, { error: "Voice request exceeds the 16 KB limit." });
   let body;
   try { body = JSON.parse(rawBody); } catch { return json(400, { error: "Voice request must be valid JSON." }); }
   const input = typeof body?.input === "string" ? body.input.trim() : "";
