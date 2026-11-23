@@ -433,6 +433,41 @@ pub struct WgpuRenderer {
 }
 
 impl WgpuRenderer {
+    async fn create_gpu_backend(
+        window: &Arc<Window>,
+        backends: wgpu::Backends,
+    ) -> anyhow::Result<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration)> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends,
+            ..Default::default()
+        });
+        let surface = instance.create_surface(window.clone())?;
+        let adapter_options = |force_fallback_adapter| wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter,
+        };
+        let adapter = match instance.request_adapter(&adapter_options(false)).await {
+            Some(adapter) => adapter,
+            None => {
+                log::warn!("CenAI hardware adapter unavailable for {backends:?}; trying fallback adapter");
+                instance.request_adapter(&adapter_options(true)).await
+                    .ok_or_else(|| anyhow::anyhow!("No compatible hardware or fallback adapter for {backends:?}"))?
+            }
+        };
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("CenAI GPU device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+        }, None).await?;
+        let size = window.inner_size();
+        let config = surface.get_default_config(&adapter, size.width.max(1), size.height.max(1))
+            .ok_or_else(|| anyhow::anyhow!("GPU surface has no supported configuration for {backends:?}"))?;
+        surface.configure(&device, &config);
+        Ok((surface, device, queue, config))
+    }
+
     pub fn new(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
         pollster::block_on(Self::new_async(window, api, runtime, workspace, workspace_root))
     }
@@ -462,37 +497,32 @@ impl WgpuRenderer {
     }
 
     async fn new_async(window: Arc<Window>, api: Option<CenAiApi>, runtime: Handle, workspace: Option<WorkspaceStore>, workspace_root: PathBuf) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(window.clone())?;
-        // Android tablets and vendor GPU drivers differ widely. Prefer the
-        // hardware adapter, but retry a software/fallback adapter before giving
-        // up so devices with restricted GPU drivers can still display the UI.
-        let adapter_options = |force_fallback_adapter| wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter,
-        };
-        let adapter = match instance.request_adapter(&adapter_options(false)).await {
-            Some(adapter) => adapter,
-            None => {
-                log::warn!("CenAI hardware GPU adapter unavailable; trying a fallback adapter");
-                instance.request_adapter(&adapter_options(true)).await
-                    .ok_or_else(|| anyhow::anyhow!("No compatible hardware or fallback GPU adapter was found"))?
+        // Android vendor Vulkan drivers are not equally reliable. Start with
+        // GLES/EGL (widely supported by Android's system compositor), then
+        // retry Vulkan if GLES cannot create a compatible surface/device.
+        #[cfg(target_os = "android")]
+        let backend_order = [wgpu::Backends::GL, wgpu::Backends::VULKAN];
+        #[cfg(not(target_os = "android"))]
+        let backend_order = [wgpu::Backends::all()];
+
+        let mut failures = Vec::new();
+        let mut gpu = None;
+        for backend in backend_order {
+            match Self::create_gpu_backend(&window, backend).await {
+                Ok(resources) => {
+                    log::info!("CenAI graphics backend initialized: {backend:?}");
+                    gpu = Some(resources);
+                    break;
+                }
+                Err(error) => {
+                    log::warn!("CenAI graphics backend {backend:?} unavailable: {error:#}");
+                    failures.push(format!("{backend:?}: {error:#}"));
+                }
             }
-        };
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("CenAI GPU device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            }, None)
-            .await?;
-        let size = window.inner_size();
-        let config = surface
-            .get_default_config(&adapter, size.width.max(1), size.height.max(1))
-            .ok_or_else(|| anyhow::anyhow!("GPU surface has no supported configuration"))?;
-        surface.configure(&device, &config);
+        }
+        let (surface, device, queue, config) = gpu.ok_or_else(|| {
+            anyhow::anyhow!("No supported Android graphics backend could initialize. {}", failures.join(" | "))
+        })?;
 
         let uniforms = ShaderUniforms {
             resolution: [config.width as f32, config.height as f32],
