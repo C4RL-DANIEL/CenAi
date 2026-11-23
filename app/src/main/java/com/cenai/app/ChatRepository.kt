@@ -133,7 +133,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     list.put(JSONObject().put("role", providerCompatibleRole(p, message.role)).put("content", if (blocks.length() == 1 && blocks.optJSONObject(0)?.optString("type") == "text") message.content else blocks))
                 }
                 payload = JSONObject().put("model", model)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("max_tokens", (vault.get("max_tokens", "4096").toIntOrNull() ?: 4096).coerceIn(1, 32768))
                     .put("stream", true).put("messages", list)
                 if (!system.isNullOrBlank()) payload.put("system", system)
                 builder = Request.Builder().url("https://api.anthropic.com/v1/messages")
@@ -150,7 +150,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     contents.put(JSONObject().put("role", if (message.role == "assistant") "model" else "user").put("parts", parts))
                 }
                 payload = JSONObject().put("contents", contents)
-                    .put("generationConfig", JSONObject().put("maxOutputTokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096))
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", (vault.get("max_tokens", "4096").toIntOrNull() ?: 4096).coerceIn(1, 32768)))
                 if (!system.isNullOrBlank()) payload.put("systemInstruction",
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                 builder = Request.Builder().url(if (oauth) "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse" else "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$key")
@@ -170,7 +170,7 @@ class ChatRepository(private val vault: SecureKeyStore) {
                     list.put(JSONObject().put("role", providerCompatibleRole(p, message.role)).put("content", content))
                 }
                 payload = JSONObject().put("model", model).put("stream", true)
-                    .put("max_tokens", vault.get("max_tokens", "4096").toIntOrNull() ?: 4096)
+                    .put("max_tokens", (vault.get("max_tokens", "4096").toIntOrNull() ?: 4096).coerceIn(1, 32768))
                     .put("messages", list)
                 builder = Request.Builder().url(urlBase.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $key")
