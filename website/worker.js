@@ -49,6 +49,33 @@ function envReady(env, keys) {
   return keys.every((key) => typeof env[key] === "string" && env[key].length > 0);
 }
 
+const CENAI_SANDBOX_BACKEND = "https://cenai-website-git-rewrite-rust-n-e95b48-carls-projects-e4dd61db.vercel.app/api/sandbox";
+
+async function sandboxProxy(request) {
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  const token = (request.headers.get("Authorization") || "").trim();
+  if (!/^Bearer\s+\S+/i.test(token)) return json(401, { error: "Sign in required" });
+  try {
+    const upstream = await fetch(CENAI_SANDBOX_BACKEND, {
+      method: "POST",
+      headers: {
+        Authorization: token,
+        "Content-Type": request.headers.get("Content-Type") || "application/json",
+        Accept: "application/json"
+      },
+      body: request.body,
+      redirect: "manual"
+    });
+    const headers = new Headers(corsHeaders);
+    headers.set("Content-Type", upstream.headers.get("Content-Type") || "application/json");
+    headers.set("Cache-Control", "no-store");
+    return new Response(upstream.body, { status: upstream.status, headers });
+  } catch (error) {
+    console.error("CenAI sandbox proxy failed", error instanceof Error ? error.message : "unknown error");
+    return json(503, { error: "CenAI sandbox service is temporarily unavailable" });
+  }
+}
+
 async function controlPlaneProxy(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"])) {
@@ -737,6 +764,7 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
       if (url.pathname === "/api/admin" || url.pathname === "/api/beta") return controlPlaneProxy(request, env);
+      if (url.pathname === "/api/sandbox") return sandboxProxy(request);
       if (url.pathname === "/api/admin-config") {
         if (request.method !== "GET") return json(405, { error: "Method not allowed" });
         return adminConfig(env);

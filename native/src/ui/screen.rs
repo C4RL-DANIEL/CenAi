@@ -1374,6 +1374,36 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Cloud code sandbox", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Run development commands in a separate Linux microVM with a private, per-account snapshot workspace. Runtime limits: 1 vCPU, 2 GB RAM and 55 seconds per command. Network access is restricted to approved development registries and GitHub. Credentials and environment variables are never forwarded.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Command", 11.0, egui::Color32::WHITE));
+        ui.text_edit_singleline(&mut state.sandbox_command_draft);
+        ui.label(text("Arguments (JSON string array)", 11.0, egui::Color32::WHITE));
+        ui.add(egui::TextEdit::multiline(&mut state.sandbox_arguments_draft).desired_rows(2));
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(text("Project ID", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.text_edit_singleline(&mut state.sandbox_project_id_draft);
+            });
+            ui.vertical(|ui| {
+                ui.label(text("Working directory", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.text_edit_singleline(&mut state.sandbox_working_directory_draft);
+            });
+        });
+        if ui.button("Run in isolated cloud sandbox").clicked() {
+            state.pending_sandbox_run = true;
+            state.sandbox_status = "Waiting to start isolated execution…".into();
+        }
+        if !state.sandbox_status.is_empty() {
+            ui.label(text(&state.sandbox_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+        if !state.sandbox_output.is_empty() {
+            egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| ui.monospace(&state.sandbox_output));
+            if ui.small_button("Clear sandbox output").clicked() { state.sandbox_output.clear(); }
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Privacy & security", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Per-user isolation, encrypted credentials and explicit approvals are part of the runtime design.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
     });

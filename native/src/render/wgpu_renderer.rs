@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_personal_memories, ContextKind, ContextRecord, ContextRequest}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, sandbox::{SandboxJobSummary, SandboxQuota, SandboxRequest}, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, execute_approved_agent_action, open_google_oauth, install_verified_update, current_app_version, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
@@ -210,6 +210,7 @@ enum ChatEvent {
     StepExecuted(u64, String, u64, Result<StepExecutionResult, String>),
     McpConnected(u64, Result<(McpServerManifest, Arc<McpHttpClient>, Vec<McpTool>), String>),
     McpCallFinished(u64, Result<serde_json::Value, String>),
+    SandboxRunFinished(u64, Result<SandboxJobSummary, String>),
     CheckoutReady(u64, Result<String, String>),
     MemoryStatusLoaded(u64, Result<bool, String>),
     MemorySettingUpdated(u64, bool, Result<(), String>),
@@ -249,6 +250,7 @@ impl ChatEvent {
             | Self::StepExecuted(generation, ..)
             | Self::McpConnected(generation, ..)
             | Self::McpCallFinished(generation, ..)
+            | Self::SandboxRunFinished(generation, ..)
             | Self::CheckoutReady(generation, ..)
             | Self::MemoryStatusLoaded(generation, ..)
             | Self::MemorySettingUpdated(generation, ..)
@@ -676,6 +678,38 @@ impl WgpuRenderer {
     }
 
     fn process_speech_output(&mut self) {
+        if std::mem::take(&mut self.app_state.pending_sandbox_run) {
+            let Some(api) = self.api.clone() else {
+                self.app_state.sandbox_status = "Sign in before using the cloud sandbox.".into();
+                return;
+            };
+            let account_id = match api.account_id() {
+                Ok(value) => value,
+                Err(error) => { self.app_state.sandbox_status = format!("Sandbox account check failed: {error}"); return; }
+            };
+            let arguments = match serde_json::from_str::<Vec<String>>(&self.app_state.sandbox_arguments_draft) {
+                Ok(value) => value,
+                Err(error) => { self.app_state.sandbox_status = format!("Arguments must be a JSON array of strings: {error}"); return; }
+            };
+            let request = SandboxRequest {
+                user_scope: account_id,
+                project_id: self.app_state.sandbox_project_id_draft.trim().to_owned(),
+                command: self.app_state.sandbox_command_draft.trim().to_owned(),
+                arguments,
+                working_directory: self.app_state.sandbox_working_directory_draft.trim().to_owned(),
+                environment: Vec::new(),
+                network_hosts: Vec::new(),
+                quota: SandboxQuota::default(),
+            };
+            let sender = self.response_tx.clone();
+            let generation = self.account_generation;
+            self.app_state.sandbox_status = "Starting a private Linux sandbox…".into();
+            let task = self.runtime.spawn(async move {
+                let result = api.sandbox_execute(&request).await;
+                let _ = sender.send(ChatEvent::SandboxRunFinished(generation, result));
+            });
+            self.track_task(task);
+        }
         if std::mem::take(&mut self.app_state.pending_voice_service_check) {
             if let Some(api) = self.api.clone() {
                 let sender = self.response_tx.clone();
@@ -2667,6 +2701,21 @@ impl WgpuRenderer {
                             self.app_state.personal_memory_status = "Memory deleted from your account.".into();
                         }
                         Err(error) => self.app_state.personal_memory_status = format!("Could not delete memory: {error}"),
+                    }
+                }
+                ChatEvent::SandboxRunFinished(_, result) => {
+                    match result {
+                        Ok(summary) => {
+                            self.app_state.sandbox_status = format!("Cloud sandbox {:?} · exit code {:?} · {} ms", summary.state, summary.exit_code, summary.duration_ms);
+                            self.app_state.sandbox_output = if summary.stderr.is_empty() {
+                                summary.stdout
+                            } else if summary.stdout.is_empty() {
+                                summary.stderr
+                            } else {
+                                format!("{}\n\n[stderr]\n{}", summary.stdout, summary.stderr)
+                            };
+                        }
+                        Err(error) => self.app_state.sandbox_status = format!("Cloud sandbox failed: {error}"),
                     }
                 }
                 ChatEvent::EcosystemUpdated(_, message, result) => {

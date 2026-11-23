@@ -11,7 +11,7 @@ pub struct SandboxQuota {
 
 impl Default for SandboxQuota {
     fn default() -> Self {
-        Self { cpu_count: 2, memory_mb: 2048, timeout_seconds: 300, disk_mb: 4096 }
+        Self { cpu_count: 1, memory_mb: 2048, timeout_seconds: 55, disk_mb: 4096 }
     }
 }
 
@@ -118,27 +118,14 @@ impl SandboxRequest {
         if path.is_absolute() || path.components().any(|component| !matches!(component, Component::Normal(_) | Component::CurDir)) {
             return Err("Sandbox working directory must remain inside the project");
         }
-        if self.quota.cpu_count == 0 || self.quota.cpu_count > 4
-            || self.quota.memory_mb < 256 || self.quota.memory_mb > 8192
-            || self.quota.timeout_seconds == 0 || self.quota.timeout_seconds > 900
+        if self.quota.cpu_count != 1
+            || self.quota.memory_mb < 256 || self.quota.memory_mb > 2048
+            || self.quota.timeout_seconds == 0 || self.quota.timeout_seconds > 55
             || self.quota.disk_mb < 128 || self.quota.disk_mb > 16_384
         {
             return Err("Sandbox resource quota is outside the allowed range");
         }
-        if self.environment.len() > 64 { return Err("Sandbox environment exceeds the allowed limits"); }
-        let mut environment_names = HashSet::new();
-        for (name, value) in &self.environment {
-            let upper = name.to_ascii_uppercase();
-            if upper.is_empty() || !upper.bytes().enumerate().all(|(index, byte)| {
-                byte.is_ascii_uppercase() || (byte.is_ascii_digit() && index > 0) || byte == b'_'
-            }) || upper.len() > 64 || !environment_names.insert(upper.clone()) || value.len() > 4096 || contains_credential_material(value) {
-                return Err("Sandbox environment contains an invalid, duplicate, or sensitive value");
-            }
-            if upper.contains("TOKEN") || upper.contains("SECRET") || upper.contains("PASSWORD")
-                || upper.contains("API_KEY") || upper.contains("SERVICE_ROLE") {
-                return Err("Secrets and privileged credentials must never enter the sandbox");
-            }
-        }
+        if !self.environment.is_empty() { return Err("Sandbox environment variables are disabled; credentials must never be forwarded"); }
         if self.network_hosts.len() > 32 || self.network_hosts.iter().any(|host| {
             !safe_public_host(host) || !allowed_hosts.contains(host)
         }) {
@@ -212,7 +199,7 @@ mod tests {
             command: "cargo".into(),
             arguments: vec!["test".into()],
             working_directory: ".".into(),
-            environment: vec![("RUST_LOG".into(), "info".into())],
+            environment: vec![],
             network_hosts: vec!["crates.io".into()],
             quota: SandboxQuota::default(),
         }
@@ -249,7 +236,7 @@ mod tests {
         let (commands, hosts) = policy();
         let mut job = request();
         job.environment.push(("OPENAI_API_KEY".into(), "never-copy-this".into()));
-        assert_eq!(job.validate(&commands, &hosts), Err("Secrets and privileged credentials must never enter the sandbox"));
+        assert_eq!(job.validate(&commands, &hosts), Err("Sandbox environment variables are disabled; credentials must never be forwarded"));
         let mut job = request();
         job.working_directory = "../".into();
         assert_eq!(job.validate(&commands, &hosts), Err("Sandbox working directory must remain inside the project"));

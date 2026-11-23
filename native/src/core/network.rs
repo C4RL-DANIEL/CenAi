@@ -7,7 +7,7 @@ use reqwest::{header, Client, StatusCode};
 use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
 
-use crate::core::{config, multimodal::AttachmentStore, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, workspace::WorkspaceStore};
+use crate::core::{config, multimodal::AttachmentStore, providers::{parse_openai_sse_event, validate_provider_endpoint, ChatRequest}, sandbox::{SandboxJobState, SandboxJobSummary, SandboxRequest}, workspace::WorkspaceStore};
 
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
@@ -626,6 +626,63 @@ impl CenAiApi {
         let status = self.control_plane("registration_status", json!({})).await?;
         status.get("registered").and_then(Value::as_bool)
             .ok_or_else(|| "CenAI registration status response was invalid.".to_owned())
+    }
+
+    /// Executes a validated command in the signed-in account's isolated remote workspace.
+    /// Account identity is checked locally and independently re-derived by the server from the JWT.
+    pub async fn sandbox_execute(&self, request: &SandboxRequest) -> Result<SandboxJobSummary, String> {
+        let account_id = self.vault.account_id()?;
+        if request.user_scope != account_id {
+            return Err("Sandbox request belongs to a different signed-in account.".into());
+        }
+        if !request.environment.is_empty() {
+            return Err("Sandbox environment variables are disabled; credentials must never be forwarded.".into());
+        }
+        let allowed_commands = std::collections::HashSet::from([
+            "bash".to_owned(), "sh".to_owned(), "cargo".to_owned(), "rustc".to_owned(),
+            "python3".to_owned(), "python".to_owned(), "node".to_owned(), "npm".to_owned(),
+            "npx".to_owned(), "git".to_owned(), "go".to_owned(), "make".to_owned(),
+            "cmake".to_owned(), "java".to_owned(), "javac".to_owned(), "gradle".to_owned(),
+            "ls".to_owned(), "cat".to_owned(), "find".to_owned(), "grep".to_owned(),
+            "sed".to_owned(), "awk".to_owned(), "pwd".to_owned(), "mkdir".to_owned(),
+            "cp".to_owned(), "mv".to_owned(), "rm".to_owned(), "touch".to_owned(),
+            "tar".to_owned(), "unzip".to_owned(), "zip".to_owned(), "which".to_owned(),
+            "head".to_owned(), "tail".to_owned(), "wc".to_owned(), "file".to_owned(),
+        ]);
+        let allowed_hosts = std::collections::HashSet::from([
+            "github.com".to_owned(), "api.github.com".to_owned(), "objects.githubusercontent.com".to_owned(),
+            "crates.io".to_owned(), "index.crates.io".to_owned(), "static.crates.io".to_owned(),
+            "registry.npmjs.org".to_owned(), "pypi.org".to_owned(), "files.pythonhosted.org".to_owned(),
+        ]);
+        request.validate(&allowed_commands, &allowed_hosts).map_err(str::to_owned)?;
+        let payload = json!({
+            "projectId": request.project_id,
+            "command": request.command,
+            "arguments": request.arguments,
+            "workingDirectory": request.working_directory,
+        });
+        let response = self.post_authenticated(config::SANDBOX_EXECUTION_URL, &payload).await?;
+        let state = match response.get("status").and_then(Value::as_str) {
+            Some("succeeded") => SandboxJobState::Succeeded,
+            Some("failed") => SandboxJobState::Failed,
+            Some("cancelled") => SandboxJobState::Cancelled,
+            Some("timed_out") => SandboxJobState::TimedOut,
+            _ => return Err("CenAI sandbox returned an unknown execution state.".into()),
+        };
+        let job_id = response.get("runId").and_then(Value::as_str)
+            .filter(|value| valid_supabase_user_id(value))
+            .ok_or_else(|| "CenAI sandbox response did not contain a valid run identifier.".to_owned())?;
+        let summary = SandboxJobSummary {
+            job_id: job_id.to_owned(),
+            user_scope: account_id,
+            state,
+            exit_code: response.get("exitCode").and_then(Value::as_i64).map(|value| value as i32),
+            stdout: response.get("stdout").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            stderr: response.get("stderr").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            duration_ms: response.get("durationMs").and_then(Value::as_u64).unwrap_or_default().min(120_000),
+        };
+        let (stdout, stderr) = summary.sanitized_output(12 * 1024);
+        Ok(SandboxJobSummary { stdout, stderr, ..summary })
     }
 
     /// Calls the per-user Ecosystem Engine. The server derives the account identity from the JWT.
