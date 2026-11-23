@@ -1209,11 +1209,13 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     surface(ui, |ui| {
         ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        let previous_provider = state.provider_key_provider.clone();
         egui::ComboBox::from_id_salt("cenai_provider_key")
             .selected_text(match state.provider_key_provider.as_str() {
                 "deepseek" => "DeepSeek",
                 "anthropic" => "Anthropic Claude",
                 "gemini" => "Google Gemini",
+                "custom" => "Custom OpenAI-compatible",
                 _ => "OpenAI-compatible",
             })
             .show_ui(ui, |ui| {
@@ -1221,7 +1223,33 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 ui.selectable_value(&mut state.provider_key_provider, "deepseek".into(), "DeepSeek");
                 ui.selectable_value(&mut state.provider_key_provider, "anthropic".into(), "Anthropic Claude");
                 ui.selectable_value(&mut state.provider_key_provider, "gemini".into(), "Google Gemini");
+                ui.selectable_value(&mut state.provider_key_provider, "custom".into(), "Custom OpenAI-compatible");
             });
+        if previous_provider != state.provider_key_provider {
+            state.pending_provider_config_load = true;
+            state.provider_config_status.clear();
+        }
+        ui.label(text("Model identifier", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.provider_model_draft)
+            .hint_text("Provider model ID")
+            .char_limit(128)
+            .desired_width(f32::INFINITY));
+        ui.label(text("API endpoint", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::singleline(&mut state.provider_endpoint_draft)
+            .hint_text("https://api.example.com/v1")
+            .desired_width(f32::INFINITY));
+        ui.label(text("Custom endpoints must use HTTPS and a public host. Anthropic and Gemini use their official endpoints; this endpoint is used by OpenAI-compatible providers.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
+        if ui.button("Save model & endpoint").clicked() {
+            state.pending_provider_config_save = Some((
+                state.provider_key_provider.clone(),
+                state.provider_model_draft.trim().to_owned(),
+                state.provider_endpoint_draft.trim().to_owned(),
+            ));
+            state.provider_config_status = "Validating provider configuration…".into();
+        }
+        if !state.provider_config_status.is_empty() {
+            ui.label(text(&state.provider_config_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
         ui.add(egui::TextEdit::singleline(&mut state.provider_key_draft)
             .password(true)
             .hint_text("Paste provider API key")
