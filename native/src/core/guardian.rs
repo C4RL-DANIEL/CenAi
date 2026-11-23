@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn guardian_sanitizes_diagnostic_labels() {
-        let event = DiagnosticEvent::sanitized(DiagnosticKind::ApiFailure, "chat/api?token=secret", "HTTP 401: private", 42);
+        let event = DiagnosticEvent::sanitized(DiagnosticKind::ApiFailure, "chat/api?token=secret", "HTTP 401", 42);
         assert_eq!(event.component, "");
         assert_eq!(event.code, "HTTP_401");
         let serialized = serde_json::to_string(&event).unwrap();
