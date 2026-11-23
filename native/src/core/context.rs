@@ -187,6 +187,8 @@ pub fn rank_personal_memories<'a>(
                 && record.content.to_ascii_lowercase().contains(&goal.trim().to_ascii_lowercase()) { 8 } else { 0 };
             (index, record, overlap.saturating_mul(3) + phrase_bonus)
         })
+        // Do not inject unrelated memories merely because fewer than max_items matched.
+        .filter(|(_, _, score)| *score > 0)
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(&right.0)));
 
@@ -296,8 +298,8 @@ mod tests {
             record(owner, "memory", None, ContextKind::PersonalMemory, "Uses a tablet for Android development"),
             record(owner, "research", None, ContextKind::FeatureData, "Feature data is not personal memory"),
         ];
-        let ranked = rank_personal_memories(owner, "Continue the CenAI Android Rust project", &records, 2, 100);
-        assert_eq!(ranked.len(), 2);
+        let ranked = rank_personal_memories(owner, "Continue the CenAI Android Rust project", &records, 8, 100);
+        assert_eq!(ranked.len(), 1, "unrelated memories must not be injected just to fill the limit");
         assert_eq!(ranked[0].content, "CenAI Android Rust renderer project");
         assert!(ranked.iter().all(|record| record.kind == ContextKind::PersonalMemory));
     }
