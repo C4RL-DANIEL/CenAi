@@ -584,7 +584,9 @@ impl WgpuRenderer {
             app_state.provider_endpoint_draft = service.user_setting(&provider_setting_key(&app_state.provider_key_provider, "endpoint"))
                 .unwrap_or_else(|_| default_endpoint.to_owned());
             if let Ok(language) = service.user_setting("voice_language") {
-                if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
+                if language == "English" {
+                    // The active Aura-1 gateway is English-only. Do not restore a
+                    // stale Qwen catalogue preference as if multilingual synthesis were live.
                     app_state.voice_language = language;
                 }
             }
@@ -2934,7 +2936,8 @@ impl WgpuRenderer {
                                 self.app_state.max_response_tokens = service.user_setting("max_response_tokens").ok().and_then(|value| value.parse::<u32>().ok()).filter(|tokens| (256..=8_192).contains(tokens)).unwrap_or(2_048);
                                 self.last_saved_preferences = (self.app_state.light_mode, self.app_state.reduced_motion, self.app_state.offline_ai_enabled, self.app_state.local_knowledge_enabled, self.app_state.multi_agent_enabled);
                                 if let Ok(language) = service.user_setting("voice_language") {
-                                    if crate::core::qwen_voice::QwenLanguage::ALL.iter().any(|item| item.model_label() == language.as_str()) {
+                                    if language == "English" {
+                                        // The active Aura-1 gateway is English-only.
                                         self.app_state.voice_language = language;
                                     }
                                 }

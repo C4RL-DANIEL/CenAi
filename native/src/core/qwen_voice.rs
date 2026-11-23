@@ -1,9 +1,10 @@
 //! CenAI Voice cloud profile contract and supported-language catalogue.
 //!
-//! Qwen supplies the pretrained cloud speech model. CenAI owns the product identity,
-//! voice profile, pronunciation policy, model lifecycle, and Android integration.
-//! The Android app uses an authenticated cloud inference gateway. Model weights,
-//! reference audio and service credentials remain on the GPU server.
+//! Qwen3-TTS model and language catalogue reserved for the planned CenAI Voice runtime.
+//! This catalogue is not evidence that Qwen inference is deployed: the current production
+//! gateway is Cloudflare Workers AI / Deepgram Aura-1 and supports English only. Keep the
+//! planned Qwen model metadata separate from the active gateway contract until deployment
+//! and end-to-end validation confirm the Qwen service is live.
 
 use serde::{Deserialize, Serialize};
 
