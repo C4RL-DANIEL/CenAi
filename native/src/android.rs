@@ -754,6 +754,12 @@ pub fn android_main(app: AndroidApp) {
             Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
         }
     }
+    if workspace.is_some() {
+        // Keep Android's durable reminder queue reconciled after process death,
+        // device reboot, or a missed schedule update. The worker only posts
+        // generic review notifications; it never executes an automation.
+        schedule_automation_schedule_refresh_worker(app.clone());
+    }
     if workspace.as_ref().is_some_and(|store| store.task_plans().unwrap_or_default().iter()
         .any(|record| record.plan.background_authorized && !record.plan.stopped)) {
         schedule_background_task_worker(app.clone());
