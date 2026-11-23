@@ -19,19 +19,17 @@ object GuardianRuntimeBridge {
         if (!installed.compareAndSet(false, true)) return
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            runCatching {
-                app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putLong("last_crash_at", System.currentTimeMillis())
-                    .putString("last_crash_category", throwable.javaClass.simpleName.take(64))
-                    .putString("last_crash_thread", thread.name.take(48))
-                    .commit()
-            }
+            recordCrash(app, throwable.javaClass.simpleName)
             previous?.uncaughtException(thread, throwable)
         }
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("android_release", Build.VERSION.RELEASE.orEmpty().take(32))
-            .putString("device_model", Build.MODEL.orEmpty().take(64))
-            .putLong("process_started_elapsed_ms", SystemClock.elapsedRealtime())
-            .apply()
+    }
+
+    internal fun recordCrash(context: Context, exceptionClass: String) {
+        val category = exceptionClass.takeIf { it.matches(Regex("[A-Za-z0-9_$]{1,64}")) }
+            ?: "UnknownException"
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putLong("last_crash_at", System.currentTimeMillis())
+            .putString("last_crash_category", category)
+            .commit()
     }
 }

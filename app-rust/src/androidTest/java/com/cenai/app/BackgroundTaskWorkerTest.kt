@@ -12,6 +12,21 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class BackgroundTaskWorkerTest {
     @Test
+    fun guardianCrashRecorderStoresOnlyBoundedExceptionCategory() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("cenai_guardian_runtime", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        GuardianRuntimeBridge.recordCrash(context, "IllegalStateException")
+        assertTrue(prefs.getLong("last_crash_at", 0L) > 0L)
+        assertEquals("IllegalStateException", prefs.getString("last_crash_category", null))
+        assertTrue(!prefs.contains("stacktrace"))
+        assertTrue(!prefs.contains("exception_message"))
+        GuardianRuntimeBridge.recordCrash(context, "token=private")
+        assertEquals("UnknownException", prefs.getString("last_crash_category", null))
+        prefs.edit().clear().commit()
+    }
+
+    @Test
     fun guardianSamplingUsesPersistentWorkManagerSchedulingAndCanBeRevoked() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         GuardianWorker.schedule(context)
