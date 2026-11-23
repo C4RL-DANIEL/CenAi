@@ -266,6 +266,18 @@ fn append_xml_text(output: &mut String, value: &quick_xml::events::BytesText<'_>
     push_bounded_text(output, unescaped.as_ref())
 }
 
+fn decode_xml_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<String, String> {
+    if let Some(character) = reference.resolve_char_ref()
+        .map_err(|error| format!("Office XML character reference is invalid: {error}"))? {
+        return Ok(character.to_string());
+    }
+    let name = reference.decode()
+        .map_err(|error| format!("Office XML entity could not be decoded: {error}"))?;
+    quick_xml::escape::resolve_predefined_entity(name.as_ref())
+        .map(str::to_owned)
+        .ok_or_else(|| format!("Office XML uses an unsupported entity: &{};", name))
+}
+
 fn xml_document_text(xml: &[u8]) -> Result<String, String> {
     if xml.len() > MAX_EXTRACTED_TEXT_BYTES * 2 {
         return Err("Office XML document exceeds the extraction limit".into());
@@ -282,6 +294,10 @@ fn xml_document_text(xml: &[u8]) -> Result<String, String> {
             Ok(Event::Empty(element)) if xml_tag_is(element.name().as_ref(), b"tab") => output.push('\t'),
             Ok(Event::Empty(element)) if xml_tag_is(element.name().as_ref(), b"br") => output.push('\n'),
             Ok(Event::Text(value)) => append_xml_text(&mut output, &value)?,
+            Ok(Event::GeneralRef(reference)) => {
+                let decoded = decode_xml_reference(&reference)?;
+                push_bounded_text(&mut output, &decoded)?;
+            }
             Ok(Event::CData(value)) => {
                 let decoded = value.decode().map_err(|error| format!("Office XML CDATA could not be decoded: {error}"))?;
                 push_bounded_text(&mut output, decoded.as_ref())?;
@@ -376,6 +392,10 @@ fn parse_shared_strings(xml: &[u8]) -> Result<Vec<String>, String> {
                 in_string = true;
             }
             Ok(Event::Text(value)) if in_string => append_xml_text(&mut current, &value)?,
+            Ok(Event::GeneralRef(reference)) if in_string => {
+                let decoded = decode_xml_reference(&reference)?;
+                push_bounded_text(&mut current, &decoded)?;
+            }
             Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"si") => {
                 strings.push(std::mem::take(&mut current));
                 in_string = false;
@@ -414,6 +434,10 @@ fn parse_worksheet_cells(xml: &[u8], shared_strings: &[String]) -> Result<String
             Ok(Event::Start(element)) if in_cell
                 && (xml_tag_is(element.name().as_ref(), b"v") || xml_tag_is(element.name().as_ref(), b"t")) => in_value = true,
             Ok(Event::Text(value)) if in_cell && in_value => append_xml_text(&mut cell_value, &value)?,
+            Ok(Event::GeneralRef(reference)) if in_cell && in_value => {
+                let decoded = decode_xml_reference(&reference)?;
+                push_bounded_text(&mut cell_value, &decoded)?;
+            }
             Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"v")
                 || xml_tag_is(element.name().as_ref(), b"t") => in_value = false,
             Ok(Event::End(element)) if xml_tag_is(element.name().as_ref(), b"c") && in_cell => {
