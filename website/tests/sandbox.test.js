@@ -24,10 +24,21 @@ test("sandbox route returns method errors without loading the Node-only SDK", as
 });
 
 test("sandbox route rejects unauthenticated execution before creating a microVM", async () => {
-  const response = mockResponse();
-  await handler({ method: "POST", headers: {}, body: { command: "pwd", arguments: [] } }, response);
-  assert.equal(response.statusCode, 401);
-  assert.equal(response.payload.error, "A valid CenAI session is required");
+  const previousUrl = process.env.SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test_key";
+  try {
+    const response = mockResponse();
+    await handler({ method: "POST", headers: {}, body: { command: "pwd", arguments: [] } }, response);
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.payload.error, "A valid CenAI session is required");
+  } finally {
+    if (previousUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY;
+    else process.env.SUPABASE_PUBLISHABLE_KEY = previousKey;
+  }
 });
 
 test("accepts bounded commands in a project-scoped working directory", () => {
