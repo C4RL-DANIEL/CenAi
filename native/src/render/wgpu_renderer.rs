@@ -225,6 +225,7 @@ fn normalize_attachment_mime(mime_type: &str, file_name: &str) -> String {
     let mime = mime_type.trim().to_ascii_lowercase();
     if mime == "image/jpg" { return "image/jpeg".into(); }
     if mime == "application/x-pdf" { return "application/pdf".into(); }
+    if mime == "application/x-zip-compressed" { return "application/zip".into(); }
     if mime == "audio/x-m4a" { return "audio/mp4".into(); }
     if mime != "application/octet-stream" && !mime.is_empty() {
         return mime;
@@ -237,6 +238,7 @@ fn normalize_attachment_mime(mime_type: &str, file_name: &str) -> String {
         "avif" => "image/avif",
         "heic" => "image/heic",
         "pdf" => "application/pdf",
+        "zip" => "application/zip",
         "rtf" => "application/rtf",
         "doc" => "application/msword",
         "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
