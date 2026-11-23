@@ -16,6 +16,12 @@ function mockResponse() {
   };
 }
 
+test("Vercel Sandbox SDK exposes the expected Node runtime API", async () => {
+  const sdk = await import("@vercel/sandbox");
+  assert.equal(typeof sdk.Sandbox?.create, "function");
+  assert.equal(typeof sdk.Snapshot?.get, "function");
+});
+
 test("sandbox route returns method errors without loading the Node-only SDK", async () => {
   const response = mockResponse();
   await handler({ method: "GET", headers: {} }, response);
