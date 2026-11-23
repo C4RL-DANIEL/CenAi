@@ -455,10 +455,16 @@ impl WgpuRenderer {
                     .ok_or_else(|| anyhow::anyhow!("No compatible hardware or fallback adapter for {backends:?}"))?
             }
         };
+        // The generic downlevel limit profile caps 2D textures at 2048px.
+        // Modern Android tablets commonly expose 2560px-wide surfaces, so
+        // inherit the adapter's actual texture dimensions while retaining
+        // conservative limits for every other GPU capability.
+        let required_limits = wgpu::Limits::downlevel_defaults()
+            .using_resolution(adapter.limits());
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("CenAI GPU device"),
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            required_limits,
             memory_hints: wgpu::MemoryHints::MemoryUsage,
         }, None).await?;
         let size = window.inner_size();
