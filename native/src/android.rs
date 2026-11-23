@@ -759,9 +759,9 @@ pub fn android_main(app: AndroidApp) {
         // device reboot, or a missed schedule update. The worker only posts
         // generic review notifications; it never executes an automation.
         schedule_automation_schedule_refresh_worker(app.clone());
-    }
-    if workspace.as_ref().is_some_and(|store| store.task_plans().unwrap_or_default().iter()
-        .any(|record| record.plan.background_authorized && !record.plan.stopped)) {
+        // Register the consent-gated worker even when there are no eligible
+        // plans yet. A plan may be authorized later in this app session; its
+        // next periodic/immediate worker pass will discover it from Rust storage.
         schedule_background_task_worker(app.clone());
     }
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
