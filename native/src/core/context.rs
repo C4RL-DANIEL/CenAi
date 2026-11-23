@@ -59,6 +59,53 @@ pub struct ContextRecord {
     pub content: String,
 }
 
+/// A conversation excerpt eligible for opt-in, on-device history retrieval.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalKnowledgeRecord {
+    pub conversation_id: String,
+    pub title: String,
+    pub content: String,
+}
+
+/// Rank saved conversation excerpts without sending them anywhere. The active
+/// conversation is excluded because its messages are already in the request.
+pub fn rank_local_knowledge<'a>(
+    query: &str,
+    current_conversation_id: &str,
+    records: &'a [LocalKnowledgeRecord],
+    max_items: usize,
+    max_bytes: usize,
+) -> Vec<&'a LocalKnowledgeRecord> {
+    fn terms(value: &str) -> std::collections::HashSet<String> {
+        value.split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|term| term.len() >= 3)
+            .map(str::to_ascii_lowercase)
+            .collect()
+    }
+    let query_terms = terms(query);
+    if query_terms.is_empty() || max_items == 0 || max_bytes == 0 { return Vec::new(); }
+    let mut ranked = records.iter().enumerate()
+        .filter(|(_, record)| record.conversation_id != current_conversation_id && !record.content.trim().is_empty())
+        .map(|(index, record)| {
+            let haystack = format!("{} {}", record.title, record.content);
+            let overlap = query_terms.intersection(&terms(&haystack)).count();
+            (index, record, overlap)
+        })
+        .filter(|(_, _, score)| *score > 0)
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(&right.0)));
+    let mut selected = Vec::new();
+    let mut used_bytes = 0usize;
+    for (_, record, _) in ranked {
+        if selected.len() >= max_items { break; }
+        let next = record.title.len().saturating_add(record.content.len());
+        if used_bytes.saturating_add(next) > max_bytes { continue; }
+        used_bytes += next;
+        selected.push(record);
+    }
+    selected
+}
+
 impl ContextRequest {
     pub fn validate(&self) -> Result<(), &'static str> {
         if !valid_user_uuid(&self.user_id) || self.feature_id.trim().is_empty() || self.session_id.trim().is_empty() {
@@ -276,6 +323,29 @@ mod tests {
         )];
         assert!(rank_personal_memories("550e8400-e29b-41d4-a716-446655440000", "preference", &records, 0, 100).is_empty());
         assert!(rank_personal_memories("550e8400-e29b-41d4-a716-446655440000", "preference", &records, 5, 0).is_empty());
+    }
+
+    #[test]
+    fn local_knowledge_ranks_relevant_saved_chats_and_excludes_current_chat() {
+        let records = vec![
+            LocalKnowledgeRecord { conversation_id: "current".into(), title: "Rust project".into(), content: "CenAI Rust migration".into() },
+            LocalKnowledgeRecord { conversation_id: "older-1".into(), title: "Cooking".into(), content: "Pasta recipe and tomato sauce".into() },
+            LocalKnowledgeRecord { conversation_id: "older-2".into(), title: "CenAI Rust migration".into(), content: "Android Rust renderer and offline inference".into() },
+        ];
+        let ranked = rank_local_knowledge("Continue the CenAI Rust Android renderer", "current", &records, 3, 1000);
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].conversation_id, "older-2");
+    }
+
+    #[test]
+    fn local_knowledge_obeys_item_and_byte_limits_and_ignores_empty_queries() {
+        let records = vec![
+            LocalKnowledgeRecord { conversation_id: "one".into(), title: "Rust".into(), content: "Rust Android build".into() },
+            LocalKnowledgeRecord { conversation_id: "two".into(), title: "Rust".into(), content: "Rust offline model".into() },
+        ];
+        assert_eq!(rank_local_knowledge("Rust", "current", &records, 1, 1000).len(), 1);
+        assert!(rank_local_knowledge("Rust", "current", &records, 5, 1).is_empty());
+        assert!(rank_local_knowledge("!!", "current", &records, 5, 1000).is_empty());
     }
 
     #[test]
