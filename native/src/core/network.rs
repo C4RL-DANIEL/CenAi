@@ -597,9 +597,18 @@ impl CenAiApi {
         if response.content_length().is_some_and(|length| length > MAX_AUDIO_BYTES as u64) {
             return Err("CenAI Voice audio exceeded the 32 MB safety limit.".into());
         }
-        let bytes = response.bytes().await
-            .map_err(|error| format!("Could not receive CenAI Voice audio: {error}"))?;
-        if bytes.len() < 44 || bytes.len() > MAX_AUDIO_BYTES || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        let capacity = response.content_length()
+            .unwrap_or(0)
+            .min(MAX_AUDIO_BYTES as u64) as usize;
+        let mut bytes = Vec::with_capacity(capacity);
+        while let Some(chunk) = response.chunk().await
+            .map_err(|error| format!("Could not receive CenAI Voice audio: {error}"))? {
+            if bytes.len().saturating_add(chunk.len()) > MAX_AUDIO_BYTES {
+                return Err("CenAI Voice audio exceeded the 32 MB safety limit.".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if bytes.len() < 44 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
             return Err("CenAI Voice returned an invalid or oversized WAV file.".into());
         }
         if self.vault.account_id()? != account_id {
