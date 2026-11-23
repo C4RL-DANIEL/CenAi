@@ -35,3 +35,8 @@ The API does not accept environment variables, arbitrary network host lists, or 
 ## Snapshot lifecycle
 
 Per-account snapshots are saved for 30 days after a successful run. The initial Rust toolchain snapshot is a separately pinned base image referenced by `CENAI_SANDBOX_BASE_SNAPSHOT_ID`; refresh that environment variable whenever the base image is rebuilt or its snapshot is nearing expiration. Never delete a user's current snapshot until the replacement has been durably saved.
+
+
+## Background cognitive processing
+
+Task plans are background-disabled by default. A user can explicitly enable **Allow background cognitive processing** for an individual plan. Android WorkManager then schedules a best-effort immediate run and a periodic run (minimum 15-minute interval, network required). The Rust worker opens the same Android Keystore vault through application `Context`, claims steps atomically in the encrypted account workspace, and executes only cognitive research, analysis, or writing through `CentralBrain`. It has no tool, device-control, account-action, or sandbox-command capability. Sensitive actions still require the foreground per-action approval flow. Revoking background permission cancels in-flight result persistence; interrupted work becomes a failed step and requires manual retry. Android may delay or stop background work due to Doze, battery policy, force-stop, or OEM restrictions, so this is not a guarantee of continuous 24/7 execution.

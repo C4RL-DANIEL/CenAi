@@ -10,7 +10,7 @@ use std::{
 
 use base64::{engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD}, Engine as _};
 use jni::{
-    objects::{JByteArray, JObject, JValue},
+    objects::{JByteArray, JObject, JString, JValue},
     JNIEnv, JavaVM,
 };
 use winit::platform::android::activity::AndroidApp;
@@ -35,22 +35,47 @@ fn valid_workspace_relative_path(value: &str) -> bool {
 }
 
 pub struct AndroidSecretVault {
-    app: AndroidApp,
+    vm: JavaVM,
+    files_dir: PathBuf,
     path: PathBuf,
     lock: Mutex<()>,
 }
 
 impl AndroidSecretVault {
-    pub fn new(app: AndroidApp) -> Result<Self, String> {
-        let root = app.internal_data_path().ok_or("Android private data directory is unavailable")?;
-        let directory = root.join("cenai-vault");
+    fn from_vm_and_files_dir(vm: JavaVM, files_dir: PathBuf) -> Result<Self, String> {
+        let directory = files_dir.join("cenai-vault");
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-        Ok(Self { app, path: directory.join("secrets.json"), lock: Mutex::new(()) })
+        Ok(Self { vm, files_dir, path: directory.join("secrets.json"), lock: Mutex::new(()) })
     }
 
+    /// Activity-backed constructor retained for the NativeActivity renderer.
+    pub fn new(app: AndroidApp) -> Result<Self, String> {
+        let files_dir = app.internal_data_path().ok_or("Android private data directory is unavailable")?;
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
+        Self::from_vm_and_files_dir(vm, files_dir)
+    }
+
+    /// Headless constructor for WorkManager. A Worker has an application Context,
+    /// not a winit AndroidApp, but Android Keystore is available from any app thread.
+    pub fn new_from_context(env: &mut JNIEnv<'_>, context: &JObject<'_>) -> Result<Self, String> {
+        let vm = env.get_java_vm().map_err(|error| error.to_string())?;
+        let files = env.call_method(context, "getFilesDir", "()Ljava/io/File;", &[])
+            .and_then(|value| value.l()).map_err(|error| error.to_string())?;
+        let path = env.call_method(&files, "getAbsolutePath", "()Ljava/lang/String;", &[])
+            .and_then(|value| value.l()).map_err(|error| error.to_string())?;
+        let path = JString::from(path);
+        let files_dir = env.get_string(&path).map_err(|error| error.to_string())?
+            .to_string_lossy().into_owned();
+        if files_dir.is_empty() {
+            return Err("Android application files directory is unavailable".into());
+        }
+        Self::from_vm_and_files_dir(vm, PathBuf::from(files_dir))
+    }
+
+    pub fn files_dir(&self) -> &std::path::Path { &self.files_dir }
+
     fn with_env<T>(&self, operation: impl FnOnce(&mut JNIEnv<'_>) -> jni::errors::Result<T>) -> Result<T, String> {
-        let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
-        let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
+        let mut env = self.vm.attach_current_thread().map_err(|error| error.to_string())?;
         operation(&mut env).map_err(|error| error.to_string())
     }
 

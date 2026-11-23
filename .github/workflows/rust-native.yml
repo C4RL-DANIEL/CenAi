@@ -5,6 +5,11 @@ on:
     branches:
       - main
       - "rewrite/**"
+    paths:
+      - "native/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-native.yml"
   pull_request:
     branches:
       - main

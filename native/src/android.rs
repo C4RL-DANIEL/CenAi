@@ -5,7 +5,7 @@ use jni::{objects::{JClass, JObject, JString, JValue}, sys::{jboolean, jint}, JN
 mod vault;
 pub(crate) mod audio;
 use vault::AndroidSecretVault;
-use crate::core::{automations::reminder_notification_tag, guardian::DiagnosticKind, network::CenAiApi, workspace::WorkspaceStore};
+use crate::core::{automations::reminder_notification_tag, brain::CentralBrain, guardian::DiagnosticKind, network::CenAiApi, workspace::WorkspaceStore};
 
 use winit::{
     application::ApplicationHandler,
@@ -247,6 +247,60 @@ pub(crate) fn cancel_automation_reminder(app: AndroidApp, owner_scope: String, t
     }));
 }
 
+/// Schedule OS-managed background cognitive work. The Rust worker executes
+/// only explicitly authorized research/analysis/writing steps; it has no tools.
+pub(crate) fn schedule_background_task_worker(app: AndroidApp) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { log::error!("Could not attach to Android VM to schedule background tasks"); return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        if let Err(error) = env.call_static_method(
+            "com/cenai/app/BackgroundTaskBridge", "schedule", "(Landroid/content/Context;)V",
+            &[JValue::Object(&activity)],
+        ) { log::error!("Could not schedule CenAI background cognitive work: {error}"); }
+    }));
+}
+
+pub(crate) fn cancel_background_task_worker(app: AndroidApp) {
+    let callback_app = app.clone();
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+        let Ok(vm) = vm else { return; };
+        let Ok(mut env) = vm.attach_current_thread() else { return; };
+        let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+        if let Err(error) = env.call_static_method(
+            "com/cenai/app/BackgroundTaskBridge", "cancel", "(Landroid/content/Context;)V",
+            &[JValue::Object(&activity)],
+        ) { log::warn!("Could not cancel CenAI background cognitive work: {error}"); }
+    }));
+}
+
+async fn run_background_cognitive_batch(api: CenAiApi, workspace: WorkspaceStore) -> Result<usize, String> {
+    let brain = CentralBrain::new(api);
+    let records = workspace.task_plans()?;
+    let mut executed = 0usize;
+    for record in records {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
+        let Some(plan) = workspace.recover_interrupted_background_steps(&record.id, now, 15 * 60 * 1_000)? else { continue; };
+        if !plan.background_authorized || plan.stopped || plan.is_paused() { continue; }
+        for step_id in plan.ready_steps().into_iter().take(2usize.saturating_sub(executed)) {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
+            let Some(claimed) = workspace.claim_background_step(&record.id, step_id, now)? else { continue; };
+            // This cognitive worker has no device, account, tool, or code-execution access.
+            let result = brain.execute_step(&claimed, step_id).await;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
+            if workspace.finish_background_step(&record.id, step_id, result, now)? { executed += 1; }
+            if executed >= 2 { return Ok(executed); }
+        }
+    }
+    Ok(executed)
+}
+
 /// Release the resident Lightning engine when Android backgrounds the app.
 /// The verified model remains in private app storage and is reloaded lazily on the
 /// next local request, avoiding a permanently resident ~600 MB model while idle.
@@ -321,6 +375,31 @@ pub extern "system" fn Java_com_cenai_app_CenAiNativeActivity_nativeOnOAuthCallb
     let callback = java_string(&mut env, callback);
     if callback.len() <= 8 * 1024 {
         push_platform_event(AndroidPlatformEvent::OAuthCallback(callback));
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_cenai_app_BackgroundTaskWorker_nativeRunBackgroundTasks(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    context: JObject<'_>,
+) -> jint {
+    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Info));
+    let result = (|| -> Result<usize, String> {
+        let vault = AndroidSecretVault::new_from_context(&mut env, &context)?;
+        let files_dir = vault.files_dir().to_path_buf();
+        let api = CenAiApi::new(Arc::new(vault)).map_err(|error| error.to_string())?;
+        if !api.has_session() { return Ok(0); }
+        let account_id = api.account_id()?;
+        if account_id.is_empty() { return Ok(0); }
+        let workspace = api.workspace_store(files_dir.join("cenai-workspace"))?;
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all()
+            .build().map_err(|error| format!("Could not start background runtime: {error}"))?;
+        runtime.block_on(run_background_cognitive_batch(api, workspace))
+    })();
+    match result {
+        Ok(completed) => completed.min(i32::MAX as usize) as jint,
+        Err(error) => { log::warn!("CenAI background cognitive worker deferred: {error}"); -1 }
     }
 }
 
@@ -581,6 +660,10 @@ pub fn android_main(app: AndroidApp) {
             Ok(_) => log::info!("Legacy conversation history is already present or no legacy history was found."),
             Err(error) => log::warn!("Legacy history import was deferred; original history was retained: {error}"),
         }
+    }
+    if workspace.as_ref().is_some_and(|store| store.task_plans().unwrap_or_default().iter()
+        .any(|record| record.plan.background_authorized && !record.plan.stopped)) {
+        schedule_background_task_worker(app.clone());
     }
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,

@@ -1,0 +1,30 @@
+package com.cenai.app
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.WorkManager
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class BackgroundTaskWorkerTest {
+    @Test
+    fun headlessVaultCanBeOpenedFromApplicationContextWithoutAnActivity() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // A clean test install has no signed-in session, so Rust must safely no-op.
+        assertEquals(0, BackgroundTaskWorker.nativeRunBackgroundTasks(context))
+    }
+
+    @Test
+    fun backgroundWorkUsesPersistentWorkManagerScheduling() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        BackgroundTaskBridge.schedule(context)
+        val work = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("cenai_background_cognitive_periodic").get()
+        assertTrue(work.isNotEmpty())
+        BackgroundTaskBridge.cancel(context)
+    }
+}

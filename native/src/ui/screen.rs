@@ -464,6 +464,17 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 else if plan.is_paused() { egui::Color32::from_rgb(224, 190, 120) }
                 else { egui::Color32::from_rgb(119, 220, 183) },
             ));
+            if !plan.stopped {
+                let mut background_authorized = plan.background_authorized;
+                if ui.checkbox(&mut background_authorized, "Allow background cognitive processing").changed() {
+                    state.pending_plan_action = Some((plan.id.clone(), 0, if background_authorized {
+                        "background_enable".into()
+                    } else {
+                        "background_disable".into()
+                    }));
+                }
+                ui.label(text("Only research, analysis and writing steps run in the background. No device controls or external actions. Android scheduling is best-effort.", 9.5, egui::Color32::from_rgb(145, 158, 186)));
+            }
             let ready_count = plan.ready_steps().len();
             if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "execute_ready".into()));

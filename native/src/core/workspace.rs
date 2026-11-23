@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use crate::core::agents::TaskPlan;
+use crate::core::agents::{StepExecutionDisposition, StepExecutionResult, StepStatus, TaskPlan};
 use crate::core::backup::EncryptedBackup;
 use crate::core::automations::Automation;
 use crate::core::network::SessionVault;
@@ -816,6 +816,120 @@ impl WorkspaceStore {
         Ok(tasks)
     }
 
+    /// Changes the background opt-in against the latest persisted plan so a UI
+    /// toggle cannot overwrite a step that a worker claimed concurrently.
+    pub fn set_task_plan_background_authorized(
+        &self,
+        plan_id: &str,
+        enabled: bool,
+        now_unix_ms: u64,
+    ) -> Result<Option<TaskPlan>, String> {
+        let _guard = self.lock_index()?;
+        let mut index = self.read_index()?;
+        let Some(record) = index.tasks.iter_mut().find(|record| record.id == plan_id) else { return Ok(None); };
+        record.plan.set_background_authorized(enabled).map_err(str::to_owned)?;
+        record.plan.validate_persisted().map_err(|error| error.to_string())?;
+        record.updated_at_unix_ms = now_unix_ms;
+        let updated = record.plan.clone();
+        self.write_index(&index)?;
+        Ok(Some(updated))
+    }
+
+    /// Recovers only stale background claims. A live WorkManager invocation is
+    /// protected by the lease window and cannot be marked failed by a second worker.
+    pub fn recover_interrupted_background_steps(
+        &self,
+        plan_id: &str,
+        now_unix_ms: u64,
+        stale_after_ms: u64,
+    ) -> Result<Option<TaskPlan>, String> {
+        let _guard = self.lock_index()?;
+        let mut index = self.read_index()?;
+        let (updated, changed) = {
+            let Some(record) = index.tasks.iter_mut().find(|record| record.id == plan_id) else { return Ok(None); };
+            let recovered = record.plan.recover_interrupted_background_steps(now_unix_ms, stale_after_ms);
+            if !recovered.is_empty() {
+                record.plan.validate_persisted().map_err(|error| error.to_string())?;
+                record.updated_at_unix_ms = now_unix_ms;
+            }
+            (record.plan.clone(), !recovered.is_empty())
+        };
+        if changed { self.write_index(&index)?; }
+        Ok(Some(updated))
+    }
+
+    /// Claims a single background step under the workspace index lock. Two
+    /// WorkManager invocations cannot both transition the same pending step.
+    pub fn claim_background_step(&self, plan_id: &str, step_id: u64, now_unix_ms: u64) -> Result<Option<TaskPlan>, String> {
+        let _guard = self.lock_index()?;
+        let mut index = self.read_index()?;
+        let Some(record) = index.tasks.iter_mut().find(|record| record.id == plan_id) else { return Ok(None); };
+        if !record.plan.background_authorized || record.plan.stopped || record.plan.is_paused() {
+            return Ok(None);
+        }
+        if record.plan.begin_background_step(step_id).is_err() { return Ok(None); }
+        record.plan.validate_persisted().map_err(|error| error.to_string())?;
+        record.updated_at_unix_ms = now_unix_ms;
+        let claimed = record.plan.clone();
+        self.write_index(&index)?;
+        Ok(Some(claimed))
+    }
+
+    /// Persists a result only if this exact step is still owned by the
+    /// background worker. Revocation during execution discards the result.
+    pub fn finish_background_step(
+        &self,
+        plan_id: &str,
+        step_id: u64,
+        result: Result<StepExecutionResult, String>,
+        now_unix_ms: u64,
+    ) -> Result<bool, String> {
+        let _guard = self.lock_index()?;
+        let mut index = self.read_index()?;
+        let Some(record) = index.tasks.iter_mut().find(|record| record.id == plan_id) else { return Ok(false); };
+        let is_background_running = record.plan.steps.iter().any(|step| step.id == step_id && step.status == StepStatus::Running)
+            && record.plan.events.iter().rev().find(|event| event.step_id == Some(step_id))
+                .is_some_and(|event| event.kind == crate::core::agents::TaskExecutionEventKind::BackgroundStarted);
+        if !is_background_running { return Ok(false); }
+
+        if !record.plan.background_authorized {
+            if let Some(step) = record.plan.steps.iter_mut().find(|step| step.id == step_id) {
+                step.output = Some("Background authorization was revoked during execution; the result was discarded.".into());
+            }
+            record.plan.fail_step(step_id).map_err(str::to_owned)?;
+        } else {
+            match result {
+                Ok(step_result) => {
+                    if step_result.output.trim().is_empty() || step_result.output.len() > 24_000 {
+                        if let Some(step) = record.plan.steps.iter_mut().find(|step| step.id == step_id) {
+                            step.output = Some("Background step returned an invalid or oversized result.".into());
+                        }
+                        record.plan.fail_step(step_id).map_err(str::to_owned)?;
+                    } else {
+                        if let Some(step) = record.plan.steps.iter_mut().find(|step| step.id == step_id) {
+                            step.output = Some(step_result.output);
+                        }
+                        match step_result.disposition {
+                            StepExecutionDisposition::Completed => record.plan.complete_step(step_id).map_err(str::to_owned)?,
+                            StepExecutionDisposition::Blocked => record.plan.block_step(step_id).map_err(str::to_owned)?,
+                        }
+                    }
+                }
+                Err(error) => {
+                    let detail = error.chars().take(2_000).collect::<String>();
+                    if let Some(step) = record.plan.steps.iter_mut().find(|step| step.id == step_id) {
+                        step.output = Some(format!("Background step failed: {detail}"));
+                    }
+                    record.plan.fail_step(step_id).map_err(str::to_owned)?;
+                }
+            }
+        }
+        record.plan.validate_persisted().map_err(|error| error.to_string())?;
+        record.updated_at_unix_ms = now_unix_ms;
+        self.write_index(&index)?;
+        Ok(true)
+    }
+
     pub fn save_task_plan(&self, plan: TaskPlan, now_unix_ms: u64) -> Result<TaskRecord, String> {
         let _guard = self.lock_index()?;
         plan.validate_persisted().map_err(|error| format!("Invalid task plan: {error}"))?;
@@ -1033,6 +1147,7 @@ mod tests {
                         output: None,
                     }],
                     stopped: false,
+            background_authorized: false,
                             events: Vec::new(),
                 }, index).unwrap();
             }
@@ -1079,6 +1194,68 @@ mod tests {
     }
 
     #[test]
+    fn recent_background_claim_is_not_recovered_but_stale_claim_requires_manual_retry() {
+        use crate::core::agents::{AgentRole, StepStatus, TaskPlan, TaskStep};
+        let mut plan = TaskPlan { id: "background-lease".into(), goal: "Research".into(), stopped: false,
+            background_authorized: true, events: Vec::new(),
+            steps: vec![TaskStep { id: 1, role: AgentRole::Researcher, title: "Research".into(), status: StepStatus::Pending, depends_on: vec![], output: None }] };
+        plan.begin_background_step(1).unwrap();
+        assert!(plan.recover_interrupted_background_steps(1_000_000, 900_000).is_empty());
+        assert!(plan.recover_interrupted_steps().is_empty(), "app startup must not interrupt a live WorkManager claim");
+        if let Some(event) = plan.events.iter_mut().rev().find(|event| event.step_id == Some(1)) {
+            event.timestamp_ms = 1;
+        }
+        assert_eq!(plan.recover_interrupted_background_steps(1_000_000, 900_000), vec![1]);
+        assert_eq!(plan.steps[0].status, StepStatus::Failed);
+        assert_eq!(plan.interrupted_steps_ready_to_retry(), vec![1]);
+    }
+
+    #[test]
+    fn background_step_requires_opt_in_and_cannot_be_claimed_twice() {
+        use crate::core::agents::{AgentRole, StepExecutionDisposition, StepExecutionResult, StepStatus, TaskPlan, TaskStep};
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440010").unwrap();
+        let mut plan = TaskPlan {
+            id: "background-claim".into(), goal: "Research safely".into(), stopped: false,
+            background_authorized: false, events: Vec::new(),
+            steps: vec![TaskStep { id: 1, role: AgentRole::Researcher, title: "Research".into(),
+                status: StepStatus::Pending, depends_on: vec![], output: None }],
+        };
+        store.save_task_plan(plan.clone(), 10).unwrap();
+        assert!(store.claim_background_step(&plan.id, 1, 20).unwrap().is_none());
+        plan.set_background_authorized(true).unwrap();
+        store.save_task_plan(plan.clone(), 30).unwrap();
+        let claimed = store.claim_background_step(&plan.id, 1, 40).unwrap().unwrap();
+        assert_eq!(claimed.steps[0].status, StepStatus::Running);
+        assert!(store.claim_background_step(&plan.id, 1, 50).unwrap().is_none());
+        let result = StepExecutionResult { disposition: StepExecutionDisposition::Completed, output: "Research complete".into() };
+        assert!(store.finish_background_step(&plan.id, 1, Ok(result), 60).unwrap());
+        assert!(!store.finish_background_step(&plan.id, 1, Err("duplicate".into()), 70).unwrap());
+        let saved = store.task_plans().unwrap().into_iter().find(|record| record.id == plan.id).unwrap();
+        assert_eq!(saved.plan.steps[0].status, StepStatus::Completed);
+        assert_eq!(saved.plan.steps[0].output.as_deref(), Some("Research complete"));
+    }
+
+    #[test]
+    fn revoking_background_authorization_discards_inflight_result() {
+        use crate::core::agents::{AgentRole, StepExecutionDisposition, StepExecutionResult, StepStatus, TaskPlan, TaskStep};
+        let root = temp_root();
+        let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440011").unwrap();
+        let plan = TaskPlan { id: "background-revoke".into(), goal: "Analyze".into(), stopped: false,
+            background_authorized: true, events: Vec::new(),
+            steps: vec![TaskStep { id: 1, role: AgentRole::Researcher, title: "Analyze".into(), status: StepStatus::Pending, depends_on: vec![], output: None }] };
+        store.save_task_plan(plan.clone(), 10).unwrap();
+        store.claim_background_step(&plan.id, 1, 20).unwrap().unwrap();
+        store.set_task_plan_background_authorized(&plan.id, false, 30).unwrap().unwrap();
+        let result = StepExecutionResult { disposition: StepExecutionDisposition::Completed, output: "Must not persist".into() };
+        assert!(!store.finish_background_step(&plan.id, 1, Ok(result), 40).unwrap());
+        let saved = store.task_plans().unwrap().into_iter().find(|record| record.id == plan.id).unwrap();
+        assert_eq!(saved.plan.steps[0].status, StepStatus::Failed);
+        assert!(saved.plan.steps[0].output.as_deref().unwrap_or_default().contains("revoked"));
+        assert!(!saved.plan.steps[0].output.as_deref().unwrap_or_default().contains("Must not persist"));
+    }
+
+    #[test]
     fn task_plans_persist_per_account_and_are_bounded() {
         let root = temp_root();
         let store = WorkspaceStore::new(&root, "550e8400-e29b-41d4-a716-446655440001").unwrap();
@@ -1086,6 +1263,7 @@ mod tests {
             id: "task-1".into(),
             goal: "Build a tested feature".into(),
             stopped: false,
+            background_authorized: false,
                             events: Vec::new(),
             steps: vec![
                 crate::core::agents::TaskStep { id: 1, role: crate::core::agents::AgentRole::Developer, title: "Implement".into(), status: crate::core::agents::StepStatus::Pending, depends_on: vec![],
@@ -1136,6 +1314,7 @@ mod tests {
         source.upsert_conversation_metadata("primary", "Private conversation title", 1234).unwrap();
         source.save_task_plan(TaskPlan {
             id: "backup-task".into(), goal: "Restore this task".into(), stopped: false,
+            background_authorized: false,
                             events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Planner, title: "Plan".into(), status: StepStatus::Pending, depends_on: Vec::new(),
                         output: None, }],

@@ -4,6 +4,18 @@ on:
   push:
     branches:
       - "rewrite/**"
+    paths:
+      - "native/**"
+      - "app-rust/**"
+      - "external/**"
+      - ".gitmodules"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle/**"
+      - ".github/scripts/verify-rust-native-activity.sh"
+      - ".github/workflows/rust-android-debug.yml"
   pull_request:
     branches:
       - main

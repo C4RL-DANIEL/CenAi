@@ -59,16 +59,16 @@ if [[ ! -s "$TEST_APK" ]]; then
 fi
 timeout 120s adb install --no-streaming -r "$TEST_APK"
 test_output="$(timeout 600s adb shell am instrument -w -r \
-  -e class com.cenai.app.LightningOfflineInferenceTest \
+  -e package com.cenai.app \
   com.cenai.app.rustdebug.test/androidx.test.runner.AndroidJUnitRunner 2>&1)" || {
     printf '%s\n' "$test_output" >&2
     timeout 10s adb logcat -d -t 1600 || true
-    echo "Lightning offline inference instrumentation failed." >&2
+    echo "CenAI Android instrumentation tests failed." >&2
     exit 1
   }
 printf '%s\n' "$test_output"
-if ! grep -q 'OK (1 test)' <<<"$test_output"; then
-  echo "Lightning offline inference test did not report success." >&2
+if ! grep -Eq 'OK \([0-9]+ tests?\)' <<<"$test_output"; then
+  echo "CenAI Android instrumentation runner did not report test success." >&2
   exit 1
 fi
 

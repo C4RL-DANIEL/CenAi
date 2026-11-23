@@ -32,7 +32,8 @@ pub struct TaskStep {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskExecutionEventKind {
-    Started, ApprovalRequested, ApprovalGranted, ApprovalDenied, ApprovalConsumed,
+    Started, BackgroundStarted, BackgroundAuthorized, BackgroundRevoked,
+    ApprovalRequested, ApprovalGranted, ApprovalDenied, ApprovalConsumed,
     Completed, Blocked, Failed, Retried, Interrupted, PlanStopped, PlanPaused, PlanResumed,
 }
 
@@ -52,6 +53,9 @@ pub struct TaskPlan {
     pub goal: String,
     pub steps: Vec<TaskStep>,
     pub stopped: bool,
+    /// Explicit opt-in for background cognitive work. Legacy plans default to disabled.
+    #[serde(default)]
+    pub background_authorized: bool,
     /// Bounded audit history; absent in older saved plans.
     #[serde(default)]
     pub events: Vec<TaskExecutionEvent>,
@@ -75,6 +79,31 @@ impl TaskPlan {
         if self.stopped { return Err("Task plan is stopped"); }
         if !self.is_paused() { return Err("Task plan is not paused"); }
         self.record_event(None, TaskExecutionEventKind::PlanResumed, None);
+        Ok(())
+    }
+
+    pub fn set_background_authorized(&mut self, enabled: bool) -> Result<(), &'static str> {
+        if self.stopped && enabled { return Err("A stopped task plan cannot run in the background"); }
+        if self.background_authorized == enabled { return Ok(()); }
+        if !enabled {
+            let running_background = self.steps.iter().filter(|step| {
+                step.status == StepStatus::Running && self.events.iter().rev().find(|event| event.step_id == Some(step.id))
+                    .is_some_and(|event| event.kind == TaskExecutionEventKind::BackgroundStarted)
+            }).map(|step| step.id).collect::<Vec<_>>();
+            for step_id in running_background {
+                if let Some(step) = self.steps.iter_mut().find(|step| step.id == step_id) {
+                    step.status = StepStatus::Failed;
+                    step.output = Some("Background permission was revoked while this step was running; its result will be discarded.".into());
+                }
+                self.record_event(Some(step_id), TaskExecutionEventKind::Failed, Some("Background authorization revoked during execution"));
+            }
+        }
+        self.background_authorized = enabled;
+        self.record_event(None, if enabled {
+            TaskExecutionEventKind::BackgroundAuthorized
+        } else {
+            TaskExecutionEventKind::BackgroundRevoked
+        }, None);
         Ok(())
     }
 
@@ -136,6 +165,9 @@ impl TaskPlan {
         if self.stopped && self.steps.iter().any(|step| matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval)) {
             return Err("Stopped task plans cannot contain active steps");
         }
+        if self.stopped && self.background_authorized {
+            return Err("Stopped task plans cannot remain authorized for background execution");
+        }
         if self.events.len() > 128 { return Err("Task execution history exceeds the 128-event limit"); }
         let step_ids: std::collections::HashSet<u64> = self.steps.iter().map(|step| step.id).collect();
         let mut previous_sequence = 0u64;
@@ -173,6 +205,34 @@ impl TaskPlan {
         step.status = StepStatus::Running;
         self.record_event(Some(step_id), TaskExecutionEventKind::Started, None);
         Ok(())
+    }
+
+    /// Atomically marks a user-authorized cognitive step as background work.
+    /// This path has no tool, device, or external-account action capability.
+    pub fn begin_background_step(&mut self, step_id: u64) -> Result<(), &'static str> {
+        if !self.background_authorized { return Err("Background execution has not been authorized by the user"); }
+        self.begin_step(step_id)?;
+        self.record_event(Some(step_id), TaskExecutionEventKind::BackgroundStarted, None);
+        Ok(())
+    }
+
+    /// Converts only interrupted background steps to failed state. Foreground
+    /// work is left untouched, and retry remains a deliberate user action.
+    pub fn recover_interrupted_background_steps(&mut self, now_ms: u64, stale_after_ms: u64) -> Vec<u64> {
+        let interrupted = self.steps.iter().filter(|step| {
+            step.status == StepStatus::Running && self.events.iter().rev().find(|event| event.step_id == Some(step.id))
+                .is_some_and(|event| event.kind == TaskExecutionEventKind::BackgroundStarted
+                    && now_ms.saturating_sub(event.timestamp_ms) >= stale_after_ms)
+        }).map(|step| step.id).collect::<Vec<_>>();
+        for step_id in &interrupted {
+            if let Some(step) = self.steps.iter_mut().find(|step| step.id == *step_id) {
+                step.status = StepStatus::Failed;
+                step.output = Some("Background processing was interrupted; review and retry manually.".into());
+            }
+            self.record_event(Some(*step_id), TaskExecutionEventKind::Interrupted,
+                Some("Background processing was interrupted; manual retry required"));
+        }
+        interrupted
     }
 
     pub fn request_step_approval(&mut self, step_id: u64) -> Result<(), &'static str> {
@@ -352,6 +412,7 @@ impl TaskPlan {
 
     pub fn stop(&mut self) {
         self.stopped = true;
+        self.background_authorized = false;
         for step in &mut self.steps {
             if matches!(step.status, StepStatus::Pending | StepStatus::Running | StepStatus::WaitingForApproval) {
                 step.status = StepStatus::Cancelled;
@@ -365,9 +426,15 @@ impl TaskPlan {
     /// remotely before the process died, so replaying it could duplicate work.
     pub fn recover_interrupted_steps(&mut self) -> Vec<u64> {
         if self.stopped { return Vec::new(); }
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
         let mut recovered = Vec::new();
         for step in &mut self.steps {
             if step.status == StepStatus::Running {
+                let recent_background_claim = self.events.iter().rev().find(|event| event.step_id == Some(step.id))
+                    .is_some_and(|event| event.kind == TaskExecutionEventKind::BackgroundStarted
+                        && now_ms.saturating_sub(event.timestamp_ms) < 15 * 60 * 1_000);
+                if recent_background_claim { continue; }
                 step.status = StepStatus::Failed;
                 step.output = Some("Execution was interrupted when CenAI closed or restarted. Review the step, then retry it manually.".into());
                 recovered.push(step.id);
@@ -394,7 +461,8 @@ mod tests {
     #[test]
     fn pause_and_resume_are_durable_and_gate_new_execution() {
         let mut plan = TaskPlan {
-            id: "pause-plan".into(), goal: "Pause safely".into(), stopped: false, events: Vec::new(),
+            id: "pause-plan".into(), goal: "Pause safely".into(), stopped: false,
+            background_authorized: false, events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: Vec::new(), output: None },
                 TaskStep { id: 2, role: AgentRole::Tester, title: "Verify".into(), status: StepStatus::Pending, depends_on: vec![1], output: None },
@@ -429,6 +497,7 @@ mod tests {
     fn dependencies_gate_execution_and_stop_is_terminal() {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![],
@@ -449,6 +518,7 @@ mod tests {
     fn ready_steps_selects_independent_work_and_excludes_approval_gated_steps() {
         let mut plan = TaskPlan {
             id: "parallel-plan".into(), goal: "Research and summarize".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Researcher, title: "Research A".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
@@ -470,6 +540,7 @@ mod tests {
     fn planner_cannot_claim_completed_steps_or_create_forward_dependencies() {
         let mut plan = TaskPlan {
             id: "task-1".into(), goal: "Build and verify".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![],
@@ -492,6 +563,7 @@ mod tests {
     fn execution_state_machine_enforces_dependencies_and_approval() {
         let mut plan = TaskPlan {
             id: "task-2".into(), goal: "Run a protected workflow".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![],
@@ -519,6 +591,7 @@ mod tests {
             id: "task-permission-coordination".into(),
             goal: "Coordinate protected work".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Read local context".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
@@ -553,6 +626,7 @@ mod tests {
             id: "task-denied-permission".into(),
             goal: "Protect account actions".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Delete remote data".into(),
@@ -574,6 +648,7 @@ mod tests {
             id: "task-bound-approval".into(),
             goal: "Prevent approval replay across operations".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Update profile".into(),
@@ -607,6 +682,7 @@ mod tests {
             id: "task-single-use-approval".into(),
             goal: "Prevent approval replay after failure".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Change account setting".into(),
@@ -638,6 +714,7 @@ mod tests {
             id: "task-ordinary-approval".into(),
             goal: "Allow explicitly reviewed ordinary operations".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Researcher, title: "Read local data".into(),
@@ -662,6 +739,7 @@ mod tests {
             id: "task-description-binding".into(),
             goal: "Prevent stale approval reuse".into(),
             stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Send a message".into(),
@@ -685,6 +763,7 @@ mod tests {
     fn denied_approval_and_failed_dependencies_block_downstream_steps() {
         let mut plan = TaskPlan {
             id: "task-3".into(), goal: "Test denied work".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Prepare".into(), status: StepStatus::Pending, depends_on: vec![],
@@ -709,6 +788,7 @@ mod tests {
     fn runtime_statuses_and_stopped_plans_can_be_persisted_safely() {
         let mut plan = TaskPlan {
             id: "task-persist".into(), goal: "Persist execution".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![],
@@ -730,6 +810,7 @@ mod tests {
     fn persisted_step_results_are_bounded_and_new_plans_cannot_smuggle_outputs() {
         let mut plan = TaskPlan {
             id: "task-output".into(), goal: "Produce a saved result".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Researcher, title: "Research".into(),
@@ -753,6 +834,7 @@ mod tests {
     fn blocked_steps_keep_their_handoff_and_never_unlock_dependents() {
         let mut plan = TaskPlan {
             id: "task-blocked".into(), goal: "Perform a protected action".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Perform external action".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
@@ -773,6 +855,7 @@ mod tests {
     fn blocked_step_can_be_retried_only_after_blocker_resolution_and_clears_stale_output() {
         let mut plan = TaskPlan {
             id: "task-retry".into(), goal: "Perform a protected action".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Perform external action".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
@@ -796,6 +879,7 @@ mod tests {
     fn stopping_plan_cancels_running_step_and_prevents_late_result_from_being_applied() {
         let mut plan = TaskPlan {
             id: "task-late-result".into(), goal: "Cancel safely".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Work".into(), status: StepStatus::Pending, depends_on: vec![], output: None }],
         };
@@ -811,6 +895,7 @@ mod tests {
     fn failed_step_can_be_retried_without_unlocking_dependents_or_reusing_output() {
         let mut plan = TaskPlan {
             id: "task-failed-retry".into(), goal: "Recover failed work".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Pending, depends_on: vec![], output: None },
@@ -835,6 +920,7 @@ mod tests {
     fn stopped_plans_cannot_retry_failed_steps() {
         let mut plan = TaskPlan {
             id: "task-stopped-failed-retry".into(), goal: "Recover".into(), stopped: true,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Recover".into(), status: StepStatus::Failed, depends_on: vec![], output: None }],
         };
@@ -845,6 +931,7 @@ mod tests {
     fn stopped_plans_cannot_retry_blocked_steps() {
         let mut plan = TaskPlan {
             id: "task-stopped-retry".into(), goal: "Recover".into(), stopped: true,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Recover".into(), status: StepStatus::Blocked, depends_on: vec![], output: Some("Blocked".into()) }],
         };
@@ -855,6 +942,7 @@ mod tests {
     fn interrupted_running_steps_recover_as_retryable_failures_without_unlocking_dependents() {
         let mut plan = TaskPlan {
             id: "task-recovery".into(), goal: "Recover safely after restart".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Running, depends_on: vec![], output: None },
@@ -878,6 +966,7 @@ mod tests {
     fn interrupted_steps_can_be_retried_in_one_explicit_batch_without_replaying_dependents() {
         let mut plan = TaskPlan {
             id: "task-batch-recovery".into(), goal: "Retry recovered work".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "Implement".into(), status: StepStatus::Running, depends_on: vec![], output: None },
@@ -903,6 +992,7 @@ mod tests {
     fn stopped_plans_do_not_recover_cancelled_or_running_work() {
         let mut plan = TaskPlan {
             id: "task-stopped-recovery".into(), goal: "Keep stopped plans terminal".into(), stopped: true,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![TaskStep { id: 1, role: AgentRole::Developer, title: "Work".into(), status: StepStatus::Cancelled, depends_on: vec![], output: None }],
         };
@@ -914,7 +1004,8 @@ mod tests {
     fn execution_history_records_approval_start_and_completion_in_order() {
         let mut plan = TaskPlan {
             id: "task-history".into(), goal: "Track every execution transition".into(),
-            stopped: false, events: Vec::new(),
+            stopped: false,
+            background_authorized: false, events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Implement".into(),
                 status: StepStatus::Pending, depends_on: Vec::new(), output: None,
@@ -943,7 +1034,8 @@ mod tests {
     fn execution_history_is_bounded_and_rejects_invalid_event_references() {
         let mut plan = TaskPlan {
             id: "task-history-bound".into(), goal: "Bound execution history".into(),
-            stopped: false, events: Vec::new(),
+            stopped: false,
+            background_authorized: false, events: Vec::new(),
             steps: vec![TaskStep {
                 id: 1, role: AgentRole::Developer, title: "Work".into(),
                 status: StepStatus::Pending, depends_on: Vec::new(), output: None,
@@ -964,6 +1056,7 @@ mod tests {
         let json = r#"{"id":"legacy","goal":"Old saved plan","steps":[{"id":1,"role":"developer","title":"Work","status":"pending","depends_on":[],"output":null}],"stopped":false}"#;
         let plan: TaskPlan = serde_json::from_str(json).unwrap();
         assert!(plan.events.is_empty());
+        assert!(!plan.background_authorized, "legacy plans must remain background-disabled until the user opts in");
         assert!(plan.validate_persisted().is_ok());
     }
 
@@ -971,6 +1064,7 @@ mod tests {
     fn dependency_cycles_are_rejected() {
         let plan = TaskPlan {
             id: "cyclic".into(), goal: "Invalid plan".into(), stopped: false,
+            background_authorized: false,
             events: Vec::new(),
             steps: vec![
                 TaskStep { id: 1, role: AgentRole::Developer, title: "A".into(), status: StepStatus::Pending, depends_on: vec![2],
