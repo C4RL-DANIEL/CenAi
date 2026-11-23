@@ -684,7 +684,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (messages.isEmpty()) {
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 24.dp),
+                    Modifier
+                        .fillMaxSize()
+                        .widthIn(max = if (isTabletLayout) 880.dp else 640.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = if (isTabletLayout) 28.dp else 18.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Surface(
@@ -701,7 +705,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                     }
                                 }
                                 Column {
-                                    Text("CENAI WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                                    Text("CENAI WORKSPACE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1)
                                     Text(if (localModelEnabled && localModelReady) "On-device AI is ready" else "Your models. Your workflow.", color = palette.muted, fontSize = 11.sp)
                                 }
                                 Spacer(Modifier.weight(1f))
@@ -720,8 +724,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             Text(
                                 "What are we\nworking on today?",
                                 color = palette.text,
-                                fontSize = 34.sp,
-                                lineHeight = 39.sp,
+                                fontSize = if (isTabletLayout) 32.sp else 29.sp,
+                                lineHeight = if (isTabletLayout) 38.sp else 35.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = (-1.1).sp
                             )
