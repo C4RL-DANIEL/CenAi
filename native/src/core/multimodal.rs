@@ -301,7 +301,7 @@ fn read_zip_entry<R: Read + std::io::Seek>(
     name: &str,
     max_bytes: usize,
 ) -> Result<Option<Vec<u8>>, String> {
-    let mut file = match archive.by_name(name) {
+    let file = match archive.by_name(name) {
         Ok(file) => file,
         Err(zip::result::ZipError::FileNotFound) => return Ok(None),
         Err(error) => return Err(format!("Document archive could not be read: {error}")),
