@@ -5,7 +5,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
 };
 
 use base64::{engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD}, Engine as _};
@@ -18,6 +18,10 @@ use sha2::{Digest, Sha256};
 
 use crate::core::network::SessionVault;
 use crate::core::workspace::WORKSPACE_CIPHER_MAGIC;
+
+// Foreground and WorkManager vault objects share this encrypted file. Serialize
+// reads and atomic writes across instances to prevent lost updates and temp-file races.
+static VAULT_FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn valid_supabase_user_id(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -38,14 +42,13 @@ pub struct AndroidSecretVault {
     vm: JavaVM,
     files_dir: PathBuf,
     path: PathBuf,
-    lock: Mutex<()>,
 }
 
 impl AndroidSecretVault {
     fn from_vm_and_files_dir(vm: JavaVM, files_dir: PathBuf) -> Result<Self, String> {
         let directory = files_dir.join("cenai-vault");
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-        Ok(Self { vm, files_dir, path: directory.join("secrets.json"), lock: Mutex::new(()) })
+        Ok(Self { vm, files_dir, path: directory.join("secrets.json") })
     }
 
     /// Activity-backed constructor retained for the NativeActivity renderer.
@@ -218,7 +221,7 @@ impl AndroidSecretVault {
         if entries.iter().any(|(name, _)| name.is_empty() || name.len() > 120) {
             return Err("Secret name is invalid".into());
         }
-        let _guard = self.lock.lock().map_err(|_| "Vault lock poisoned")?;
+        let _guard = VAULT_FILE_LOCK.get_or_init(|| Mutex::new(())).lock().map_err(|_| "Vault lock poisoned")?;
         let mut values = self.read_map()?;
         for (name, value) in entries {
             if value.is_empty() {
@@ -318,7 +321,7 @@ impl AndroidSecretVault {
     }
 
     pub fn get_secret(&self, name: &str) -> Result<String, String> {
-        let _guard = self.lock.lock().map_err(|_| "Vault lock poisoned")?;
+        let _guard = VAULT_FILE_LOCK.get_or_init(|| Mutex::new(())).lock().map_err(|_| "Vault lock poisoned")?;
         let values = self.read_map()?;
         let Some(encoded) = values.get(name) else { return Ok(String::new()); };
         let packed = STANDARD_NO_PAD.decode(encoded).map_err(|error| error.to_string())?;
