@@ -665,10 +665,13 @@ impl ApplicationHandler for CenAiApplication {
                 Self::report_startup_error(self.android_app.clone(),
                     "CenAI could not initialize graphics on this device. Check for a system update and reopen the app.".into());
             }
-            Err(_) => {
-                log::error!("CenAI GPU initialization panicked.");
+            Err(payload) => {
+                let details = payload.downcast_ref::<&str>().copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("unknown graphics initialization panic");
+                log::error!("CenAI GPU initialization panicked: {details}");
                 Self::report_startup_error(self.android_app.clone(),
-                    "CenAI's graphics driver failed during startup. Reopen the app; if this continues, send the device model and Android version to support.".into());
+                    format!("CenAI graphics initialization failed: {}", details.chars().take(180).collect::<String>()));
             }
         }
         self.window = Some(window);
