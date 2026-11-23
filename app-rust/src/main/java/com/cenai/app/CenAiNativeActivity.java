@@ -56,6 +56,14 @@ public final class CenAiNativeActivity extends NativeActivity {
         handleAutomationReminderIntent(getIntent());
     }
 
+    /** Shows a non-sensitive startup diagnostic if the native renderer cannot initialize. */
+    public void showStartupError(String message) {
+        String safeMessage = message == null || message.trim().isEmpty()
+            ? "CenAI could not initialize its display. Please reopen the app."
+            : message;
+        android.widget.Toast.makeText(this, safeMessage, android.widget.Toast.LENGTH_LONG).show();
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
