@@ -1,0 +1,101 @@
+name: CenAI Kotlin Android Debug APK (Stable UI)
+
+on:
+  push:
+    branches:
+      - "rewrite/**"
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle.properties"
+      - ".github/workflows/kotlin-android-debug.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "settings.gradle*"
+      - "build.gradle*"
+      - "gradle.properties"
+      - ".github/workflows/kotlin-android-debug.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cenai-kotlin-debug-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-debug:
+    name: Build and smoke-test stable Kotlin Compose app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Run Kotlin unit tests and build stable APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Verify stable APK package and launcher
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "package: name='com.cenai.app'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "launchable-activity: name='com.cenai.app.MainActivity'"
+          sha256sum "$APK" > "$APK.sha256"
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+      - name: Install and launch stable Kotlin app on API 35
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-boot-timeout: 900000
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -memory 4096
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am force-stop com.cenai.app
+            adb shell monkey -p com.cenai.app 1
+            sleep 20
+            adb shell pidof com.cenai.app
+            if adb logcat -d -t 2000 | grep -E "FATAL EXCEPTION|Fatal signal" | grep -q "com.cenai.app"; then
+              adb logcat -d -t 2000
+              exit 1
+            fi
+      - name: Upload stable Kotlin debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CenAI-stable-Kotlin-Compose-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
