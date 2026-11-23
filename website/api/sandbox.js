@@ -17,7 +17,7 @@ const CREDENTIAL_ARGUMENT = /authorization\s*:|bearer\s+|(?:api[_ -]?key|access[
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_OUTPUT_BYTES = 12 * 1024;
 const SESSION_TIMEOUT_MS = 55_000;
-const DEFAULT_BASE_SNAPSHOT_ID = "snap_eOaqLRrGW2Zxeil8bdOPlHhdZ3dy";
+const DEFAULT_BASE_SNAPSHOT_ID = "snap_aDgjD0mjRVpRav21NkrK9OKCNLq7";
 export const config = { maxDuration: 60 };
 
 function send(res, status, payload) {
@@ -117,9 +117,10 @@ export default async function handler(req, res) {
     if (typeof runId !== "string" || !/^[0-9a-f-]{36}$/i.test(runId)) return send(res, 429, { error: "Sandbox usage limit reached. Try again later." });
 
     previousSnapshotId = await supabaseRpc(base, publishableKey, token, "cenai_get_sandbox_workspace");
+    const baseSnapshotId = process.env.CENAI_SANDBOX_BASE_SNAPSHOT_ID || DEFAULT_BASE_SNAPSHOT_ID;
     const restoreSnapshotId = typeof previousSnapshotId === "string" && /^snap_[A-Za-z0-9_-]{8,96}$/.test(previousSnapshotId)
       ? previousSnapshotId
-      : (process.env.CENAI_SANDBOX_BASE_SNAPSHOT_ID || DEFAULT_BASE_SNAPSHOT_ID);
+      : baseSnapshotId;
     sandbox = await Sandbox.create({
       source: { type: "snapshot", snapshotId: restoreSnapshotId },
       region: "sin1",
@@ -137,7 +138,11 @@ export default async function handler(req, res) {
     if (saved !== true) throw new Error("Sandbox workspace snapshot could not be saved to the account");
     workspaceSaved = true;
     sandbox = null; // snapshot() stops the microVM automatically
-    if (typeof previousSnapshotId === "string" && previousSnapshotId.startsWith("snap_") && previousSnapshotId !== newSnapshot.snapshotId) {
+    // A shared base image is never an account-owned workspace snapshot and must never be deleted here.
+    if (typeof previousSnapshotId === "string"
+      && /^snap_[A-Za-z0-9_-]{8,96}$/.test(previousSnapshotId)
+      && previousSnapshotId !== newSnapshot.snapshotId
+      && previousSnapshotId !== baseSnapshotId) {
       try { await (await Snapshot.get({ snapshotId: previousSnapshotId })).delete(); } catch { /* Expired snapshots are harmless; retention cleanup is best effort. */ }
     }
     const exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 1;
