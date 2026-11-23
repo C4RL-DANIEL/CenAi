@@ -12,6 +12,27 @@ use crate::core::{config, multimodal::{extract_document_text, AttachmentStore}, 
 const MAX_STREAM_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 256 * 1024;
 
+const MAX_JSON_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+async fn read_response_limited(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    if response.content_length().is_some_and(|length| length > max_bytes as u64) {
+        return Err(format!("{label} exceeded the {} MiB safety limit.", max_bytes / (1024 * 1024)));
+    }
+    let mut bytes = Vec::with_capacity(response.content_length().unwrap_or(0).min(max_bytes as u64) as usize);
+    while let Some(chunk) = response.chunk().await
+        .map_err(|error| format!("Could not receive {label}: {error}"))? {
+        if bytes.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(format!("{label} exceeded the {} MiB safety limit.", max_bytes / (1024 * 1024)));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
 fn jwt_has_active_aal2(token: &str, now_unix: i64) -> bool {
     let mut segments = token.split('.');
     let (Some(_header), Some(payload), Some(_signature), None) =
@@ -512,7 +533,8 @@ impl CenAiApi {
 
     async fn decode_response(response: reqwest::Response) -> Result<Value, String> {
         let status = response.status();
-        let raw = response.text().await.map_err(|error| error.to_string())?;
+        let bytes = read_response_limited(response, MAX_JSON_RESPONSE_BYTES, "CenAI JSON response").await?;
+        let raw = String::from_utf8_lossy(&bytes);
         let data: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({}));
         if !status.is_success() {
             let message = ["msg", "message", "error_description", "error"]
@@ -582,8 +604,8 @@ impl CenAiApi {
         }
         if !response.status().is_success() {
             let status = response.status();
-            let raw = response.text().await.unwrap_or_default();
-            let data: Value = serde_json::from_str(&raw).unwrap_or_else(|_| json!({}));
+            let raw = read_response_limited(response, 16 * 1024, "CenAI Voice error response").await.unwrap_or_default();
+            let data: Value = serde_json::from_slice(&raw).unwrap_or_else(|_| json!({}));
             let message = data.get("error").and_then(Value::as_str)
                 .or_else(|| data.get("message").and_then(Value::as_str))
                 .unwrap_or("Cloud voice service is unavailable.");
