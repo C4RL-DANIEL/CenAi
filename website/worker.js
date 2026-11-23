@@ -550,8 +550,16 @@ async function aiChat(request, env) {
   if (!env.AI || typeof env.AI.run !== "function") return json(503, { error: "Cloud AI runtime is not bound to this Worker" });
   const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return json(401, { error: "Sign in required" });
-  const body = await request.json().catch(() => null);
-  if (!body || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
+  let rawBody;
+  try {
+    rawBody = await readRequestTextLimited(request, 1_048_576);
+  } catch {
+    return json(400, { error: "Chat request must contain valid UTF-8 JSON." });
+  }
+  if (rawBody === null) return json(413, { error: "Chat request exceeds the 1 MB limit." });
+  let body;
+  try { body = JSON.parse(rawBody); } catch { return json(400, { error: "Chat request must be valid JSON." }); }
+  if (!body || typeof body !== "object" || Array.isArray(body) || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 50) {
     return json(400, { error: "Provide between 1 and 50 chat messages." });
   }
   const messages = [];

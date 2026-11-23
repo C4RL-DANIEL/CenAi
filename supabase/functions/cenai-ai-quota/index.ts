@@ -32,7 +32,40 @@ Deno.serve(async (req: Request) => {
     if (!token) return reply(401, { error: "Sign in required" });
     const { data: { user }, error: authError } = await authDb.auth.getUser(token);
     if (authError || !user || user.is_anonymous) return reply(401, { error: "Valid signed-in account required" });
-    const body = await req.json().catch(() => ({}));
+    const declaredLength = Number(req.headers.get("Content-Length") || 0);
+    if (Number.isFinite(declaredLength) && declaredLength > 65536) {
+      return reply(413, { error: "Quota request exceeds the 64 KB limit." });
+    }
+    if (!req.body) return reply(400, { error: "A JSON request body is required." });
+    const reader = req.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > 65536) {
+          await reader.cancel("Quota request exceeds the 64 KB limit.");
+          return reply(413, { error: "Quota request exceeds the 64 KB limit." });
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    } catch {
+      return reply(400, { error: "Quota request must be valid UTF-8 JSON." });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply(400, { error: "Quota request must be a JSON object." });
+    }
     if (!await registrationAllowed(user)) return reply(403, { error: "Complete Discord invitation registration before using CenAI.", code: "REGISTRATION_REQUIRED" });
     const action = String(body.action || "");
     if (["authorize", "record", "voice_authorize", "voice_record", "voice_status"].includes(action)) {
