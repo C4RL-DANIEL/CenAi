@@ -6,7 +6,7 @@
 - The Worker forwards the authenticated request to the Vercel serverless function at `/api/sandbox`.
 - The server verifies the Supabase bearer token, verifies CenAI registration eligibility, and claims a per-account quota slot before provisioning any compute.
 - Each account's workspace is restored from its own Vercel Sandbox snapshot. First use starts from the pinned Rust-enabled base snapshot configured by `CENAI_SANDBOX_BASE_SNAPSHOT_ID`.
-- After a command completes, the microVM is snapshotted and the new snapshot ID is stored through account-scoped Supabase RPCs. The previous snapshot is deleted after the new reference is saved.
+- After a command completes, the microVM is snapshotted and the new snapshot ID is stored through account-scoped Supabase RPCs. The previous account-owned snapshot is deleted after the new reference is saved. The shared base image is explicitly excluded from account cleanup and is never deleted by a user's run.
 - The database stores only the account ID, snapshot ID, and minimal run metadata; it does not store command output or workspace file contents.
 
 ## Runtime limits and security
