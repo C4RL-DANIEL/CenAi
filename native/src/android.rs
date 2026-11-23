@@ -320,7 +320,15 @@ async fn run_background_cognitive_batch(api: CenAiApi, workspace: WorkspaceStore
                 .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
             let Some(claimed) = workspace.claim_background_step(&record.id, step_id, now)? else { continue; };
             // This cognitive worker has no device, account, tool, or code-execution access.
-            let result = brain.execute_step(&claimed, step_id).await;
+            // Bound each provider request so a stalled network call cannot hold a WorkManager
+            // lease indefinitely. The step is persisted as failed and remains available for
+            // an explicit retry in the foreground task UI.
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(90),
+                brain.execute_step(&claimed, step_id),
+            )
+            .await
+            .unwrap_or_else(|_| Err("Background cognitive step timed out after 90 seconds; retry it when online.".into()));
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default().as_millis().min(u64::MAX as u128) as u64;
             if workspace.finish_background_step(&record.id, step_id, result, now)? { executed += 1; }
