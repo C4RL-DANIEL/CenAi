@@ -1020,6 +1020,7 @@ impl WgpuRenderer {
             .map(|message| (message.id, message.body.clone()))
             .last();
         let Some((message_id, latest_goal)) = latest else { return; };
+        let custom_system_prompt = self.app_state.system_prompt_draft.clone();
         if message_id <= self.last_dispatched_message_id { return; }
         if self.tool_followup_dispatch {
             self.tool_followup_dispatch = false;
@@ -1036,6 +1037,7 @@ impl WgpuRenderer {
         );
         if use_local {
             let prompt = conversation_prompt_for_offline(&self.app_state.conversation);
+            let custom_prompt = custom_system_prompt.clone();
             let local_knowledge_enabled = self.app_state.local_knowledge_enabled;
             let local_knowledge_store = self.workspace.clone();
             let current_conversation_id = self.app_state.active_conversation_id.clone();
@@ -1057,6 +1059,7 @@ impl WgpuRenderer {
                                 .and_then(|store| local_knowledge_context(store, &query, &current_conversation_id).ok())
                                 .unwrap_or_default()
                         } else { String::new() };
+                        let prompt = append_custom_system_prompt(prompt, &custom_prompt);
                         let prompt = append_local_knowledge_context(prompt, &context);
                         lightning_generate(app, &prompt)
                     }).await {
@@ -1098,6 +1101,7 @@ impl WgpuRenderer {
             let context = recent_messages.iter().rev().take(8).collect::<Vec<_>>().into_iter().rev()
                 .map(|message| format!("{}: {}", if message.role == MessageRole::User { "User" } else { "Assistant" }, message.body))
                 .collect::<Vec<_>>().join("\n");
+            let context = append_custom_system_prompt(context, &custom_system_prompt);
             let user_id = api.account_id();
             let session_id = self.session_id.clone();
             let generation = self.account_generation;
@@ -1152,6 +1156,7 @@ impl WgpuRenderer {
             })
             .collect();
         messages.insert(0, ChatMessage { role: "system".into(), content: AGENT_TOOL_SYSTEM_PROMPT.into() });
+        insert_custom_system_prompt(&mut messages, &custom_system_prompt);
         let mut provider = self.app_state.provider_key_provider.clone();
         let mut key = api.provider_key(&provider).unwrap_or_default();
         let generation = self.account_generation;
