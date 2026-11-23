@@ -572,6 +572,23 @@ impl CenAiApplication {
         Self { api, runtime, workspace, workspace_root, android_app, window: None, renderer: None, last_size: winit::dpi::PhysicalSize::new(0, 0) }
     }
 
+    fn report_startup_error(app: AndroidApp, message: String) {
+        let callback_app = app.clone();
+        app.run_on_java_main_thread(Box::new(move || {
+            let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
+            let Ok(vm) = vm else { return; };
+            let Ok(mut env) = vm.attach_current_thread() else { return; };
+            let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+            let Ok(message) = env.new_string(message) else { return; };
+            if let Err(error) = env.call_method(
+                &activity, "showStartupError", "(Ljava/lang/String;)V",
+                &[JValue::Object(&message)],
+            ) {
+                log::error!("Could not display native startup diagnostic: {error}");
+            }
+        }));
+    }
+
     fn invoke_activity_method(app: AndroidApp, method: &'static str) {
         let callback_app = app.clone();
         app.run_on_java_main_thread(Box::new(move || {
@@ -645,9 +662,13 @@ impl ApplicationHandler for CenAiApplication {
             }
             Ok(Err(error)) => {
                 log::error!("CenAI GPU initialization failed: {error:#}");
+                Self::report_startup_error(self.android_app.clone(),
+                    "CenAI could not initialize graphics on this device. Check for a system update and reopen the app.".into());
             }
             Err(_) => {
-                log::error!("CenAI GPU initialization panicked; keeping the native activity alive for diagnostics.");
+                log::error!("CenAI GPU initialization panicked.");
+                Self::report_startup_error(self.android_app.clone(),
+                    "CenAI's graphics driver failed during startup. Reopen the app; if this continues, send the device model and Android version to support.".into());
             }
         }
         self.window = Some(window);
