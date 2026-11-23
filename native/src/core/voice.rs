@@ -381,6 +381,24 @@ mod tests {
     }
 
     #[test]
+    fn voice_pipeline_exposes_all_chunks_from_large_capture_callbacks() {
+        let mut pipeline = VoicePipeline::new(VoiceMode::PushToTalk, 16_000, 500).unwrap();
+        pipeline.start().unwrap();
+        pipeline.permission_result(true).unwrap();
+        pipeline.provider_connected().unwrap();
+        let first = pipeline.ingest_frame(AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![1400; 32_000],
+        }).unwrap().unwrap();
+        assert_eq!(first.duration_ms(), 500);
+        let queued = pipeline.drain_pending_chunks();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].duration_ms(), 500);
+        assert!(queued.iter().all(|chunk| chunk.speech_detected));
+    }
+
+    #[test]
     fn voice_session_requires_permission_and_provider_connection() {
         let mut session = VoiceSession::new(VoiceMode::RealtimeSpeech);
         assert_eq!(session.start(), Ok(VoiceEvent::RequestMicrophonePermission));
