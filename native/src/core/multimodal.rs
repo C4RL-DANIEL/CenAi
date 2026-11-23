@@ -2,7 +2,9 @@
 use crate::core::{network::SessionVault, workspace::WORKSPACE_CIPHER_MAGIC};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, path::{Path, PathBuf}, sync::Arc};
+use std::{fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, sync::Arc};
+use quick_xml::{events::Event, Reader};
+use zip::ZipArchive;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,7 +47,7 @@ impl AttachmentMetadata {
         let mime = self.mime_type.to_ascii_lowercase();
         let (allowed, max_bytes): (&[&str], u64) = match self.kind {
             AttachmentKind::Image => (&["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif", "image/heic"], 20 * 1024 * 1024),
-            AttachmentKind::Document => (&["application/pdf", "application/msword", "application/rtf",
+            AttachmentKind::Document => (&["application/pdf", "application/zip", "application/msword", "application/rtf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -77,6 +79,7 @@ impl AttachmentMetadata {
             "image/avif" | "image/heic" | "video/mp4" | "video/quicktime" | "audio/mp4" =>
                 bytes.len() >= 12 && &bytes[4..8] == b"ftyp",
             "application/pdf" => bytes.starts_with(b"%PDF-"),
+            "application/zip" => bytes.starts_with(b"PK\\x03\\x04") || bytes.starts_with(b"PK\\x05\\x06"),
             "application/rtf" => bytes.starts_with(b"{\\rtf"),
             "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint"
             | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
