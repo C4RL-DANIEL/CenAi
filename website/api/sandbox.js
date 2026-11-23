@@ -25,7 +25,11 @@ export function shouldDeletePreviousSnapshot(previousSnapshotId, nextSnapshotId,
 }
 const SESSION_TIMEOUT_MS = 55_000;
 const DEFAULT_BASE_SNAPSHOT_ID = "snap_P9PmDJ8xGmMCwSWiMZMYB0sz7CA4";
-export const config = { maxDuration: 60 };
+export const config = {
+  maxDuration: 60,
+  // Enforce the request ceiling before Vercel's body parser allocates the payload.
+  api: { bodyParser: { sizeLimit: "32kb" } }
+};
 
 function send(res, status, payload) {
   res.setHeader("Cache-Control", "no-store");
