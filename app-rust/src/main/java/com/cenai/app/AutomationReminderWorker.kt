@@ -16,6 +16,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 
 private fun isValidNotificationTag(value: String): Boolean =
     value.matches(Regex("cenai_automation_[0-9a-f]{64}"))
@@ -71,7 +72,16 @@ class AutomationReminderWorker(context: Context, params: WorkerParameters) : Cor
 class AutomationScheduleRefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = try {
         if (nativeRefreshAutomationSchedules(applicationContext) >= 0) Result.success() else Result.retry()
-    } catch (_: UnsatisfiedLinkError) { Result.retry() } catch (_: SecurityException) { Result.failure() }
+    } catch (_: UnsatisfiedLinkError) {
+        Result.retry()
+    } catch (_: SecurityException) {
+        Result.failure()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        android.util.Log.w("CenAI-Automation", "Automation schedule refresh failed; WorkManager will retry.", error)
+        Result.retry()
+    }
 
     companion object {
         init { System.loadLibrary("cenai_native") }
