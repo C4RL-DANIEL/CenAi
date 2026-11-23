@@ -223,7 +223,8 @@ impl AndroidSecretVault {
 
     fn decrypt(&self, packed: &[u8]) -> Result<String, String> {
         let bytes = self.decrypt_bytes(packed)?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        String::from_utf8(bytes)
+            .map_err(|_| "Encrypted credential contains invalid UTF-8 and was not accepted".to_owned())
     }
     fn read_map(&self) -> Result<BTreeMap<String, String>, String> {
         const MAX_VAULT_FILE_BYTES: u64 = 1024 * 1024;
