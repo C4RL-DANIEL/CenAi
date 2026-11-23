@@ -2,7 +2,10 @@
 use crate::core::{network::SessionVault, workspace::WORKSPACE_CIPHER_MAGIC};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, sync::Arc};
+use std::{fs, io::{Cursor, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex, MutexGuard, OnceLock}};
+
+// Serialize attachment metadata/content pairs across independently created stores.
+static ATTACHMENT_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 use quick_xml::{events::Event, Reader};
 use zip::ZipArchive;
 
@@ -110,6 +113,11 @@ pub struct AttachmentStore {
 }
 
 impl AttachmentStore {
+    fn lock_store(&self) -> Result<MutexGuard<'static, ()>, String> {
+        ATTACHMENT_STORE_LOCK.get_or_init(|| Mutex::new(()))
+            .lock().map_err(|_| "Attachment store lock was poisoned".to_owned())
+    }
+
     /// Plaintext attachment storage is available only to migration tests.
     #[cfg(test)]
     pub fn new(root: impl AsRef<Path>, user_id: &str) -> Result<Self, &'static str> {
@@ -164,6 +172,7 @@ impl AttachmentStore {
     }
 
     fn migrate_plaintext_files(&self) -> Result<(), String> {
+        let _guard = self.lock_store()?;
         let directory = self.root.join(&self.user_id).join("attachments");
         if !directory.exists() { return Ok(()); }
         for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
@@ -197,6 +206,7 @@ impl AttachmentStore {
     }
 
     pub fn save(&self, metadata: &AttachmentMetadata, bytes: &[u8]) -> Result<PathBuf, String> {
+        let _guard = self.lock_store()?;
         metadata.validate_content(bytes).map_err(str::to_owned)?;
         let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
         let metadata_path = path.with_extension("json");
@@ -209,6 +219,7 @@ impl AttachmentStore {
         Ok(path)
     }
     pub fn list(&self) -> Result<Vec<AttachmentMetadata>, String> {
+        let _guard = self.lock_store()?;
         let directory = self.root.join(&self.user_id).join("attachments");
         if !directory.exists() { return Ok(Vec::new()); }
         let mut items = Vec::new();
@@ -232,6 +243,7 @@ impl AttachmentStore {
     }
 
     pub fn delete(&self, attachment_id: &str) -> Result<bool, String> {
+        let _guard = self.lock_store()?;
         let bytes_path = self.path_for(attachment_id).map_err(str::to_owned)?;
         let metadata_path = bytes_path.with_extension("json");
         let existed = bytes_path.exists() || metadata_path.exists();
@@ -242,6 +254,7 @@ impl AttachmentStore {
     }
 
     pub fn load(&self, metadata: &AttachmentMetadata) -> Result<Vec<u8>, String> {
+        let _guard = self.lock_store()?;
         metadata.validate().map_err(str::to_owned)?;
         let path = self.path_for(&metadata.id).map_err(str::to_owned)?;
         let bytes = self.read_storage(&path, &self.relative_key(&metadata.id, "bin"))?;
