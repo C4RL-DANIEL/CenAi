@@ -33,7 +33,7 @@ fn valid_supabase_user_id(value: &str) -> bool {
 }
 
 fn supported_user_setting_key(key: &str) -> bool {
-    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" | "active_provider" | "system_prompt" | "voice_language") {
+    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" | "active_provider" | "system_prompt" | "max_response_tokens" | "voice_language") {
         return true;
     }
     let parts = key.split('_').collect::<Vec<_>>();
@@ -48,6 +48,7 @@ fn valid_user_setting_value(key: &str, value: &str) -> bool {
         "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" => matches!(value, "true" | "false"),
         "active_provider" => matches!(value, "openai" | "deepseek" | "anthropic" | "gemini" | "custom"),
         "system_prompt" => value.len() <= 8_000 && !value.contains('\0'),
+        "max_response_tokens" => value.parse::<u32>().is_ok_and(|tokens| (256..=8_192).contains(&tokens) && tokens % 256 == 0),
         "voice_language" => matches!(value, "Chinese" | "English" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian"),
         _ if key.starts_with("provider_model_") => !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control),
         _ if key.starts_with("provider_endpoint_") => value.len() <= 2048 && !value.chars().any(char::is_control),
@@ -473,6 +474,10 @@ mod identity_tests {
         assert!(valid_user_setting_key("voice_language"));
         assert!(valid_user_setting_value("voice_language", "English"));
         assert!(!valid_user_setting_value("voice_language", "Klingon"));
+        assert!(supported_user_setting_key("max_response_tokens"));
+        assert!(valid_user_setting_value("max_response_tokens", "2048"));
+        assert!(!valid_user_setting_value("max_response_tokens", "100"));
+        assert!(!valid_user_setting_value("max_response_tokens", "999"));
         assert!(supported_user_setting_key("system_prompt"));
         assert!(valid_user_setting_value("system_prompt", "Be concise.\\nExplain assumptions."));
         assert!(!valid_user_setting_value("system_prompt", &"x".repeat(8_001)));
