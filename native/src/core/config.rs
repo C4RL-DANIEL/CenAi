@@ -9,7 +9,13 @@ pub const TELEMETRY_URL: &str = "https://bqkzehozezvepbthglyj.supabase.co/functi
 pub const CLOUD_CHAT_URL: &str = "https://cenai-website.cenai-app.workers.dev/api/ai/chat/completions";
 pub const CLOUD_VOICE_URL: &str = "https://cenai-website.cenai-app.workers.dev/api/voice/speech";
 pub const CLOUD_VOICE_STATUS_URL: &str = "https://cenai-website.cenai-app.workers.dev/api/voice/status";
-pub const SANDBOX_EXECUTION_URL: &str = "https://cenai-website-git-rewrite-rust-n-e95b48-carls-projects-e4dd61db.vercel.app/api/sandbox";
+// Debug builds use the branch preview; production builds target the production
+// Vercel domain, which is deployed when the rewrite is promoted to main.
+pub const SANDBOX_EXECUTION_URL: &str = if cfg!(debug_assertions) {
+    "https://cenai-website-git-rewrite-rust-n-e95b48-carls-projects-e4dd61db.vercel.app/api/sandbox"
+} else {
+    "https://cenai-website.vercel.app/api/sandbox"
+};
 pub const WEBSITE_OTP_URL: &str = "https://cenai-website.cenai-app.workers.dev/api/email-otp";
 pub const REQUEST_TIMEOUT_SECONDS: u64 = 40;
 pub const STREAM_TIMEOUT_SECONDS: u64 = 300;
