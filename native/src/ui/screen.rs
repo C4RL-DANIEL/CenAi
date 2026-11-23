@@ -1209,6 +1209,8 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     surface(ui, |ui| {
         ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.checkbox(&mut state.multi_agent_enabled, "Multi-provider consensus");
+        ui.label(text("When enabled, CenAI asks every configured provider connection independently, then synthesizes their answers. Each provider uses its own saved model and endpoint. At least two connected providers are required; no provider key is shared with another service.", 9.5, egui::Color32::from_rgb(163, 174, 203)));
         let previous_provider = state.provider_key_provider.clone();
         egui::ComboBox::from_id_salt("cenai_provider_key")
             .selected_text(match state.provider_key_provider.as_str() {
