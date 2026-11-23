@@ -636,6 +636,64 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, bytes) in entries {
+            writer.start_file(*name, options.clone()).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn docx_text_extraction_decodes_xml_entities_and_paragraphs() {
+        let xml = br#"<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Hello &amp; welcome</w:t></w:r></w:p><w:p><w:r><w:t>Second line</w:t></w:r></w:p></w:body></w:document>"#;
+        let bytes = make_zip(&[("word/document.xml", xml)]);
+        let text = extract_document_text("application/vnd.openxmlformats-officedocument.wordprocessingml.document", &bytes).unwrap();
+        assert!(text.contains("Hello & welcome"));
+        assert!(text.contains("Second line"));
+    }
+
+    #[test]
+    fn xlsx_text_extraction_resolves_shared_string_cells() {
+        let shared = br#"<sst><si><t>Product</t></si><si><t>Widget</t></si></sst>"#;
+        let sheet = br#"<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row></sheetData></worksheet>"#;
+        let bytes = make_zip(&[
+            ("xl/sharedStrings.xml", shared),
+            ("xl/worksheets/sheet1.xml", sheet),
+        ]);
+        let text = extract_document_text("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", &bytes).unwrap();
+        assert!(text.contains("Product"));
+        assert!(text.contains("Widget"));
+    }
+
+    #[test]
+    fn pptx_text_extraction_reads_slide_text() {
+        let slide = br#"<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:cSld><a:p><a:r><a:t>Slide content</a:t></a:r></a:p></p:cSld></p:sld>"#;
+        let bytes = make_zip(&[("ppt/slides/slide1.xml", slide)]);
+        let text = extract_document_text("application/vnd.openxmlformats-officedocument.presentationml.presentation", &bytes).unwrap();
+        assert!(text.contains("Slide content"));
+    }
+
+    #[test]
+    fn zip_extraction_only_reads_bounded_utf8_text_and_rejects_traversal() {
+        let bytes = make_zip(&[
+            ("docs/readme.md", b"safe project notes"),
+            ("../secret.txt", b"must not be exposed"),
+            ("assets/image.bin", b"not text"),
+        ]);
+        let metadata = AttachmentMetadata::from_bytes(
+            "archive_1".into(), "project.zip".into(), "application/zip".into(),
+            AttachmentKind::Document, &bytes,
+        ).unwrap();
+        assert!(metadata.validate_content(&bytes).is_ok());
+        let text = extract_document_text("application/zip", &bytes).unwrap();
+        assert!(text.contains("safe project notes"));
+        assert!(!text.contains("must not be exposed"));
+    }
+
     #[test]
     fn rich_content_rejects_insecure_citations_and_oversized_tables() {
         let citation = RichBlock::Citation { citation: Citation { title: "Source".into(), url: "http://example.com".into(), publisher: None } };
