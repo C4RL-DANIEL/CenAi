@@ -15,8 +15,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = System.getenv("CENAI_VERSION_CODE")?.toIntOrNull() ?: 2000
-        versionName = System.getenv("CENAI_VERSION_NAME") ?: "0.2.0"
+        versionCode = System.getenv("CENAI_VERSION_CODE")?.toIntOrNull() ?: 4000
+        versionName = System.getenv("CENAI_VERSION_NAME") ?: "0.4.0-kotlin-stable"
     }
     signingConfigs {
         create("release") {
