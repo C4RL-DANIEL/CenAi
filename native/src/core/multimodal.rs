@@ -110,6 +110,8 @@ pub struct AttachmentStore {
 }
 
 impl AttachmentStore {
+    /// Plaintext attachment storage is available only to migration tests.
+    #[cfg(test)]
     pub fn new(root: impl AsRef<Path>, user_id: &str) -> Result<Self, &'static str> {
         if !valid_account_uuid(user_id) { return Err("Attachment storage requires a canonical account UUID"); }
         Ok(Self { root: root.as_ref().to_path_buf(), user_id: user_id.to_owned(), vault: None })
