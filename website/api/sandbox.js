@@ -8,14 +8,22 @@ const ALLOWED_COMMANDS = new Set([
   "which", "head", "tail", "wc", "file"
 ]);
 const NETWORK_ALLOWLIST = [
-  "github.com", "api.github.com", "objects.githubusercontent.com",
+  "github.com", "api.github.com", "objects.githubusercontent.com", "raw.githubusercontent.com", "codeload.github.com",
   "crates.io", "index.crates.io", "static.crates.io",
-  "registry.npmjs.org", "pypi.org", "files.pythonhosted.org",
-  "static.rust-lang.org", "sh.rustup.rs", "archive.ubuntu.com", "security.ubuntu.com", "deb.debian.org"
+  "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
+  "static.rust-lang.org", "sh.rustup.rs", "archive.ubuntu.com", "security.ubuntu.com", "deb.debian.org",
+  "repo.maven.apache.org", "plugins.gradle.org", "services.gradle.org", "downloads.gradle.org", "dl.google.com"
 ];
 const CREDENTIAL_ARGUMENT = /authorization\s*:|bearer\s+|(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|passphrase|client[_ -]?secret|service[_ -]?role|private[_ -]?key|secret)\s*[:=]|-----BEGIN |\bsk-[A-Za-z0-9_-]{12,}|\bsb_secret_|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./i;
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_OUTPUT_BYTES = 12 * 1024;
+
+export function shouldDeletePreviousSnapshot(previousSnapshotId, nextSnapshotId, sharedBaseSnapshotId) {
+  return typeof previousSnapshotId === "string"
+    && /^snap_[A-Za-z0-9_-]{8,96}$/.test(previousSnapshotId)
+    && previousSnapshotId !== nextSnapshotId
+    && previousSnapshotId !== sharedBaseSnapshotId;
+}
 const SESSION_TIMEOUT_MS = 55_000;
 const DEFAULT_BASE_SNAPSHOT_ID = "snap_aDgjD0mjRVpRav21NkrK9OKCNLq7";
 export const config = { maxDuration: 60 };
@@ -126,7 +134,7 @@ export default async function handler(req, res) {
       region: "sin1",
       resources: { vcpus: 1 },
       timeout: SESSION_TIMEOUT_MS,
-      networkPolicy: { mode: "custom", allowedDomains: NETWORK_ALLOWLIST }
+      networkPolicy: { allow: NETWORK_ALLOWLIST }
     });
 
     const mkdir = await sandbox.runCommand({ cmd: "mkdir", args: ["-p", input.cwd], cwd: "/vercel/sandbox" });
@@ -139,10 +147,7 @@ export default async function handler(req, res) {
     workspaceSaved = true;
     sandbox = null; // snapshot() stops the microVM automatically
     // A shared base image is never an account-owned workspace snapshot and must never be deleted here.
-    if (typeof previousSnapshotId === "string"
-      && /^snap_[A-Za-z0-9_-]{8,96}$/.test(previousSnapshotId)
-      && previousSnapshotId !== newSnapshot.snapshotId
-      && previousSnapshotId !== baseSnapshotId) {
+    if (shouldDeletePreviousSnapshot(previousSnapshotId, newSnapshot.snapshotId, baseSnapshotId)) {
       try { await (await Snapshot.get({ snapshotId: previousSnapshotId })).delete(); } catch { /* Expired snapshots are harmless; retention cleanup is best effort. */ }
     }
     const exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 1;
