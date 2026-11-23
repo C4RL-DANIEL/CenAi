@@ -1093,7 +1093,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
         ui.separator();
         ui.label(text("Local conversation knowledge", 14.0, egui::Color32::WHITE).strong());
         ui.checkbox(&mut state.local_knowledge_enabled, "Search my saved conversations for relevant context");
-        ui.label(text("When enabled, CenAI searches a small, relevance-ranked selection of your encrypted on-device chat history and adds matching excerpts to the current request. It stays on this device and is separate from personal memory.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Search runs on device and adds a small, relevance-ranked selection of encrypted saved chats to the current request. Cloud providers receive those excerpts with the request; Offline Lightning keeps them on device. This is separate from personal memory.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         egui::ComboBox::from_id_salt("cenai_memory_category")
             .selected_text(match state.memory_category_draft.as_str() {
                 "profile" => "Profile",
@@ -1273,7 +1273,7 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Assistant instructions", 16.0, egui::Color32::WHITE).strong());
-        ui.label(text("Set your preferred tone, response style and task-specific guidance. These instructions are saved encrypted on this device and remain subordinate to CenAI safety rules and permission checks.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text("Set your preferred tone, response style and task-specific guidance. These instructions are saved encrypted on this device and included in requests sent to your selected provider. They remain subordinate to CenAI safety rules and permission checks.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::multiline(&mut state.system_prompt_draft)
             .hint_text("For example: Explain technical changes clearly, prefer concise answers, and show commands before destructive operations.")
             .desired_rows(5)
