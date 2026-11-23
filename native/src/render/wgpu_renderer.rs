@@ -910,8 +910,10 @@ impl WgpuRenderer {
                         Ok(frame) => {
                             if let Some(pipeline) = self.voice_pipeline.as_mut() {
                                 match pipeline.ingest_frame(frame) {
-                                    Ok(Some(chunk)) => completed_chunks.push(chunk),
-                                    Ok(None) => {},
+                                    Ok(chunk) => {
+                                        if let Some(chunk) = chunk { completed_chunks.push(chunk); }
+                                        completed_chunks.extend(pipeline.drain_pending_chunks());
+                                    }
                                     Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
                                 }
                             }
@@ -989,8 +991,10 @@ impl WgpuRenderer {
                     Ok(frame) => {
                         if let Some(pipeline) = self.voice_pipeline.as_mut() {
                             match pipeline.ingest_frame(frame) {
-                                Ok(Some(chunk)) => completed_chunks.push(chunk),
-                                Ok(None) => {},
+                                Ok(chunk) => {
+                                    if let Some(chunk) = chunk { completed_chunks.push(chunk); }
+                                    completed_chunks.extend(pipeline.drain_pending_chunks());
+                                }
                                 Err(error) => self.app_state.voice_status = format!("Voice capture failed: {error}"),
                             }
                         }
