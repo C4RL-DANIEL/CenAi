@@ -473,6 +473,9 @@ mod identity_tests {
         assert!(valid_user_setting_key("voice_language"));
         assert!(valid_user_setting_value("voice_language", "English"));
         assert!(!valid_user_setting_value("voice_language", "Klingon"));
+        assert!(supported_user_setting_key("system_prompt"));
+        assert!(valid_user_setting_value("system_prompt", "Be concise.\\nExplain assumptions."));
+        assert!(!valid_user_setting_value("system_prompt", &"x".repeat(8_001)));
         assert!(supported_user_setting_key("active_provider"));
         assert!(valid_user_setting_value("active_provider", "custom"));
         assert!(!valid_user_setting_value("active_provider", "unknown"));
