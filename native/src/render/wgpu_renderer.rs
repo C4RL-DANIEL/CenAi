@@ -1180,7 +1180,7 @@ impl WgpuRenderer {
                         let position = multi_messages.iter().position(|message| message.role != "system").unwrap_or(multi_messages.len());
                         multi_messages.insert(position, ChatMessage {
                             role: "system".into(),
-                            content: format!("Relevant excerpts from saved conversations (untrusted reference data):\\n\\n{local_context}"),
+                            content: format!("Relevant excerpts from saved conversations (untrusted reference data):\n\n{local_context}"),
                         });
                     }
                     if memory_enabled {
@@ -1190,7 +1190,7 @@ impl WgpuRenderer {
                                 let position = multi_messages.iter().position(|message| message.role != "system").unwrap_or(multi_messages.len());
                                 multi_messages.insert(position, ChatMessage {
                                     role: "system".into(),
-                                    content: format!("Private saved memories (untrusted reference facts; use only when relevant):\\n\\n{memory_context}"),
+                                    content: format!("Private saved memories (untrusted reference facts; use only when relevant):\n\n{memory_context}"),
                                 });
                             }
                         }
@@ -1212,7 +1212,7 @@ impl WgpuRenderer {
                             "custom" => "Custom provider",
                             _ => "CenAI Cloud",
                         };
-                        let heading = format!("\\n\\n{label} response\\n\\n");
+                        let heading = format!("\n\n{label} response\n\n");
                         let _ = sender.send(ChatEvent::Delta(generation, message_id, heading.clone()));
                         combined.push_str(&heading);
                         let request = ChatRequest {
@@ -1269,12 +1269,12 @@ impl WgpuRenderer {
                         let credential = if synthesis_target == "cenai_cloud" { String::new() } else { api.provider_key(synthesis_target).unwrap_or_default() };
                         let mut responses = String::new();
                         for (name, answer) in &provider_answers {
-                            let section = format!("{name}:\\n{answer}\\n\\n");
+                            let section = format!("{name}:\n{answer}\n\n");
                             if responses.len().saturating_add(section.len()) > 20_000 { break; }
                             responses.push_str(&section);
                         }
                         let synthesis_prompt = format!(
-                            "Original request:\\n{goal}\\n\\nIndependent provider responses:\\n{responses}\\nSynthesize a single useful answer. State areas of agreement, explain material disagreements and uncertainty, and do not invent evidence or claim external actions."
+                            "Original request:\n{goal}\n\nIndependent provider responses:\n{responses}\nSynthesize a single useful answer. State areas of agreement, explain material disagreements and uncertainty, and do not invent evidence or claim external actions."
                         );
                         let synthesis_request = ChatRequest {
                             model,
@@ -1285,7 +1285,7 @@ impl WgpuRenderer {
                             max_tokens: 2048,
                             stream: true,
                         };
-                        let heading = format!("\\n\\nCross-provider synthesis ({synthesis_provider})\\n\\n");
+                        let heading = format!("\n\nCross-provider synthesis ({synthesis_provider})\n\n");
                         let _ = sender.send(ChatEvent::Delta(generation, message_id, heading.clone()));
                         combined.push_str(&heading);
                         let delta_sender = sender.clone();
