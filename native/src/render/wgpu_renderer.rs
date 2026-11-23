@@ -1102,13 +1102,16 @@ impl WgpuRenderer {
         let offline_prompt_base = conversation_prompt_for_offline(&self.app_state.conversation);
 
         if !key.is_empty() || (provider == "gemini" && api.has_google_gemini_oauth()) {
+            let (default_model, default_endpoint) = provider_defaults(&provider);
+            let model = api.user_setting(&provider_setting_key(&provider, "model"))
+                .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_model.to_owned());
+            let configured_endpoint = api.user_setting(&provider_setting_key(&provider, "endpoint"))
+                .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| default_endpoint.to_owned());
             let (endpoint, model) = match provider.as_str() {
-                "deepseek" => ("https://api.deepseek.com", "deepseek-flash"),
-                "anthropic" => ("", "claude-sonnet-5-5"),
-                "gemini" => ("", "gemini-3.8-flash"),
-                _ => ("https://api.openai.com/v1", "gpt-4.1-mini"),
+                "anthropic" | "gemini" => (String::new(), model),
+                _ => (configured_endpoint, model),
             };
-            let request = ChatRequest { model: model.into(), messages, max_tokens: 2048, stream: true };
+            let request = ChatRequest { model, messages, max_tokens: 2048, stream: true };
             let selected_provider = provider.clone();
             let use_gemini_oauth = selected_provider == "gemini" && key.is_empty();
             let goal = latest_goal.clone();
@@ -1175,7 +1178,7 @@ impl WgpuRenderer {
                         }
                         _ => {
                             let delta_sender = sender.clone();
-                            api.stream_openai_compatible(endpoint, &credential, &request, move |delta| {
+                            api.stream_openai_compatible(&endpoint, &credential, &request, move |delta| {
                                 let _ = delta_sender.send(ChatEvent::Delta(generation, message_id, delta.to_owned()));
                             }).await
                         },
