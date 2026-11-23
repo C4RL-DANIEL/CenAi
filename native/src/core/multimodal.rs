@@ -680,8 +680,18 @@ mod tests {
             let right_store = right.clone();
             let left_metadata = left_metadata.clone();
             let right_metadata = right_metadata.clone();
-            let left_thread = std::thread::spawn(move || left_store.save(&left_metadata, left_bytes).unwrap());
-            let right_thread = std::thread::spawn(move || right_store.save(&right_metadata, right_bytes).unwrap());
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+            let left_barrier = barrier.clone();
+            let right_barrier = barrier.clone();
+            let left_thread = std::thread::spawn(move || {
+                left_barrier.wait();
+                left_store.save(&left_metadata, left_bytes).unwrap()
+            });
+            let right_thread = std::thread::spawn(move || {
+                right_barrier.wait();
+                right_store.save(&right_metadata, right_bytes).unwrap()
+            });
+            barrier.wait();
             left_thread.join().unwrap();
             right_thread.join().unwrap();
             let saved = left.list().unwrap();
