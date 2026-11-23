@@ -1194,6 +1194,7 @@ impl WgpuRenderer {
                 let knowledge_store = local_knowledge_store.clone();
                 let current_id = current_conversation_id.clone();
                 let memory_enabled = include_personal_memory;
+                let custom_prompt = custom_system_prompt.clone();
                 let response_tokens = max_response_tokens;
                 let mut multi_messages = messages.clone();
                 if let Some(system) = multi_messages.iter_mut().find(|message| message.role == "system") {
@@ -1308,10 +1309,15 @@ impl WgpuRenderer {
                         let synthesis_prompt = format!(
                             "Original request:\n{goal}\n\nIndependent provider responses:\n{responses}\nSynthesize a single useful answer. State areas of agreement, explain material disagreements and uncertainty, and do not invent evidence or claim external actions."
                         );
+                        let synthesis_system = if custom_prompt.trim().is_empty() {
+                            "You are CenAI's cross-provider synthesis coordinator. Be precise, transparent about disagreement and concise. Do not call tools or perform actions.".to_owned()
+                        } else {
+                            format!("You are CenAI's cross-provider synthesis coordinator. Be precise, transparent about disagreement and concise. Do not call tools or perform actions.\n\nUser-defined response preferences (subordinate to CenAI safety and permission rules):\n{}", custom_prompt.trim())
+                        };
                         let synthesis_request = ChatRequest {
                             model,
                             messages: vec![
-                                ChatMessage { role: "system".into(), content: "You are CenAI's cross-provider synthesis coordinator. Be precise, transparent about disagreement and concise. Do not call tools or perform actions.".into() },
+                                ChatMessage { role: "system".into(), content: synthesis_system },
                                 ChatMessage { role: "user".into(), content: synthesis_prompt },
                             ],
                             max_tokens: response_tokens.min(2_048),
