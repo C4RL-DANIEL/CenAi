@@ -128,7 +128,7 @@ export default async function handler(req, res) {
       networkPolicy: { mode: "custom", allowedDomains: NETWORK_ALLOWLIST }
     });
 
-    const mkdir = await sandbox.runCommand({ cmd: "mkdir", args: ["-p", input.projectRoot], cwd: "/vercel/sandbox" });
+    const mkdir = await sandbox.runCommand({ cmd: "mkdir", args: ["-p", input.cwd], cwd: "/vercel/sandbox" });
     if (mkdir.exitCode !== 0) throw new Error("Could not initialize the isolated project workspace");
 
     const result = await sandbox.runCommand({ cmd: input.command, args: input.args, cwd: input.cwd });
