@@ -30,3 +30,16 @@ test("rejects credentials embedded in command arguments", () => {
 test("redacts sensitive output before it reaches the app", () => {
   assert.equal(redact("compile ok\nAPI_KEY=secret-value\nBearer eyJabc.def.ghi"), "compile ok\n[redacted sensitive output]\n[redacted sensitive output]");
 });
+
+test("shared base snapshot is not eligible for per-account cleanup", () => {
+  const base = "snap_aDgjD0mjRVpRav21NkrK9OKCNLq7";
+  const next = "snap_nextWorkspaceSnapshot123456789";
+  const shouldDelete = (previous, current, sharedBase) =>
+    typeof previous === "string" &&
+    /^snap_[A-Za-z0-9_-]{8,96}$/.test(previous) &&
+    previous !== current &&
+    previous !== sharedBase;
+  assert.equal(shouldDelete(base, next, base), false);
+  assert.equal(shouldDelete("snap_previousWorkspace123456789", next, base), true);
+  assert.equal(shouldDelete(next, next, base), false);
+});
