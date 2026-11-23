@@ -3851,3 +3851,47 @@ mod mfa_response_tests {
     }
 }
 
+
+#[cfg(test)]
+mod provider_prompt_tests {
+    use super::*;
+
+    #[test]
+    fn provider_defaults_preserve_supported_builtin_models() {
+        assert_eq!(provider_defaults("openai"), ("gpt-4.1-mini", "https://api.openai.com/v1"));
+        assert_eq!(provider_defaults("deepseek"), ("deepseek-flash", "https://api.deepseek.com"));
+        assert_eq!(provider_defaults("anthropic").0, "claude-sonnet-5-5");
+        assert_eq!(provider_defaults("gemini").0, "gemini-3.8-flash");
+        assert_eq!(provider_defaults("custom"), ("", ""));
+    }
+
+    #[test]
+    fn custom_prompt_is_inserted_after_the_policy_prompt() {
+        let mut messages = vec![
+            ChatMessage { role: "system".into(), content: "CenAI policy".into() },
+            ChatMessage { role: "user".into(), content: "Help me".into() },
+        ];
+        insert_custom_system_prompt(&mut messages, "Be concise and explain assumptions.");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].content, "CenAI policy");
+        assert!(messages[1].content.contains("subordinate to all CenAI safety"));
+        assert!(messages[1].content.contains("Be concise and explain assumptions."));
+        assert_eq!(messages[2].role, "user");
+    }
+
+    #[test]
+    fn empty_custom_prompt_does_not_change_the_request() {
+        let mut messages = vec![ChatMessage { role: "user".into(), content: "Hello".into() }];
+        insert_custom_system_prompt(&mut messages, "  ");
+        assert_eq!(messages.len(), 1);
+        let prompt = append_custom_system_prompt("base prompt".into(), "");
+        assert_eq!(prompt, "base prompt");
+    }
+
+    #[test]
+    fn provider_setting_keys_are_scoped_by_provider_and_setting() {
+        assert_eq!(provider_setting_key("deepseek", "model"), "provider_model_deepseek");
+        assert_eq!(provider_setting_key("custom", "endpoint"), "provider_endpoint_custom");
+    }
+}
+
