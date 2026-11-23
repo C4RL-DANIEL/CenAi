@@ -226,13 +226,39 @@ impl AndroidSecretVault {
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
     fn read_map(&self) -> Result<BTreeMap<String, String>, String> {
+        const MAX_VAULT_FILE_BYTES: u64 = 1024 * 1024;
+        const MAX_VAULT_ENTRIES: usize = 256;
         if !self.path.exists() { return Ok(BTreeMap::new()); }
+        let metadata = fs::metadata(&self.path).map_err(|error| error.to_string())?;
+        if !metadata.is_file() || metadata.len() > MAX_VAULT_FILE_BYTES {
+            return Err("Encrypted credential vault is not a regular file or exceeds the 1 MB safety limit".into());
+        }
         let bytes = fs::read(&self.path).map_err(|error| error.to_string())?;
-        serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+        if bytes.len() as u64 > MAX_VAULT_FILE_BYTES {
+            return Err("Encrypted credential vault grew beyond the 1 MB safety limit while reading".into());
+        }
+        let values: BTreeMap<String, String> = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("Encrypted credential vault is invalid: {error}"))?;
+        if values.len() > MAX_VAULT_ENTRIES || values.iter().any(|(name, encoded)| {
+            name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
+        }) {
+            return Err("Encrypted credential vault contains entries outside the supported limits".into());
+        }
+        Ok(values)
     }
 
     fn write_map(&self, values: &BTreeMap<String, String>) -> Result<(), String> {
+        const MAX_VAULT_FILE_BYTES: usize = 1024 * 1024;
+        const MAX_VAULT_ENTRIES: usize = 256;
+        if values.len() > MAX_VAULT_ENTRIES || values.iter().any(|(name, encoded)| {
+            name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
+        }) {
+            return Err("Credential vault update exceeds the supported entry limits".into());
+        }
         let bytes = serde_json::to_vec(values).map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_VAULT_FILE_BYTES {
+            return Err("Credential vault update exceeds the 1 MB safety limit".into());
+        }
         let temporary = self.path.with_extension("tmp");
         let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(&temporary)
             .map_err(|error| error.to_string())?;
