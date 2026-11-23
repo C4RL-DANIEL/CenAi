@@ -546,6 +546,11 @@ impl WgpuRenderer {
         let (response_tx, response_rx) = mpsc::channel();
         let mut app_state = AppState::default();
         if let Some(service) = &api {
+            if let Ok(provider) = service.user_setting("active_provider") {
+                if matches!(provider.as_str(), "openai" | "deepseek" | "anthropic" | "gemini" | "custom") {
+                    app_state.provider_key_provider = provider;
+                }
+            }
             app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
             app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
             app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
@@ -1858,6 +1863,9 @@ impl WgpuRenderer {
             let (default_model, default_endpoint) = provider_defaults(&provider);
             let model_key = provider_setting_key(&provider, "model");
             let endpoint_key = provider_setting_key(&provider, "endpoint");
+            if let Some(api) = self.api.as_ref() {
+                let _ = api.save_user_setting("active_provider", &provider);
+            }
             let saved_model = self.api.as_ref().and_then(|api| api.user_setting(&model_key).ok());
             let saved_endpoint = self.api.as_ref().and_then(|api| api.user_setting(&endpoint_key).ok());
             self.app_state.provider_model_draft = saved_model.filter(|value| !value.trim().is_empty())
@@ -2841,8 +2849,13 @@ impl WgpuRenderer {
                                 self.track_task(task);
                             }
                             self.app_state.guardian_consent = self.api.as_ref().is_some_and(CenAiApi::guardian_consent);
-                            self.app_state.pending_provider_config_load = true;
                             if let Some(service) = &self.api {
+                                if let Ok(provider) = service.user_setting("active_provider") {
+                                    if matches!(provider.as_str(), "openai" | "deepseek" | "anthropic" | "gemini" | "custom") {
+                                        self.app_state.provider_key_provider = provider;
+                                    }
+                                }
+                                self.app_state.pending_provider_config_load = true;
                                 self.app_state.light_mode = service.user_setting("light_mode").is_ok_and(|value| value == "true");
                                 self.app_state.reduced_motion = service.user_setting("reduced_motion").is_ok_and(|value| value == "true");
                                 self.app_state.offline_ai_enabled = service.user_setting("offline_ai_enabled").is_ok_and(|value| value == "true");
