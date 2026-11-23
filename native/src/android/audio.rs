@@ -172,6 +172,21 @@ impl AndroidAudioCapture {
                 let _ = env.call_method(&recorder, "release", "()V", &[]);
                 Ok(())
             })();
+            if result.is_err() {
+                // Ensure AudioRecord is released even when start/read fails midway.
+                if let Ok(vm) = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) } {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        if let Ok(slot) = recorder_slot.lock() {
+                            if let Some(recorder) = slot.as_ref() {
+                                let _ = env.call_method(recorder.as_obj(), "stop", "()V", &[]);
+                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                                let _ = env.call_method(recorder.as_obj(), "release", "()V", &[]);
+                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                            }
+                        }
+                    }
+                }
+            }
             if let Err(error) = result {
                 let _ = sender.try_send(Err(error));
             }
@@ -331,6 +346,21 @@ impl AndroidAudioPlayback {
                 let _ = env.call_method(&track, "release", "()V", &[]);
                 Ok(())
             })();
+            if result.is_err() {
+                // Always release AudioTrack on partial initialization or write failures.
+                if let Ok(vm) = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) } {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        if let Ok(slot) = track_slot.lock() {
+                            if let Some(track) = slot.as_ref() {
+                                let _ = env.call_method(track.as_obj(), "stop", "()V", &[]);
+                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                                let _ = env.call_method(track.as_obj(), "release", "()V", &[]);
+                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                            }
+                        }
+                    }
+                }
+            }
             if let Err(error) = result {
                 log::warn!("CenAI speech playback failed: {error}");
                 let _ = error_sender.try_send(error);
