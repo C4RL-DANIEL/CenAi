@@ -472,6 +472,9 @@ mod identity_tests {
         assert!(valid_user_setting_key("voice_language"));
         assert!(valid_user_setting_value("voice_language", "English"));
         assert!(!valid_user_setting_value("voice_language", "Klingon"));
+        assert!(supported_user_setting_key("active_provider"));
+        assert!(valid_user_setting_value("active_provider", "custom"));
+        assert!(!valid_user_setting_value("active_provider", "unknown"));
         assert!(supported_user_setting_key("provider_model_custom"));
         assert!(valid_user_setting_value("provider_model_custom", "vendor-model-v1"));
         assert!(supported_user_setting_key("provider_endpoint_custom"));
