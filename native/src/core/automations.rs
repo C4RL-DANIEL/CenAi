@@ -26,10 +26,421 @@ impl Automation {
     /// Builds a user-reviewed handoff prompt for a due occurrence. This never
     /// authorizes execution; the agent must still obtain per-action approval.
     pub fn review_prompt(&self) -> Option<String> {
-        if !self.enabled || !self.requires_approval { return None; }
+        if !self.enabled || !self.requires_approval {
+            return None;
+        }
         let scheduled_at = self.pending_scheduled_at?;
         let scheduled = DateTime::<Utc>::from_timestamp(scheduled_at, 0)?;
         let title = self.title.trim();
-        if title.is_empty() || title.len() > 2_000 { return None; }
+        if title.is_empty() || title.len() > 2_000 {
+            return None;
+        }
         Some(format!(
-            "A scheduled CenAI task is ready for review.\nTask: {title}\nScheduled time: {}\n\nPlease prepare a plan and explain what¶»§q«^
+            "A scheduled CenAI task is ready for review.\nTask: {title}\nScheduled time: {}\n\nPlease prepare a plan and explain what you intend to do. Do not execute external, destructive, account, device, or network actions. Wait for my explicit approval for each action.",
+            scheduled.format("%Y-%m-%d %H:%M UTC")
+        ))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutomationTrigger {
+    pub automation_id: String,
+    pub owner_scope: String,
+    pub scheduled_at: i64,
+    pub requires_approval: bool,
+}
+
+fn valid_user_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+        })
+}
+
+/// Stable, privacy-preserving Android WorkManager identity for an automation.
+/// Raw account scope and task identifiers stay inside the Rust core.
+pub fn reminder_notification_tag(owner_scope: &str, automation_id: &str) -> Option<String> {
+    if !valid_user_uuid(owner_scope)
+        || automation_id.trim().is_empty()
+        || automation_id.len() > 128
+        || !automation_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    {
+        return None;
+    }
+    let digest = Sha256::digest(format!("{owner_scope}:{automation_id}").as_bytes());
+    let token = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    Some(format!("cenai_automation_{token}"))
+}
+
+impl Automation {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.id.trim().is_empty() || self.id.len() > 128
+            || !self.id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            || !valid_user_uuid(&self.owner_scope) || self.title.trim().is_empty()
+            || self.title.len() > 160 || self.title.chars().any(char::is_control)
+            || !self.requires_approval {
+            return Err("Automation requires a safe identity, authenticated owner UUID, title and explicit approval");
+        }
+        if self.schedule.len() > 120 || self.schedule.parse::<Schedule>().is_err() {
+            return Err("Automation schedule must be a valid five-field cron expression");
+        }
+        if self.last_scheduled_at.is_some_and(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0).is_none())
+            || self.pending_scheduled_at.is_some_and(|timestamp| {
+                Some(timestamp) != self.last_scheduled_at || DateTime::<Utc>::from_timestamp(timestamp, 0).is_none()
+            }) {
+            return Err("Automation schedule cursor is invalid or inconsistent");
+        }
+        Ok(())
+    }
+
+    pub fn next_run_after(&self, after: DateTime<Utc>) -> Result<Option<DateTime<Utc>>, &'static str> {
+        self.validate()?;
+        let schedule = self.schedule.parse::<Schedule>().map_err(|_| "Automation cron schedule is invalid")?;
+        Ok(schedule.next_after(&after))
+    }
+
+    pub fn pause(&mut self) { self.enabled = false; }
+    pub fn resume(&mut self) { self.enabled = true; }
+}
+
+#[derive(Default)]
+pub struct AutomationScheduler {
+    automations: HashMap<String, Automation>,
+}
+
+impl AutomationScheduler {
+    pub fn from_workspace(store: &WorkspaceStore) -> Result<Self, String> {
+        let mut scheduler = Self::default();
+        for automation in store.automations()? {
+            scheduler.upsert(automation).map_err(|error| error.to_owned())?;
+        }
+        Ok(scheduler)
+    }
+
+    pub fn persist_to_workspace(&self, store: &WorkspaceStore) -> Result<(), String> {
+        let automations = self.automations.values().cloned().collect::<Vec<_>>();
+        store.save_automations(&automations)
+    }
+
+    pub fn upsert_and_persist(&mut self, automation: Automation, store: &WorkspaceStore) -> Result<(), String> {
+        let key = Self::key(&automation.owner_scope, &automation.id);
+        let previous = self.automations.get(&key).cloned();
+        self.upsert(automation).map_err(|error| error.to_owned())?;
+        if let Err(error) = self.persist_to_workspace(store) {
+            match previous {
+                Some(previous) => { self.automations.insert(key, previous); }
+                None => { self.automations.remove(&key); }
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn set_enabled_and_persist(&mut self, owner_scope: &str, automation_id: &str, enabled: bool, store: &WorkspaceStore) -> Result<bool, String> {
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        let key = Self::key(owner_scope, automation_id);
+        let Some(item) = self.automations.get_mut(&key) else { return Ok(false); };
+        let previous = item.clone();
+        item.enabled = enabled;
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    pub fn remove_and_persist(&mut self, owner_scope: &str, automation_id: &str, store: &WorkspaceStore) -> Result<bool, String> {
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        let key = Self::key(owner_scope, automation_id);
+        let Some(previous) = self.automations.remove(&key) else { return Ok(false); };
+        if let Err(error) = store.delete_automation(automation_id) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    /// Clears a due occurrence in memory after its reminder has been durably recorded.
+    pub fn acknowledge(&mut self, owner_scope: &str, automation_id: &str, scheduled_at: i64) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        let Some(item) = self.automations.get_mut(&Self::key(owner_scope, automation_id)) else { return false; };
+        if item.pending_scheduled_at != Some(scheduled_at) { return false; }
+        item.pending_scheduled_at = None;
+        true
+    }
+
+    /// Persists the acknowledgement; failed writes restore the pending trigger.
+    pub fn acknowledge_and_persist(
+        &mut self,
+        owner_scope: &str,
+        automation_id: &str,
+        scheduled_at: i64,
+        store: &WorkspaceStore,
+    ) -> Result<bool, String> {
+        if !valid_user_uuid(owner_scope) { return Ok(false); }
+        let key = Self::key(owner_scope, automation_id);
+        let Some(previous) = self.automations.get(&key).cloned() else { return Ok(false); };
+        if previous.pending_scheduled_at != Some(scheduled_at) { return Ok(false); }
+        if !self.acknowledge(owner_scope, automation_id, scheduled_at) { return Ok(false); }
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations.insert(key, previous);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    pub fn poll_due_and_persist(&mut self, now: DateTime<Utc>, store: &WorkspaceStore) -> Result<Vec<AutomationTrigger>, String> {
+        let previous = self.automations.clone();
+        let due = self.poll_due(now);
+        if due.is_empty() { return Ok(due); }
+        if let Err(error) = self.persist_to_workspace(store) {
+            self.automations = previous;
+            return Err(error);
+        }
+        Ok(due)
+    }
+
+    fn key(owner_scope: &str, automation_id: &str) -> String {
+        format!("{owner_scope}:{automation_id}")
+    }
+
+    pub fn upsert(&mut self, automation: Automation) -> Result<(), &'static str> {
+        automation.validate()?;
+        if self.automations.values().any(|existing| existing.owner_scope != automation.owner_scope) {
+            return Err("An automation scheduler cannot mix authenticated account scopes");
+        }
+        let key = Self::key(&automation.owner_scope, &automation.id);
+        self.automations.insert(key, automation);
+        Ok(())
+    }
+
+    pub fn remove(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        self.automations.remove(&Self::key(owner_scope, automation_id)).is_some()
+    }
+
+    pub fn pause(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        self.update_enabled(owner_scope, automation_id, false)
+    }
+
+    pub fn resume(&mut self, owner_scope: &str, automation_id: &str) -> bool {
+        self.update_enabled(owner_scope, automation_id, true)
+    }
+
+    fn update_enabled(&mut self, owner_scope: &str, automation_id: &str, enabled: bool) -> bool {
+        if !valid_user_uuid(owner_scope) { return false; }
+        let Some(automation) = self.automations.get_mut(&Self::key(owner_scope, automation_id)) else { return false; };
+        automation.enabled = enabled;
+        true
+    }
+
+    /// Returns each due occurrence once. The caller must persist the updated
+    /// automation snapshot before dispatching its trigger to prevent replay.
+    pub fn poll_due(&mut self, now: DateTime<Utc>) -> Vec<AutomationTrigger> {
+        let mut due = Vec::new();
+        for automation in self.automations.values_mut() {
+            if !automation.enabled { continue; }
+            if let Some(pending_at) = automation.pending_scheduled_at {
+                due.push(AutomationTrigger {
+                    automation_id: automation.id.clone(),
+                    owner_scope: automation.owner_scope.clone(),
+                    scheduled_at: pending_at,
+                    requires_approval: automation.requires_approval,
+                });
+                continue;
+            }
+            let cursor = automation.last_scheduled_at
+                .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
+                .unwrap_or_else(|| now - Duration::minutes(1));
+            let Ok(schedule) = automation.schedule.parse::<Schedule>() else { continue; };
+            // Coalesce missed intervals into the latest due occurrence so a long
+            // app suspension does not replay an unbounded backlog of old tasks.
+            let mut latest_due = None;
+            for occurrence in schedule.after(&cursor).take(10_000) {
+                if occurrence <= now { latest_due = Some(occurrence); } else { break; }
+            }
+            if let Some(next) = latest_due {
+                automation.last_scheduled_at = Some(next.timestamp());
+                automation.pending_scheduled_at = Some(next.timestamp());
+                due.push(AutomationTrigger {
+                    automation_id: automation.id.clone(),
+                    owner_scope: automation.owner_scope.clone(),
+                    scheduled_at: next.timestamp(),
+                    requires_approval: automation.requires_approval,
+                });
+            }
+        }
+        due.sort_by_key(|trigger| (trigger.scheduled_at, trigger.owner_scope.clone(), trigger.automation_id.clone()));
+        due
+    }
+
+    pub fn snapshot(&self, owner_scope: &str) -> Vec<Automation> {
+        if !valid_user_uuid(owner_scope) { return Vec::new(); }
+        let mut items = self.automations.values()
+            .filter(|automation| automation.owner_scope == owner_scope)
+            .cloned().collect::<Vec<_>>();
+        items.sort_by(|left, right| left.id.cmp(&right.id));
+        items
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OWNER: &str = "550e8400-e29b-41d4-a716-446655440010";
+    const OTHER: &str = "550e8400-e29b-41d4-a716-446655440011";
+
+    fn due_timestamp(value: &str) -> i64 {
+        DateTime::parse_from_rfc3339(value).unwrap().timestamp()
+    }
+
+    fn automation(id: &str, owner: &str, schedule: &str) -> Automation {
+        Automation {
+            id: id.into(),
+            owner_scope: owner.into(),
+            title: "Scheduled report".into(),
+            schedule: schedule.into(),
+            enabled: true,
+            requires_approval: true,
+            last_scheduled_at: None,
+            pending_scheduled_at: None,
+        }
+    }
+
+    #[test]
+    fn due_automation_review_prompt_is_bounded_and_never_grants_execution() {
+        let mut item = automation("daily-digest", OWNER, "0 9 * * *");
+        assert!(item.review_prompt().is_none());
+        item.pending_scheduled_at = Some(due_timestamp("2026-11-23T09:00:00Z"));
+        let prompt = item.review_prompt().expect("due approved task has a review prompt");
+        assert!(prompt.contains("Task: Scheduled report"));
+        assert!(prompt.contains("2026-11-23 09:00 UTC"));
+        assert!(prompt.contains("Do not execute"));
+        assert!(prompt.contains("explicit approval for each action"));
+        item.requires_approval = false;
+        assert!(item.review_prompt().is_none());
+        item.requires_approval = true;
+        item.enabled = false;
+        assert!(item.review_prompt().is_none());
+    }
+
+    #[test]
+    fn reminder_notification_tags_are_stable_scoped_and_reject_invalid_ids() {
+        let tag = reminder_notification_tag(OWNER, "daily-digest").unwrap();
+        assert_eq!(tag, reminder_notification_tag(OWNER, "daily-digest").unwrap());
+        assert!(tag.starts_with("cenai_automation_"));
+        assert_eq!(tag.len(), "cenai_automation_".len() + 64);
+        assert_ne!(tag, reminder_notification_tag(OTHER, "daily-digest").unwrap());
+        assert_ne!(tag, reminder_notification_tag(OWNER, "weekly-digest").unwrap());
+        assert!(reminder_notification_tag("not-a-user", "daily-digest").is_none());
+        assert!(reminder_notification_tag(OWNER, "../unsafe").is_none());
+    }
+
+    #[test]
+    fn automation_rejects_unscoped_owners_and_invalid_schedules() {
+        let mut automation = automation("daily-digest", "not-a-user", "0 9 * * *");
+        assert!(automation.validate().is_err());
+        automation.owner_scope = OWNER.into();
+        assert!(automation.validate().is_ok());
+        automation.requires_approval = false;
+        assert!(automation.validate().is_err());
+        automation.requires_approval = true;
+        automation.schedule = "90 25 * * *".into();
+        assert!(automation.validate().is_err());
+        automation.schedule = "*/15 9-17 * * 1-5".into();
+        assert!(automation.validate().is_ok());
+    }
+
+    #[test]
+    fn automation_pause_resume_and_remove_are_persisted() {
+        let root = std::env::temp_dir().join(format!("cenai-automation-controls-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(&root, OWNER).unwrap();
+        let mut scheduler = AutomationScheduler::default();
+        scheduler.upsert_and_persist(automation("daily", OWNER, "0 9 * * *"), &store).unwrap();
+        assert!(scheduler.set_enabled_and_persist(OWNER, "daily", false, &store).unwrap());
+        assert!(!store.automations().unwrap()[0].enabled);
+        assert!(scheduler.set_enabled_and_persist(OWNER, "daily", true, &store).unwrap());
+        assert!(store.automations().unwrap()[0].enabled);
+        assert!(scheduler.remove_and_persist(OWNER, "daily", &store).unwrap());
+        assert!(store.automations().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn automation_scheduler_emits_each_due_occurrence_once_and_respects_pause() {
+        let mut scheduler = AutomationScheduler::default();
+        let mut item = automation("quarter-hour", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        scheduler.upsert(item).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T09:15:30Z").unwrap().with_timezone(&Utc);
+        let due = scheduler.poll_due(now);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp());
+        assert!(due[0].requires_approval);
+        assert_eq!(scheduler.poll_due(now), due);
+        assert!(scheduler.acknowledge(OWNER, "quarter-hour", due[0].scheduled_at));
+        assert!(scheduler.poll_due(now).is_empty());
+        assert!(scheduler.pause(OWNER, "quarter-hour"));
+        assert!(scheduler.poll_due(now + Duration::minutes(15)).is_empty());
+        assert!(scheduler.resume(OWNER, "quarter-hour"));
+    }
+
+    #[test]
+    fn delayed_scheduler_coalesces_missed_occurrences_without_backlog_replay() {
+        let mut scheduler = AutomationScheduler::default();
+        let mut item = automation("hourly", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        scheduler.upsert(item).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T10:02:00Z").unwrap().with_timezone(&Utc);
+        let due = scheduler.poll_due(now);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].scheduled_at, DateTime::parse_from_rfc3339("2026-11-21T10:00:00Z").unwrap().timestamp());
+        assert_eq!(scheduler.poll_due(now), due);
+        assert!(scheduler.acknowledge(OWNER, "hourly", due[0].scheduled_at));
+        assert!(scheduler.poll_due(now).is_empty());
+    }
+
+    #[test]
+    fn due_automation_occurrence_is_persisted_before_it_is_dispatched() {
+        let root = std::env::temp_dir().join(format!("cenai-automation-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = WorkspaceStore::new(&root, OWNER).unwrap();
+        let mut item = automation("quarter-hour", OWNER, "*/15 * * * *");
+        item.last_scheduled_at = Some(DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap().timestamp());
+        store.save_automation(item).unwrap();
+        let mut scheduler = AutomationScheduler::from_workspace(&store).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-21T09:15:30Z").unwrap().with_timezone(&Utc);
+        assert_eq!(scheduler.poll_due_and_persist(now, &store).unwrap().len(), 1);
+        let reloaded = AutomationScheduler::from_workspace(&store).unwrap();
+        assert!(reloaded.automations.values().all(|automation| automation.last_scheduled_at
+            == Some(DateTime::parse_from_rfc3339("2026-11-21T09:15:00Z").unwrap().timestamp())));
+        let mut reloaded = reloaded;
+        let replayed = reloaded.poll_due_and_persist(now + Duration::minutes(5), &store).unwrap();
+        assert_eq!(replayed.len(), 1);
+        assert_eq!(replayed[0].scheduled_at, due_timestamp("2026-11-21T09:15:00Z"));
+        assert!(reloaded.acknowledge_and_persist(OWNER, "quarter-hour", replayed[0].scheduled_at, &store).unwrap());
+        assert!(reloaded.poll_due_and_persist(now + Duration::minutes(5), &store).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn automation_scheduler_isolates_accounts_and_supports_next_run_queries() {
+        let mut alice = AutomationScheduler::default();
+        let mut bob = AutomationScheduler::default();
+        alice.upsert(automation("daily", OWNER, "0 9 * * *")).unwrap();
+        bob.upsert(automation("daily", OTHER, "0 9 * * *")).unwrap();
+        assert!(alice.upsert(automation("foreign", OTHER, "0 9 * * *")).is_err());
+        let now = DateTime::parse_from_rfc3339("2026-11-21T08:30:00Z").unwrap().with_timezone(&Utc);
+        let next = alice.snapshot(OWNER).pop().unwrap().next_run_after(now).unwrap().unwrap();
+        assert_eq!(next, DateTime::parse_from_rfc3339("2026-11-21T09:00:00Z").unwrap());
+        assert_eq!(alice.snapshot(OWNER).len(), 1);
+        assert_eq!(bob.snapshot(OTHER).len(), 1);
+        assert!(alice.remove(OWNER, "daily"));
+        assert_eq!(alice.snapshot(OWNER).len(), 0);
+        assert_eq!(bob.snapshot(OTHER).len(), 1);
+    }
+}
