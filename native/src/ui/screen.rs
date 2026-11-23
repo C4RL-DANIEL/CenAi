@@ -1090,6 +1090,10 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             state.pending_memory_enabled = Some(state.personal_memory_enabled);
         }
         ui.label(text("Memories are stored under your authenticated account only. The Brain can use them only when you explicitly allow personal memory for a request. Disabling memory prevents retrieval and new saves.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.separator();
+        ui.label(text("Local conversation knowledge", 14.0, egui::Color32::WHITE).strong());
+        ui.checkbox(&mut state.local_knowledge_enabled, "Search my saved conversations for relevant context");
+        ui.label(text("When enabled, CenAI searches a small, relevance-ranked selection of your encrypted on-device chat history and adds matching excerpts to the current request. It stays on this device and is separate from personal memory.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         egui::ComboBox::from_id_salt("cenai_memory_category")
             .selected_text(match state.memory_category_draft.as_str() {
                 "profile" => "Profile",
