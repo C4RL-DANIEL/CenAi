@@ -110,6 +110,9 @@ pub struct WorkspaceStore {
 }
 
 impl WorkspaceStore {
+    /// Plaintext workspace constructor is test-only. Production callers must use
+    /// new_encrypted with the authenticated Android Keystore vault.
+    #[cfg(test)]
     pub fn new(root: impl AsRef<Path>, user_identity: &str) -> Result<Self, String> {
         Self::build(root, user_identity, None)
     }
