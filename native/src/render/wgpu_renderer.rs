@@ -122,7 +122,7 @@ where
         "cenai_cloud" => {
             let payload = serde_json::json!({
                 "model": "cloudflare-gemma-4-26b-a4b-it",
-                "messages": request.messages,
+                "messages": &request.messages,
                 "max_tokens": request.max_tokens.min(2048),
                 "stream": false,
             });
@@ -1128,8 +1128,8 @@ impl WgpuRenderer {
             })
             .collect();
         messages.insert(0, ChatMessage { role: "system".into(), content: AGENT_TOOL_SYSTEM_PROMPT.into() });
-        let provider = self.app_state.provider_key_provider.clone();
-        let key = api.provider_key(&provider).unwrap_or_default();
+        let mut provider = self.app_state.provider_key_provider.clone();
+        let mut key = api.provider_key(&provider).unwrap_or_default();
         let generation = self.account_generation;
         let sender = self.response_tx.clone();
         let offline_prompt_base = conversation_prompt_for_offline(&self.app_state.conversation);
@@ -1147,6 +1147,12 @@ impl WgpuRenderer {
             if let Some(position) = targets.iter().position(|target| target == &provider) {
                 let selected = targets.remove(position);
                 targets.insert(0, selected);
+            }
+            if targets.len() == 1 && key.trim().is_empty()
+                && !(provider == "gemini" && api.has_google_gemini_oauth())
+                && targets[0] != "cenai_cloud" {
+                provider = targets[0].clone();
+                key = api.provider_key(&provider).unwrap_or_default();
             }
             if targets.len() >= 2 {
                 let api = api.clone();
