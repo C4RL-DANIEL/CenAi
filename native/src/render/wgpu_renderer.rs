@@ -107,6 +107,38 @@ fn provider_defaults(provider: &str) -> (&'static str, &'static str) {
     }
 }
 
+async fn stream_provider_target<F>(
+    api: &CenAiApi,
+    provider: &str,
+    endpoint: &str,
+    api_key: &str,
+    request: &ChatRequest,
+    on_delta: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str) + Send,
+{
+    match provider {
+        "cenai_cloud" => {
+            let payload = serde_json::json!({
+                "model": "cloudflare-gemma-4-26b-a4b-it",
+                "messages": request.messages,
+                "max_tokens": request.max_tokens.min(2048),
+                "stream": false,
+            });
+            api.stream_cloud_chat(&payload, on_delta).await
+        }
+        "anthropic" => api.stream_anthropic(request, api_key, on_delta).await,
+        "gemini" if api_key.trim().is_empty() => {
+            let token = api.google_gemini_access_token().await?;
+            api.stream_gemini_oauth(request, &token, on_delta).await
+        }
+        "gemini" => api.stream_gemini(request, api_key, on_delta).await,
+        "openai" | "deepseek" | "custom" => api.stream_openai_compatible(endpoint, api_key, request, on_delta).await,
+        _ => Err("This provider is not available for multi-provider consensus.".into()),
+    }
+}
+
 fn provider_setting_key(provider: &str, suffix: &str) -> String {
     format!("provider_{suffix}_{provider}")
 }
