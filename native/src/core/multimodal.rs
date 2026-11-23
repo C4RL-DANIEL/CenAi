@@ -171,9 +171,17 @@ impl AttachmentStore {
             if extension != "bin" && extension != "json" { continue; }
             let id = path.file_stem().and_then(|value| value.to_str()).ok_or("Attachment filename is invalid")?;
             let relative = self.relative_key(id, extension);
-            let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-            if bytes.starts_with(WORKSPACE_CIPHER_MAGIC) { self.decode(&relative, &bytes)?; }
-            else { self.write_atomic(&path, &relative, &bytes)?; }
+            // Only inspect the authenticated-envelope marker for existing files;
+            // decrypting every binary attachment during startup wastes memory and CPU.
+            let mut prefix = vec![0u8; WORKSPACE_CIPHER_MAGIC.len()];
+            let mut file = fs::File::open(&path).map_err(|error| error.to_string())?;
+            let prefix_len = file.read(&mut prefix).map_err(|error| error.to_string())?;
+            if prefix_len == WORKSPACE_CIPHER_MAGIC.len() && prefix == WORKSPACE_CIPHER_MAGIC {
+                continue;
+            }
+            drop(file);
+            let plaintext = fs::read(&path).map_err(|error| error.to_string())?;
+            self.write_atomic(&path, &relative, &plaintext)?;
         }
         Ok(())
     }
