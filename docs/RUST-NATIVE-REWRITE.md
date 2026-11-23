@@ -28,7 +28,7 @@ The Central Brain is one shared intelligence service, **not one shared memory po
 - Personal memory is included only when the user's memory setting and request-level permission allow it. Model output cannot grant permissions or broaden context.
 - Send only the minimum authorized excerpts needed for the task; never ship a whole account history by default. Deletion must also remove indexed/embedded copies and cached derivatives.
 
-The Rust rewrite adds a context authorization gate with tests for cross-user denial, cross-feature grants, per-session isolation, explicit personal-memory access and malformed foreign records. It accepts only canonical Supabase UUIDs. This gate is a client-side defense-in-depth layer; Cloudflare/Supabase services must enforce the same tenant predicates server-side. **Important current limitation:** the gate authorizes records supplied to it; it is not yet a durable personal-memory database or retrieval/indexing service. The current planner uses a bounded recent conversation context, not an account-wide memory search.
+The Rust rewrite adds a context authorization gate with tests for cross-user denial, cross-feature grants, per-session isolation, explicit personal-memory access and malformed foreign records. It accepts only canonical Supabase UUIDs. The account-scoped personal-memory service is implemented through the authenticated `cenai-memory` Supabase Edge Function and `user_personal_memories` / `user_memory_settings` tables; the server derives the owner from the verified JWT, enforces MFA when configured, rejects credential material, and supports enable/list/save/delete/clear. Central Brain fetches memories only when the user explicitly enables memory for the request, ranks relevant facts and applies strict item/byte bounds. This is persistent account memory, distinct from the separate opt-in local saved-conversation retrieval.
 
 ## Current architecture
 
@@ -39,7 +39,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - `egui 0.31`: Rust-owned custom screen composition, controls, text input and Markdown/code display.
 - `native/src/android/vault.rs`: AES-GCM secrets encrypted with an Android Keystore-managed key; the encrypted records live in the app-private directory.
 - `native/src/core/network.rs`: Supabase auth, serialized session mutation/refresh, account-bound authenticated requests, control-plane, billing, telemetry, CenAI Cloud streaming and provider streaming/email OTP.
-- `native/src/core/workspace.rs`: per-account workspace metadata, conversation snapshots and path-safe artifacts. Data is stored in Android app-private storage and partitioned by a hash of the immutable user UUID; the current workspace files are not separately encrypted with a per-account key.
+- `native/src/core/workspace.rs`: per-account workspace metadata, conversation snapshots and path-safe artifacts. Data is stored in Android app-private storage, partitioned by a hash of the immutable user UUID, and encrypted at rest with the Android Keystore-backed AES-256-GCM vault. Each encrypted file envelope binds both the authenticated account UUID and its relative storage path; legacy plaintext files are migrated atomically when the encrypted store opens.
 - `native/src/core/brain.rs`: Central Brain plan generation; every returned plan is validated before any action.
 - `native/src/core/mcp.rs`: MCP manifest validation and security review; discovery is not permission.
 - `native/src/core/guardian.rs`: bounded local diagnostics and a separate consent-gated upload queue; pre-consent events are never uploaded retroactively and revoking consent clears pending uploads.
@@ -89,7 +89,7 @@ The Rust rewrite adds a context authorization gate with tests for cross-user den
 - Keep private Ecosystem Engine internals private, but never rely on obscurity: enforce server-side authentication, authorization, signed manifests, scoped capabilities, audit and revocation.
 - Keep user content and workspace data on-device by default; cloud sync, backup, analytics and diagnostics require explicit user intent/consent.
 - Use only the Supabase publishable key in the client; enforce account and capability authorization server-side.
-- Provider credentials, session tokens, preferences and workspace content are encrypted with the Android Keystore-backed account vault. Workspace files are partitioned by authenticated account UUID and encrypted before atomic persistence; cross-device synchronization still requires a separate shared-key/consent design.
+- Provider credentials, session tokens, preferences and workspace content are encrypted with the Android Keystore-backed account vault. Workspace files are partitioned by authenticated account UUID and encrypted before atomic persistence; cross-device synchronization still requires a separate shared-key/consent design. Personal memories are stored server-side in account-scoped Supabase tables behind the authenticated Edge Function and are not included in diagnostics or telemetry.
 - Do not transmit prompts, conversation text, filenames, file content or credentials in Guardian telemetry.
 - Sensitive reads, external writes, purchases, account changes and destructive operations require explicit approval.
 - Never execute an AI-generated plan just because it parsed successfully.
