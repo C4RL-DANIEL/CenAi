@@ -1272,6 +1272,23 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
+        ui.label(text("Assistant instructions", 16.0, egui::Color32::WHITE).strong());
+        ui.label(text("Set your preferred tone, response style and task-specific guidance. These instructions are saved encrypted on this device and remain subordinate to CenAI safety rules and permission checks.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.add(egui::TextEdit::multiline(&mut state.system_prompt_draft)
+            .hint_text("For example: Explain technical changes clearly, prefer concise answers, and show commands before destructive operations.")
+            .desired_rows(5)
+            .char_limit(8_000)
+            .desired_width(f32::INFINITY));
+        if ui.button("Save assistant instructions").clicked() {
+            state.pending_system_prompt_save = Some(state.system_prompt_draft.clone());
+            state.system_prompt_status = "Saving encrypted instructions…".into();
+        }
+        if !state.system_prompt_status.is_empty() {
+            ui.label(text(&state.system_prompt_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+        }
+    });
+    ui.add_space(8.0);
+    surface(ui, |ui| {
         ui.label(text("Google Gemini account connection", 15.0, egui::Color32::WHITE).strong());
         ui.label(text("Use Google's OAuth authorization-code flow with PKCE. Your refresh token is encrypted in the account-scoped Android Keystore vault.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.add(egui::TextEdit::singleline(&mut state.gemini_oauth_client_id_draft)
