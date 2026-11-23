@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_local_knowledge, rank_personal_memories, ContextKind, ContextRecord, ContextRequest, LocalKnowledgeRecord}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, sandbox::{SandboxJobSummary, SandboxQuota, SandboxRequest}, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
+use crate::{core::{agents::{TaskPlan, StepExecutionResult}, tools::AgentToolRuntime, automations::{Automation, AutomationScheduler}, brain::CentralBrain, context::{rank_local_knowledge, rank_personal_memories, ContextKind, ContextRecord, ContextRequest, LocalKnowledgeRecord}, guardian::{DiagnosticEvent, DiagnosticKind, GuardianMonitor}, mcp::{McpHttpClient, McpServerManifest, McpTool}, network::CenAiApi, sandbox::{SandboxJobSummary, SandboxQuota, SandboxRequest}, multimodal::{AttachmentKind, AttachmentMetadata, AttachmentStore}, providers::{validate_provider_endpoint, ChatMessage, ChatRequest}, voice::VoicePipeline, workspace::WorkspaceStore}, ui::{model::{AppState, EcosystemAppItem, MessageRole}, screen}};
 #[cfg(target_os = "android")]
 use crate::android::{lightning_generate, schedule_automation_reminder, cancel_automation_reminder, schedule_automation_schedule_refresh_worker, cancel_automation_schedule_refresh_worker, schedule_background_task_worker, cancel_background_task_worker, execute_approved_agent_action, open_google_oauth, install_verified_update, current_app_version, audio::{AndroidAudioCapture, AndroidAudioPlayback}};
 #[cfg(target_os = "android")]
@@ -95,6 +95,20 @@ fn append_local_knowledge_context(mut prompt: String, context: &str) -> String {
         prompt.push_str(context);
     }
     prompt
+}
+
+fn provider_defaults(provider: &str) -> (&'static str, &'static str) {
+    match provider {
+        "deepseek" => ("deepseek-chat", "https://api.deepseek.com"),
+        "anthropic" => ("claude-sonnet-4-5", "https://api.anthropic.com"),
+        "gemini" => ("gemini-2.5-flash", "https://generativelanguage.googleapis.com"),
+        "custom" => ("", ""),
+        _ => ("gpt-4.1-mini", "https://api.openai.com/v1"),
+    }
+}
+
+fn provider_setting_key(provider: &str, suffix: &str) -> String {
+    format!("provider_{suffix}_{provider}")
 }
 
 fn bounded_memory_context(memories: &[serde_json::Value], goal: &str, owner_user_id: &str) -> String {
