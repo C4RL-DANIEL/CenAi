@@ -96,14 +96,16 @@ struct BackupArtifact {
     bytes_base64: String,
 }
 
+// Separate foreground and WorkManager JNI calls can construct independent
+// WorkspaceStore values for the same account in one process. A process-wide lock
+// protects their read-modify-write index transactions, not just cloned handles.
+static WORKSPACE_INDEX_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+
 #[derive(Clone)]
 pub struct WorkspaceStore {
     user_root: PathBuf,
     user_identity: String,
     index_path: PathBuf,
-    // Clones of a workspace share this lock so read-modify-write index updates
-    // cannot silently overwrite one another when UI and background tasks race.
-    index_lock: Arc<Mutex<()>>,
     vault: Option<Arc<dyn SessionVault>>,
 }
 
@@ -128,7 +130,7 @@ impl WorkspaceStore {
         let user_root = root.as_ref().join(scope);
         fs::create_dir_all(user_root.join("artifacts")).map_err(|error| error.to_string())?;
         let index_path = user_root.join("workspace.json");
-        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path, index_lock: Arc::new(Mutex::new(())), vault };
+        let store = Self { user_root, user_identity: user_identity.to_owned(), index_path, vault };
         if store.vault.is_some() { store.migrate_plaintext_files()?; }
         if !store.index_path.exists() {
             store.write_index(&WorkspaceIndex { schema_version: 1, projects: Vec::new(), tasks: Vec::new(), automations: Vec::new() })?;
@@ -136,8 +138,9 @@ impl WorkspaceStore {
         Ok(store)
     }
 
-    fn lock_index(&self) -> Result<MutexGuard<'_, ()>, String> {
-        self.index_lock.lock().map_err(|_| "Workspace index lock was poisoned".to_owned())
+    fn lock_index(&self) -> Result<MutexGuard<'static, ()>, String> {
+        WORKSPACE_INDEX_LOCK.get_or_init(|| Mutex::new(()))
+            .lock().map_err(|_| "Workspace index lock was poisoned".to_owned())
     }
 
     fn read_index(&self) -> Result<WorkspaceIndex, String> {
