@@ -619,15 +619,35 @@ impl ApplicationHandler for CenAiApplication {
         let attributes = Window::default_attributes()
             .with_title("CenAI")
             .with_transparent(false);
-        let window = Arc::new(event_loop.create_window(attributes).expect("create Android window"));
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => Arc::new(window),
+            Err(error) => {
+                log::error!("CenAI could not create its Android window: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
         self.last_size = window.inner_size();
-        match WgpuRenderer::new_android(window.clone(), self.api.clone(), self.runtime.clone(), self.workspace.take(), self.workspace_root.clone(), self.android_app.clone()) {
-            Ok(renderer) => {
+        let renderer_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            WgpuRenderer::new_android(
+                window.clone(),
+                self.api.clone(),
+                self.runtime.clone(),
+                self.workspace.take(),
+                self.workspace_root.clone(),
+                self.android_app.clone(),
+            )
+        }));
+        match renderer_result {
+            Ok(Ok(renderer)) => {
                 log::info!("CenAI renderer initialized: {}", crate::RUNTIME_ID);
                 self.renderer = Some(renderer);
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 log::error!("CenAI GPU initialization failed: {error:#}");
+            }
+            Err(_) => {
+                log::error!("CenAI GPU initialization panicked; keeping the native activity alive for diagnostics.");
             }
         }
         self.window = Some(window);
@@ -770,8 +790,20 @@ pub fn android_main(app: AndroidApp) {
     };
     let mut builder = EventLoop::builder();
     builder.with_android_app(app.clone());
-    let event_loop = builder.build().expect("create Android event loop");
-    event_loop
-        .run_app(&mut CenAiApplication::new(api, runtime.handle().clone(), workspace, workspace_root, app.clone()))
-        .expect("run CenAI Android application");
+    let event_loop = match builder.build() {
+        Ok(event_loop) => event_loop,
+        Err(error) => {
+            log::error!("Android event loop initialization failed: {error}");
+            return;
+        }
+    };
+    if let Err(error) = event_loop.run_app(&mut CenAiApplication::new(
+        api,
+        runtime.handle().clone(),
+        workspace,
+        workspace_root,
+        app.clone(),
+    )) {
+        log::error!("CenAI Android event loop stopped with an error: {error}");
+    }
 }
