@@ -44,7 +44,7 @@ class CenAiVoiceClient(private val vault: SecureKeyStore) {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val message = response.body?.string().orEmpty()
-                throw IOException("CenAI Voice request failed (HTTP \${response.code}): " +
+                throw IOException("CenAI Voice request failed (HTTP ${response.code}): " +
                     runCatching { JSONObject(message).optString("error") }.getOrDefault(message).take(300))
             }
             val declared = response.header("Content-Length")?.toLongOrNull() ?: 0L
@@ -89,7 +89,7 @@ class CenAiVoiceClient(private val vault: SecureKeyStore) {
         client.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw IOException("CenAI Voice status failed (HTTP \${response.code}): " +
+                throw IOException("CenAI Voice status failed (HTTP ${response.code}): " +
                     runCatching { JSONObject(raw).optString("error") }.getOrDefault(raw).take(300))
             }
             JSONObject(raw)
@@ -168,7 +168,7 @@ class CenAiVoicePlayback {
         next.setOnErrorListener { _, what, extra ->
             stop()
             file.delete()
-            onError("Audio playback failed (\${what}/\${extra}).")
+            onError("Audio playback failed (${what}/${extra}).")
             true
         }
         try {
