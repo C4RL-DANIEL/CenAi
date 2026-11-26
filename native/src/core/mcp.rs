@@ -201,10 +201,31 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
     if !matches!(kind, "object" | "array" | "string" | "number" | "integer" | "boolean" | "null") {
         return Err("MCP input schema uses an unsupported type".into());
     }
+
+    // Reject validation keywords that this bounded validator does not implement.
+    // Silently accepting pattern/format/$ref/etc. would make the UI's security
+    // review disagree with the schema the remote server expects.
+    let common = ["type", "enum", "const", "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly"];
+    let specific: &[&str] = match kind {
+        "object" => &["properties", "required", "additionalProperties"],
+        "array" => &["items", "minItems", "maxItems"],
+        "string" => &["minLength", "maxLength"],
+        "number" | "integer" => &["minimum", "maximum"],
+        _ => &[],
+    };
+    if schema.as_object().is_some_and(|fields| fields.keys().any(|key|
+        !common.contains(&key.as_str()) && !specific.contains(&key.as_str()))) {
+        return Err(format!("MCP {kind} schema contains an unsupported validation keyword"));
+    }
+
     if let Some(values) = schema.get("enum") {
         if !values.is_array() || values.as_array().is_some_and(|items| items.is_empty() || items.len() > 64) {
             return Err("MCP schema enum must contain 1-64 values".into());
         }
+    }
+    if schema.get("const").is_some_and(|value| value.is_null() && kind != "null") {
+        // JSON null is a legitimate const only for a null-typed schema.
+        return Err("MCP schema const does not match its declared type".into());
     }
     if kind == "object" {
         let properties = schema.get("properties").and_then(serde_json::Value::as_object)
@@ -213,8 +234,10 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
         if let Some(required) = schema.get("required") {
             let values = required.as_array().ok_or("MCP required must be an array")?;
             if values.len() > 128 { return Err("MCP required list is too large".into()); }
+            let mut unique = HashSet::new();
             for item in values {
                 let name = item.as_str().ok_or("MCP required entries must be strings")?;
+                if !unique.insert(name) { return Err("MCP required entries must be unique".into()); }
                 if !properties.contains_key(name) { return Err("MCP required entry is not a declared property".into()); }
             }
         }
@@ -228,6 +251,25 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
     if kind == "array" {
         let items = schema.get("items").ok_or("MCP array schema must declare item schema")?;
         validate_schema_definition(items, depth + 1)?;
+        let min = schema.get("minItems").map(|value| value.as_u64().ok_or("MCP minItems must be a non-negative integer")).transpose()?;
+        let max = schema.get("maxItems").map(|value| value.as_u64().ok_or("MCP maxItems must be a non-negative integer")).transpose()?;
+        if min.zip(max).is_some_and(|(min, max)| min > max) {
+            return Err("MCP minItems cannot exceed maxItems".into());
+        }
+    }
+    if kind == "string" {
+        let min = schema.get("minLength").map(|value| value.as_u64().ok_or("MCP minLength must be a non-negative integer")).transpose()?;
+        let max = schema.get("maxLength").map(|value| value.as_u64().ok_or("MCP maxLength must be a non-negative integer")).transpose()?;
+        if min.zip(max).is_some_and(|(min, max)| min > max) {
+            return Err("MCP minLength cannot exceed maxLength".into());
+        }
+    }
+    if matches!(kind, "number" | "integer") {
+        let min = schema.get("minimum").map(|value| value.as_f64().ok_or("MCP minimum must be numeric")).transpose()?;
+        let max = schema.get("maximum").map(|value| value.as_f64().ok_or("MCP maximum must be numeric")).transpose()?;
+        if min.zip(max).is_some_and(|(min, max)| min > max) {
+            return Err("MCP minimum cannot exceed maximum".into());
+        }
     }
     Ok(())
 }
@@ -591,6 +633,33 @@ mod tests {
         assert!(validate_tool_arguments(&schema, &serde_json::json!({"count":2})).is_err());
         assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","count":9})).is_err());
         assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","shell":"rm -rf /"})).is_err());
+    }
+
+    #[test]
+    fn schema_validator_rejects_malformed_or_unsupported_constraints() {
+        let malformed_min = serde_json::json!({"type":"string","minLength":"2"});
+        assert!(validate_schema_definition(&malformed_min, 0).is_err());
+
+        let inverted_range = serde_json::json!({"type":"integer","minimum":10,"maximum":1});
+        assert!(validate_schema_definition(&inverted_range, 0).is_err());
+
+        let unsupported_pattern = serde_json::json!({"type":"string","pattern":"^safe$"});
+        assert!(validate_schema_definition(&unsupported_pattern, 0).unwrap_err().contains("unsupported validation keyword"));
+
+        let duplicate_required = serde_json::json!({
+            "type":"object",
+            "properties":{"name":{"type":"string"}},
+            "required":["name","name"]
+        });
+        assert!(validate_schema_definition(&duplicate_required, 0).is_err());
+
+        let supported = serde_json::json!({
+            "type":"object",
+            "properties":{"name":{"type":"string","minLength":1,"maxLength":40}},
+            "required":["name"],
+            "additionalProperties":false
+        });
+        assert!(validate_schema_definition(&supported, 0).is_ok());
     }
 
     #[test]
