@@ -815,6 +815,29 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         error = "The approved action arguments were invalid."
                                         return@launch
                                     }
+                                    if (name == "sandbox_run") {
+                                        try {
+                                            val argumentArray = arguments.optJSONArray("arguments") ?: JSONArray()
+                                            val commandArguments = List(argumentArray.length()) { index -> argumentArray.getString(index) }
+                                            val result = sandboxClient.run(
+                                                arguments.getString("command"),
+                                                commandArguments,
+                                                arguments.optString("projectId", "default"),
+                                                arguments.optString("workingDirectory", ".")
+                                            )
+                                            val output = "Run " + result.status + " · exit " + result.exitCode + " · " + result.durationMs + " ms\nSTDOUT:\n" + result.stdout + "\nSTDERR:\n" + result.stderr
+                                            info = output
+                                            val updated = messages.map { item ->
+                                                if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
+                                                    ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + output)
+                                                } else item
+                                            }
+                                            persist(updated)
+                                        } catch (failure: Exception) {
+                                            error = failure.message ?: "Cloud sandbox execution failed."
+                                        }
+                                        return@launch
+                                    }
                                     val mcpExecution = runCatching { mcpRegistry.execute(name, arguments, approveSensitiveAction = true) }
                                         .getOrElse {
                                             error = it.message ?: "MCP action failed."
