@@ -135,7 +135,7 @@ class CenAiVoiceClient(private val vault: SecureKeyStore) {
                 }
                 offset += 8 + length + (length and 1)
             }
-            require(format == 1 && channels == 1 && sampleRate in setOf(8_000L, 16_000L, 24_000L, 48_000L) &&
+            require(format == 1 && channels == 1 && sampleRate != null && sampleRate in setOf(8_000L, 16_000L, 24_000L, 48_000L) &&
                 bits == 16 && dataBytes > 0 && dataBytes % 2 == 0) {
                 "CenAI Voice WAV uses an unsupported audio encoding."
             }
