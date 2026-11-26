@@ -32,6 +32,31 @@ class ProjectWorkspaceStoreInstrumentedTest {
     }
 
     @Test
+    fun encryptedWorkspaceBackupRestoresProjectsAndVerifiesArtifactIntegrity() {
+        val vault = SecureKeyStore(context)
+        val sourceOwner = java.util.UUID.randomUUID().toString()
+        val restoreOwner = java.util.UUID.randomUUID().toString()
+        val source = ProjectWorkspaceStore(context, vault, sourceOwner)
+        val destination = ProjectWorkspaceStore(context, vault, restoreOwner)
+        val project = source.create("Backup test", "Encrypted portable archive")
+        val bytes = "backup artifact payload".toByteArray()
+        val artifact = source.saveArtifact(project.id, "backup.txt", "text/plain", bytes)
+        val archive = source.exportBackup()
+
+        try {
+            assertEquals(1, destination.restoreBackup(archive))
+            val restored = destination.list(includeArchived = true).single()
+            assertEquals(project.id, restored.id)
+            assertEquals(artifact.id, restored.artifacts.single().id)
+            assertArrayEquals(bytes, destination.readArtifact(restored.id, artifact.id))
+            assertThrows(IllegalArgumentException::class.java) { destination.restoreBackup(archive) }
+        } finally {
+            source.delete(project.id)
+            destination.delete(project.id)
+        }
+    }
+
+    @Test
     fun rejectsInvalidProjectAndArtifactInput() {
         val store = ProjectWorkspaceStore(context, SecureKeyStore(context))
         assertThrows(IllegalArgumentException::class.java) { store.create("  ") }
