@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
@@ -189,6 +190,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var activeAccountId by remember { mutableStateOf(vault.get("supabase_user_id", "guest").ifBlank { "guest" }) }
     remember(activeAccountId) { runCatching { vault.migrateLegacyAccountData(activeAccountId) }; true }
     var wideDestination by remember { mutableStateOf("Chat") }
+    var projectsOpen by remember { mutableStateOf(false) }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -613,6 +615,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = palette.text) }
                 },
                 actions = {
+                    IconButton(onClick = { projectsOpen = true }) { Icon(Icons.Default.Folder, "Your Work", tint = palette.accent) }
                     IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
                     Box {
                         IconButton(onClick = { moreActionsExpanded = true }) { Icon(Icons.Default.MoreVert, "More actions", tint = palette.text) }
@@ -884,6 +887,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             Spacer(Modifier.height(24.dp))
         }
     }
+
+    if (projectsOpen) YourWorkDialog(vault = vault, ownerId = activeAccountId, onDismiss = { projectsOpen = false })
 
     if (settings) {
         var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
