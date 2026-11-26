@@ -8,8 +8,10 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Per-provider API keys encrypted with Android Keystore.
 - Custom OpenAI-compatible HTTPS endpoints and optional JSON headers.
 - Saved conversations, searchable chat history, new chat, delete, edit/resend, copy, regenerate and share/export.
+- Your Work projects and Knowledge Vault: encrypted per-account project metadata and files, bounded file import, verified file reads, note creation and Storage Access Framework export. Files are AES-GCM encrypted with Android Keystore keys and isolated by account workspace UUID.
 - Text-document attachments (TXT, Markdown, CSV and JSON), selectable-text PDF extraction (up to 300 pages / 250,000 characters), on-device OCR, and native multimodal image payloads for vision-capable OpenAI, Claude, Gemini, DeepSeek V4.1 Flash (`deepseek-flash`) and compatible custom models. Images are explicitly selected by the user and capped at 4 MB per attachment; Legacy DeepSeek text-only model IDs are migrated to `deepseek-flash` for image requests. Password-protected PDFs are not supported; scanned PDFs fall back to on-device OCR with a 50-page limit. Android speech-recognition voice input is also available.
 - Configurable speech engine controls: input/output language tags, speech rate, pitch and an in-app voice test; assistant responses can be read aloud with Android Text-to-Speech.
+- Optional CenAI Aura-1 cloud speech for Read aloud, with explicit user opt-in, authenticated requests, per-account settings, bounded text/audio sizes and server-side daily quotas. Cloud voice remains disabled until the administrator enables its feature flag; Android speech recognition and system TTS remain available offline.
 - Optional local knowledge retrieval across saved conversations and attached text documents. Matching excerpts are searched on-device and included as context for the selected provider.
 - Offline Brain powered by LiteRT-LM: import a compatible `.litertlm` model into app-private storage and run text chat locally on the CPU without a network connection. The model is not bundled in the APK; users must obtain it under its model licence.
 - Save or share conversations; save uses Android's Storage Access Framework so the user chooses the destination.
@@ -26,6 +28,8 @@ CenAI is an Android-first multi-provider AI workspace built with Kotlin, Jetpack
 - Four switchable UI themes in Settings: CenAI Default, Android Material 3 (including wallpaper-derived Material You colors on Android 12+), iOS-inspired, and Figma-inspired.
 - Markdown-aware message rendering with visually separated fenced code blocks, language labels, horizontal code scrolling and per-block copy.
 - Agent planning mode with a bounded tool-call loop, per-tool enable/disable controls, nine local utilities, and approval-gated Android actions (open URL, open dialer without calling, share sheet and app settings). Sensitive actions require a separate approval tap and hand off to Android intents; CenAI cannot silently call or send messages. One-off scheduled network tasks run through WorkManager with a bounded four-turn safe-tool loop, encrypted local prompts/results, task status/history, cancellation controls and optional private completion notifications; Android may defer work due to battery and connectivity policy.
+- Manually approved MCP Streamable-HTTP servers with public-HTTPS/DNS checks, account-scoped credentials, exact user-approved tool schemas, scoped capabilities and per-call approval for sensitive reads or external writes. Publisher identities are shown as unverified unless independently verified by the user.
+- Optional cloud sandbox for user-submitted or agent-requested commands. Commands run in an isolated account-scoped remote microVM with an allowlist, bounded/redacted output and explicit approval for every agent invocation; no shell runs on the Android device.
 - Expanded settings for agent planning, approval preferences and provider account/OAuth capability guidance.
 
 ## Build
@@ -49,7 +53,7 @@ Then push a version tag such as `v0.2.0`. The workflow runs JVM unit tests, buil
 
 ## Agent tools
 
-Agent planning mode can request an allow-listed set of local tools: current date/time, arithmetic, word counting, text statistics, JSON formatting, UUID generation and Base64 encoding/decoding. Each tool can be enabled or disabled in Settings. The model requests tools through a strict structured marker; the app validates the name against its registry and executes only registered handlers. Agent turns are bounded to four tool/response cycles. This is not arbitrary shell execution, unrestricted code execution, unattended device control or unrestricted file/network access. Additional tools must be added individually with scoped permissions, explicit approval for sensitive/destructive actions, execution timeouts and audit history.
+Agent planning mode can request an allow-listed set of local tools: current date/time, arithmetic, word counting, text statistics, JSON formatting, UUID generation and Base64 encoding/decoding. It can also use manually approved MCP capabilities and the optional cloud sandbox when enabled. Each local tool can be enabled or disabled in Settings. MCP servers require an explicit connect action, public HTTPS and a declared schema/scope manifest; sensitive reads and external writes require a separate approval. Sandbox execution is always approval-gated and occurs in an isolated remote microVM. Agent turns are bounded to four tool/response cycles. This is not unrestricted device control or unrestricted file/network access.
 
 ## Google Gemini OAuth
 
@@ -59,7 +63,7 @@ Other providers are not automatically account-connected. Only implement their OA
 
 ## Security and provider access
 
-Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
+Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration. Project files, chat history, MCP configuration and MCP bearer credentials are encrypted and account-scoped. Cloud Voice and Cloud Sandbox require their backend migrations and deployments; Voice is disabled by default until the administrator enables its feature flag. Cloud Sandbox commands are never executed locally.
 
 
 ## UI design references
