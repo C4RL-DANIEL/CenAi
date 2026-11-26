@@ -601,7 +601,7 @@ async function proxyFunction(request, env, slug) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > 1_048_576) return json(413, { error: "Request body exceeds the 1 MB limit" });
-  const allowed = new Set(["cenai-paypal-billing", "cenai-billing", "cenai-public-api", "cenai-telemetry", "cenai-control-plane"]);
+  const allowed = new Set(["cenai-paypal-billing", "cenai-billing", "cenai-public-api", "cenai-telemetry", "cenai-control-plane", "cenai-memory", "cenai-ecosystem"]);
   if (!/^[a-z0-9-]+$/.test(slug) || !allowed.has(slug)) return json(404, { error: "Backend function not found" });
   if (!envReady(env, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"])) return json(503, { error: "Supabase integration is not configured" });
   const headers = new Headers();
