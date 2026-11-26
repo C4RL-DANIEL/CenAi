@@ -57,7 +57,7 @@ class CenAiSandboxClient(private val vault: SecureKeyStore) {
             val raw = response.body?.string().orEmpty()
             val data = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
             if (!response.isSuccessful) {
-                throw IOException(data.optString("error").ifBlank { "Cloud sandbox failed (HTTP \${response.code})." }.take(500))
+                throw IOException(data.optString("error").ifBlank { "Cloud sandbox failed (HTTP ${response.code})." }.take(500))
             }
             CenAiSandboxResult(
                 data.optString("runId"),
