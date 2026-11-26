@@ -1108,7 +1108,7 @@ Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Mo
                                     Text("Use CenAI Cloud Voice for Read aloud", color = palette.text, fontSize = 12.sp)
                                     Text(if (cloudVoiceReady) "Service reports ready" else "Check service status before enabling", color = palette.muted, fontSize = 10.sp)
                                 }
-                                Switch(checked = cloudVoiceEnabled, enabled = !cloudVoiceEnabled || (cloudVoiceReady && cloudSignedIn), onCheckedChange = {
+                                Switch(checked = cloudVoiceEnabled, enabled = cloudVoiceEnabled || (cloudVoiceReady && cloudSignedIn), onCheckedChange = {
                                     cloudVoiceEnabled = it
                                     vault.putUser(activeAccountId, "cloud_voice_enabled", it.toString())
                                 })
@@ -1338,7 +1338,7 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                                 Text("Allow the agent to request sandbox runs", color = palette.text, fontSize = 12.sp)
                                 Text("Every command pauses for your approval", color = palette.muted, fontSize = 10.sp)
                             }
-                            Switch(checked = sandboxAgentEnabled, enabled = !sandboxAgentEnabled || cloudSignedIn, onCheckedChange = {
+                            Switch(checked = sandboxAgentEnabled, enabled = sandboxAgentEnabled || cloudSignedIn, onCheckedChange = {
                                 sandboxAgentEnabled = it
                                 vault.putUser(activeAccountId, "sandbox_agent_enabled", it.toString())
                             })
