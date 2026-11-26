@@ -54,11 +54,27 @@ class CenAiSandboxClient(private val vault: SecureKeyStore) {
             .post(payload)
             .build()
         client.newCall(request).execute().use { response ->
-            val raw = response.body?.string().orEmpty()
-            val data = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+            val body = response.body
+            val declared = body?.contentLength() ?: 0L
+            require(declared <= MAX_RESPONSE_BYTES) { "Sandbox response exceeds the 64 KiB safety limit." }
+            val output = java.io.ByteArrayOutputStream()
+            body?.byteStream()?.use { input ->
+                val buffer = ByteArray(8 * 1024)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_RESPONSE_BYTES) { "Sandbox response exceeds the 64 KiB safety limit." }
+                    output.write(buffer, 0, count)
+                }
+            }
+            val data = runCatching { JSONObject(output.toString(Charsets.UTF_8.name())) }.getOrElse { JSONObject() }
             if (!response.isSuccessful) {
                 throw IOException(data.optString("error").ifBlank { "Cloud sandbox failed (HTTP ${response.code})." }.take(500))
             }
+            require(data.optString("runId").matches(Regex("[0-9a-fA-F-]{36}"))) { "Sandbox returned an invalid run identifier." }
+            require(data.optString("status") in setOf("succeeded", "failed")) { "Sandbox returned an invalid run status." }
             CenAiSandboxResult(
                 data.optString("runId"),
                 data.optString("projectId"),
@@ -74,6 +90,7 @@ class CenAiSandboxClient(private val vault: SecureKeyStore) {
     companion object {
         private const val SANDBOX_URL = "https://cenai-website.cenai-app.workers.dev/api/sandbox"
         private const val MAX_OUTPUT_CHARS = 12 * 1024
+        private const val MAX_RESPONSE_BYTES = 64 * 1024
         private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
         private val ALLOWED_COMMANDS = setOf(
             "bash", "sh", "cargo", "rustc", "python3", "python", "node", "npm", "npx", "git",
