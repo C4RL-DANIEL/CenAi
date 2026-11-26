@@ -76,7 +76,7 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
                     require(schema.toString().toByteArray().size <= MAX_SCHEMA_BYTES) { "MCP tool schema is too large." }
                     add(McpToolDefinition(
                         config.serverId, name,
-                        tool.optString("description", capability.description).take(2_000),
+                        capability.description,
                         schema,
                         capability.requiresSensitiveRead || capability.requiresExternalWrite,
                         capability.requiredScopes
