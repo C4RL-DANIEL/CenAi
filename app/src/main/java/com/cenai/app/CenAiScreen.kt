@@ -201,6 +201,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
+    val sandboxClient = remember { CenAiSandboxClient(vault) }
     val voiceClient = remember { CenAiVoiceClient(vault) }
     val voicePlayback = remember { CenAiVoicePlayback() }
     var cloudVoiceEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "cloud_voice_enabled", "false").toBoolean()) }
@@ -976,6 +977,12 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var mcpStatus by remember(activeAccountId) { mutableStateOf("") }
         var mcpBusy by remember(activeAccountId) { mutableStateOf(false) }
         var mcpConnectedServers by remember(activeAccountId) { mutableStateOf(mcpRegistry.servers()) }
+        var sandboxCommand by remember(activeAccountId) { mutableStateOf("cargo") }
+        var sandboxArguments by remember(activeAccountId) { mutableStateOf("test\n-p\ncenai-native") }
+        var sandboxProjectId by remember(activeAccountId) { mutableStateOf("default") }
+        var sandboxWorkingDirectory by remember(activeAccountId) { mutableStateOf(".") }
+        var sandboxBusy by remember(activeAccountId) { mutableStateOf(false) }
+        var sandboxResult by remember(activeAccountId) { mutableStateOf("") }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
         AlertDialog(
             modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
@@ -1288,6 +1295,41 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                                         }) { Text("Disconnect") }
                                     }
                                 }
+                            }
+                        }
+                        HorizontalDivider(color = palette.raised)
+                    }
+                    if (selectedSettingsPage == "Agents") {
+                        Text("CENAI CLOUD SANDBOX", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Run an explicitly submitted command in an isolated per-account cloud microVM, not on this Android device. Commands and network access are allow-listed, outputs are bounded and sensitive output is redacted. Android may not be able to stop a request after the remote VM has started.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                        OutlinedTextField(sandboxCommand, { sandboxCommand = it.take(32) }, label = { Text("Command") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(sandboxArguments, { sandboxArguments = it.take(16_000) }, label = { Text("Arguments · one per line") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(sandboxProjectId, { sandboxProjectId = it.take(80) }, label = { Text("Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(sandboxWorkingDirectory, { sandboxWorkingDirectory = it.take(512) }, label = { Text("Working directory inside project") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Button(
+                            enabled = cloudSignedIn && !sandboxBusy && sandboxCommand.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                sandboxBusy = true
+                                sandboxResult = "Starting isolated cloud execution…"
+                                scope.launch {
+                                    try {
+                                        val args = sandboxArguments.lineSequence().filter { it.isNotBlank() }.toList()
+                                        val result = sandboxClient.run(
+                                            sandboxCommand.trim(), args,
+                                            sandboxProjectId.trim(), sandboxWorkingDirectory.trim()
+                                        )
+                                        sandboxResult = "Run " + result.status + " · exit " + result.exitCode + " · " + result.durationMs + " ms\n" +
+                                            "STDOUT:\n" + result.stdout + "\nSTDERR:\n" + result.stderr
+                                    } catch (failure: Exception) {
+                                        sandboxResult = failure.message ?: "Cloud sandbox execution failed."
+                                    } finally { sandboxBusy = false }
+                                }
+                            }
+                        ) { Text(if (sandboxBusy) "Running in cloud…" else "Run in isolated cloud sandbox") }
+                        if (sandboxResult.isNotBlank()) {
+                            Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                Text(sandboxResult.take(14_000), color = palette.text, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(12.dp))
                             }
                         }
                         HorizontalDivider(color = palette.raised)
