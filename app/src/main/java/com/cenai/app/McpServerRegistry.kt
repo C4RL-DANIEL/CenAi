@@ -1,5 +1,6 @@
 package com.cenai.app
 
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -72,6 +73,8 @@ class McpServerRegistry(private val vault: SecureKeyStore, private val ownerId: 
                 approveSensitiveAction = approveSensitiveAction
             )
             ToolExecution(toolName, arguments, result.toString().take(MAX_OUTPUT_CHARS), false, true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             ToolExecution(toolName, arguments, "MCP tool failed: " + (error.message ?: error.javaClass.simpleName).take(500), false, false)
         }
