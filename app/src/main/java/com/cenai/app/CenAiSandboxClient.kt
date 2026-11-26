@@ -104,6 +104,7 @@ class CenAiSandboxClient(private val vault: SecureKeyStore) {
 
         internal fun validateRequest(command: String, arguments: List<String>, projectId: String, workingDirectory: String) {
             require(command in ALLOWED_COMMANDS) { "Command is not in the CenAI sandbox allowlist." }
+            require(arguments.sumOf { it.toByteArray(Charsets.UTF_8).size } <= 24 * 1024) { "Sandbox arguments exceed the 24 KiB request budget." }
             require(arguments.size <= 128 && arguments.all { it.length <= 4_096 && '\u0000' !in it && !CREDENTIAL_PATTERN.containsMatchIn(it) }) {
                 "Sandbox arguments exceed the allowed limits or contain credential-like material."
             }
