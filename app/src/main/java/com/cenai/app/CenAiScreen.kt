@@ -191,7 +191,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
-    val store = remember { ChatStore(context) }
+    val store = remember { ChatStore(context, vault) }
     val updater = remember { UpdateManager(context) }
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
