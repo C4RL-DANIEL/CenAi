@@ -66,12 +66,8 @@ class LocalModelRuntime(context: Context) {
                     "Bundled Lightning model is incomplete or has an unexpected size."
                 }
                 closeEngineLocked()
-                if (modelFile.exists() && !modelFile.delete()) {
-                    throw IllegalStateException("Could not replace the incomplete Lightning model file.")
-                }
-                if (!temporary.renameTo(modelFile)) {
-                    throw IllegalStateException("Could not install Lightning into private app storage.")
-                }
+                // Use POSIX rename so the large model is committed atomically on Android filesystems.
+                android.system.Os.rename(temporary.absolutePath, modelFile.absolutePath)
                 true
             } catch (error: Exception) {
                 temporary.delete()
