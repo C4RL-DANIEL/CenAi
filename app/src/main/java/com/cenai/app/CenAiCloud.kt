@@ -41,6 +41,12 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         }
     }
 
+    private fun activeOwnerId(): String = vault.get("supabase_user_id")
+
+    private fun accessToken(ownerId: String): String =
+        if (ownerId.isNotBlank() && vault.get("supabase_user_id") == ownerId)
+            vault.getUserSecret(ownerId, "supabase_access_token") else ""
+
     private fun authPayload(action: String, email: String = "", password: String = "", refreshToken: String = ""): JSONObject {
         val payload = JSONObject(NativeCore.buildAuthPayload(action, email, password, refreshToken))
         val error = payload.optString("error")
@@ -63,19 +69,26 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         return AccountResult("Signed in as ${email.trim()}.", true)
     }
 
-    private fun saveSession(data: JSONObject, email: String) {
+    private fun saveSession(data: JSONObject, email: String, expectedOwnerId: String? = null) {
         val session = JSONObject(NativeCore.parseAuthSession(data.toString()))
         val error = session.optString("error")
         if (error.isNotBlank()) throw IOException(error)
         val accessToken = session.optString("access_token")
         val refreshToken = session.optString("refresh_token")
         val ownerId = session.optString("user_id")
+        if (ownerId.isBlank() || (expectedOwnerId != null && ownerId != expectedOwnerId)) {
+            throw IOException("The refreshed CenAI session belongs to a different account. Sign in again.")
+        }
+        if (expectedOwnerId != null && vault.get("supabase_user_id") != expectedOwnerId) {
+            throw IOException("The active CenAI account changed during session refresh. Request cancelled.")
+        }
         val accountEmail = session.optString("email").ifBlank { email }
         vault.putSecret("supabase_access_token", accessToken)
         vault.putSecret("supabase_refresh_token", refreshToken)
         vault.put("supabase_user_id", ownerId)
         vault.putUserSecret(ownerId, "supabase_access_token", accessToken)
         vault.putUserSecret(ownerId, "supabase_refresh_token", refreshToken)
+        vault.putUser(ownerId, "account_email", accountEmail)
         vault.put("supabase_account_email", accountEmail)
     }
 
@@ -91,47 +104,57 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         vault.put("supabase_account_email", "")
     }
 
-    suspend fun refreshSession(): Boolean {
-        if (vault.get("supabase_user_id").isBlank()) return false
-        val refresh = vault.getSecret("supabase_refresh_token")
+    suspend fun refreshSession(expectedOwnerId: String = activeOwnerId()): Boolean {
+        if (expectedOwnerId.isBlank() || activeOwnerId() != expectedOwnerId) return false
+        val refresh = vault.getUserSecret(expectedOwnerId, "supabase_refresh_token")
         if (refresh.isBlank()) return false
         return try {
             val data = post("$BASE_URL/auth/v1/token?grant_type=refresh_token", authPayload("refresh", refreshToken = refresh))
             if (data.optString("access_token").isBlank()) false else {
-                saveSession(data, vault.get("supabase_account_email"))
-                true
+                val parsed = JSONObject(NativeCore.parseAuthSession(data.toString()))
+                if (parsed.optString("user_id") != expectedOwnerId || activeOwnerId() != expectedOwnerId) {
+                    false
+                } else {
+                    saveSession(data, vault.getUser(expectedOwnerId, "account_email", vault.get("supabase_account_email")), expectedOwnerId)
+                    true
+                }
             }
         } catch (_: Exception) { false }
     }
 
     suspend fun paypalBilling(action: String, payload: JSONObject = JSONObject()): JSONObject {
-        var token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        var token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         payload.put("action", action)
         return try {
             post("$BASE_URL/functions/v1/cenai-paypal-billing", payload, token)
         } catch (error: IOException) {
-            if (!refreshSession()) throw error
-            token = vault.getSecret("supabase_access_token")
+            if (!refreshSession(ownerId)) throw error
+            token = accessToken(ownerId)
+            if (token.isBlank()) throw IOException("Your CenAI session changed. Sign in again.")
             post("$BASE_URL/functions/v1/cenai-paypal-billing", payload, token)
         }
     }
 
     suspend fun call(action: String, payload: JSONObject = JSONObject()): JSONObject {
-        var token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        var token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         return try {
             post("$BASE_URL/functions/v1/cenai-control-plane", payload.put("action", action), token)
-        } catch (e: IOException) {
-            if (!refreshSession()) throw e
-            token = vault.getSecret("supabase_access_token")
+        } catch (error: IOException) {
+            if (!refreshSession(ownerId)) throw error
+            token = accessToken(ownerId)
+            if (token.isBlank()) throw IOException("Your CenAI session changed. Sign in again.")
             post("$BASE_URL/functions/v1/cenai-control-plane", payload.put("action", action), token)
         }
     }
 
     suspend fun startBillingCheckout(plan: String): String {
         require(plan in setOf("supporter", "pro")) { "Choose a supported CenAI plan." }
-        var token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        var token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val payload = JSONObject().put("plan", plan)
         return try {
@@ -139,8 +162,9 @@ class CenAiCloud(private val vault: SecureKeyStore) {
                 .takeIf { it.startsWith("https://checkout.stripe.com/") }
                 ?: throw IOException("The billing service did not return a valid checkout link.")
         } catch (error: IOException) {
-            if (!refreshSession()) throw error
-            token = vault.getSecret("supabase_access_token")
+            if (!refreshSession(ownerId)) throw error
+            token = accessToken(ownerId)
+            if (token.isBlank()) throw IOException("Your CenAI session changed. Sign in again.")
             post("$BASE_URL/functions/v1/cenai-billing", payload, token).optString("checkoutUrl")
                 .takeIf { it.startsWith("https://checkout.stripe.com/") }
                 ?: throw IOException("The billing service did not return a valid checkout link.")
@@ -148,13 +172,15 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     private suspend fun telemetryCall(payload: JSONObject): JSONObject {
-        var token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        var token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         return try {
             post("$BASE_URL/functions/v1/cenai-telemetry", payload, token)
         } catch (error: IOException) {
-            if (!refreshSession()) throw error
-            token = vault.getSecret("supabase_access_token")
+            if (!refreshSession(ownerId)) throw error
+            token = accessToken(ownerId)
+            if (token.isBlank()) throw IOException("Your CenAI session changed. Sign in again.")
             post("$BASE_URL/functions/v1/cenai-telemetry", payload, token)
         }
     }
@@ -172,20 +198,23 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     suspend fun sendEmailOtp(): String {
-        val token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        val token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val data = post("https://cenai-website.cenai-app.workers.dev/api/email-otp", JSONObject().put("action", "send"), token)
+        if (activeOwnerId() != ownerId) throw IOException("The active CenAI account changed during email verification.")
         return data.optString("message", "Verification code sent.")
     }
 
     suspend fun verifyEmailOtp(code: String): String {
         val validation = NativeCore.validateEmailOtp(code)
         require(validation == "OK") { validation }
-        val token = vault.getSecret("supabase_access_token")
+        val ownerId = activeOwnerId()
+        val token = accessToken(ownerId)
         if (token.isBlank()) throw IOException("Sign in to your CenAI account first.")
         val data = post("https://cenai-website.cenai-app.workers.dev/api/email-otp", JSONObject().put("action", "verify").put("code", code), token)
         if (!data.optBoolean("verified")) throw IOException("Email verification was not confirmed.")
-        val ownerId = vault.get("supabase_user_id")
+        if (activeOwnerId() != ownerId) throw IOException("The active CenAI account changed during email verification.")
         vault.putUser(ownerId, "cenai_email_verified", "true")
         return data.optString("message", "Email verified.")
     }
@@ -195,6 +224,9 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         return ownerId.isNotBlank() && vault.getUser(ownerId, "cenai_email_verified", "false") == "true"
     }
 
-    fun accountEmail(): String = if (vault.get("supabase_user_id").isNotBlank()) vault.get("supabase_account_email") else ""
-    fun isSignedIn(): Boolean = vault.get("supabase_user_id").isNotBlank() && vault.getSecret("supabase_access_token").isNotBlank()
+    fun accountEmail(): String {
+        val ownerId = activeOwnerId()
+        return if (ownerId.isNotBlank()) vault.getUser(ownerId, "account_email", vault.get("supabase_account_email")) else ""
+    }
+    fun isSignedIn(): Boolean = accessToken(activeOwnerId()).isNotBlank()
 }
