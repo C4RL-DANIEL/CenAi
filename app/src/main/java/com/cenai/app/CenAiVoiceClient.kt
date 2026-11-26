@@ -100,8 +100,8 @@ class CenAiVoiceClient(private val vault: SecureKeyStore) {
         const val VOICE_PROFILE = "cenai-en-v1"
         const val MAX_TEXT_CHARS = 1_000
         private const val MAX_AUDIO_BYTES = 32 * 1024 * 1024
-        private const val STATUS_URL = "https://cenai-website.vercel.app/api/voice/status"
-        private const val SPEECH_URL = "https://cenai-website.vercel.app/api/voice/speech"
+        private const val STATUS_URL = "https://cenai-website.cenai-app.workers.dev/api/voice/status"
+        private const val SPEECH_URL = "https://cenai-website.cenai-app.workers.dev/api/voice/speech"
         private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
 
         internal fun validateWav(bytes: ByteArray) {
