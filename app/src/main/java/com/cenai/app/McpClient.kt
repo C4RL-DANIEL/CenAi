@@ -258,10 +258,15 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
                 val bytes = address.address
                 val mappedV4 = bytes.take(10).all { it == 0.toByte() } &&
                     bytes[10] == 0xff.toByte() && bytes[11] == 0xff.toByte()
-                val uniqueLocal = (bytes[0].toInt() and 0xfe) == 0xfc
+                val first = bytes[0].toInt() and 0xff
+                val globalUnicast = first in 0x20..0x3f
+                val uniqueLocal = (first and 0xfe) == 0xfc
                 val documentation = bytes[0] == 0x20.toByte() && bytes[1] == 0x01.toByte() &&
                     bytes[2] == 0x0d.toByte() && bytes[3] == 0xb8.toByte()
-                mappedV4 || uniqueLocal || documentation
+                val special2001 = bytes[0] == 0x20.toByte() && bytes[1] == 0x01.toByte() &&
+                    (bytes[2].toInt() and 0xf0) == 0
+                val sixToFour = bytes[0] == 0x20.toByte() && bytes[1] == 0x02.toByte()
+                mappedV4 || !globalUnicast || uniqueLocal || documentation || special2001 || sixToFour
             }
             else -> true
         }
