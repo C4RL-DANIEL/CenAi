@@ -35,7 +35,6 @@ declare
   v_global_used numeric(14,2) := 0;
   v_event_id bigint;
 begin
-  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service role required'; end if;
   if p_user_id is null or p_characters is null or p_characters < 1 or p_characters > 1000
      or p_user_daily_character_limit < 1 or p_user_daily_character_limit > 1000
      or p_global_daily_neuron_limit < 100 or p_global_daily_neuron_limit > 10000 then
@@ -71,7 +70,6 @@ language plpgsql security definer set search_path = ''
 as $function$
 declare v_updated bigint;
 begin
-  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service role required'; end if;
   if p_user_id is null or p_event_id is null or p_status not in ('success','error') then return false; end if;
   update public.cenai_voice_usage_events
     set status=p_status,completed_at=now()
