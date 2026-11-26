@@ -142,7 +142,7 @@ class McpClient(private val vault: SecureKeyStore) {
         val body = JSONObject().put("jsonrpc", "2.0").put("method", "notifications/initialized")
         val request = requestBuilder(config, connection).post(body.toString().toRequestBody(jsonType)).build()
         clientFor(connection).newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("MCP initialization notification failed (HTTP \${response.code}).")
+            if (!response.isSuccessful) throw IOException("MCP initialization notification failed (HTTP ${response.code}).")
         }
     }
 
@@ -152,12 +152,12 @@ class McpClient(private val vault: SecureKeyStore) {
         val request = requestBuilder(config, connection).post(body.toString().toRequestBody(jsonType)).build()
         clientFor(connection).newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IOException("MCP request failed (HTTP \${response.code}): \${raw.take(400)}")
+            if (!response.isSuccessful) throw IOException("MCP request failed (HTTP ${response.code}): ${raw.take(400)}")
             connection.sessionId = response.header("Mcp-Session-Id") ?: connection.sessionId
             val envelope = parseJsonOrSse(raw)
             val error = envelope.optJSONObject("error")
-            if (error != null) throw IOException("MCP \${method} error: \${error.optString("message", "Unknown server error").take(400)}")
-            return envelope.optJSONObject("result") ?: throw IOException("MCP \${method} returned no result.")
+            if (error != null) throw IOException("MCP ${method} error: ${error.optString("message", "Unknown server error").take(400)}")
+            return envelope.optJSONObject("result") ?: throw IOException("MCP ${method} returned no result.")
         }
     }
 
@@ -167,7 +167,7 @@ class McpClient(private val vault: SecureKeyStore) {
             .header("Content-Type", "application/json")
             .header("MCP-Protocol-Version", config.protocolVersion)
         connection.sessionId?.let { builder.header("Mcp-Session-Id", it) }
-        vault.getSecret("mcp_auth_\${config.serverId}").takeIf { it.isNotBlank() }?.let {
+        vault.getSecret("mcp_auth_${config.serverId}").takeIf { it.isNotBlank() }?.let {
             builder.header("Authorization", "Bearer $it")
         }
         return builder
@@ -332,7 +332,7 @@ class McpClient(private val vault: SecureKeyStore) {
                     val properties = schema.optJSONObject("properties") ?: JSONObject()
                     val required = schema.optJSONArray("required") ?: JSONArray()
                     for (i in 0 until required.length()) {
-                        require(value.has(required.getString(i))) { "Required MCP argument '\${required.getString(i)}' is missing." }
+                        require(value.has(required.getString(i))) { "Required MCP argument '${required.getString(i)}' is missing." }
                     }
                     val keys = value.keys()
                     while (keys.hasNext()) {
