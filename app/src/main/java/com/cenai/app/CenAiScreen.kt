@@ -1327,7 +1327,7 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                                         Text(server.serverId + " · " + server.publisher, color = palette.text, fontWeight = FontWeight.SemiBold)
                                         Text(server.endpointUrl, color = palette.muted, fontSize = 10.sp)
                                         Text(server.capabilities.size.toString() + " declared capabilities · publisher unverified", color = palette.muted, fontSize = 10.sp)
-                                        Text(server.capabilities.joinToString(" · ") { it.name + if (it.requiresSensitiveRead || it.requiresExternalWrite) " (approval)" else "" }, color = palette.muted, fontSize = 10.sp)
+                                        Text(server.capabilities.joinToString(" · ") { it.name + " [" + it.requiredScopes.joinToString(", ") + "]" + if (it.requiresSensitiveRead || it.requiresExternalWrite) " (approval)" else "" }, color = palette.muted, fontSize = 10.sp)
                                         TextButton(enabled = !mcpBusy, onClick = {
                                             runCatching { mcpRegistry.remove(server.serverId) }
                                                 .onSuccess { mcpConnectedServers = mcpRegistry.servers(); mcpStatus = "Server disconnected and its saved credential revoked." }
