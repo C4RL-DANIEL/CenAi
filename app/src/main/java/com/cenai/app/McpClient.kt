@@ -47,7 +47,7 @@ data class McpToolDefinition(
 )
 
 /** Guarded MCP Streamable HTTP transport. Discovery and sensitive execution require explicit approval. */
-class McpClient(private val vault: SecureKeyStore) {
+class McpClient(private val vault: SecureKeyStore, private val ownerId: String = vault.get("supabase_user_id").ifBlank { "guest" }) {
     private val requestIds = AtomicLong(1)
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
@@ -111,12 +111,12 @@ class McpClient(private val vault: SecureKeyStore) {
     fun saveBearerCredential(serverId: String, token: String) {
         require(serverId.matches(SERVER_ID)) { "MCP server identity is invalid." }
         require(token.length <= 8_192) { "MCP credential is too long." }
-        vault.putSecret("mcp_auth_$serverId", token.trim())
+        vault.putUserSecret(ownerId, "mcp_auth_$serverId", token.trim())
     }
 
     fun removeBearerCredential(serverId: String) {
         require(serverId.matches(SERVER_ID)) { "MCP server identity is invalid." }
-        vault.putSecret("mcp_auth_$serverId", "")
+        vault.putUserSecret(ownerId, "mcp_auth_$serverId", "")
     }
 
     private data class Connection(val url: HttpUrl, val addresses: List<InetAddress>, var sessionId: String? = null)
@@ -168,7 +168,7 @@ class McpClient(private val vault: SecureKeyStore) {
             .header("Content-Type", "application/json")
             .header("MCP-Protocol-Version", config.protocolVersion)
         connection.sessionId?.let { builder.header("Mcp-Session-Id", it) }
-        vault.getSecret("mcp_auth_${config.serverId}").takeIf { it.isNotBlank() }?.let {
+        vault.getUserSecret(ownerId, "mcp_auth_${config.serverId}").takeIf { it.isNotBlank() }?.let {
             builder.header("Authorization", "Bearer $it")
         }
         return builder
