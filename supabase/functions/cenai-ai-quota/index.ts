@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
       const globalUsed = Number(globalRow?.reserved_neurons || 0);
       return reply(200, { ok: true, quota: {
         dailyCharacterLimit: 1000, dailyCharactersUsed: userUsed,
-        voiceNeuronAllocation: 4000, globalNeuronLimit: 4000,
+        voiceNeuronAllocation: 4000, globalNeuronLimit: 8000,
         globalNeuronsUsed: Number(globalUsed.toFixed(2)),
         resetsAt: new Date(dayStart.getTime() + 86400000).toISOString()
       } });
