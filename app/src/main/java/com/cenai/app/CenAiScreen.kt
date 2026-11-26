@@ -801,17 +801,40 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             message = message, index = index, last = index == messages.lastIndex,
                             busy = busy, style = vault.get("ui_style", "AURORA"),
                             onApproveDeviceAction = { name, rawArgs ->
-                                runCatching { DeviceActionManager(context).execute(name, JSONObject(rawArgs)) }
-                                    .onSuccess { result ->
-                                        info = result
-                                        val updated = messages.map { item ->
-                                            if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
-                                                ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + result)
-                                            } else item
-                                        }
-                                        persist(updated)
+                                scope.launch {
+                                    val arguments = runCatching { JSONObject(rawArgs) }.getOrElse {
+                                        error = "The approved action arguments were invalid."
+                                        return@launch
                                     }
-                                    .onFailure { error = it.message ?: "Android action could not be opened." }
+                                    val mcpExecution = runCatching { mcpRegistry.execute(name, arguments, approveSensitiveAction = true) }
+                                        .getOrElse {
+                                            error = it.message ?: "MCP action failed."
+                                            null
+                                        }
+                                    if (mcpExecution != null) {
+                                        if (mcpExecution.completed) {
+                                            info = mcpExecution.output
+                                            val updated = messages.map { item ->
+                                                if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
+                                                    ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + mcpExecution.output)
+                                                } else item
+                                            }
+                                            persist(updated)
+                                        } else error = mcpExecution.output
+                                    } else {
+                                        runCatching { DeviceActionManager(context).execute(name, arguments) }
+                                            .onSuccess { result ->
+                                                info = result
+                                                val updated = messages.map { item ->
+                                                    if (item.role == "tool" && item.content.contains("\nARGS:$rawArgs")) {
+                                                        ChatMessage("tool", item.content.replaceFirst("Approval required", "Completed").substringBefore("\nARGS:") + "\n" + result)
+                                                    } else item
+                                                }
+                                                persist(updated)
+                                            }
+                                            .onFailure { error = it.message ?: "Android action could not be opened." }
+                                    }
+                                }
                             },
                             onCopy = { clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]"))); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
