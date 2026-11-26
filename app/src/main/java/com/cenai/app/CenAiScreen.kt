@@ -201,9 +201,9 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
-    val sandboxClient = remember { CenAiSandboxClient(vault) }
+    val sandboxClient = remember(activeAccountId) { CenAiSandboxClient(vault, activeAccountId) }
     var sandboxAgentEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "sandbox_agent_enabled", "false").toBoolean()) }
-    val voiceClient = remember { CenAiVoiceClient(vault) }
+    val voiceClient = remember(activeAccountId) { CenAiVoiceClient(vault, activeAccountId) }
     val voicePlayback = remember { CenAiVoicePlayback() }
     var cloudVoiceEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "cloud_voice_enabled", "false").toBoolean()) }
     var cloudVoiceReady by remember(activeAccountId) { mutableStateOf(false) }
