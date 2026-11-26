@@ -968,6 +968,14 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
         var backgroundTaskPrompt by remember { mutableStateOf("") }
         var backgroundTaskDelay by remember { mutableStateOf("15") }
         var backgroundTaskStatus by remember { mutableStateOf("") }
+        var mcpServerId by remember(activeAccountId) { mutableStateOf("") }
+        var mcpEndpoint by remember(activeAccountId) { mutableStateOf("") }
+        var mcpPublisher by remember(activeAccountId) { mutableStateOf("") }
+        var mcpBearerToken by remember(activeAccountId) { mutableStateOf("") }
+        var mcpManifest by remember(activeAccountId) { mutableStateOf("""[{"name":"search","description":"Search approved records","inputSchema":{"type":"object","properties":{"query":{"type":"string","maxLength":200}},"required":["query"],"additionalProperties":false},"requiredScopes":["read"],"requiresSensitiveRead":false,"requiresExternalWrite":false}]""") }
+        var mcpStatus by remember(activeAccountId) { mutableStateOf("") }
+        var mcpBusy by remember(activeAccountId) { mutableStateOf(false) }
+        var mcpConnectedServers by remember(activeAccountId) { mutableStateOf(mcpRegistry.servers()) }
         var uiStyle by remember { mutableStateOf(vault.get("ui_style", "AURORA")) }
         AlertDialog(
             modifier = Modifier.fillMaxSize().padding(8.dp).widthIn(max = 1120.dp),
@@ -1234,6 +1242,55 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                     }
                     HorizontalDivider(color = palette.raised)
                     
+                    }
+                    if (selectedSettingsPage == "Agents") {
+                        Text("MODEL CONTEXT PROTOCOL", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Connect a manually configured MCP Streamable-HTTP server. Connecting approves the declared scopes; sensitive reads and external writes still require a separate approval each time. Publisher identity is not cryptographically verified by this manual flow.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                        OutlinedTextField(mcpServerId, { mcpServerId = it.take(128) }, label = { Text("Server ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mcpEndpoint, { mcpEndpoint = it.take(2_048) }, label = { Text("Public HTTPS endpoint (port 443)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mcpPublisher, { mcpPublisher = it.take(160) }, label = { Text("Publisher name (unverified)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mcpBearerToken, { mcpBearerToken = it.take(8_192) }, label = { Text("Optional bearer token") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(mcpManifest, { mcpManifest = it.take(128_000) }, label = { Text("Declared capabilities manifest · JSON array") }, minLines = 5, modifier = Modifier.fillMaxWidth())
+                        Button(
+                            enabled = !mcpBusy && mcpServerId.isNotBlank() && mcpEndpoint.startsWith("https://") && mcpPublisher.isNotBlank() && mcpManifest.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                mcpBusy = true
+                                mcpStatus = "Validating manifest and connecting to the server…"
+                                scope.launch {
+                                    try {
+                                        val tools = mcpRegistry.approveAndConnect(
+                                            mcpServerId.trim(), mcpEndpoint.trim(), mcpPublisher.trim(), mcpManifest, mcpBearerToken
+                                        )
+                                        mcpConnectedServers = mcpRegistry.servers()
+                                        mcpStatus = "Connected. Discovered " + tools.size + " approved tools."
+                                        mcpBearerToken = ""
+                                    } catch (failure: Exception) {
+                                        mcpStatus = failure.message ?: "MCP connection failed."
+                                    } finally { mcpBusy = false }
+                                }
+                            }
+                        ) { Text(if (mcpBusy) "Connecting…" else "Approve & connect MCP server") }
+                        if (mcpStatus.isNotBlank()) Text(mcpStatus, color = palette.muted, fontSize = 11.sp)
+                        if (mcpConnectedServers.isNotEmpty()) {
+                            Text("CONNECTED SERVERS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            mcpConnectedServers.forEach { server ->
+                                Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        Text(server.serverId + " · " + server.publisher, color = palette.text, fontWeight = FontWeight.SemiBold)
+                                        Text(server.endpointUrl, color = palette.muted, fontSize = 10.sp)
+                                        Text(server.capabilities.size.toString() + " declared capabilities · publisher unverified", color = palette.muted, fontSize = 10.sp)
+                                        Text(server.capabilities.joinToString(" · ") { it.name + if (it.requiresSensitiveRead || it.requiresExternalWrite) " (approval)" else "" }, color = palette.muted, fontSize = 10.sp)
+                                        TextButton(enabled = !mcpBusy, onClick = {
+                                            runCatching { mcpRegistry.remove(server.serverId) }
+                                                .onSuccess { mcpConnectedServers = mcpRegistry.servers(); mcpStatus = "Server disconnected and its saved credential revoked." }
+                                                .onFailure { mcpStatus = it.message ?: "Could not remove MCP server." }
+                                        }) { Text("Disconnect") }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = palette.raised)
                     }
                     if (selectedSettingsPage == "AI & models") {
 Text("ACCOUNT CONNECTIONS", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
