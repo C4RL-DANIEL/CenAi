@@ -59,14 +59,21 @@ class CenAiCloud(private val vault: SecureKeyStore) {
     }
 
     private fun saveSession(data: JSONObject, email: String) {
+        val user = data.optJSONObject("user") ?: throw IllegalStateException("Authentication response did not include an account identity.")
+        val userId = user.optString("id").trim().lowercase()
+        require(runCatching { java.util.UUID.fromString(userId).toString() == userId }.getOrDefault(false)) {
+            "Authentication response did not include a valid immutable account UUID."
+        }
         vault.putSecret("supabase_access_token", data.optString("access_token"))
         vault.putSecret("supabase_refresh_token", data.optString("refresh_token"))
-        vault.put("supabase_account_email", data.optJSONObject("user")?.optString("email")?.ifBlank { email } ?: email)
+        vault.put("supabase_user_id", userId)
+        vault.put("supabase_account_email", user.optString("email").ifBlank { email })
     }
 
     fun signOut() {
         vault.putSecret("supabase_access_token", "")
         vault.putSecret("supabase_refresh_token", "")
+        vault.put("supabase_user_id", "")
         vault.put("supabase_account_email", "")
         vault.put("cenai_email_verified", "false")
     }
@@ -76,7 +83,12 @@ class CenAiCloud(private val vault: SecureKeyStore) {
         if (refresh.isBlank()) return false
         return try {
             val data = post("$BASE_URL/auth/v1/token?grant_type=refresh_token", JSONObject().put("refresh_token", refresh))
-            if (data.optString("access_token").isBlank()) false else {
+            val refreshedId = data.optJSONObject("user")?.optString("id").orEmpty().trim().lowercase()
+            val activeId = vault.get("supabase_user_id").trim().lowercase()
+            if (data.optString("access_token").isBlank() || refreshedId.isBlank() || refreshedId != activeId) {
+                signOut()
+                false
+            } else {
                 saveSession(data, vault.get("supabase_account_email"))
                 true
             }
