@@ -111,6 +111,12 @@ jobs:
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
           test -n "$APK"
           sha256sum "$APK" > "$APK.sha256"
+      - name: Verify Lightning model is packaged in the debug APK
+        run: |
+          APK="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$APK"
+          ENTRY_SIZE="$(unzip -l "$APK" | awk '$4 == "assets/models/lightning.litertlm" { print $1 }')"
+          test "$ENTRY_SIZE" = "613722264" || { echo "::error::Expected the 613722264-byte Lightning model asset inside the APK; found '${ENTRY_SIZE:-missing}'."; exit 1; }
       - name: Check release signing readiness without exposing secrets
         id: signing_readiness
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
