@@ -53,7 +53,7 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-paypal-billing cenai-public-api cenai-telemetry; do
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-paypal-billing cenai-public-api cenai-telemetry; do
             deno check --no-lock "supabase/functions/$function/index.ts"
           done
 
@@ -96,6 +96,11 @@ jobs:
           grep -q 'refund-requests-content' website/admin/index.html
           for script in website/*.js website/api/*.js website/api/v1/*.js website/admin/*.js; do node --check "$script"; done
           grep -q 'cenai-ai-quota' website/worker.js
+          grep -q '"cenai-memory"' website/worker.js
+          grep -q '"cenai-ecosystem"' website/worker.js
+          grep -q 'cenai_user_has_verified_mfa' supabase/migrations/20261121160000_cenai_mfa_service_check.sql
+          grep -q 'user_personal_memories' supabase/migrations/20261121120000_central_brain_personal_memory.sql
+          grep -q 'ecosystem_request_nonces' supabase/migrations/20261123100000_cenai_ecosystem_transport.sql
           grep -q 'url.pathname === "/api/sandbox"' website/worker.js
           grep -q 'url.pathname === "/api/voice/status"' website/worker.js
           grep -q 'url.pathname === "/api/voice/speech"' website/worker.js
