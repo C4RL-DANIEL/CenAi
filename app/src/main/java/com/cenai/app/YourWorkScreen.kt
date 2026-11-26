@@ -23,21 +23,28 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val store = remember(ownerId) { ProjectWorkspaceStore(context, vault, ownerId) }
+    val backupClient = remember(ownerId) { WorkspaceBackupClient(vault, ownerId) }
+    val scope = rememberCoroutineScope()
     var projects by remember { mutableStateOf(runCatching { store.list(includeArchived = true) }.getOrDefault(emptyList())) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
@@ -51,6 +58,9 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
     val selected = projects.firstOrNull { it.id == selectedId }
     var pendingExportBytes by remember { mutableStateOf<ByteArray?>(null) }
     var exportStatus by remember { mutableStateOf("") }
+    var backupPassphrase by remember { mutableStateOf("") }
+    var backupBusy by remember { mutableStateOf(false) }
+    var backupStatus by remember { mutableStateOf("") }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
         val bytes = pendingExportBytes
         if (uri != null && bytes != null) {
