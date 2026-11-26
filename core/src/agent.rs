@@ -160,7 +160,7 @@ pub fn tool_policy(name: &str, enabled_tools_json: &str) -> Result<String, Strin
     let risk = match name {
         "current_time" | "calculate" | "count_words" | "format_json" | "current_date"
         | "generate_uuid" | "text_stats" | "base64_encode" | "base64_decode" => "safe",
-        "open_url" | "open_dialer" | "share_text" | "open_app_settings" => "sensitive",
+        "open_url" | "open_dialer" | "share_text" | "open_app_settings" | "sandbox_run" => "sensitive",
         _ => return Ok(json!({
             "allowed": false,
             "risk": "unknown",
@@ -206,6 +206,13 @@ mod policy_tests {
             &tool_policy("share_text", r#"["calculate"]"#).unwrap()
         ).unwrap();
         assert_eq!(disabled["allowed"], false);
+        let sandbox: serde_json::Value = serde_json::from_str(
+            &tool_policy("sandbox_run", r#"["sandbox_run"]"#).unwrap()
+        ).unwrap();
+        assert_eq!(sandbox["allowed"], true);
+        assert_eq!(sandbox["risk"], "sensitive");
+        assert_eq!(sandbox["requires_approval"], true);
+
         let unknown: serde_json::Value = serde_json::from_str(
             &tool_policy("run_shell", "null").unwrap()
         ).unwrap();
