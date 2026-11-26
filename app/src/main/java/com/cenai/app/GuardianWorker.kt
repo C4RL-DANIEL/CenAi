@@ -59,5 +59,13 @@ class GuardianWorker(
             if (enabled) schedule(app)
             else WorkManager.getInstance(app).cancelUniqueWork(WORK_NAME)
         }
+
+        fun restoreEnabled(context: Context) {
+            val app = context.applicationContext
+            val enabled = app.getSharedPreferences("cenai_guardian", Context.MODE_PRIVATE)
+                .getBoolean("background_enabled", false)
+            if (enabled) schedule(app)
+            else WorkManager.getInstance(app).cancelUniqueWork(WORK_NAME)
+        }
     }
 }
