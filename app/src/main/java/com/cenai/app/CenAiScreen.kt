@@ -819,6 +819,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                         return@launch
                                     }
                                     if (name == "sandbox_run") {
+                                        if (!sandboxAgentEnabled) {
+                                            error = "Cloud sandbox access was disabled after this approval card was created."
+                                            return@launch
+                                        }
                                         try {
                                             val argumentArray = arguments.optJSONArray("arguments") ?: JSONArray()
                                             val commandArguments = List(argumentArray.length()) { index -> argumentArray.getString(index) }
@@ -856,6 +860,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                                             }
                                             persist(updated)
                                         } else error = mcpExecution.output
+                                    } else if (name.startsWith("mcp__")) {
+                                        error = "This MCP server or capability is no longer connected. Reconnect it before approving."
                                     } else {
                                         runCatching { DeviceActionManager(context).execute(name, arguments) }
                                             .onSuccess { result ->
