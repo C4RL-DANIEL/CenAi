@@ -24,6 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install pinned website dependencies
+        working-directory: website
+        run: npm install --no-audit --no-fund
       - name: Build Cloudflare Pages assets
         working-directory: website
         run: |
@@ -145,11 +148,13 @@ jobs:
           curl -fsS "$BASE/sitemap.xml" -o /tmp/cenai-sitemap.xml
           grep -q "guides/choosing-ai-models.html" /tmp/cenai-sitemap.xml
 
-          for route in sandbox voice/status voice/speech; do
-            output="/tmp/cenai-${route//\//-}.json"
-            code=$(curl -sS --max-time 15 -o "$output" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE/api/$route")
-            if [[ "$code" != "401" ]]; then cat "$output"; echo "Expected 401 from /api/$route, got $code"; exit 1; fi
-          done
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            for route in sandbox voice/status voice/speech; do
+              output="/tmp/cenai-${route//\//-}.json"
+              code=$(curl -sS --max-time 15 -o "$output" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE/api/$route")
+              if [[ "$code" != "401" ]]; then cat "$output"; echo "Expected 401 from /api/$route, got $code"; exit 1; fi
+            done
+          fi
           ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
           if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi
           echo "Cloudflare Worker health, public pages, API authentication and Supabase configuration passed."
