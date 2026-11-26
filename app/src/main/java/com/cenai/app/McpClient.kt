@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl
+import okhttp3.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -121,7 +122,7 @@ class McpClient(private val vault: SecureKeyStore) {
     private data class Connection(val url: HttpUrl, val addresses: List<InetAddress>, var sessionId: String? = null)
 
     private fun connect(config: McpServerConfig): Connection {
-        val url = HttpUrl.get(config.endpointUrl)
+        val url = config.endpointUrl.toHttpUrl()
         val connection = Connection(url, resolvePublicEndpoint(url))
         val initialized = request(
             config, connection, "initialize",
@@ -175,11 +176,13 @@ class McpClient(private val vault: SecureKeyStore) {
 
     private fun clientFor(connection: Connection): OkHttpClient =
         OkHttpClient.Builder()
-            .dns(Dns { host ->
-                if (!host.equals(connection.url.host, ignoreCase = true)) {
-                    throw UnknownHostException("MCP attempted to resolve an unapproved host.")
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    if (!hostname.equals(connection.url.host, ignoreCase = true)) {
+                        throw UnknownHostException("MCP attempted to resolve an unapproved host.")
+                    }
+                    return connection.addresses
                 }
-                connection.addresses
             })
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(45, TimeUnit.SECONDS)
