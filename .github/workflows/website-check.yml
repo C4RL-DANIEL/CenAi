@@ -146,8 +146,9 @@ jobs:
           grep -q "guides/choosing-ai-models.html" /tmp/cenai-sitemap.xml
 
           for route in sandbox voice/status voice/speech; do
-            code=$(curl -sS --max-time 15 -o "/tmp/cenai-$route.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE/api/$route")
-            if [[ "$code" != "401" ]]; then cat "/tmp/cenai-$route.json"; echo "Expected 401 from /api/$route, got $code"; exit 1; fi
+            output="/tmp/cenai-${route//\//-}.json"
+            code=$(curl -sS --max-time 15 -o "$output" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE/api/$route")
+            if [[ "$code" != "401" ]]; then cat "$output"; echo "Expected 401 from /api/$route, got $code"; exit 1; fi
           done
           ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
           if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi
