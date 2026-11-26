@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         GuardianMonitor(applicationContext).installCrashRecorder()
-        GuardianWorker.schedule(applicationContext)
+        GuardianWorker.restoreEnabled(applicationContext)
         val vault = SecureKeyStore(applicationContext)
         setContent { CenAiScreen(vault) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
