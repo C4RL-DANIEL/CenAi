@@ -31,7 +31,7 @@ class AccountWorkspaceStore(context: Context, val accountId: String) {
             updateAAD(aad(relativePath))
         }
         val envelope = MAGIC + iv + cipher.doFinal(plaintext)
-        val temp = File(parent, ".\${target.name}.\${java.util.UUID.randomUUID()}.tmp")
+        val temp = File(parent, ".${target.name}.${java.util.UUID.randomUUID()}.tmp")
         try {
             java.io.FileOutputStream(temp).use { stream ->
                 stream.write(envelope)
