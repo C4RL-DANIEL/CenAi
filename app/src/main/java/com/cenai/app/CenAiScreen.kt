@@ -372,8 +372,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val targetModel = targetSettings.getString("model")
                     val targetBase = targetSettings.getString("base_url")
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
-                    val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
-                    val enabledToolsJson = JSONArray().apply { toolEnabled.filterValues { it }.keys.forEach(::put) }.toString()
+                    val enabledToolSet = toolEnabled.filterValues { it }.keys.toMutableSet().apply {
+                        if (sandboxAgentEnabled) add("sandbox_run")
+                    }
+                    val runtime = AgentRuntime(enabledTools = enabledToolSet)
+                    val enabledToolsJson = JSONArray().apply { enabledToolSet.forEach(::put) }.toString()
                     val toolGuide = if (agentPlanning) {
                         listOf(
                             NativeCore.buildToolGuide(enabledToolsJson, true, true),
@@ -423,7 +426,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         if (visible.isNotBlank()) displayText += visible + "\n\n"
                         val execution = when {
                             decision.name == "sandbox_run" && sandboxAgentEnabled ->
-                                ToolExecution(decision.name, decision.arguments, "Cloud sandbox execution requires your approval.", true, false)
+                                runtime.execute(decision.name, decision.arguments)
                             else -> mcpRegistry.execute(decision.name, decision.arguments) ?: runtime.execute(decision.name, decision.arguments)
                         }
                         val current = messages.toMutableList()
