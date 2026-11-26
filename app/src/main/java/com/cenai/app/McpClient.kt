@@ -8,7 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl
-import okhttp3.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -217,7 +217,7 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
             }
             validateSchemaDefinition(capability.inputSchema, 0)
         }
-        HttpUrl.get(config.endpointUrl)
+        config.endpointUrl.toHttpUrl()
     }
 
     private fun resolvePublicEndpoint(url: HttpUrl): List<InetAddress> {
