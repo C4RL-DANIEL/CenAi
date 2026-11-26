@@ -1310,6 +1310,16 @@ Text("LOCAL TOOLS & PLUGINS", color = palette.accent, fontSize = 10.sp, fontWeig
                     if (selectedSettingsPage == "Agents") {
                         Text("CENAI CLOUD SANDBOX", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Text("Run an explicitly submitted command in an isolated per-account cloud microVM, not on this Android device. Commands and network access are allow-listed, outputs are bounded and sensitive output is redacted. Android may not be able to stop a request after the remote VM has started.", color = palette.muted, fontSize = 10.sp, lineHeight = 15.sp)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Allow the agent to request sandbox runs", color = palette.text, fontSize = 12.sp)
+                                Text("Every command pauses for your approval", color = palette.muted, fontSize = 10.sp)
+                            }
+                            Switch(checked = sandboxAgentEnabled, enabled = !sandboxAgentEnabled || cloudSignedIn, onCheckedChange = {
+                                sandboxAgentEnabled = it
+                                vault.putUser(activeAccountId, "sandbox_agent_enabled", it.toString())
+                            })
+                        }
                         OutlinedTextField(sandboxCommand, { sandboxCommand = it.take(32) }, label = { Text("Command") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(sandboxArguments, { sandboxArguments = it.take(16_000) }, label = { Text("Arguments · one per line") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(sandboxProjectId, { sandboxProjectId = it.take(80) }, label = { Text("Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
