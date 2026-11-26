@@ -69,6 +69,9 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
                     val schema = tool.optJSONObject("inputSchema")
                         ?: throw IOException("MCP tool '$name' did not provide an input schema.")
                     validateSchemaDefinition(schema, 0)
+                    require(jsonEquivalent(schema, capability.inputSchema)) {
+                        "MCP tool '$name' schema differs from the user-approved manifest."
+                    }
                     require(schema.toString().toByteArray().size <= MAX_SCHEMA_BYTES) { "MCP tool schema is too large." }
                     add(McpToolDefinition(
                         config.serverId, name,
@@ -279,6 +282,21 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
         private const val MAX_ARGUMENT_BYTES = 256 * 1024
         private val SERVER_ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val TOOL_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+        private fun jsonEquivalent(first: Any?, second: Any?): Boolean {
+            if (first is JSONObject && second is JSONObject) {
+                val firstKeys = first.keys().asSequence().toSet()
+                val secondKeys = second.keys().asSequence().toSet()
+                return firstKeys == secondKeys && firstKeys.all { key ->
+                    jsonEquivalent(first.opt(key), second.opt(key))
+                }
+            }
+            if (first is JSONArray && second is JSONArray) {
+                if (first.length() != second.length()) return false
+                return (0 until first.length()).all { index -> jsonEquivalent(first.opt(index), second.opt(index)) }
+            }
+            return first == second
+        }
 
         internal fun validateSchemaDefinition(schema: JSONObject, depth: Int) {
             require(depth <= 12) { "MCP schema is nested too deeply." }
