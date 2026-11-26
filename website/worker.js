@@ -1,5 +1,10 @@
 import { connect } from "cloudflare:sockets";
 
+function __name(target, value) {
+  Object.defineProperty(target, "name", { value, configurable: true });
+  return target;
+}
+
 const STATIC_CACHE_VERSION = "20261119-gmail-mime-line-wrap-1";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
