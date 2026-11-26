@@ -811,7 +811,29 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             },
                             onCopy = { clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]"))); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
-                            onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
+                            onSpeak = {
+                                if (cloudVoiceEnabled) {
+                                    scope.launch {
+                                        try {
+                                            if (!cloudVoiceReady) {
+                                                val health = voiceClient.status()
+                                                if (!health.optBoolean("ready")) throw IllegalStateException("CenAI Cloud Voice is not enabled on the service yet.")
+                                                cloudVoiceReady = true
+                                            }
+                                            val file = voiceClient.synthesizeToCache(context, message.content.take(CenAiVoiceClient.MAX_TEXT_CHARS))
+                                            appMonitor.recordEvent("voice_output")
+                                            monitorSnapshot = appMonitor.snapshot()
+                                            voicePlayback.play(file, onError = { error = it })
+                                        } catch (failure: Exception) {
+                                            error = failure.message ?: "CenAI Cloud Voice could not synthesize this response."
+                                        }
+                                    }
+                                } else if (speechOutputReady) {
+                                    appMonitor.recordEvent("voice_output")
+                                    monitorSnapshot = appMonitor.snapshot()
+                                    textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index")
+                                } else info = "Speech output is not ready yet."
+                            },
                             onEdit = { editIndex = index; editText = message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]") },
                             onRegenerate = {
                                 val before = messages.take(index)
