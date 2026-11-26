@@ -51,5 +51,13 @@ class GuardianWorker(
                 request
             )
         }
+
+        fun setEnabled(context: Context, enabled: Boolean) {
+            val app = context.applicationContext
+            app.getSharedPreferences("cenai_guardian", Context.MODE_PRIVATE)
+                .edit().putBoolean("background_enabled", enabled).apply()
+            if (enabled) schedule(app)
+            else WorkManager.getInstance(app).cancelUniqueWork(WORK_NAME)
+        }
     }
 }
