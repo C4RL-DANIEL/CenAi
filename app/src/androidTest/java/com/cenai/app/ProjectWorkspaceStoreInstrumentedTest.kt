@@ -48,8 +48,21 @@ class ProjectWorkspaceStoreInstrumentedTest {
 
     @Test
     fun projectMetadataDoesNotCrossAccountBoundaries() {
-        val first = ProjectWorkspaceStore(context, SecureKeyStore(context))
-        val project = first.create("Private project")
-        assertTrue(first.list().any { it.id == project.id })
+        val vault = SecureKeyStore(context)
+        val previous = vault.get("supabase_user_id")
+        val firstId = java.util.UUID.randomUUID().toString()
+        val secondId = java.util.UUID.randomUUID().toString()
+        try {
+            vault.put("supabase_user_id", firstId)
+            val first = ProjectWorkspaceStore(context, vault)
+            val project = first.create("Private project")
+            vault.put("supabase_user_id", secondId)
+            val second = ProjectWorkspaceStore(context, vault)
+            assertFalse(second.list(includeArchived = true).any { it.id == project.id })
+            vault.put("supabase_user_id", firstId)
+            first.delete(project.id)
+        } finally {
+            vault.put("supabase_user_id", previous)
+        }
     }
 }
