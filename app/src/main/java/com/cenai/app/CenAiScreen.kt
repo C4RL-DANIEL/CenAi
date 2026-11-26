@@ -197,6 +197,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
+    val voiceClient = remember { CenAiVoiceClient(vault) }
+    val voicePlayback = remember { CenAiVoicePlayback() }
+    var cloudVoiceEnabled by remember { mutableStateOf(vault.get("cloud_voice_enabled", "false").toBoolean()) }
+    var cloudVoiceReady by remember { mutableStateOf(false) }
+    DisposableEffect(voicePlayback) { onDispose { voicePlayback.stop() } }
     var speechOutputReady by remember { mutableStateOf(false) }
     var speechRate by remember { mutableFloatStateOf(vault.get("speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
     var speechPitch by remember { mutableFloatStateOf(vault.get("speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
@@ -790,7 +795,29 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                             },
                             onCopy = { clipboard.setText(AnnotatedString(message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]"))); info = "Copied to clipboard." },
                             onCopyCode = { code -> clipboard.setText(AnnotatedString(code)); info = "Code copied to clipboard." },
-                            onSpeak = { if (speechOutputReady) { appMonitor.recordEvent("voice_output"); monitorSnapshot = appMonitor.snapshot(); textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index") } else info = "Speech output is not ready yet." },
+                            onSpeak = {
+                                if (cloudVoiceEnabled) {
+                                    scope.launch {
+                                        try {
+                                            if (!cloudVoiceReady) {
+                                                val health = voiceClient.status()
+                                                if (!health.optBoolean("ready")) throw IllegalStateException("CenAI Cloud Voice is not enabled on the service yet.")
+                                                cloudVoiceReady = true
+                                            }
+                                            val file = voiceClient.synthesizeToCache(context, message.content.take(CenAiVoiceClient.MAX_TEXT_CHARS))
+                                            appMonitor.recordEvent("voice_output")
+                                            monitorSnapshot = appMonitor.snapshot()
+                                            voicePlayback.play(file, onError = { error = it })
+                                        } catch (failure: Exception) {
+                                            error = failure.message ?: "CenAI Cloud Voice could not synthesize this response."
+                                        }
+                                    }
+                                } else if (speechOutputReady) {
+                                    appMonitor.recordEvent("voice_output")
+                                    monitorSnapshot = appMonitor.snapshot()
+                                    textToSpeech.speak(message.content, TextToSpeech.QUEUE_FLUSH, null, "cenai-$currentId-$index")
+                                } else info = "Speech output is not ready yet."
+                            },
                             onEdit = { editIndex = index; editText = message.content.replace(Regex("""\[\[CENAI_IMAGE\|[^|]+\|[A-Za-z0-9+/=]+]]"""), "[Image attached]") },
                             onRegenerate = {
                                 val before = messages.take(index)
@@ -983,7 +1010,50 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     
                     }
                     if (selectedSettingsPage == "AI & models") {
-Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text("CENAI CLOUD VOICE · AURA-1", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("Optional authenticated cloud speech. The selected text is sent to CenAI Voice only when you press Read aloud. English only; up to 1,000 characters per request.", color = palette.muted, fontSize = 10.sp)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Use CenAI Cloud Voice for Read aloud", color = palette.text, fontSize = 12.sp)
+                                    Text(if (cloudVoiceReady) "Service reports ready" else "Check service status before enabling", color = palette.muted, fontSize = 10.sp)
+                                }
+                                Switch(checked = cloudVoiceEnabled, enabled = cloudVoiceReady && cloudSignedIn, onCheckedChange = {
+                                    cloudVoiceEnabled = it
+                                    vault.put("cloud_voice_enabled", it.toString())
+                                })
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(enabled = !cloudBusy && cloudSignedIn, modifier = Modifier.weight(1f), onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            val health = voiceClient.status()
+                                            cloudVoiceReady = health.optBoolean("ready")
+                                            cloudStatus = if (cloudVoiceReady) "CenAI Voice ready · " + health.optString("profile", "Aura-1") else "CenAI Voice is not enabled."
+                                        } catch (failure: Exception) {
+                                            cloudVoiceReady = false
+                                            cloudStatus = failure.message ?: "CenAI Voice status could not be checked."
+                                        } finally { cloudBusy = false }
+                                    }
+                                }) { Text("Check service") }
+                                OutlinedButton(enabled = cloudVoiceReady && cloudSignedIn && !cloudBusy, modifier = Modifier.weight(1f), onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            val file = voiceClient.synthesizeToCache(context, "Hello. This is CenAI Cloud Voice.")
+                                            voicePlayback.play(file, onError = { cloudStatus = it })
+                                            cloudStatus = "CenAI Voice sample is playing."
+                                        } catch (failure: Exception) {
+                                            cloudStatus = failure.message ?: "Voice test failed."
+                                        } finally { cloudBusy = false }
+                                    }
+                                }) { Text("Test voice") }
+                            }
+                        }
+                    }
+                    Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
