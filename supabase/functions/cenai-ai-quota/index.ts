@@ -23,6 +23,75 @@ Deno.serve(async (req: Request) => {
     if (authError || !user || user.is_anonymous) return reply(401, { error: "Valid signed-in account required" });
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
+    if (action === "voice_status") {
+      const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags")
+        .select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
+      if (flagError) throw flagError;
+      if (flag?.enabled !== true) return reply(503, { error: "CenAI Voice is not enabled by the administrator yet.", code: "VOICE_CLOUD_DISABLED" });
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const { data: userRows, error: userError } = await adminDb.from("cenai_voice_usage_events")
+        .select("characters").eq("owner_user_id", user.id).gte("created_at", dayStart.toISOString());
+      if (userError) throw userError;
+      const { data: globalRows, error: globalError } = await adminDb.from("cenai_voice_usage_events")
+        .select("neurons").gte("created_at", dayStart.toISOString());
+      if (globalError) throw globalError;
+      const userUsed = (userRows || []).reduce((sum: number, row: any) => sum + Number(row.characters || 0), 0);
+      const globalUsed = (globalRows || []).reduce((sum: number, row: any) => sum + Number(row.neurons || 0), 0);
+      return reply(200, { ok: true, quota: {
+        dailyCharacterLimit: 1000, dailyCharactersUsed: userUsed,
+        voiceNeuronAllocation: 4000, globalNeuronLimit: 4000,
+        globalNeuronsUsed: Number(globalUsed.toFixed(2)),
+        resetsAt: new Date(dayStart.getTime() + 86400000).toISOString()
+      } });
+    }
+    if (action === "voice_authorize") {
+      const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags")
+        .select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
+      if (flagError) throw flagError;
+      if (flag?.enabled !== true) return reply(503, { error: "CenAI Voice is not enabled by the administrator yet.", code: "VOICE_CLOUD_DISABLED" });
+      const characters = Math.floor(Number(body.characters));
+      if (!Number.isSafeInteger(characters) || characters < 1 || characters > 1000) {
+        return reply(400, { error: "Each voice request is limited to 1,000 characters.", code: "VOICE_REQUEST_LIMIT" });
+      }
+      const { data: reservation, error: reserveError } = await adminDb.rpc("cenai_reserve_voice_usage", {
+        p_user_id: user.id, p_characters: characters,
+        p_user_daily_character_limit: 1000, p_global_daily_neuron_limit: 4000
+      });
+      if (reserveError) {
+        console.error("CenAI Voice quota reservation failed", reserveError.message);
+        return reply(503, { error: "Could not reserve CenAI Voice quota.", code: "VOICE_QUOTA_UNAVAILABLE" });
+      }
+      const row = Array.isArray(reservation) ? reservation[0] : reservation;
+      if (!row?.allowed) return reply(429, {
+        error: row?.reason === "global_daily_neuron_limit"
+          ? "CenAI Voice has reached its daily Neuron allocation. Try again after the UTC reset."
+          : row?.reason === "user_daily_character_limit"
+            ? "You have reached your daily CenAI Voice allowance."
+            : "CenAI Voice request could not be authorized.",
+        code: row?.reason || "VOICE_QUOTA_BLOCKED",
+        quota: { dailyCharacterLimit: 1000, dailyCharactersUsed: row?.user_characters_used || 0,
+          voiceNeuronAllocation: 4000, globalNeuronLimit: 4000, globalNeuronsUsed: Number(row?.global_neurons_used || 0) }
+      });
+      return reply(200, { ok: true, eventId: row.event_id, quota: {
+        dailyCharacterLimit: 1000, dailyCharactersUsed: row.user_characters_used,
+        voiceNeuronAllocation: 4000, globalNeuronLimit: 4000,
+        globalNeuronsUsed: Number(row.global_neurons_used || 0)
+      } });
+    }
+    if (action === "voice_record") {
+      const eventId = Number(body.eventId);
+      const status = String(body.status || "");
+      if (!Number.isSafeInteger(eventId) || eventId < 1 || !["success", "error"].includes(status)) {
+        return reply(400, { error: "Invalid CenAI Voice usage event." });
+      }
+      const { data, error } = await adminDb.rpc("cenai_record_voice_usage", {
+        p_user_id: user.id, p_event_id: eventId, p_status: status
+      });
+      if (error) throw error;
+      if (data !== true) return reply(404, { error: "CenAI Voice usage reservation was not found." });
+      return reply(200, { ok: true, recorded: true });
+    }
     if (action === "authorize") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags").select("enabled").eq("key", "ai.cloud.enabled").maybeSingle();
       if (flagError) throw flagError;
