@@ -1,7 +1,7 @@
 name: Website checks
 on:
   push:
-    branches: [ main, "feat/**", cloudflare-migration ]
+    branches: [ main, "feat/**", "feature/**", cloudflare-migration ]
     paths:
       - "website/**"
       - "supabase/**"
@@ -28,6 +28,7 @@ jobs:
         working-directory: website
         run: |
           npm run check
+          npm test
           npm run build
           test -s dist/index.html
           test -s dist/admin/index.html
@@ -92,6 +93,12 @@ jobs:
           grep -q 'refund-requests-content' website/admin/index.html
           for script in website/*.js website/api/*.js website/api/v1/*.js website/admin/*.js; do node --check "$script"; done
           grep -q 'cenai-ai-quota' website/worker.js
+          grep -q 'url.pathname === "/api/sandbox"' website/worker.js
+          grep -q 'url.pathname === "/api/voice/status"' website/worker.js
+          grep -q 'url.pathname === "/api/voice/speech"' website/worker.js
+          grep -q 'cenai_reserve_voice_usage' supabase/migrations/20261121222409_cenai_aura1_voice_quotas.sql
+          grep -q 'cenai_reserve_ai_request_v2' supabase/migrations/20261121222413_cenai_shared_workers_ai_neuron_budget.sql
+          grep -q 'cenai_sandbox_workspaces' supabase/migrations/20261123010815_cenai_sandbox_workspace_snapshots.sql
           grep -q 'cenai_reserve_ai_request' supabase/migrations/20261116142000_add_cloud_ai_quota_reservation.sql
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
@@ -138,6 +145,10 @@ jobs:
           curl -fsS "$BASE/sitemap.xml" -o /tmp/cenai-sitemap.xml
           grep -q "guides/choosing-ai-models.html" /tmp/cenai-sitemap.xml
 
+          for route in sandbox voice/status voice/speech; do
+            code=$(curl -sS --max-time 15 -o "/tmp/cenai-$route.json" -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{}' "$BASE/api/$route")
+            if [[ "$code" != "401" ]]; then cat "/tmp/cenai-$route.json"; echo "Expected 401 from /api/$route, got $code"; exit 1; fi
+          done
           ai_code=$(curl -sS --max-time 15 -o /tmp/cenai-ai.json -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"model":"cloudflare-gemma-4-26b-a4b-it","messages":[{"role":"user","content":"health check"}]}' "$BASE/api/ai/chat/completions")
           if [[ "$ai_code" != "401" ]]; then cat /tmp/cenai-ai.json; echo "Expected 401 from unauthenticated AI endpoint, got $ai_code"; exit 1; fi
           echo "Cloudflare Worker health, public pages, API authentication and Supabase configuration passed."
