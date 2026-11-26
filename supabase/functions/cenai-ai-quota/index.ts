@@ -13,6 +13,19 @@ const headers = {
 };
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers });
 
+async function registrationAllowed(user: any): Promise<boolean> {
+  const { data: policy, error } = await adminDb.from("registration_policy")
+    .select("enforced_from").eq("id", 1).maybeSingle();
+  if (error) throw error;
+  if (!policy?.enforced_from) throw new Error("Discord registration policy is not configured");
+  const createdAt = Date.parse(String(user.created_at ?? ""));
+  const enforcedFrom = Date.parse(String(policy.enforced_from));
+  const legacy = Number.isFinite(createdAt) && Number.isFinite(enforcedFrom) && createdAt < enforcedFrom;
+  const discord = user.app_metadata?.cenai_registration_verified === true &&
+    user.app_metadata?.cenai_registration_method === "discord";
+  return legacy || discord;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers });
   if (req.method !== "POST") return reply(405, { error: "Method not allowed" });
@@ -23,6 +36,9 @@ Deno.serve(async (req: Request) => {
     if (authError || !user || user.is_anonymous) return reply(401, { error: "Valid signed-in account required" });
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
+    if (["voice_status", "voice_authorize", "voice_record"].includes(action) && !await registrationAllowed(user)) {
+      return reply(403, { error: "Complete Discord invitation registration before using CenAI Voice.", code: "REGISTRATION_REQUIRED" });
+    }
     if (action === "voice_status") {
       const { data: flag, error: flagError } = await adminDb.from("admin_feature_flags")
         .select("enabled").eq("key", "voice.cloud.enabled").maybeSingle();
