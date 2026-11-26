@@ -19,7 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Dialog
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -62,6 +62,13 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
         }
         pendingExportBytes = null
     }
+    fun refresh() {
+        projects = runCatching { store.list(includeArchived = true) }
+            .onFailure { status = it.message ?: "Could not load projects." }
+            .getOrDefault(emptyList())
+        if (selectedId != null && projects.none { it.id == selectedId }) selectedId = null
+    }
+
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val projectId = selectedId
         if (uri != null && projectId != null) {
@@ -89,13 +96,6 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
                 refresh()
             }.onFailure { status = it.message ?: "Could not import file." }
         }
-    }
-
-    fun refresh() {
-        projects = runCatching { store.list(includeArchived = true) }
-            .onFailure { status = it.message ?: "Could not load projects." }
-            .getOrDefault(emptyList())
-        if (selectedId != null && projects.none { it.id == selectedId }) selectedId = null
     }
 
     Dialog(onDismissRequest = onDismiss) {
