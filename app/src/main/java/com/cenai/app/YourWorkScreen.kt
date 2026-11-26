@@ -1,5 +1,9 @@
 package com.cenai.app
 
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,6 +49,34 @@ fun YourWorkDialog(vault: SecureKeyStore, onDismiss: () -> Unit) {
     var preview by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     val selected = projects.firstOrNull { it.id == selectedId }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val projectId = selectedId
+        if (uri != null && projectId != null) {
+            runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(16 * 1024)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= 8 * 1024 * 1024) { "Files larger than 8 MiB are not supported yet." }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } ?: error("Android could not open this file.")
+                val mime = context.contentResolver.getType(uri).orEmpty().ifBlank { "application/octet-stream" }
+                val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                } ?: "imported-file"
+                store.saveArtifact(projectId, name, mime, bytes)
+            }.onSuccess {
+                status = "File imported and encrypted in this project."
+                refresh()
+            }.onFailure { status = it.message ?: "Could not import file." }
+        }
+    }
 
     fun refresh() {
         projects = runCatching { store.list(includeArchived = true) }
@@ -105,6 +137,11 @@ fun YourWorkDialog(vault: SecureKeyStore, onDismiss: () -> Unit) {
                         OutlinedButton(onClick = { showDelete = true }) { Text("Delete project") }
                     }
                     Text("Project files", style = MaterialTheme.typography.titleMedium)
+                    OutlinedButton(
+                        enabled = !selected.archived,
+                        onClick = { importLauncher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Import file · 8 MiB maximum") }
                     if (selected.artifacts.isEmpty()) Text("No files saved in this project yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     selected.artifacts.forEach { artifact ->
                         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
