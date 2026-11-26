@@ -125,6 +125,38 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
                     }
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Encrypted cloud backup", style = MaterialTheme.typography.titleMedium)
+                        Text("Projects and files are encrypted on this device before upload. The server never receives your passphrase or plaintext workspace.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(backupPassphrase, { backupPassphrase = it.take(256) }, label = { Text("Backup passphrase · 12 characters minimum") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(enabled = !backupBusy && ownerId != "guest" && backupPassphrase.length >= 12, modifier = Modifier.weight(1f), onClick = {
+                                backupBusy = true
+                                backupStatus = "Encrypting and uploading…"
+                                scope.launch {
+                                    try { withContext(Dispatchers.IO) { backupClient.upload(store.exportBackup(), backupPassphrase) }; backupStatus = "Encrypted workspace backup uploaded." }
+                                    catch (error: Exception) { backupStatus = error.message ?: "Backup upload failed." }
+                                    finally { backupBusy = false }
+                                }
+                            }) { Text("Back up") }
+                            Button(enabled = !backupBusy && ownerId != "guest" && backupPassphrase.length >= 12, modifier = Modifier.weight(1f), onClick = {
+                                backupBusy = true
+                                backupStatus = "Downloading and decrypting…"
+                                scope.launch {
+                                    try {
+                                        val restored = withContext(Dispatchers.IO) { store.restoreBackup(backupClient.download(backupPassphrase)) }
+                                        backupStatus = "Restored " + restored + " project(s). Existing projects were not overwritten."
+                                        refresh()
+                                    } catch (error: Exception) { backupStatus = error.message ?: "Backup restore failed." }
+                                    finally { backupBusy = false }
+                                }
+                            }) { Text(if (backupBusy) "Working…" else "Restore") }
+                        }
+                        Text("Restore adds projects with new local IDs only; it never overwrites existing projects. Keep this passphrase safe—CenAI cannot recover it.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (backupStatus.isNotBlank()) Text(backupStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 if (selected == null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Projects", style = MaterialTheme.typography.titleMedium)
