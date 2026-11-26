@@ -1026,7 +1026,50 @@ Text("APPEARANCE", color = palette.accent, fontSize = 10.sp, fontWeight = FontWe
                     
                     }
                     if (selectedSettingsPage == "AI & models") {
-Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text("CENAI CLOUD VOICE · AURA-1", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("Optional authenticated cloud speech. Text is sent to CenAI Voice only when you press Read aloud. English only; up to 1,000 characters per request.", color = palette.muted, fontSize = 10.sp)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Use CenAI Cloud Voice for Read aloud", color = palette.text, fontSize = 12.sp)
+                                    Text(if (cloudVoiceReady) "Service reports ready" else "Check service status before enabling", color = palette.muted, fontSize = 10.sp)
+                                }
+                                Switch(checked = cloudVoiceEnabled, enabled = !cloudVoiceEnabled || (cloudVoiceReady && cloudSignedIn), onCheckedChange = {
+                                    cloudVoiceEnabled = it
+                                    vault.putUser(activeAccountId, "cloud_voice_enabled", it.toString())
+                                })
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(enabled = !cloudBusy && cloudSignedIn, modifier = Modifier.weight(1f), onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            val health = voiceClient.status()
+                                            cloudVoiceReady = health.optBoolean("ready")
+                                            cloudStatus = if (cloudVoiceReady) "CenAI Voice ready · " + health.optString("profile", "Aura-1") else "CenAI Voice is not enabled."
+                                        } catch (failure: Exception) {
+                                            cloudVoiceReady = false
+                                            cloudStatus = failure.message ?: "CenAI Voice status could not be checked."
+                                        } finally { cloudBusy = false }
+                                    }
+                                }) { Text("Check service") }
+                                OutlinedButton(enabled = cloudVoiceReady && cloudSignedIn && !cloudBusy, modifier = Modifier.weight(1f), onClick = {
+                                    cloudBusy = true
+                                    scope.launch {
+                                        try {
+                                            val file = voiceClient.synthesizeToCache(context, "Hello. This is CenAI Cloud Voice.")
+                                            voicePlayback.play(file, onError = { cloudStatus = it })
+                                            cloudStatus = "CenAI Voice sample is playing."
+                                        } catch (failure: Exception) {
+                                            cloudStatus = failure.message ?: "Voice test failed."
+                                        } finally { cloudBusy = false }
+                                    }
+                                }) { Text("Test voice") }
+                            }
+                        }
+                    }
+                    Text("PROVIDER", color = palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                         OutlinedTextField(value = provider.label, onValueChange = {}, readOnly = true,
                             label = { Text("AI provider") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
