@@ -200,6 +200,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val localModelRuntime = remember { LocalModelRuntime(context) }
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
+    val voiceClient = remember { CenAiVoiceClient(vault) }
+    val voicePlayback = remember { CenAiVoicePlayback() }
+    var cloudVoiceEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "cloud_voice_enabled", "false").toBoolean()) }
+    var cloudVoiceReady by remember(activeAccountId) { mutableStateOf(false) }
+    DisposableEffect(voicePlayback) { onDispose { voicePlayback.stop() } }
     var speechOutputReady by remember { mutableStateOf(false) }
     var speechRate by remember(activeAccountId) { mutableFloatStateOf(vault.getUser(activeAccountId, "speech_rate", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
     var speechPitch by remember(activeAccountId) { mutableFloatStateOf(vault.getUser(activeAccountId, "speech_pitch", "1.0").toFloatOrNull()?.coerceIn(0.5f, 2f) ?: 1f) }
