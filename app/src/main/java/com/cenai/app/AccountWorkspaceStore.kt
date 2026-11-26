@@ -37,8 +37,8 @@ class AccountWorkspaceStore(context: Context, val accountId: String) {
                 stream.write(envelope)
                 stream.fd.sync()
             }
-            if (target.exists() && !target.delete()) error("Could not replace workspace file.")
-            if (!temp.renameTo(target)) error("Could not commit workspace file.")
+            // POSIX rename replaces the previous file atomically on Android.
+            android.system.Os.rename(temp.absolutePath, target.absolutePath)
         } finally {
             if (temp.exists()) temp.delete()
         }
