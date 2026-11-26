@@ -73,9 +73,12 @@ class LocalModelRuntime(context: Context) {
                     throw IllegalStateException("Could not install Lightning into private app storage.")
                 }
                 true
-            } catch (_: Throwable) {
+            } catch (error: Exception) {
                 temporary.delete()
-                false
+                throw IllegalStateException(
+                    "Bundled Lightning model installation failed: " + (error.message ?: error.javaClass.simpleName),
+                    error
+                )
             }
         }
     }
