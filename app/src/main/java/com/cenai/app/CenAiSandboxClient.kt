@@ -22,7 +22,7 @@ data class CenAiSandboxResult(
 )
 
 /** User-initiated isolated cloud execution. No shell is run on the Android device. */
-class CenAiSandboxClient(private val vault: SecureKeyStore) {
+class CenAiSandboxClient(private val vault: SecureKeyStore, private val ownerId: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(75, TimeUnit.SECONDS)
@@ -38,7 +38,7 @@ class CenAiSandboxClient(private val vault: SecureKeyStore) {
         workingDirectory: String = "."
     ): CenAiSandboxResult = withContext(Dispatchers.IO) {
         validateRequest(command, arguments, projectId, workingDirectory)
-        val token = vault.getSecret("supabase_access_token")
+        val token = vault.getUserSecret(ownerId, "supabase_access_token")
         require(token.isNotBlank()) { "Sign in to your CenAI account before using the cloud sandbox." }
         val args = JSONArray().apply { arguments.forEach(::put) }
         val payload = JSONObject()
