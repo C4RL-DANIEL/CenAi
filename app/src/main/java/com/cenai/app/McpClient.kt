@@ -11,6 +11,7 @@ import okhttp3.HttpUrl
 import okhttp3.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -155,7 +156,7 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
             .put("method", method).put("params", params)
         val request = requestBuilder(config, connection).post(body.toString().toRequestBody(jsonType)).build()
         clientFor(connection).newCall(request).execute().use { response ->
-            val raw = response.body?.string().orEmpty()
+            val raw = readBodyLimited(response)
             if (!response.isSuccessful) throw IOException("MCP request failed (HTTP ${response.code}): ${raw.take(400)}")
             connection.sessionId = response.header("Mcp-Session-Id") ?: connection.sessionId
             val envelope = parseJsonOrSse(raw)
@@ -266,6 +267,25 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
         }
     }
 
+    private fun readBodyLimited(response: okhttp3.Response): String {
+        val body = response.body ?: return ""
+        val declared = body.contentLength()
+        require(declared < 0 || declared <= MAX_RESPONSE_BYTES) { "MCP response exceeds the 1 MiB safety limit." }
+        val output = ByteArrayOutputStream()
+        body.byteStream().use { input ->
+            val buffer = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_RESPONSE_BYTES) { "MCP response exceeds the 1 MiB safety limit." }
+                output.write(buffer, 0, count)
+            }
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+
     private fun parseJsonOrSse(raw: String): JSONObject {
         val trimmed = raw.trim()
         if (trimmed.startsWith("{")) return JSONObject(trimmed)
@@ -280,6 +300,7 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
         private const val MAX_TOOLS = 128
         private const val MAX_SCHEMA_BYTES = 64 * 1024
         private const val MAX_ARGUMENT_BYTES = 256 * 1024
+        private const val MAX_RESPONSE_BYTES = 1024 * 1024
         private val SERVER_ID = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val TOOL_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
