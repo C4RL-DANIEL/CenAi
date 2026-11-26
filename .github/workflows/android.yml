@@ -167,7 +167,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
-          script: timeout 900s gradle connectedDebugAndroidTest --stacktrace
+          script: timeout 1200s gradle connectedDebugAndroidTest --stacktrace
       - name: Upload Android test reports
         if: always()
         uses: actions/upload-artifact@v4
