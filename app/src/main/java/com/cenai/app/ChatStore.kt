@@ -23,7 +23,7 @@ class ChatStore(context: Context, vault: SecureKeyStore? = null) {
     private val appContext = context.applicationContext
     private val legacyPrefs = appContext.getSharedPreferences("cenai_history", Context.MODE_PRIVATE)
     private val vault = vault ?: SecureKeyStore(appContext)
-    private val workspace = AccountWorkspaceStore(appContext, resolveAccountId())
+    private fun workspace() = AccountWorkspaceStore(appContext, resolveAccountId())
 
     private fun resolveAccountId(): String {
         val authenticatedId = vault.get("supabase_user_id").trim().lowercase()
@@ -37,7 +37,7 @@ class ChatStore(context: Context, vault: SecureKeyStore? = null) {
     }
 
     fun load(): MutableList<Conversation> {
-        val encrypted = runCatching { workspace.readText(CONVERSATIONS_FILE) }
+        val encrypted = runCatching { workspace().readText(CONVERSATIONS_FILE) }
             .onFailure { Log.e(TAG, "Encrypted conversation workspace could not be opened; refusing plaintext fallback.", it) }
             .getOrNull()
         if (encrypted != null) return parse(encrypted)
@@ -66,7 +66,7 @@ class ChatStore(context: Context, vault: SecureKeyStore? = null) {
                 .put("updatedAt", conversation.updatedAt).put("ownerEmail", conversation.ownerEmail)
                 .put("messages", messages))
         }
-        workspace.writeText(CONVERSATIONS_FILE, array.toString())
+        workspace().writeText(CONVERSATIONS_FILE, array.toString())
     }
 
     private fun parse(raw: String): MutableList<Conversation> = runCatching {
