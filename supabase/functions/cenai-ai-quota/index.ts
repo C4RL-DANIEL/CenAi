@@ -83,12 +83,14 @@ Deno.serve(async (req: Request) => {
       if (!row?.allowed) return reply(429, {
         error: row?.reason === "global_daily_neuron_limit"
           ? "CenAI Voice has reached its daily Neuron allocation. Try again after the UTC reset."
-          : row?.reason === "user_daily_character_limit"
+          : row?.reason === "shared_global_daily_neuron_limit"
+            ? "CenAI has reached its shared daily AI allowance. Try again after the UTC reset."
+            : row?.reason === "user_daily_character_limit"
             ? "You have reached your daily CenAI Voice allowance."
             : "CenAI Voice request could not be authorized.",
         code: row?.reason || "VOICE_QUOTA_BLOCKED",
         quota: { dailyCharacterLimit: 1000, dailyCharactersUsed: row?.user_characters_used || 0,
-          voiceNeuronAllocation: 4000, globalNeuronLimit: 4000, globalNeuronsUsed: Number(row?.global_neurons_used || 0) }
+          voiceNeuronAllocation: 4000, globalNeuronLimit: 8000, globalNeuronsUsed: Number(row?.global_neurons_used || 0) }
       });
       return reply(200, { ok: true, eventId: row.event_id, quota: {
         dailyCharacterLimit: 1000, dailyCharactersUsed: row.user_characters_used,
