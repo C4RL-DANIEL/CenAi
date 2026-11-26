@@ -187,6 +187,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val context = LocalContext.current
     val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 700
     var wideDestination by remember { mutableStateOf("Chat") }
+    var projectsOpen by remember { mutableStateOf(false) }
     var selectedSettingsPage by remember { mutableStateOf("Appearance") }
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -593,6 +594,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     IconButton(onClick = { historyOpen = true }) { Icon(Icons.Default.History, "Chat history", tint = palette.text) }
                 },
                 actions = {
+                    IconButton(onClick = { projectsOpen = true }) { Icon(Icons.Default.Folder, "Your Work", tint = palette.accent) }
                     IconButton(onClick = { newChat() }) { Icon(Icons.Default.Add, "New chat", tint = palette.accent) }
                     Box {
                         IconButton(onClick = { moreActionsExpanded = true }) { Icon(Icons.Default.MoreVert, "More actions", tint = palette.text) }
@@ -869,6 +871,8 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
             Spacer(Modifier.height(24.dp))
         }
     }
+
+    if (projectsOpen) YourWorkDialog(vault = vault, onDismiss = { projectsOpen = false })
 
     if (settings) {
         var cloudEmail by remember { mutableStateOf(cloud.accountEmail()) }
