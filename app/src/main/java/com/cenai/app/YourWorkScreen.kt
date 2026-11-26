@@ -49,6 +49,19 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
     var preview by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     val selected = projects.firstOrNull { it.id == selectedId }
+    var pendingExportBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var exportStatus by remember { mutableStateOf("") }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        val bytes = pendingExportBytes
+        if (uri != null && bytes != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { output -> output.write(bytes) }
+                    ?: error("Android could not create the export file.")
+            }.onSuccess { exportStatus = "File exported successfully." }
+                .onFailure { exportStatus = it.message ?: "Could not export file." }
+        }
+        pendingExportBytes = null
+    }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val projectId = selectedId
         if (uri != null && projectId != null) {
@@ -160,6 +173,11 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
                                             .onFailure { status = it.message ?: "Could not open file." }
                                     }) { Text("Open") }
                                     TextButton(onClick = {
+                                        runCatching { store.readArtifact(selected.id, artifact.id) }
+                                            .onSuccess { bytes -> pendingExportBytes = bytes; exportLauncher.launch(artifact.name) }
+                                            .onFailure { status = it.message ?: "Could not prepare file export." }
+                                    }) { Text("Export") }
+                                    TextButton(onClick = {
                                         runCatching { store.deleteArtifact(selected.id, artifact.id) }
                                             .onSuccess { status = "File deleted."; refresh() }
                                             .onFailure { status = it.message ?: "Could not delete file." }
@@ -190,6 +208,7 @@ fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit
                     }
                 }
                 if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                if (exportStatus.isNotBlank()) Text(exportStatus, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
