@@ -1019,7 +1019,7 @@ Surface(color = palette.raised, shape = RoundedCornerShape(12.dp), modifier = Mo
                                     Text("Use CenAI Cloud Voice for Read aloud", color = palette.text, fontSize = 12.sp)
                                     Text(if (cloudVoiceReady) "Service reports ready" else "Check service status before enabling", color = palette.muted, fontSize = 10.sp)
                                 }
-                                Switch(checked = cloudVoiceEnabled, enabled = cloudVoiceReady && cloudSignedIn, onCheckedChange = {
+                                Switch(checked = cloudVoiceEnabled, enabled = !cloudVoiceEnabled || (cloudVoiceReady && cloudSignedIn), onCheckedChange = {
                                     cloudVoiceEnabled = it
                                     vault.put("cloud_voice_enabled", it.toString())
                                 })
