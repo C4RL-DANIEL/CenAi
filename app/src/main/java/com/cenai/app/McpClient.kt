@@ -386,7 +386,7 @@ class McpClient(private val vault: SecureKeyStore, private val ownerId: String =
                         val name = keys.next()
                         val childSchema = properties.optJSONObject(name)
                         if (childSchema == null) {
-                            require(!schema.optBoolean("additionalProperties", true)) { "Undeclared MCP argument '$name' is not allowed." }
+                            require(schema.optBoolean("additionalProperties", true)) { "Undeclared MCP argument '$name' is not allowed." }
                         } else validateValue(value.opt(name), childSchema, depth + 1)
                     }
                 }
