@@ -35,9 +35,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun YourWorkDialog(vault: SecureKeyStore, onDismiss: () -> Unit) {
+fun YourWorkDialog(vault: SecureKeyStore, ownerId: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val store = remember { ProjectWorkspaceStore(context, vault) }
+    val store = remember(ownerId) { ProjectWorkspaceStore(context, vault, ownerId) }
     var projects by remember { mutableStateOf(runCatching { store.list(includeArchived = true) }.getOrDefault(emptyList())) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
