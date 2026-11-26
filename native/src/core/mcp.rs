@@ -307,6 +307,31 @@ fn validate_tool_arguments(schema: &serde_json::Value, arguments: &serde_json::V
     validate_tool_value(schema, arguments, 0)
 }
 
+fn validate_rpc_response(value: &serde_json::Value, expected_id: &serde_json::Value, method: &str) -> Result<serde_json::Value, String> {
+    if value.get("jsonrpc").and_then(serde_json::Value::as_str) != Some("2.0") {
+        return Err(format!("MCP method {method} returned an invalid JSON-RPC version"));
+    }
+    if value.get("id") != Some(expected_id) {
+        return Err(format!("MCP method {method} returned a response for a different request ID"));
+    }
+    let has_result = value.get("result").is_some();
+    let error = value.get("error");
+    if has_result == error.is_some() {
+        return Err(format!("MCP method {method} returned an invalid JSON-RPC response envelope"));
+    }
+    if let Some(error) = error {
+        if !error.is_object()
+            || error.get("code").and_then(serde_json::Value::as_i64).is_none()
+            || error.get("message").and_then(serde_json::Value::as_str).is_none()
+        {
+            return Err(format!("MCP method {method} returned a malformed JSON-RPC error"));
+        }
+        return Err(format!("MCP method {method} failed: {error}"));
+    }
+    value.get("result").cloned()
+        .ok_or_else(|| format!("MCP method {method} omitted its result"))
+}
+
 pub struct McpHttpClient {
     client: reqwest::Client,
     manifest: McpServerManifest,
@@ -390,19 +415,34 @@ impl McpHttpClient {
         if notification || raw.trim().is_empty() {
             return Ok((serde_json::Value::Null, session));
         }
-        let payload = if content_type.contains("text/event-stream") {
-            raw.lines().filter_map(|line| line.trim().strip_prefix("data:"))
-                .map(str::trim).rfind(|line| !line.is_empty() && *line != "[DONE]").ok_or("MCP server returned an empty event stream")?
-                .to_owned()
-        } else {
-            raw
-        };
-        let value: serde_json::Value = serde_json::from_str(&payload)
-            .map_err(|error| format!("Invalid MCP JSON-RPC response: {error}"))?;
-        if let Some(error) = value.get("error") {
-            return Err(format!("MCP method {method} failed: {error}"));
+        if !content_type.contains("application/json") && !content_type.contains("text/event-stream") {
+            return Err(format!("MCP method {method} returned an unsupported content type"));
         }
-        Ok((value.get("result").cloned().unwrap_or(value), session))
+        let expected_id = serde_json::Value::from(id);
+        let value = if content_type.contains("text/event-stream") {
+            let normalized = raw.replace("\r\n", "\n");
+            let mut matching_response = None;
+            for event in normalized.split("\n\n") {
+                let data = event.lines()
+                    .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if data.is_empty() || data == "[DONE]" { continue; }
+                let candidate: serde_json::Value = serde_json::from_str(&data)
+                    .map_err(|error| format!("Invalid MCP event-stream JSON: {error}"))?;
+                // MCP servers may send notifications while a request is pending.
+                // Ignore those, but accept only the response correlated to this request.
+                if candidate.get("id") == Some(&expected_id) {
+                    matching_response = Some(candidate);
+                }
+            }
+            matching_response.ok_or_else(|| format!("MCP method {method} event stream omitted its matching response"))?
+        } else {
+            serde_json::from_str::<serde_json::Value>(&raw)
+                .map_err(|error| format!("Invalid MCP JSON-RPC response: {error}"))?
+        };
+        let result = validate_rpc_response(&value, &expected_id, method)?;
+        Ok((result, session))
     }
 
     pub async fn initialize(&self) -> Result<serde_json::Value, String> {
@@ -481,6 +521,31 @@ mod tests {
                 requested_scopes: vec!["mail.send".into()],
             }],
         }
+    }
+
+    #[test]
+    fn json_rpc_responses_must_match_the_request_and_have_one_valid_outcome() {
+        let request_id = serde_json::json!(42);
+        let valid = serde_json::json!({"jsonrpc":"2.0","id":42,"result":{"tools":[]}});
+        assert_eq!(validate_rpc_response(&valid, &request_id, "tools/list").unwrap(), serde_json::json!({"tools":[]}));
+
+        let wrong_id = serde_json::json!({"jsonrpc":"2.0","id":41,"result":{}});
+        assert!(validate_rpc_response(&wrong_id, &request_id, "tools/list").unwrap_err().contains("different request ID"));
+
+        let wrong_version = serde_json::json!({"jsonrpc":"1.0","id":42,"result":{}});
+        assert!(validate_rpc_response(&wrong_version, &request_id, "tools/list").is_err());
+
+        let missing_outcome = serde_json::json!({"jsonrpc":"2.0","id":42});
+        assert!(validate_rpc_response(&missing_outcome, &request_id, "tools/list").is_err());
+
+        let conflicting_outcomes = serde_json::json!({"jsonrpc":"2.0","id":42,"result":{},"error":{"code":-1,"message":"bad"}});
+        assert!(validate_rpc_response(&conflicting_outcomes, &request_id, "tools/list").is_err());
+
+        let malformed_error = serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":"bad","message":false}});
+        assert!(validate_rpc_response(&malformed_error, &request_id, "tools/list").is_err());
+
+        let remote_error = serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":-32000,"message":"denied"}});
+        assert!(validate_rpc_response(&remote_error, &request_id, "tools/list").unwrap_err().contains("denied"));
     }
 
     #[test]
