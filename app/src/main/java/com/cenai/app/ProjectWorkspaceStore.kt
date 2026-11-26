@@ -136,6 +136,95 @@ class ProjectWorkspaceStore(context: Context, vault: SecureKeyStore, ownerId: St
         writeIndex(projects)
     }
 
+    /** Creates a portable archive; artifact bytes are included so a new device can restore the workspace. */
+    fun exportBackup(): ByteArray = synchronized(lock) {
+        val root = JSONObject().put("format", "cenai-project-workspace").put("version", 1)
+            .put("exportedAt", System.currentTimeMillis())
+        val projects = JSONArray()
+        var totalBytes = 0L
+        readIndex().forEach { project ->
+            val artifacts = JSONArray()
+            project.artifacts.forEach { artifact ->
+                val bytes = readArtifact(project.id, artifact.id)
+                totalBytes += bytes.size
+                require(totalBytes <= MAX_BACKUP_BYTES) { "Workspace backup exceeds the 95 MiB limit." }
+                artifacts.put(JSONObject()
+                    .put("id", artifact.id).put("name", artifact.name).put("mimeType", artifact.mimeType)
+                    .put("byteCount", artifact.byteCount).put("sha256", artifact.sha256)
+                    .put("createdAt", artifact.createdAt)
+                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes)))
+            }
+            projects.put(JSONObject()
+                .put("id", project.id).put("name", project.name).put("description", project.description)
+                .put("createdAt", project.createdAt).put("updatedAt", project.updatedAt)
+                .put("archived", project.archived).put("artifacts", artifacts))
+        }
+        root.put("projects", projects)
+        val bytes = root.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_BACKUP_BYTES) { "Workspace backup exceeds the 95 MiB limit." }
+        bytes
+    }
+
+    /** Restores only new project IDs; it never overwrites existing local projects. */
+    fun restoreBackup(archive: ByteArray): Int = synchronized(lock) {
+        require(archive.isNotEmpty() && archive.size <= MAX_BACKUP_BYTES) { "Backup file is empty or exceeds the 95 MiB limit." }
+        val root = JSONObject(archive.toString(Charsets.UTF_8))
+        require(root.optString("format") == "cenai-project-workspace" && root.optInt("version") == 1) {
+            "This is not a supported CenAI workspace backup."
+        }
+        val array = root.getJSONArray("projects")
+        require(array.length() <= MAX_PROJECTS) { "Backup contains too many projects." }
+        val existing = readIndex()
+        val existingIds = existing.map { it.id }.toSet()
+        val imported = ArrayList<CenAiProject>(array.length())
+        val pathsWritten = ArrayList<String>()
+        val seenProjects = HashSet<String>()
+        val seenArtifacts = HashSet<String>()
+        var totalBytes = 0L
+        try {
+            repeat(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                val id = item.getString("id").also(::requireUuid)
+                require(id !in existingIds && seenProjects.add(id)) { "Backup contains a project that already exists locally." }
+                val name = item.getString("name").trim()
+                val description = item.optString("description")
+                require(name.isNotEmpty() && name.length <= 100 && description.length <= 2_000) { "Backup project metadata is invalid." }
+                val artifactArray = item.optJSONArray("artifacts") ?: JSONArray()
+                require(artifactArray.length() <= MAX_ARTIFACTS) { "Backup project has too many artifacts." }
+                val artifacts = ArrayList<CenAiArtifact>(artifactArray.length())
+                repeat(artifactArray.length()) { artifactIndex ->
+                    val value = artifactArray.getJSONObject(artifactIndex)
+                    val artifactId = value.getString("id").also(::requireUuid)
+                    require(seenArtifacts.add("$id/$artifactId")) { "Backup contains duplicate artifact identifiers." }
+                    val artifactName = value.getString("name")
+                    val mimeType = value.getString("mimeType")
+                    require(artifactName.isNotBlank() && artifactName.length <= 160) { "Backup artifact name is invalid." }
+                    require(mimeType.length in 1..120 && mimeType.none { it.isISOControl() }) { "Backup artifact MIME type is invalid." }
+                    val bytes = java.util.Base64.getDecoder().decode(value.getString("data"))
+                    totalBytes += bytes.size
+                    require(bytes.isNotEmpty() && bytes.size <= MAX_ARTIFACT_BYTES && bytes.size == value.getInt("byteCount") &&
+                        totalBytes <= MAX_BACKUP_BYTES && sha256(bytes) == value.getString("sha256")) {
+                        "Backup artifact failed its size or integrity check."
+                    }
+                    val path = artifactPath(id, artifactId)
+                    require(workspace.read(path) == null) { "Backup artifact path already exists; restore was stopped to avoid overwriting local data." }
+                    workspace.write(path, bytes)
+                    pathsWritten += path
+                    artifacts += CenAiArtifact(artifactId, artifactName, mimeType, bytes.size,
+                        value.getString("sha256"), value.getLong("createdAt"))
+                }
+                imported += CenAiProject(id, name, description, item.getLong("createdAt"),
+                    item.getLong("updatedAt"), item.optBoolean("archived"), artifacts)
+            }
+            require(existing.size + imported.size <= MAX_PROJECTS) { "Restoring this backup would exceed the local project limit." }
+            writeIndex(existing + imported)
+            imported.size
+        } catch (error: Exception) {
+            pathsWritten.forEach { workspace.delete(it) }
+            throw error
+        }
+    }
+
     private fun readIndex(): List<CenAiProject> {
         val raw = workspace.readText(INDEX_PATH) ?: return emptyList()
         val array = JSONArray(raw)
@@ -201,5 +290,6 @@ class ProjectWorkspaceStore(context: Context, vault: SecureKeyStore, ownerId: St
         private const val MAX_PROJECTS = 100
         private const val MAX_ARTIFACTS = 100
         private const val MAX_ARTIFACT_BYTES = 8 * 1024 * 1024
+        private const val MAX_BACKUP_BYTES = 95 * 1024 * 1024
     }
 }
