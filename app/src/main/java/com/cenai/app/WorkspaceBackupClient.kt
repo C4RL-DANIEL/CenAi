@@ -68,7 +68,7 @@ class WorkspaceBackupClient(private val vault: SecureKeyStore, private val owner
             }
             val body = response.body ?: throw IOException("Cloud backup is empty.")
             val declared = body.contentLength()
-            require(declared in (HEADER_BYTES + TAG_BYTES).toLong()..(MAX_ENVELOPE_BYTES).toLong()) {
+            require(declared == -1L || declared in (HEADER_BYTES + TAG_BYTES).toLong()..(MAX_ENVELOPE_BYTES).toLong()) {
                 "Cloud backup has an invalid size."
             }
             val output = java.io.ByteArrayOutputStream()
