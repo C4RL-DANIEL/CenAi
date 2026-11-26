@@ -230,6 +230,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var localModelReady by remember { mutableStateOf(localModelRuntime.isModelInstalled()) }
     var guardianSnapshot by remember { mutableStateOf(guardian.snapshot()) }
     var guardianHistoryCount by remember { mutableIntStateOf(context.getSharedPreferences("cenai_guardian_history", android.content.Context.MODE_PRIVATE).getString("samples", "").orEmpty().lineSequence().count { it.isNotBlank() }) }
+    var guardianMonitoringEnabled by remember { mutableStateOf(context.getSharedPreferences("cenai_guardian", android.content.Context.MODE_PRIVATE).getBoolean("background_enabled", false)) }
     var monitorSnapshot by remember { mutableStateOf(appMonitor.snapshot()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -1727,7 +1728,17 @@ Text("GUARDIAN · DEVICE HEALTH", color = palette.accent, fontSize = 10.sp, font
                             Text("Storage free ${guardianSnapshot.freeStorageMb} / ${guardianSnapshot.totalStorageMb} MB · Battery ${guardianSnapshot.batteryPercent}% ${if (guardianSnapshot.charging) "· Charging" else ""}", color = palette.muted, fontSize = 10.sp)
                             Text("${guardianSnapshot.device} · Android ${guardianSnapshot.androidVersion} · ${guardianSnapshot.network} · Uptime ${guardianSnapshot.uptimeMinutes} min", color = palette.muted, fontSize = 10.sp)
                             Text("Last crash: ${if (guardianSnapshot.lastCrashAt == 0L) "None recorded" else guardianSnapshot.lastCrashCategory + " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(guardianSnapshot.lastCrashAt))}", color = palette.muted, fontSize = 10.sp)
-                            Text("Background Guardian: $guardianHistoryCount health samples · scheduled every 15 minutes when Android permits", color = palette.muted, fontSize = 10.sp)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("Background Guardian sampling", color = palette.text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text(if (guardianMonitoringEnabled) "Enabled · Android schedules samples about every 15 minutes" else "Off · only manual health checks run", color = palette.muted, fontSize = 10.sp)
+                                }
+                                Switch(checked = guardianMonitoringEnabled, onCheckedChange = { enabled ->
+                                    guardianMonitoringEnabled = enabled
+                                    GuardianWorker.setEnabled(context, enabled)
+                                })
+                            }
+                            Text("$guardianHistoryCount local health samples · Android may delay or skip background work to save battery", color = palette.muted, fontSize = 10.sp)
                             Text("Diagnostics stay on-device by default. If you explicitly enable Guardian sharing in your CenAI account privacy settings, only these summary fields are sent; no stack traces, prompts or personal content.", color = palette.muted, fontSize = 10.sp)
                             if (cloud.isSignedIn() && vault.getUser(activeAccountId, "guardian_cloud_consent", "false").toBoolean()) {
                                 OutlinedButton(enabled = !cloudBusy, onClick = {
