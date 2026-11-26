@@ -78,7 +78,9 @@ jobs:
           emulator-boot-timeout: 900000
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -memory 4096
-          script: bash "$GITHUB_WORKSPACE/.github/scripts/verify-kotlin-stable.sh"
+          script: |
+            gradle --no-daemon :app:connectedDebugAndroidTest --stacktrace
+            bash "$GITHUB_WORKSPACE/.github/scripts/verify-kotlin-stable.sh"
       - name: Upload stable Kotlin debug APK
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
