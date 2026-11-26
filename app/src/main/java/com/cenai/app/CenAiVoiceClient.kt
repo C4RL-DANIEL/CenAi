@@ -16,7 +16,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /** Authenticated Aura-1 cloud speech adapter. Text is sent only when the user invokes Read aloud. */
-class CenAiVoiceClient(private val vault: SecureKeyStore) {
+class CenAiVoiceClient(private val vault: SecureKeyStore, private val ownerId: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -33,7 +33,7 @@ class CenAiVoiceClient(private val vault: SecureKeyStore) {
             "Cloud voice supports 1–1,000 characters per request."
         }
         require(language == "English") { "CenAI Aura-1 currently supports English only." }
-        val token = vault.getSecret("supabase_access_token")
+        val token = vault.getUserSecret(ownerId, "supabase_access_token")
         require(token.isNotBlank()) { "Sign in to your CenAI account to use cloud voice." }
         val body = JSONObject().put("input", clean).put("language", language).put("voice", VOICE_PROFILE)
             .toString().toRequestBody(JSON_TYPE)
