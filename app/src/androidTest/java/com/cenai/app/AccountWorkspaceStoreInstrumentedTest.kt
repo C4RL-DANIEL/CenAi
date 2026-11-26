@@ -41,8 +41,13 @@ class AccountWorkspaceStoreInstrumentedTest {
         val account = UUID.randomUUID().toString()
         val store = AccountWorkspaceStore(context, account)
         store.writeText("projects/one.json", "bound to one path")
+        val root = File(context.noBackupFilesDir, "cenai_workspaces/$account/projects")
+        val original = File(root, "one.json")
+        val relocated = File(root, "two.json")
+        assertEquals(true, original.copyTo(relocated, overwrite = true).exists())
         assertThrows(Exception::class.java) { store.readText("projects/two.json") }
         store.delete("projects/one.json")
+        store.delete("projects/two.json")
     }
 
     @Test
