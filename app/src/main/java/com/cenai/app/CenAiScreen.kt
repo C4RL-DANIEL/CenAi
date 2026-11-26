@@ -202,6 +202,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     val guardian = remember { GuardianMonitor(context) }
     val cloud = remember { CenAiCloud(vault) }
     val sandboxClient = remember { CenAiSandboxClient(vault) }
+    var sandboxAgentEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "sandbox_agent_enabled", "false").toBoolean()) }
     val voiceClient = remember { CenAiVoiceClient(vault) }
     val voicePlayback = remember { CenAiVoicePlayback() }
     var cloudVoiceEnabled by remember(activeAccountId) { mutableStateOf(vault.getUser(activeAccountId, "cloud_voice_enabled", "false").toBoolean()) }
@@ -374,8 +375,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
                     val enabledToolsJson = JSONArray().apply { toolEnabled.filterValues { it }.keys.forEach(::put) }.toString()
                     val toolGuide = if (agentPlanning) {
-                        listOf(NativeCore.buildToolGuide(enabledToolsJson, true, true), mcpRegistry.toolGuide())
-                            .filter { it.isNotBlank() }.joinToString("\n\n")
+                        listOf(
+                            NativeCore.buildToolGuide(enabledToolsJson, true, true),
+                            mcpRegistry.toolGuide(),
+                            if (sandboxAgentEnabled) "sandbox_run — execute an explicitly approved command in the isolated CenAI cloud microVM. Input schema: {command: string, arguments: string[], projectId: string, workingDirectory: string}. This action always requires user approval before execution." else ""
+                        ).filter { it.isNotBlank() }.joinToString("\n\n")
                     } else ""
                     val systemContext = NativeCore.buildSystemContext(
                         systemPrompt,
@@ -417,7 +421,11 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                         val visible = decision.visibleText
                         if (visible.isNotBlank()) displayText += visible + "\n\n"
-                        val execution = mcpRegistry.execute(decision.name, decision.arguments) ?: runtime.execute(decision.name, decision.arguments)
+                        val execution = when {
+                            decision.name == "sandbox_run" && sandboxAgentEnabled ->
+                                ToolExecution(decision.name, decision.arguments, "Cloud sandbox execution requires your approval.", true, false)
+                            else -> mcpRegistry.execute(decision.name, decision.arguments) ?: runtime.execute(decision.name, decision.arguments)
+                        }
                         val current = messages.toMutableList()
                         if (current.lastOrNull()?.role == "assistant") {
                             current[current.lastIndex] = ChatMessage("assistant", displayText.trimEnd())
