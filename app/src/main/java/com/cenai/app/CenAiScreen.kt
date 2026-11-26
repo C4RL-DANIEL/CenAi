@@ -195,6 +195,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
     var moreActionsExpanded by remember { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val repo = remember { ChatRepository(vault) }
+    val mcpRegistry = remember(activeAccountId) { McpServerRegistry(vault, activeAccountId) }
     val store = remember(activeAccountId) { ChatStore(context, activeAccountId) }
     val updater = remember { UpdateManager(context) }
     val localModelRuntime = remember { LocalModelRuntime(context) }
@@ -371,7 +372,10 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                     val heading = if (multiAgent) "${target.label} response\n\n" else ""
                     val runtime = AgentRuntime(enabledTools = toolEnabled.filterValues { it }.keys)
                     val enabledToolsJson = JSONArray().apply { toolEnabled.filterValues { it }.keys.forEach(::put) }.toString()
-                    val toolGuide = if (agentPlanning) NativeCore.buildToolGuide(enabledToolsJson, true, true) else ""
+                    val toolGuide = if (agentPlanning) {
+                        listOf(NativeCore.buildToolGuide(enabledToolsJson, true, true), mcpRegistry.toolGuide())
+                            .filter { it.isNotBlank() }.joinToString("\n\n")
+                    } else ""
                     val systemContext = NativeCore.buildSystemContext(
                         systemPrompt,
                         agentMemory,
@@ -412,7 +416,7 @@ private fun CenAiScreenContent(vault: SecureKeyStore, onUiStyleChange: (String) 
                         }
                         val visible = decision.visibleText
                         if (visible.isNotBlank()) displayText += visible + "\n\n"
-                        val execution = runtime.execute(decision.name, decision.arguments)
+                        val execution = mcpRegistry.execute(decision.name, decision.arguments) ?: runtime.execute(decision.name, decision.arguments)
                         val current = messages.toMutableList()
                         if (current.lastOrNull()?.role == "assistant") {
                             current[current.lastIndex] = ChatMessage("assistant", displayText.trimEnd())
