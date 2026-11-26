@@ -6,7 +6,6 @@ import android.security.keystore.KeyProperties
 import java.io.File
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -25,11 +24,13 @@ class AccountWorkspaceStore(context: Context, val accountId: String) {
         val target = resolve(relativePath)
         val parent = target.parentFile ?: error("Invalid workspace path.")
         check(parent.mkdirs() || parent.isDirectory) { "Could not create workspace directory." }
-        val iv = ByteArray(IV_BYTES).also(SecureRandom()::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, iv))
+            // Android Keystore requires randomized IV generation for GCM encryption.
+            init(Cipher.ENCRYPT_MODE, key())
             updateAAD(aad(relativePath))
         }
+        val iv = cipher.iv ?: error("Android Keystore did not generate a workspace nonce.")
+        require(iv.size == IV_BYTES) { "Android Keystore generated an unsupported GCM nonce." }
         val envelope = MAGIC + iv + cipher.doFinal(plaintext)
         val temp = File(parent, ".${target.name}.${java.util.UUID.randomUUID()}.tmp")
         try {
