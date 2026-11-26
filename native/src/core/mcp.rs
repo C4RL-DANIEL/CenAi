@@ -223,9 +223,11 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
             return Err("MCP schema enum must contain 1-64 values".into());
         }
     }
-    if schema.get("const").is_some_and(|value| value.is_null() && kind != "null") {
-        // JSON null is a legitimate const only for a null-typed schema.
-        return Err("MCP schema const does not match its declared type".into());
+    if let Some(constant) = schema.get("const") {
+        let mut type_schema = schema.clone();
+        if let Some(fields) = type_schema.as_object_mut() { fields.remove("const"); }
+        validate_tool_value(&type_schema, constant, depth + 1)
+            .map_err(|_| "MCP schema const does not match its declared type or constraints".to_owned())?;
     }
     if kind == "object" {
         let properties = schema.get("properties").and_then(serde_json::Value::as_object)
@@ -288,6 +290,9 @@ fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, de
         _ => false,
     };
     if !valid { return Err(format!("MCP argument does not match the declared {kind} type")); }
+    if schema.get("const").is_some_and(|expected| expected != value) {
+        return Err("MCP argument does not match the declared constant value".into());
+    }
     if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array) {
         if !values.iter().any(|item| item == value) { return Err("MCP argument is not an allowed enum value".into()); }
     }
@@ -652,6 +657,13 @@ mod tests {
             "required":["name","name"]
         });
         assert!(validate_schema_definition(&duplicate_required, 0).is_err());
+
+        let constant_schema = serde_json::json!({"type":"string","const":"approved"});
+        assert!(validate_schema_definition(&constant_schema, 0).is_ok());
+        assert!(validate_tool_arguments(&constant_schema, &serde_json::json!("approved")).is_ok());
+        assert!(validate_tool_arguments(&constant_schema, &serde_json::json!("other")).is_err());
+        let invalid_constant = serde_json::json!({"type":"integer","const":"not-an-integer"});
+        assert!(validate_schema_definition(&invalid_constant, 0).is_err());
 
         let supported = serde_json::json!({
             "type":"object",
