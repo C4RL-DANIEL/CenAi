@@ -61,6 +61,14 @@ Other providers are not automatically account-connected. Only implement their OA
 
 Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
 
+## Production website and free-tier backend architecture
+
+The production website is served by the CenAI Cloudflare Worker; Cloudflare is the website hosting and delivery layer. Vercel is not required for the production website or its deployment path. The Worker serves the site assets and forwards the supported backend requests to the configured Supabase project.
+
+Supabase provides the authentication, database and Edge Function backend. The password-policy Edge Function checks new passwords against the Have I Been Pwned range API using the first five hexadecimal characters of a locally computed SHA-1 hash with response padding; the full password and full hash are not sent to that service. The function fails closed if the breach check is unavailable. CenAI's official website signup and password-recovery/update flows call this function before account creation or password update.
+
+This is an application-level safeguard, not a global Supabase Auth password hook: on the Free plan, direct Auth API clients that bypass CenAI's official flows can bypass this custom check. Do not describe it as universal protection for every client. Keep service-role credentials only in Supabase Edge Function secrets, never in website JavaScript, the Android app or Git. Keep Cloudflare Worker secrets out of source control as well. Apply request abuse controls at the Cloudflare edge (for example, rate limiting and bot controls) before exposing additional unauthenticated endpoints; do not assume CORS is authentication or rate limiting.
+
 
 ## UI design references
 
