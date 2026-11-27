@@ -1,6 +1,6 @@
 import { connect } from "cloudflare:sockets";
 
-const STATIC_CACHE_VERSION = "20261127-password-policy-cache-bust-1";
+const STATIC_CACHE_VERSION = "20261127-auth-policy-cache-v001";
 const STATIC_FILES = new Set([
   "/index.html", "/styles.css", "/site-shell.css", "/editorial.css", "/billing.css", "/home.js", "/app.js", "/api.html",
   "/about.html", "/privacy.html", "/terms.html", "/contact.html", "/robots.txt", "/sitemap.xml",
