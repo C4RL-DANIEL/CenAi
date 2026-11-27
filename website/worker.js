@@ -487,7 +487,7 @@ async function staticAsset(request, url, ctx) {
   const cacheKey = new Request(url.origin + assetPath + "?v=" + STATIC_CACHE_VERSION);
   let response = await caches.default.match(cacheKey);
   if (!response) {
-    const origin = "https://raw.githubusercontent.com/C4RL-DANIEL/CenAi/main/website" + assetPath;
+    const origin = "https://raw.githubusercontent.com/C4RL-DANIEL/CenAi/main/website" + assetPath + "?v=" + STATIC_CACHE_VERSION;
     try {
       const upstream = await fetch(origin);
       if (!upstream.ok) return withSecurity(new Response("Website asset unavailable", { status: 502 }));
