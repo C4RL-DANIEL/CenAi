@@ -40,6 +40,17 @@ jobs:
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require release tag to point to mainline commit
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Release tags must point to a commit already merged into main."
+            exit 1
+          fi
 
       - uses: actions/setup-java@v4
         with:
