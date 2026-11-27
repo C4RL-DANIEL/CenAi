@@ -52,6 +52,37 @@ pub fn parse_openai_sse_event(line: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn is_non_public_ip(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+                || ip.is_multicast() || ip.is_broadcast() || octets[0] == 0 || octets[0] >= 240
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && (octets[2] == 0 || octets[2] == 2))
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19
+                    || (octets[1] == 51 && octets[2] == 100)))
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+        }
+        std::net::IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            let octets = ip.octets();
+            let mapped_v4 = segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
+            let compatible_v4 = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
+            if mapped_v4 || compatible_v4 {
+                return is_non_public_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    octets[12], octets[13], octets[14], octets[15],
+                )));
+            }
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+                || ip.is_unspecified() || ip.is_multicast()
+                || (segments[0] == 0x2001 && (segments[1] == 0x0db8 || segments[1] == 0x0002))
+                || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
+                || (segments[0] & 0xffc0 == 0xfec0)
+        }
+    }
+}
+
 pub fn validate_provider_endpoint(endpoint: &str) -> Result<(), &'static str> {
     let trimmed = endpoint.trim();
     if trimmed.len() > 2048 || trimmed.is_empty() {
@@ -75,16 +106,8 @@ pub fn validate_provider_endpoint(endpoint: &str) -> Result<(), &'static str> {
     }
     let ip_literal = normalized.trim_start_matches('[').trim_end_matches(']');
     if let Ok(ip) = ip_literal.parse::<std::net::IpAddr>() {
-        let is_private = match ip {
-            std::net::IpAddr::V4(address) => address.is_private()
-                || address.is_loopback() || address.is_link_local()
-                || address.is_unspecified() || address.is_broadcast(),
-            std::net::IpAddr::V6(address) => address.is_loopback()
-                || address.is_unique_local() || address.is_unicast_link_local()
-                || address.is_unspecified() || address.is_multicast(),
-        };
-        if is_private {
-            return Err("Provider endpoint cannot target a private or local IP address");
+        if is_non_public_ip(ip) {
+            return Err("Provider endpoint cannot target a private, reserved or local IP address");
         }
     }
     Ok(())
@@ -117,6 +140,17 @@ mod tests {
         assert!(validate_provider_endpoint("https://localhost/v1").is_err());
         assert!(validate_provider_endpoint("https://127.0.0.1/v1").is_err());
         assert!(validate_provider_endpoint("https://10.0.0.8/v1").is_err());
+        // Block non-routable and special-use literals before any network request.
+        for address in [
+            "0.0.0.1", "100.64.0.1", "192.0.2.1", "198.18.0.1",
+            "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1",
+            "[::]", "[ff02::1]", "[fc00::1]", "[fe80::1]",
+            "[::ffff:127.0.0.1]", "[::ffff:10.0.0.1]", "[::ffff:192.0.2.1]",
+        ] {
+            assert!(validate_provider_endpoint(&format!("https://{address}/v1")).is_err(), "{address}");
+        }
+        assert!(validate_provider_endpoint("https://8.8.8.8/v1").is_ok());
+        assert!(validate_provider_endpoint("https://[2606:4700:4700::1111]/v1").is_ok());
         assert!(validate_provider_endpoint("https://[::1]/v1").is_err());
         assert!(validate_provider_endpoint("https://user:pass@api.example.com/v1").is_err());
         assert!(validate_provider_endpoint("https://api.example.com/v1?key=secret").is_err());
