@@ -96,6 +96,8 @@ jobs:
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
           grep -q 'cenai-website.cenai-app.workers.dev/reset-password' website/reset-password.js
+          grep -q 'STATIC_CACHE_VERSION' website/worker.js
+          grep -q 'assetPath + "?v=" + STATIC_CACHE_VERSION' website/worker.js
           grep -q 'cenai-password-policy' website/reset-password.js
           grep -q 'passwordPolicy' website/account.js
           grep -q 'action:"signup"' website/account.js
