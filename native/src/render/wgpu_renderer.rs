@@ -2849,9 +2849,11 @@ impl WgpuRenderer {
                                     .unwrap_or_default()
                                     .as_millis() as u64;
                                 match store.save_task_plan(running.clone(), now) {
-                                    Err(error) => self.app_state.plan_status = format!(
+                                    Err(error) => {
+                                        self.app_state.plan_status = format!(
                                         "AI steps could not be saved before execution: {error}."
-                                    ),
+                                    )
+                                    }
                                     Ok(_) => {
                                         self.app_state.task_plans[index] = running.clone();
                                         self.app_state.plan_status = if action
