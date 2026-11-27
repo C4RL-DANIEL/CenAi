@@ -21,7 +21,7 @@ function json(status: number, body: Record<string, unknown>) {
 function validatePassword(password: string) {
   const length = Array.from(password).length;
   if (length < 12) return "Use at least 12 characters.";
-  if (length > 128) return "Use no more than 128 characters.";
+  if (new TextEncoder().encode(password).length > 72) return "Use a password no longer than 72 UTF-8 bytes.";
   if (!password.trim() || /[\u0000-\u001f\u007f]/.test(password)) return "Choose a password containing printable characters.";
   if (/^(.)\1{11,}$/su.test(password)) return "Avoid passwords made from one repeated character.";
   return null;
