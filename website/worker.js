@@ -49,9 +49,21 @@ function envReady(env, keys) {
   return keys.every((key) => typeof env[key] === "string" && env[key].length > 0);
 }
 
-const CENAI_SANDBOX_BACKEND = "https://cenai-website.vercel.app/api/sandbox";
+function sandboxBackendUrl(env) {
+  const configured = String(env.CENAI_SANDBOX_BACKEND_URL || "").trim();
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/api/sandbox") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
-async function sandboxProxy(request) {
+async function sandboxProxy(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   const token = (request.headers.get("Authorization") || "").trim();
   if (!/^Bearer\s+\S+/i.test(token)) return json(401, { error: "Sign in required" });
@@ -806,7 +818,7 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
       if (url.pathname === "/api/admin" || url.pathname === "/api/beta") return controlPlaneProxy(request, env);
-      if (url.pathname === "/api/sandbox") return sandboxProxy(request);
+      if (url.pathname === "/api/sandbox") return sandboxProxy(request, env);
       if (url.pathname === "/api/admin-config") {
         if (request.method !== "GET") return json(405, { error: "Method not allowed" });
         return adminConfig(env);
