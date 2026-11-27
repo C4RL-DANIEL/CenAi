@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { isBreached, validatePassword } from "./policy.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -18,34 +19,6 @@ function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
-function validatePassword(password: string) {
-  const length = Array.from(password).length;
-  if (length < 12) return "Use at least 12 characters.";
-  if (new TextEncoder().encode(password).length > 72) return "Use a password no longer than 72 UTF-8 bytes.";
-  if (!password.trim() || /[\u0000-\u001f\u007f]/.test(password)) return "Choose a password containing printable characters.";
-  if (/^(.)\1{11,}$/su.test(password)) return "Avoid passwords made from one repeated character.";
-  return null;
-}
-
-async function isBreached(password: string): Promise<boolean> {
-  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(password));
-  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-  const prefix = hash.slice(0, 5);
-  const suffix = hash.slice(5);
-  // k-anonymity: only the first five SHA-1 characters leave CenAI. The password
-  // and complete hash are never sent to HIBP and are never logged.
-  const response = await fetch("https://api.pwnedpasswords.com/range/" + prefix, {
-    headers: { "Add-Padding": "true", "User-Agent": "CenAI-Password-Policy/1.0" },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!response.ok) throw new Error("BREACH_CHECK_UNAVAILABLE");
-  const rows = await response.text();
-  for (const line of rows.split("\n")) {
-    const [candidate, countText] = line.trim().split(":");
-    if (candidate?.toUpperCase() === suffix && Number(countText) > 0) return true;
-  }
-  return false;
-}
 
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
