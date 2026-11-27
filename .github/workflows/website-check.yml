@@ -49,7 +49,7 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-paypal-billing cenai-public-api cenai-telemetry; do
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-email-otp cenai-password-policy cenai-paypal-billing cenai-public-api cenai-telemetry; do
             deno check --no-lock "supabase/functions/$function/index.ts"
           done
 
@@ -96,6 +96,11 @@ jobs:
           grep -q 'api/site-pages' website/worker.js
           grep -q 'api/releases' website/worker.js
           grep -q 'cenai-website.cenai-app.workers.dev/reset-password' website/reset-password.js
+          grep -q 'cenai-password-policy' website/reset-password.js
+          grep -q 'passwordPolicy' website/account.js
+          grep -q 'action:"signup"' website/account.js
+          grep -q '12–72 characters' website/reset-password.html
+          grep -q 'Add-Padding' supabase/functions/cenai-password-policy/index.ts
           grep -q 'site_pages_public_read' supabase/migrations/20261116135000_tighten_cms_and_quota_table_access.sql
           grep -q 'cenai_issue_email_otp_for_user' supabase/migrations/20261116135500_secure_email_otp_service_role_only.sql
           echo "Cloudflare site build and backend route checks passed."
