@@ -86,8 +86,8 @@ jobs:
           grep -q 'pwnedpasswords.com/range/' supabase/functions/cenai-password-policy/policy.ts
           grep -q 'Add-Padding' supabase/functions/cenai-password-policy/policy.ts
           grep -q 'BREACH_CHECK_UNAVAILABLE' supabase/functions/cenai-password-policy/policy.ts
-          grep -q 'Use at least 12 characters' supabase/functions/cenai-password-policy/index.ts
-          grep -q '72 UTF-8 bytes' supabase/functions/cenai-password-policy/index.ts
+          grep -q 'Use at least 12 characters' supabase/functions/cenai-password-policy/policy.ts
+          grep -q '72 UTF-8 bytes' supabase/functions/cenai-password-policy/policy.ts
           grep -q 'minlength="12"' website/reset-password.html
           grep -q 'password-form' website/register.js
           node - <<'NODE'
