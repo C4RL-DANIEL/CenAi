@@ -140,7 +140,10 @@ jobs:
           grep -q 'cenai_issue_email_otp_for_user' supabase/migrations/20261116135500_secure_email_otp_service_role_only.sql
           echo "Cloudflare site build and backend route checks passed."
 
+      # Production smoke tests must only run for mainline changes. Feature branches
+      # are not deployed to the live Worker and must not be judged against its old routes.
       - name: Smoke test production Cloudflare Worker
+        if: github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           BASE="https://cenai-website.cenai-app.workers.dev"
