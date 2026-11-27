@@ -23,7 +23,7 @@ Deno.test("breach lookup uses only the five-character SHA-1 prefix and detects a
   assert(breached, "known breached password should be detected");
   assert(requestedUrl === "https://api.pwnedpasswords.com/range/5BAA6", "only the five-character hash prefix may be sent");
   assert(padding === "true", "HIBP response padding must be requested");
-  assert(!requestedUrl.includes("password") && !requestedUrl.includes("5BAA61E4"), "password and full hash must not leave the function");
+  assert(!requestedUrl.includes("5BAA61E4"), "the complete hash must not leave the function");
 });
 
 Deno.test("breach lookup allows hashes absent from the returned range", async () => {
