@@ -52,7 +52,7 @@ jobs:
           deno-version: v2.x
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
-          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-paypal-billing cenai-public-api cenai-telemetry; do
+          for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-password-policy cenai-paypal-billing cenai-public-api cenai-telemetry; do
             deno check --no-lock "supabase/functions/$function/index.ts"
           done
 
@@ -79,6 +79,13 @@ jobs:
           grep -q 'Complete Discord invitation registration' supabase/functions/cenai-public-api/index.ts
           grep -q 'Complete Discord invitation registration' supabase/functions/cenai-telemetry/index.ts
           grep -q 'link.hash = "invite="' website/admin/admin.js
+          grep -q 'cenai-password-policy' website/register.js
+          grep -q 'cenai-password-policy' website/reset-password.js
+          grep -q 'pwnedpasswords.com/range/' supabase/functions/cenai-password-policy/index.ts
+          grep -q 'Add-Padding' supabase/functions/cenai-password-policy/index.ts
+          grep -q 'BREACH_CHECK_UNAVAILABLE' supabase/functions/cenai-password-policy/index.ts
+          grep -q 'Use at least 12 characters' supabase/functions/cenai-password-policy/index.ts
+          grep -q 'minlength="12"' website/reset-password.html
           grep -q 'password-form' website/register.js
           node - <<'NODE'
           const fs = require("node:fs");
