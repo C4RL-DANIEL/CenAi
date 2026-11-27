@@ -16,8 +16,12 @@ class LightningOfflineInferenceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = LocalModelRuntime(context)
         try {
+            println("CenAI offline inference: checking packaged model asset")
+            context.assets.openFd("models/lightning.litertlm").use { asset ->
+                assertEquals("The APK must package the complete pinned Lightning model.", 613_722_264L, asset.length)
+            }
             println("CenAI offline inference: installing the bundled Lightning model")
-            assertTrue("The APK must contain the bundled Lightning model.", runtime.installBundledModelIfMissing())
+            assertTrue("The bundled Lightning model should install into app-private storage.", runtime.installBundledModelIfMissing())
             assertEquals(613_722_264L, runtime.modelSizeBytes())
             println("CenAI offline inference: model installed; initializing CPU engine and generating")
 
