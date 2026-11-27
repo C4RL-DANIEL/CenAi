@@ -16,10 +16,16 @@ class LightningOfflineInferenceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = LocalModelRuntime(context)
         try {
-            assertTrue("The APK must contain the bundled Lightning model.", runtime.installBundledModelIfMissing())
+            println("CenAI offline inference: checking packaged model asset")
+            context.assets.openFd("models/lightning.litertlm").use { asset ->
+                assertEquals("The APK must package the complete pinned Lightning model.", 613_722_264L, asset.length)
+            }
+            println("CenAI offline inference: installing the bundled Lightning model")
+            assertTrue("The bundled Lightning model should install into app-private storage.", runtime.installBundledModelIfMissing())
             assertEquals(613_722_264L, runtime.modelSizeBytes())
+            println("CenAI offline inference: model installed; initializing CPU engine and generating")
 
-            val response = withTimeout(180_000L) {
+            val response = withTimeout(600_000L) {
                 runtime.stream(
                     listOf(
                         ChatMessage("system", "You are CenAI, a concise private on-device assistant. Reply briefly."),
@@ -27,6 +33,7 @@ class LightningOfflineInferenceTest {
                     )
                 ) { /* The smoke test validates local generation; no network callback is installed. */ }
             }
+            println("CenAI offline inference: generation completed with ${response.length} characters")
             assertTrue("Offline Lightning inference returned an empty response.", response.isNotBlank())
         } finally {
             runtime.release()

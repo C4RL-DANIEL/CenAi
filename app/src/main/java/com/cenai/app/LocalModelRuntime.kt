@@ -15,6 +15,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import android.os.StatFs
 
 /**
  * Private, on-device Lightning runtime. The pinned Qwen3-0.6B INT8 LiteRT-LM
@@ -40,22 +42,30 @@ class LocalModelRuntime(context: Context) {
             if (isModelInstalled()) return@withLock true
             val source = try {
                 app.assets.open(MODEL_ASSET_PATH)
-            } catch (_: Throwable) {
-                return@withLock false
+            } catch (error: IOException) {
+                throw IllegalStateException(
+                    "Bundled Lightning asset '$MODEL_ASSET_PATH' is missing from this APK.",
+                    error
+                )
             }
             modelDir.mkdirs()
+            val availableBytes = StatFs(modelDir.absolutePath).availableBytes
+            require(availableBytes >= EXPECTED_MODEL_SIZE_BYTES + MINIMUM_INSTALL_HEADROOM_BYTES) {
+                "Not enough free app storage to install Lightning: $availableBytes bytes available; " +
+                    "at least ${EXPECTED_MODEL_SIZE_BYTES + MINIMUM_INSTALL_HEADROOM_BYTES} required."
+            }
             val temporary = File(modelDir, "lightning.bundle.tmp")
+            var copied = 0L
             try {
-                var copied = 0L
                 source.use { input ->
                     FileOutputStream(temporary).use { output ->
-                        val buffer = ByteArray(1024 * 1024)
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
                             copied += count
                             require(copied <= EXPECTED_MODEL_SIZE_BYTES) {
-                                "Bundled Lightning model is larger than the pinned model."
+                                "Bundled Lightning model is larger than the pinned model ($copied bytes read)."
                             }
                             output.write(buffer, 0, count)
                         }
@@ -63,7 +73,7 @@ class LocalModelRuntime(context: Context) {
                     }
                 }
                 require(copied == EXPECTED_MODEL_SIZE_BYTES) {
-                    "Bundled Lightning model is incomplete or has an unexpected size."
+                    "Bundled Lightning model is incomplete: copied $copied of $EXPECTED_MODEL_SIZE_BYTES bytes."
                 }
                 closeEngineLocked()
                 if (modelFile.exists() && !modelFile.delete()) {
@@ -73,9 +83,14 @@ class LocalModelRuntime(context: Context) {
                     throw IllegalStateException("Could not install Lightning into private app storage.")
                 }
                 true
-            } catch (_: Throwable) {
+            } catch (error: Exception) {
                 temporary.delete()
-                false
+                throw IllegalStateException(
+                    "Failed to install bundled Lightning after copying $copied of $EXPECTED_MODEL_SIZE_BYTES bytes.",
+                    error
+                )
+            } finally {
+                source.close()
             }
         }
     }
@@ -149,5 +164,7 @@ class LocalModelRuntime(context: Context) {
     companion object {
         private const val MODEL_ASSET_PATH = "models/lightning.litertlm"
         private const val EXPECTED_MODEL_SIZE_BYTES = 613_722_264L
+        private const val COPY_BUFFER_BYTES = 256 * 1024
+        private const val MINIMUM_INSTALL_HEADROOM_BYTES = 128L * 1024L * 1024L
     }
 }
