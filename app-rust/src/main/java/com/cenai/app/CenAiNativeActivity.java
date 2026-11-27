@@ -65,6 +65,37 @@ public final class CenAiNativeActivity extends NativeActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        GuardianRuntimeBridge.recordLifecycle(this, "resumed");
+    }
+
+    @Override
+    protected void onPause() {
+        GuardianRuntimeBridge.recordLifecycle(this, "paused");
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        GuardianRuntimeBridge.recordLifecycle(this, "stopped");
+        super.onStop();
+    }
+
+    @Override
+    public void onLowMemory() {
+        GuardianRuntimeBridge.recordLifecycle(this, "low_memory");
+        GuardianRuntimeBridge.recordMemoryPressure(this, 80);
+        super.onLowMemory();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        GuardianRuntimeBridge.recordMemoryPressure(this, level);
+        super.onTrimMemory(level);
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
