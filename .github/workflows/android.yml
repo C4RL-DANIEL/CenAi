@@ -127,7 +127,7 @@ jobs:
           [[ -n "$CENAI_KEY_PASSWORD" ]] || missing+=(CENAI_KEY_PASSWORD)
           if (( ${#missing[@]} )); then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            printf 'ready=false\\nmissing=%s\\n' "${missing[*]}" > release-signing-readiness.txt
+            printf 'ready=false\nmissing=%s\n' "${missing[*]}" > release-signing-readiness.txt
             echo "Release signing is not fully configured. Missing secret names: ${missing[*]}" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             tmp_keystore="$(mktemp)"
@@ -146,7 +146,7 @@ jobs:
               exit 1
             fi
             echo "ready=true" >> "$GITHUB_OUTPUT"
-            printf 'ready=true\\nmissing=none\\nkeystore=valid\\nalias=valid\\nkey_password=valid\\n' > release-signing-readiness.txt
+            printf 'ready=true\nmissing=none\nkeystore=valid\nalias=valid\nkey_password=valid\n' > release-signing-readiness.txt
             echo "Release signing keystore, alias, and passwords verified. Values were not printed." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload signing readiness result
