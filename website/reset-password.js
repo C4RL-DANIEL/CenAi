@@ -37,7 +37,7 @@
     const password = document.getElementById("password").value;
     const confirm = document.getElementById("confirm").value;
     if (Array.from(password).length < 12) return message("Use at least 12 characters.", "error");
-    if (Array.from(password).length > 128) return message("Use no more than 128 characters.", "error");
+    if (Array.from(password).length > 72) return message("Use no more than 72 characters.", "error");
     if (password !== confirm) return message("The passwords do not match.", "error");
     submit.disabled = true;
     submit.textContent = "Updating…";
