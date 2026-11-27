@@ -21,9 +21,9 @@ pub fn approval_policy(class: OperationClass, explicitly_granted: bool) -> Appro
         OperationClass::ReadOnly => ApprovalDecision::RequireUserApproval,
         OperationClass::Reversible if explicitly_granted => ApprovalDecision::Allow,
         OperationClass::Reversible => ApprovalDecision::RequireUserApproval,
-        OperationClass::ExternalAccount | OperationClass::Sensitive | OperationClass::Destructive => {
-            ApprovalDecision::RequireUserApproval
-        }
+        OperationClass::ExternalAccount
+        | OperationClass::Sensitive
+        | OperationClass::Destructive => ApprovalDecision::RequireUserApproval,
     }
 }
 
@@ -33,15 +33,28 @@ mod tests {
 
     #[test]
     fn dangerous_operations_always_require_per_action_approval() {
-        for class in [OperationClass::ExternalAccount, OperationClass::Sensitive, OperationClass::Destructive] {
-            assert_eq!(approval_policy(class, true), ApprovalDecision::RequireUserApproval);
+        for class in [
+            OperationClass::ExternalAccount,
+            OperationClass::Sensitive,
+            OperationClass::Destructive,
+        ] {
+            assert_eq!(
+                approval_policy(class, true),
+                ApprovalDecision::RequireUserApproval
+            );
         }
     }
 
     #[test]
     fn granted_read_and_reversible_operations_can_proceed() {
-        assert_eq!(approval_policy(OperationClass::ReadOnly, true), ApprovalDecision::Allow);
-        assert_eq!(approval_policy(OperationClass::Reversible, true), ApprovalDecision::Allow);
+        assert_eq!(
+            approval_policy(OperationClass::ReadOnly, true),
+            ApprovalDecision::Allow
+        );
+        assert_eq!(
+            approval_policy(OperationClass::Reversible, true),
+            ApprovalDecision::Allow
+        );
     }
 
     #[test]

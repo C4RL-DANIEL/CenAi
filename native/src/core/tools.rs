@@ -17,7 +17,11 @@ const MAX_TOOL_TEXT_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ToolRisk { Safe, Sensitive, Destructive }
+pub enum ToolRisk {
+    Safe,
+    Sensitive,
+    Destructive,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolDefinition {
@@ -47,20 +51,31 @@ pub struct AgentToolRuntime {
 }
 
 impl Default for AgentToolRuntime {
-    fn default() -> Self { Self::new(None) }
+    fn default() -> Self {
+        Self::new(None)
+    }
 }
 
 impl AgentToolRuntime {
-    pub fn new(enabled_tools: Option<HashSet<String>>) -> Self { Self { enabled_tools } }
+    pub fn new(enabled_tools: Option<HashSet<String>>) -> Self {
+        Self { enabled_tools }
+    }
 
     pub fn available_tools(&self) -> Vec<ToolDefinition> {
-        definitions().into_iter()
-            .filter(|tool| self.enabled_tools.as_ref().is_none_or(|enabled| enabled.contains(&tool.name)))
+        definitions()
+            .into_iter()
+            .filter(|tool| {
+                self.enabled_tools
+                    .as_ref()
+                    .is_none_or(|enabled| enabled.contains(&tool.name))
+            })
             .collect()
     }
 
     pub fn parse_tool_call(&self, response: &str) -> Result<Option<ToolCall>, &'static str> {
-        if response.len() > MAX_TOOL_RESPONSE_BYTES { return Err("Tool response exceeds the 32 KiB limit"); }
+        if response.len() > MAX_TOOL_RESPONSE_BYTES {
+            return Err("Tool response exceeds the 32 KiB limit");
+        }
         let response = response.trim();
         if !response.contains(TOOL_CALL_OPEN) {
             return if response.contains(TOOL_CALL_CLOSE) {
@@ -69,32 +84,66 @@ impl AgentToolRuntime {
                 Ok(None)
             };
         }
-        if !response.starts_with(TOOL_CALL_OPEN) || !response.ends_with(TOOL_CALL_CLOSE)
+        if !response.starts_with(TOOL_CALL_OPEN)
+            || !response.ends_with(TOOL_CALL_CLOSE)
             || response.matches(TOOL_CALL_OPEN).count() != 1
-            || response.matches(TOOL_CALL_CLOSE).count() != 1 {
-            return Err("A tool call must contain exactly one complete marker pair and no surrounding text");
+            || response.matches(TOOL_CALL_CLOSE).count() != 1
+        {
+            return Err(
+                "A tool call must contain exactly one complete marker pair and no surrounding text",
+            );
         }
         let body_start = TOOL_CALL_OPEN.len();
         let raw = response[body_start..response.len() - TOOL_CALL_CLOSE.len()].trim();
         let payload: Value = serde_json::from_str(raw).map_err(|_| "Tool call JSON is invalid")?;
-        let object = payload.as_object().ok_or("Tool call must be a JSON object")?;
+        let object = payload
+            .as_object()
+            .ok_or("Tool call must be a JSON object")?;
         if object.len() != 2 || !object.contains_key("name") || !object.contains_key("arguments") {
             return Err("Tool call must contain exactly the name and arguments fields");
         }
-        let name = object.get("name").and_then(Value::as_str).ok_or("Tool name is required")?;
-        if name.is_empty() || name.len() > 80 { return Err("Tool name is invalid"); }
-        let arguments = object.get("arguments").cloned().ok_or("Tool arguments are required")?;
-        if !arguments.is_object() { return Err("Tool arguments must be a JSON object"); }
-        Ok(Some(ToolCall { name: name.to_owned(), arguments }))
+        let name = object
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or("Tool name is required")?;
+        if name.is_empty() || name.len() > 80 {
+            return Err("Tool name is invalid");
+        }
+        let arguments = object
+            .get("arguments")
+            .cloned()
+            .ok_or("Tool arguments are required")?;
+        if !arguments.is_object() {
+            return Err("Tool arguments must be a JSON object");
+        }
+        Ok(Some(ToolCall {
+            name: name.to_owned(),
+            arguments,
+        }))
     }
 
     pub fn execute(&self, name: &str, arguments: Value, approval_granted: bool) -> ToolExecution {
-        let definition = self.available_tools().into_iter().find(|tool| tool.name == name);
+        let definition = self
+            .available_tools()
+            .into_iter()
+            .find(|tool| tool.name == name);
         let Some(definition) = definition else {
-            return execution(name, arguments, "Tool is disabled or not allow-listed.", false, false);
+            return execution(
+                name,
+                arguments,
+                "Tool is disabled or not allow-listed.",
+                false,
+                false,
+            );
         };
         if let Err(error) = validate_arguments(name, &arguments) {
-            return execution(name, arguments, format!("Invalid tool arguments: {error}"), false, false);
+            return execution(
+                name,
+                arguments,
+                format!("Invalid tool arguments: {error}"),
+                false,
+                false,
+            );
         }
         let class = match definition.risk {
             ToolRisk::Safe => OperationClass::ReadOnly,
@@ -111,58 +160,127 @@ impl AgentToolRuntime {
         let result = match name {
             "current_time" => Ok(Local::now().to_rfc3339()),
             "current_date" => Ok(Local::now().date_naive().format("%Y-%m-%d").to_string()),
-            "calculate" => required_string(&arguments, "expression").and_then(|value| SafeArithmetic::evaluate(value).map(|number| number.to_string())),
+            "calculate" => required_string(&arguments, "expression")
+                .and_then(|value| SafeArithmetic::evaluate(value).map(|number| number.to_string())),
             "count_words" => required_string(&arguments, "text").map(word_stats),
             "text_stats" => required_string(&arguments, "text").map(text_stats),
             "format_json" => required_string(&arguments, "json").and_then(|value| {
                 serde_json::from_str::<Value>(value)
                     .map_err(|_| "Supplied text is not valid JSON".to_owned())
-                    .and_then(|parsed| serde_json::to_string_pretty(&parsed).map_err(|_| "JSON formatting failed".to_owned()))
+                    .and_then(|parsed| {
+                        serde_json::to_string_pretty(&parsed)
+                            .map_err(|_| "JSON formatting failed".to_owned())
+                    })
             }),
             "generate_uuid" => Ok(random_uuid()),
-            "base64_encode" => required_string(&arguments, "text").map(|value| STANDARD.encode(value.as_bytes())),
+            "base64_encode" => {
+                required_string(&arguments, "text").map(|value| STANDARD.encode(value.as_bytes()))
+            }
             "base64_decode" => required_string(&arguments, "value").and_then(|value| {
-                STANDARD.decode(value).map_err(|_| "Base64 input is invalid".to_owned())
-                    .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "Base64 payload is not valid UTF-8".to_owned()))
+                STANDARD
+                    .decode(value)
+                    .map_err(|_| "Base64 input is invalid".to_owned())
+                    .and_then(|bytes| {
+                        String::from_utf8(bytes)
+                            .map_err(|_| "Base64 payload is not valid UTF-8".to_owned())
+                    })
             }),
-            "sandbox_run" => Err("Sandbox execution must be dispatched by the account-scoped approval bridge.".to_owned()),
+            "sandbox_run" => Err(
+                "Sandbox execution must be dispatched by the account-scoped approval bridge."
+                    .to_owned(),
+            ),
             // These require an Android activity and an explicit approval UI; never run in this pure Rust executor.
             "open_url" | "open_dialer" | "share_text" | "open_app_settings" => {
-                return execution(name, arguments, "Approved Android action must be dispatched by the foreground platform bridge.", true, false);
+                return execution(
+                    name,
+                    arguments,
+                    "Approved Android action must be dispatched by the foreground platform bridge.",
+                    true,
+                    false,
+                );
             }
             _ => Err("No executor is registered for this tool".to_owned()),
         };
         match result {
             Ok(output) => execution(name, arguments, output, false, true),
-            Err(error) => execution(name, arguments, format!("Tool error: {error}"), false, false),
+            Err(error) => execution(
+                name,
+                arguments,
+                format!("Tool error: {error}"),
+                false,
+                false,
+            ),
         }
     }
 }
 
 fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
-    let object = arguments.as_object().ok_or("Tool arguments must be a JSON object")?;
+    let object = arguments
+        .as_object()
+        .ok_or("Tool arguments must be a JSON object")?;
     if name == "sandbox_run" {
         let required = ["command", "arguments", "project_id", "working_directory"];
         if object.len() != required.len() || required.iter().any(|key| !object.contains_key(*key)) {
             return Err("Sandbox arguments do not match the exact allow-listed schema".into());
         }
-        let command = object.get("command").and_then(Value::as_str).ok_or("Sandbox command must be a string")?;
-        let allowed = ["bash", "sh", "cargo", "rustc", "python3", "python", "node", "npm", "npx", "git", "go", "make", "cmake", "java", "javac", "gradle", "ls", "cat", "find", "grep", "sed", "awk", "pwd", "mkdir", "cp", "mv", "rm", "touch", "tar", "unzip", "zip", "which", "head", "tail", "wc", "file"];
-        if !allowed.contains(&command) { return Err("Sandbox command is not in the allowlist".into()); }
-        let args = object.get("arguments").and_then(Value::as_array).ok_or("Sandbox arguments must be a JSON string array")?;
-        if args.len() > 128 || args.iter().any(|value| value.as_str().is_none_or(|arg| arg.len() > 4096 || arg.contains('\0'))) {
+        let command = object
+            .get("command")
+            .and_then(Value::as_str)
+            .ok_or("Sandbox command must be a string")?;
+        let allowed = [
+            "bash", "sh", "cargo", "rustc", "python3", "python", "node", "npm", "npx", "git", "go",
+            "make", "cmake", "java", "javac", "gradle", "ls", "cat", "find", "grep", "sed", "awk",
+            "pwd", "mkdir", "cp", "mv", "rm", "touch", "tar", "unzip", "zip", "which", "head",
+            "tail", "wc", "file",
+        ];
+        if !allowed.contains(&command) {
+            return Err("Sandbox command is not in the allowlist".into());
+        }
+        let args = object
+            .get("arguments")
+            .and_then(Value::as_array)
+            .ok_or("Sandbox arguments must be a JSON string array")?;
+        if args.len() > 128
+            || args.iter().any(|value| {
+                value
+                    .as_str()
+                    .is_none_or(|arg| arg.len() > 4096 || arg.contains('\0'))
+            })
+        {
             return Err("Sandbox arguments exceed the allowed limits".into());
         }
-        let project_id = object.get("project_id").and_then(Value::as_str).ok_or("Sandbox project ID must be a string")?;
-        if project_id.is_empty() || project_id.len() > 80 || !project_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+        let project_id = object
+            .get("project_id")
+            .and_then(Value::as_str)
+            .ok_or("Sandbox project ID must be a string")?;
+        if project_id.is_empty()
+            || project_id.len() > 80
+            || !project_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
             return Err("Sandbox project ID is invalid".into());
         }
-        let working_directory = object.get("working_directory").and_then(Value::as_str).ok_or("Sandbox working directory must be a string")?;
+        let working_directory = object
+            .get("working_directory")
+            .and_then(Value::as_str)
+            .ok_or("Sandbox working directory must be a string")?;
         use std::path::{Component, Path};
-        if working_directory.is_empty() || working_directory.len() > 512 || working_directory.contains('\\') || working_directory.contains('\0')
+        if working_directory.is_empty()
+            || working_directory.len() > 512
+            || working_directory.contains('\\')
+            || working_directory.contains('\0')
             || Path::new(working_directory).is_absolute()
-            || Path::new(working_directory).components().any(|part| matches!(part, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
-            return Err("Sandbox working directory must remain inside the project workspace".into());
+            || Path::new(working_directory).components().any(|part| {
+                matches!(
+                    part,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(
+                "Sandbox working directory must remain inside the project workspace".into(),
+            );
         }
         return Ok(());
     }
@@ -178,31 +296,50 @@ fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
     };
     let expected_names: HashSet<&str> = expected.iter().map(|(key, _)| *key).collect();
     if object.len() != expected.len()
-        || expected.iter().any(|(key, required)| *required && !object.contains_key(*key))
-        || object.keys().any(|actual| !expected_names.contains(actual.as_str())) {
+        || expected
+            .iter()
+            .any(|(key, required)| *required && !object.contains_key(*key))
+        || object
+            .keys()
+            .any(|actual| !expected_names.contains(actual.as_str()))
+    {
         return Err("Tool arguments do not match the exact allow-listed schema".into());
     }
     for (key, _) in expected {
         if !object.get(*key).is_some_and(Value::is_string) {
             return Err(format!("Tool argument '{key}' must be a string"));
         }
-        if object.get(*key).and_then(Value::as_str).is_some_and(|value| value.len() > MAX_TOOL_TEXT_BYTES) {
+        if object
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.len() > MAX_TOOL_TEXT_BYTES)
+        {
             return Err("Tool text argument exceeds 64 KiB".into());
         }
     }
     match name {
         "open_url" => {
             let value = required_string(arguments, "url")?;
-            let parsed = reqwest::Url::parse(value).map_err(|_| "URL must be a valid HTTP(S) link".to_owned())?;
-            if value.len() > 4096 || !matches!(parsed.scheme(), "https" | "http")
-                || parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
-                return Err("Only public HTTP(S) links without embedded credentials can be opened".into());
+            let parsed = reqwest::Url::parse(value)
+                .map_err(|_| "URL must be a valid HTTP(S) link".to_owned())?;
+            if value.len() > 4096
+                || !matches!(parsed.scheme(), "https" | "http")
+                || parsed.host_str().is_none()
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+            {
+                return Err(
+                    "Only public HTTP(S) links without embedded credentials can be opened".into(),
+                );
             }
         }
         "open_dialer" => {
             let number = required_string(arguments, "number")?;
-            if !(4..=32).contains(&number.len()) || !number.chars().all(|c|
-                c.is_ascii_digit() || "+*#(). -".contains(c)) {
+            if !(4..=32).contains(&number.len())
+                || !number
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || "+*#(). -".contains(c))
+            {
                 return Err("Dialer number contains unsupported characters or is outside the 4–32 character limit".into());
             }
         }
@@ -216,12 +353,14 @@ fn validate_arguments(name: &str, arguments: &Value) -> Result<(), String> {
 
 fn definitions() -> Vec<ToolDefinition> {
     let no_args = json!({"type":"object","properties":{},"additionalProperties":false});
-    let string_arg = |name: &str| json!({
-        "type":"object",
-        "properties":{(name):{"type":"string","maxLength":MAX_TOOL_TEXT_BYTES}},
-        "required":[name],
-        "additionalProperties":false
-    });
+    let string_arg = |name: &str| {
+        json!({
+            "type":"object",
+            "properties":{(name):{"type":"string","maxLength":MAX_TOOL_TEXT_BYTES}},
+            "required":[name],
+            "additionalProperties":false
+        })
+    };
     let sandbox_args = json!({
         "type":"object",
         "properties":{
@@ -253,25 +392,50 @@ fn definitions() -> Vec<ToolDefinition> {
     }).collect()
 }
 
-fn execution(name: &str, arguments: Value, output: impl Into<String>, requires_approval: bool, completed: bool) -> ToolExecution {
-    ToolExecution { tool_name: name.into(), arguments, output: output.into(), requires_approval, completed }
+fn execution(
+    name: &str,
+    arguments: Value,
+    output: impl Into<String>,
+    requires_approval: bool,
+    completed: bool,
+) -> ToolExecution {
+    ToolExecution {
+        tool_name: name.into(),
+        arguments,
+        output: output.into(),
+        requires_approval,
+        completed,
+    }
 }
 
 fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
-    let value = arguments.get(key).and_then(Value::as_str).ok_or_else(|| format!("Argument '{key}' must be a string"))?;
-    if value.len() > MAX_TOOL_TEXT_BYTES { return Err("Tool text argument exceeds 64 KiB".into()); }
+    let value = arguments
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("Argument '{key}' must be a string"))?;
+    if value.len() > MAX_TOOL_TEXT_BYTES {
+        return Err("Tool text argument exceeds 64 KiB".into());
+    }
     Ok(value)
 }
 
 fn word_stats(value: &str) -> String {
     let words = value.split_whitespace().count();
     let characters = value.chars().count();
-    let without_spaces = value.chars().filter(|character| !character.is_whitespace()).count();
-    json!({"words":words,"characters":characters,"characters_without_spaces":without_spaces}).to_string()
+    let without_spaces = value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count();
+    json!({"words":words,"characters":characters,"characters_without_spaces":without_spaces})
+        .to_string()
 }
 
 fn text_stats(value: &str) -> String {
-    let lines = if value.is_empty() { 0 } else { value.lines().count() };
+    let lines = if value.is_empty() {
+        0
+    } else {
+        value.lines().count()
+    };
     json!({"lines":lines,"words":value.split_whitespace().count(),"characters":value.chars().count()}).to_string()
 }
 
@@ -287,60 +451,111 @@ fn random_uuid() -> String {
     )
 }
 
-struct SafeArithmetic<'a> { source: &'a [u8], cursor: usize }
+struct SafeArithmetic<'a> {
+    source: &'a [u8],
+    cursor: usize,
+}
 
 impl<'a> SafeArithmetic<'a> {
     fn evaluate(source: &'a str) -> Result<f64, String> {
-        if source.is_empty() || source.len() > 200 { return Err("Expression length must be 1–200 characters.".into()); }
-        let mut parser = Self { source: source.as_bytes(), cursor: 0 };
+        if source.is_empty() || source.len() > 200 {
+            return Err("Expression length must be 1–200 characters.".into());
+        }
+        let mut parser = Self {
+            source: source.as_bytes(),
+            cursor: 0,
+        };
         let result = parser.expression()?;
         parser.spaces();
-        if parser.cursor != parser.source.len() { return Err("Unexpected input.".into()); }
-        if !result.is_finite() { return Err("Invalid result.".into()); }
+        if parser.cursor != parser.source.len() {
+            return Err("Unexpected input.".into());
+        }
+        if !result.is_finite() {
+            return Err("Invalid result.".into());
+        }
         Ok(result)
     }
-    fn spaces(&mut self) { while self.source.get(self.cursor).is_some_and(u8::is_ascii_whitespace) { self.cursor += 1; } }
+    fn spaces(&mut self) {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.cursor += 1;
+        }
+    }
     fn take(&mut self, byte: u8) -> bool {
-        if self.source.get(self.cursor) == Some(&byte) { self.cursor += 1; true } else { false }
+        if self.source.get(self.cursor) == Some(&byte) {
+            self.cursor += 1;
+            true
+        } else {
+            false
+        }
     }
     fn expression(&mut self) -> Result<f64, String> {
         let mut value = self.term()?;
         loop {
             self.spaces();
-            if self.take(b'+') { value += self.term()?; }
-            else if self.take(b'-') { value -= self.term()?; }
-            else { return Ok(value); }
+            if self.take(b'+') {
+                value += self.term()?;
+            } else if self.take(b'-') {
+                value -= self.term()?;
+            } else {
+                return Ok(value);
+            }
         }
     }
     fn term(&mut self) -> Result<f64, String> {
         let mut value = self.factor()?;
         loop {
             self.spaces();
-            if self.take(b'*') { value *= self.factor()?; }
-            else if self.take(b'/') || self.take(b'%') {
+            if self.take(b'*') {
+                value *= self.factor()?;
+            } else if self.take(b'/') || self.take(b'%') {
                 let operator = self.source[self.cursor - 1];
                 let divisor = self.factor()?;
-                if divisor == 0.0 { return Err("Division by zero.".into()); }
-                if operator == b'/' { value /= divisor; } else { value %= divisor; }
-            } else { return Ok(value); }
+                if divisor == 0.0 {
+                    return Err("Division by zero.".into());
+                }
+                if operator == b'/' {
+                    value /= divisor;
+                } else {
+                    value %= divisor;
+                }
+            } else {
+                return Ok(value);
+            }
         }
     }
     fn factor(&mut self) -> Result<f64, String> {
         self.spaces();
-        if self.take(b'+') { return self.factor(); }
-        if self.take(b'-') { return Ok(-self.factor()?); }
+        if self.take(b'+') {
+            return self.factor();
+        }
+        if self.take(b'-') {
+            return Ok(-self.factor()?);
+        }
         if self.take(b'(') {
             let value = self.expression()?;
             self.spaces();
-            if !self.take(b')') { return Err("Missing closing parenthesis.".into()); }
+            if !self.take(b')') {
+                return Err("Missing closing parenthesis.".into());
+            }
             return Ok(value);
         }
         let start = self.cursor;
-        while self.source.get(self.cursor).is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.') {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+        {
             self.cursor += 1;
         }
-        if self.cursor == start { return Err("Expected a number.".into()); }
-        let raw = std::str::from_utf8(&self.source[start..self.cursor]).map_err(|_| "Invalid number.".to_owned())?;
+        if self.cursor == start {
+            return Err("Expected a number.".into());
+        }
+        let raw = std::str::from_utf8(&self.source[start..self.cursor])
+            .map_err(|_| "Invalid number.".to_owned())?;
         raw.parse::<f64>().map_err(|_| "Invalid number.".to_owned())
     }
 }
@@ -352,33 +567,79 @@ mod tests {
     #[test]
     fn allow_list_and_safe_tools_work() {
         let runtime = AgentToolRuntime::default();
-        assert_eq!(runtime.execute("calculate", json!({"expression":"(2 + 3) * 4 / 2"}), false).output, "10");
-        assert!(runtime.execute("generate_uuid", json!({}), false).output.contains('-'));
-        assert_eq!(runtime.execute("base64_encode", json!({"text":"CenAI"}), false).output, "Q2VuQUk=");
-        assert_eq!(runtime.execute("base64_decode", json!({"value":"Q2VuQUk="}), false).output, "CenAI");
+        assert_eq!(
+            runtime
+                .execute("calculate", json!({"expression":"(2 + 3) * 4 / 2"}), false)
+                .output,
+            "10"
+        );
+        assert!(runtime
+            .execute("generate_uuid", json!({}), false)
+            .output
+            .contains('-'));
+        assert_eq!(
+            runtime
+                .execute("base64_encode", json!({"text":"CenAI"}), false)
+                .output,
+            "Q2VuQUk="
+        );
+        assert_eq!(
+            runtime
+                .execute("base64_decode", json!({"value":"Q2VuQUk="}), false)
+                .output,
+            "CenAI"
+        );
     }
 
     #[test]
     fn parser_rejects_unmatched_close_and_extra_top_level_fields() {
         let runtime = AgentToolRuntime::default();
-        assert!(runtime.parse_tool_call("orphan [[/CENAI_TOOL_CALL]]").is_err());
+        assert!(runtime
+            .parse_tool_call("orphan [[/CENAI_TOOL_CALL]]")
+            .is_err());
         assert!(runtime.parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"current_time","arguments":{},"extra":true}[[/CENAI_TOOL_CALL]]"#).is_err());
-        assert!(runtime.parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"current_time"}[[/CENAI_TOOL_CALL]]"#).is_err());
+        assert!(runtime
+            .parse_tool_call(r#"[[CENAI_TOOL_CALL]]{"name":"current_time"}[[/CENAI_TOOL_CALL]]"#)
+            .is_err());
     }
 
     #[test]
     fn malformed_math_and_json_are_rejected() {
         let runtime = AgentToolRuntime::default();
-        assert!(!runtime.execute("calculate", json!({"expression":"1 / 0"}), false).completed);
-        assert!(!runtime.execute("format_json", json!({"json":"{bad"}), false).completed);
-        assert!(!runtime.execute("calculate", json!({"expression":"1 + 2 garbage"}), false).completed);
+        assert!(
+            !runtime
+                .execute("calculate", json!({"expression":"1 / 0"}), false)
+                .completed
+        );
+        assert!(
+            !runtime
+                .execute("format_json", json!({"json":"{bad"}), false)
+                .completed
+        );
+        assert!(
+            !runtime
+                .execute("calculate", json!({"expression":"1 + 2 garbage"}), false)
+                .completed
+        );
     }
 
     #[test]
     fn tools_reject_extra_and_missing_arguments() {
         let runtime = AgentToolRuntime::default();
-        assert!(!runtime.execute("calculate", json!({"expression":"1+1","unexpected":"ignored"}), false).completed);
-        assert!(!runtime.execute("current_time", json!({"unexpected":true}), false).completed);
+        assert!(
+            !runtime
+                .execute(
+                    "calculate",
+                    json!({"expression":"1+1","unexpected":"ignored"}),
+                    false
+                )
+                .completed
+        );
+        assert!(
+            !runtime
+                .execute("current_time", json!({"unexpected":true}), false)
+                .completed
+        );
         assert!(!runtime.execute("base64_encode", json!({}), false).completed);
     }
 
@@ -395,7 +656,11 @@ mod tests {
     #[test]
     fn sandbox_tool_rejects_unallowlisted_commands_and_path_traversal() {
         let runtime = AgentToolRuntime::default();
-        let bad_command = runtime.execute("sandbox_run", json!({"command":"sudo","arguments":[],"project_id":"default","working_directory":"."}), false);
+        let bad_command = runtime.execute(
+            "sandbox_run",
+            json!({"command":"sudo","arguments":[],"project_id":"default","working_directory":"."}),
+            false,
+        );
         assert!(!bad_command.requires_approval);
         assert!(!bad_command.completed);
         let bad_path = runtime.execute("sandbox_run", json!({"command":"pwd","arguments":[],"project_id":"default","working_directory":"../../etc"}), false);
@@ -423,24 +688,50 @@ mod tests {
         for (name, arguments) in actions {
             let result = runtime.execute(name, arguments, false);
             assert!(result.requires_approval, "{name} must request approval");
-            assert!(!result.completed, "{name} must never run in the pure Rust tool executor");
-            assert!(result.output.contains("approval") || result.output.contains("Approved Android action"));
+            assert!(
+                !result.completed,
+                "{name} must never run in the pure Rust tool executor"
+            );
+            assert!(
+                result.output.contains("approval")
+                    || result.output.contains("Approved Android action")
+            );
         }
     }
 
     #[test]
     fn malformed_android_action_arguments_are_rejected_before_approval() {
         let runtime = AgentToolRuntime::default();
-        assert!(!runtime.execute("open_url", json!({"url":"javascript:alert(1)"}), false).requires_approval);
-        assert!(!runtime.execute("open_dialer", json!({"number":"+1"}), false).requires_approval);
-        assert!(!runtime.execute("share_text", json!({"text":""}), false).requires_approval);
-        assert!(!runtime.execute("open_app_settings", json!({"package":"other.app"}), false).requires_approval);
+        assert!(
+            !runtime
+                .execute("open_url", json!({"url":"javascript:alert(1)"}), false)
+                .requires_approval
+        );
+        assert!(
+            !runtime
+                .execute("open_dialer", json!({"number":"+1"}), false)
+                .requires_approval
+        );
+        assert!(
+            !runtime
+                .execute("share_text", json!({"text":""}), false)
+                .requires_approval
+        );
+        assert!(
+            !runtime
+                .execute("open_app_settings", json!({"package":"other.app"}), false)
+                .requires_approval
+        );
     }
 
     #[test]
     fn disabled_tools_cannot_be_called() {
-        let runtime = AgentToolRuntime::new(Some(["current_date".to_owned()].into_iter().collect()));
-        assert!(runtime.execute("calculate", json!({"expression":"1+1"}), false).output.contains("not allow-listed"));
+        let runtime =
+            AgentToolRuntime::new(Some(["current_date".to_owned()].into_iter().collect()));
+        assert!(runtime
+            .execute("calculate", json!({"expression":"1+1"}), false)
+            .output
+            .contains("not allow-listed"));
     }
 
     #[test]
@@ -450,6 +741,8 @@ mod tests {
         assert_eq!(call.name, "calculate");
         assert_eq!(call.arguments["expression"], "2+2");
         assert!(runtime.parse_tool_call(r#"prefix [[CENAI_TOOL_CALL]]{"name":"calculate","arguments":{"expression":"2+2"}}[[/CENAI_TOOL_CALL]]"#).is_err());
-        assert!(runtime.parse_tool_call("[[CENAI_TOOL_CALL]][][[/CENAI_TOOL_CALL]]").is_err());
+        assert!(runtime
+            .parse_tool_call("[[CENAI_TOOL_CALL]][][[/CENAI_TOOL_CALL]]")
+            .is_err());
     }
 }

@@ -2,13 +2,22 @@
 use super::palette::Rgba;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Vec2 { pub x: f32, pub y: f32 }
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Size { pub width: f32, pub height: f32 }
+pub struct Size {
+    pub width: f32,
+    pub height: f32,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rect { pub origin: Vec2, pub size: Size }
+pub struct Rect {
+    pub origin: Vec2,
+    pub size: Size,
+}
 
 impl Rect {
     pub fn contains(self, point: Vec2) -> bool {
@@ -22,7 +31,11 @@ impl Rect {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Fill {
     Solid(Rgba),
-    LinearGradient { start: Rgba, end: Rgba, angle_radians: f32 },
+    LinearGradient {
+        start: Rgba,
+        end: Rgba,
+        angle_radians: f32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,10 +59,18 @@ impl Surface {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Viewport { pub width_px: u32, pub height_px: u32, pub density_milli: u32 }
+pub struct Viewport {
+    pub width_px: u32,
+    pub height_px: u32,
+    pub density_milli: u32,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LayoutClass { Compact, Medium, Expanded }
+pub enum LayoutClass {
+    Compact,
+    Medium,
+    Expanded,
+}
 
 impl Viewport {
     pub fn layout_class(self) -> LayoutClass {
@@ -68,7 +89,13 @@ mod tests {
 
     #[test]
     fn hit_testing_uses_inclusive_surface_bounds() {
-        let rect = Rect { origin: Vec2 { x: 10.0, y: 20.0 }, size: Size { width: 30.0, height: 40.0 } };
+        let rect = Rect {
+            origin: Vec2 { x: 10.0, y: 20.0 },
+            size: Size {
+                width: 30.0,
+                height: 40.0,
+            },
+        };
         assert!(rect.contains(Vec2 { x: 10.0, y: 20.0 }));
         assert!(rect.contains(Vec2 { x: 40.0, y: 60.0 }));
         assert!(!rect.contains(Vec2 { x: 41.0, y: 60.0 }));
@@ -76,8 +103,16 @@ mod tests {
 
     #[test]
     fn viewport_breakpoints_are_density_aware() {
-        let compact = Viewport { width_px: 1080, height_px: 2400, density_milli: 3000 };
-        let expanded = Viewport { width_px: 2560, height_px: 1600, density_milli: 2000 };
+        let compact = Viewport {
+            width_px: 1080,
+            height_px: 2400,
+            density_milli: 3000,
+        };
+        let expanded = Viewport {
+            width_px: 2560,
+            height_px: 1600,
+            density_milli: 2000,
+        };
         assert_eq!(compact.layout_class(), LayoutClass::Compact);
         assert_eq!(expanded.layout_class(), LayoutClass::Expanded);
     }
@@ -90,7 +125,8 @@ mod tests {
             corner_radius: -5.0,
             glow: 4.0,
             opacity: -1.0,
-        }.sanitized();
+        }
+        .sanitized();
         assert_eq!(surface.corner_radius, 0.0);
         assert_eq!(surface.glow, 1.0);
         assert_eq!(surface.opacity, 0.0);

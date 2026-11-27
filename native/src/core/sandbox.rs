@@ -1,5 +1,8 @@
 //! Safe remote execution request model. The executor must run in an isolated per-user container.
-use std::{collections::HashSet, path::{Component, Path}};
+use std::{
+    collections::HashSet,
+    path::{Component, Path},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SandboxQuota {
@@ -11,7 +14,12 @@ pub struct SandboxQuota {
 
 impl Default for SandboxQuota {
     fn default() -> Self {
-        Self { cpu_count: 1, memory_mb: 2048, timeout_seconds: 55, disk_mb: 4096 }
+        Self {
+            cpu_count: 1,
+            memory_mb: 2048,
+            timeout_seconds: 55,
+            disk_mb: 4096,
+        }
     }
 }
 
@@ -31,14 +39,18 @@ fn valid_user_uuid(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36
         && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
-        })
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
 }
 
 fn safe_project_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 80
-        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    !value.is_empty()
+        && value.len() <= 80
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn contains_credential_material(value: &str) -> bool {
@@ -47,9 +59,12 @@ fn contains_credential_material(value: &str) -> bool {
         || lower.contains("-----begin ")
         || lower.contains("sk-")
         || lower.contains("sb_secret_")
-        || lower.contains("api_key=") || lower.contains("api-key=")
-        || lower.contains("access_token=") || lower.contains("refresh_token=")
-        || lower.contains("password=") || lower.contains("secret=")
+        || lower.contains("api_key=")
+        || lower.contains("api-key=")
+        || lower.contains("access_token=")
+        || lower.contains("refresh_token=")
+        || lower.contains("password=")
+        || lower.contains("secret=")
         || (lower.contains("eyj") && value.matches('.').count() >= 2)
 }
 
@@ -57,9 +72,14 @@ fn safe_public_ip(address: std::net::IpAddr) -> bool {
     match address {
         std::net::IpAddr::V4(ip) => {
             let octets = ip.octets();
-            !(ip.is_private() || ip.is_loopback() || ip.is_link_local()
-                || ip.is_unspecified() || ip.is_multicast() || ip.is_broadcast()
-                || octets[0] == 0 || octets[0] >= 240
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || ip.is_broadcast()
+                || octets[0] == 0
+                || octets[0] >= 240
                 || (octets[0] == 100 && (64..=127).contains(&octets[1]))
                 || (octets[0] == 192 && octets[1] == 0)
                 || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || octets[1] == 51))
@@ -72,11 +92,14 @@ fn safe_public_ip(address: std::net::IpAddr) -> bool {
             let compatible = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
             if mapped || compatible {
                 return safe_public_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
-                    octets[12], octets[13], octets[14], octets[15]
+                    octets[12], octets[13], octets[14], octets[15],
                 )));
             }
-            !(ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
-                || ip.is_unspecified() || ip.is_multicast()
+            !(ip.is_loopback()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast()
                 || (segments[0] == 0x2001 && segments[1] == 0x0db8)
                 || (segments[0] & 0xffc0 == 0xfec0))
         }
@@ -84,9 +107,13 @@ fn safe_public_ip(address: std::net::IpAddr) -> bool {
 }
 
 fn safe_public_host(host: &str) -> bool {
-    if host.is_empty() || host.len() > 253 || host != host.to_ascii_lowercase()
-        || host == "localhost" || host.ends_with(".localhost")
-        || host.ends_with(".local") || host.ends_with(".internal")
+    if host.is_empty()
+        || host.len() > 253
+        || host != host.to_ascii_lowercase()
+        || host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
     {
         return false;
     }
@@ -94,41 +121,74 @@ fn safe_public_host(host: &str) -> bool {
         return safe_public_ip(address);
     }
     let labels = host.split('.').collect::<Vec<_>>();
-    labels.len() >= 2 && labels.iter().all(|label| {
-        !label.is_empty() && label.len() <= 63
-            && label.as_bytes().first().is_some_and(|byte| byte.is_ascii_alphanumeric())
-            && label.as_bytes().last().is_some_and(|byte| byte.is_ascii_alphanumeric())
-            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    })
+    labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                && label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
 }
 
 impl SandboxRequest {
-    pub fn validate(&self, allowed_commands: &HashSet<String>, allowed_hosts: &HashSet<String>) -> Result<(), &'static str> {
+    pub fn validate(
+        &self,
+        allowed_commands: &HashSet<String>,
+        allowed_hosts: &HashSet<String>,
+    ) -> Result<(), &'static str> {
         if !valid_user_uuid(&self.user_scope) || !safe_project_id(&self.project_id) {
             return Err("Sandbox jobs require a verified account UUID and safe project identifier");
         }
         if !allowed_commands.contains(&self.command) {
             return Err("Command is not in the sandbox allowlist");
         }
-        if self.arguments.len() > 128 || self.arguments.iter().any(|argument| argument.len() > 4096
-            || argument.contains('\0') || contains_credential_material(argument)) {
+        if self.arguments.len() > 128
+            || self.arguments.iter().any(|argument| {
+                argument.len() > 4096
+                    || argument.contains('\0')
+                    || contains_credential_material(argument)
+            })
+        {
             return Err("Sandbox arguments exceed the allowed limits");
         }
         let path = Path::new(&self.working_directory);
-        if path.is_absolute() || path.components().any(|component| !matches!(component, Component::Normal(_) | Component::CurDir)) {
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+        {
             return Err("Sandbox working directory must remain inside the project");
         }
         if self.quota.cpu_count != 1
-            || self.quota.memory_mb < 256 || self.quota.memory_mb > 2048
-            || self.quota.timeout_seconds == 0 || self.quota.timeout_seconds > 55
-            || self.quota.disk_mb < 128 || self.quota.disk_mb > 16_384
+            || self.quota.memory_mb < 256
+            || self.quota.memory_mb > 2048
+            || self.quota.timeout_seconds == 0
+            || self.quota.timeout_seconds > 55
+            || self.quota.disk_mb < 128
+            || self.quota.disk_mb > 16_384
         {
             return Err("Sandbox resource quota is outside the allowed range");
         }
-        if !self.environment.is_empty() { return Err("Sandbox environment variables are disabled; credentials must never be forwarded"); }
-        if self.network_hosts.len() > 32 || self.network_hosts.iter().any(|host| {
-            !safe_public_host(host) || !allowed_hosts.contains(host)
-        }) {
+        if !self.environment.is_empty() {
+            return Err(
+                "Sandbox environment variables are disabled; credentials must never be forwarded",
+            );
+        }
+        if self.network_hosts.len() > 32
+            || self
+                .network_hosts
+                .iter()
+                .any(|host| !safe_public_host(host) || !allowed_hosts.contains(host))
+        {
             return Err("Sandbox network host is not allowlisted");
         }
         Ok(())
@@ -136,7 +196,15 @@ impl SandboxRequest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SandboxJobState { Queued, Starting, Running, Succeeded, Failed, Cancelled, TimedOut }
+pub enum SandboxJobState {
+    Queued,
+    Starting,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+    TimedOut,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SandboxJobSummary {
@@ -155,22 +223,50 @@ impl SandboxJobSummary {
         for line in value.lines() {
             let lower = line.to_ascii_lowercase();
             let sensitive_assignment = [
-                "authorization:", "bearer ", "api_key=", "api-key=", "access_token=",
-                "refresh_token=", "password=", "password:", "passphrase=", "client_secret=",
-                "service_role=", "private_key=", "api_key:", "api-key:", "access_token:",
-                "refresh_token:", "secret:", "sk-", "sb_secret_", "-----begin ",
-            ].iter().any(|needle| lower.contains(needle))
+                "authorization:",
+                "bearer ",
+                "api_key=",
+                "api-key=",
+                "access_token=",
+                "refresh_token=",
+                "password=",
+                "password:",
+                "passphrase=",
+                "client_secret=",
+                "service_role=",
+                "private_key=",
+                "api_key:",
+                "api-key:",
+                "access_token:",
+                "refresh_token:",
+                "secret:",
+                "sk-",
+                "sb_secret_",
+                "-----begin ",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle))
                 || (lower.contains("eyj") && line.matches('.').count() >= 2);
-            let safe_line = if sensitive_assignment { "[redacted sensitive output]" } else { line };
-            if !output.is_empty() { output.push('\n'); }
+            let safe_line = if sensitive_assignment {
+                "[redacted sensitive output]"
+            } else {
+                line
+            };
+            if !output.is_empty() {
+                output.push('\n');
+            }
             let remaining = max_bytes.saturating_sub(output.len());
-            if remaining == 0 { break; }
+            if remaining == 0 {
+                break;
+            }
             let mut bounded = safe_line.to_owned();
             while bounded.len() > remaining {
                 bounded.pop();
             }
             output.push_str(&bounded);
-            if output.len() >= max_bytes { break; }
+            if output.len() >= max_bytes {
+                break;
+            }
         }
         output
     }
@@ -188,8 +284,10 @@ mod tests {
     use super::*;
 
     fn policy() -> (HashSet<String>, HashSet<String>) {
-        (HashSet::from(["cargo".into(), "rustc".into(), "python".into()]),
-         HashSet::from(["crates.io".into(), "static.crates.io".into()]))
+        (
+            HashSet::from(["cargo".into(), "rustc".into(), "python".into()]),
+            HashSet::from(["crates.io".into(), "static.crates.io".into()]),
+        )
     }
 
     fn request() -> SandboxRequest {
@@ -235,14 +333,24 @@ mod tests {
     fn secrets_paths_and_unapproved_hosts_are_rejected() {
         let (commands, hosts) = policy();
         let mut job = request();
-        job.environment.push(("OPENAI_API_KEY".into(), "never-copy-this".into()));
-        assert_eq!(job.validate(&commands, &hosts), Err("Sandbox environment variables are disabled; credentials must never be forwarded"));
+        job.environment
+            .push(("OPENAI_API_KEY".into(), "never-copy-this".into()));
+        assert_eq!(
+            job.validate(&commands, &hosts),
+            Err("Sandbox environment variables are disabled; credentials must never be forwarded")
+        );
         let mut job = request();
         job.working_directory = "../".into();
-        assert_eq!(job.validate(&commands, &hosts), Err("Sandbox working directory must remain inside the project"));
+        assert_eq!(
+            job.validate(&commands, &hosts),
+            Err("Sandbox working directory must remain inside the project")
+        );
         let mut job = request();
         job.network_hosts.push("example.org".into());
-        assert_eq!(job.validate(&commands, &hosts), Err("Sandbox network host is not allowlisted"));
+        assert_eq!(
+            job.validate(&commands, &hosts),
+            Err("Sandbox network host is not allowlisted")
+        );
         let mut job = request();
         job.network_hosts = vec!["127.0.0.1".into()];
         let mut unsafe_hosts = hosts.clone();
@@ -273,7 +381,10 @@ mod tests {
         job.environment.push((String::new(), "empty-name".into()));
         assert!(job.validate(&commands, &hosts).is_err());
         let mut job = request();
-        job.environment.push(("SERVICE".into(), "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature".into()));
+        job.environment.push((
+            "SERVICE".into(),
+            "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature".into(),
+        ));
         assert!(job.validate(&commands, &hosts).is_err());
         let mut job = request();
         job.arguments.push("--api-key=private-value".into());
@@ -285,9 +396,15 @@ mod tests {
         let (commands, hosts) = policy();
         let mut job = request();
         job.command = "su".into();
-        assert_eq!(job.validate(&commands, &hosts), Err("Command is not in the sandbox allowlist"));
+        assert_eq!(
+            job.validate(&commands, &hosts),
+            Err("Command is not in the sandbox allowlist")
+        );
         let mut job = request();
         job.quota.memory_mb = 32_768;
-        assert_eq!(job.validate(&commands, &hosts), Err("Sandbox resource quota is outside the allowed range"));
+        assert_eq!(
+            job.validate(&commands, &hosts),
+            Err("Sandbox resource quota is outside the allowed range")
+        );
     }
 }

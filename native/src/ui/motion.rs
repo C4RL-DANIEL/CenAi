@@ -9,7 +9,12 @@ pub struct Motion {
 
 impl Motion {
     pub fn new(from: f32, to: f32, duration_seconds: f32) -> Self {
-        Self { from, to, elapsed_seconds: 0.0, duration_seconds: duration_seconds.max(0.001) }
+        Self {
+            from,
+            to,
+            elapsed_seconds: 0.0,
+            duration_seconds: duration_seconds.max(0.001),
+        }
     }
 
     pub fn advance(&mut self, delta_seconds: f32, reduced_motion: bool) -> f32 {
@@ -17,7 +22,8 @@ impl Motion {
             self.elapsed_seconds = self.duration_seconds;
             return self.to;
         }
-        self.elapsed_seconds = (self.elapsed_seconds + delta_seconds.max(0.0)).min(self.duration_seconds);
+        self.elapsed_seconds =
+            (self.elapsed_seconds + delta_seconds.max(0.0)).min(self.duration_seconds);
         self.value()
     }
 

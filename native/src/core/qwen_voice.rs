@@ -34,8 +34,16 @@ pub enum QwenLanguage {
 
 impl QwenLanguage {
     pub const ALL: [Self; 10] = [
-        Self::Chinese, Self::English, Self::Japanese, Self::Korean, Self::German,
-        Self::French, Self::Russian, Self::Portuguese, Self::Spanish, Self::Italian,
+        Self::Chinese,
+        Self::English,
+        Self::Japanese,
+        Self::Korean,
+        Self::German,
+        Self::French,
+        Self::Russian,
+        Self::Portuguese,
+        Self::Spanish,
+        Self::Italian,
     ];
 
     pub fn model_label(self) -> &'static str {
@@ -164,7 +172,10 @@ impl SynthesisRequest {
         if text.len() > MAX_SYNTHESIS_TEXT_BYTES {
             return Err("Speech text exceeds the CenAI Voice limit");
         }
-        if text.chars().any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t')) {
+        if text
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+        {
             return Err("Speech text contains unsupported control characters");
         }
         if self.speaker_id.trim().is_empty() || self.speaker_id.len() > 96 {

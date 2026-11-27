@@ -1,6 +1,6 @@
 //! Versioned first-party app identity and per-user capability authorization contracts.
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 const MAX_ID_BYTES: usize = 128;
 const MAX_VERSION_BYTES: usize = 64;
@@ -10,9 +10,10 @@ fn valid_user_uuid(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36
         && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
-        })
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
 }
 
 fn valid_dotted_id(value: &str) -> bool {
@@ -22,17 +23,27 @@ fn valid_dotted_id(value: &str) -> bool {
             !part.is_empty()
                 && part.len() <= 63
                 && part.as_bytes()[0].is_ascii_alphanumeric()
-                && part.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
-                && part.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+                && part
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
 }
 
 fn valid_scope_token(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_ID_BYTES
-        && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._:-".contains(&byte))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._:-".contains(&byte)
+        })
         && value.as_bytes()[0].is_ascii_alphanumeric()
-        && value.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+        && value
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -84,7 +95,10 @@ impl AppManifest {
             return Err(ManifestError::EmptyVersion);
         }
         if self.version.len() > MAX_VERSION_BYTES
-            || !self.version.bytes().all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
+            || !self
+                .version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
         {
             return Err(ManifestError::InvalidVersion);
         }
@@ -94,10 +108,18 @@ impl AppManifest {
         if self.capabilities.len() > MAX_DECLARATIONS {
             return Err(ManifestError::TooManyCapabilities);
         }
-        if self.capabilities.iter().any(|value| value.trim().is_empty()) {
+        if self
+            .capabilities
+            .iter()
+            .any(|value| value.trim().is_empty())
+        {
             return Err(ManifestError::EmptyCapability);
         }
-        if self.capabilities.iter().any(|value| !valid_scope_token(value)) {
+        if self
+            .capabilities
+            .iter()
+            .any(|value| !valid_scope_token(value))
+        {
             return Err(ManifestError::InvalidCapability);
         }
         let unique_capabilities: HashSet<&str> =
@@ -108,10 +130,18 @@ impl AppManifest {
         if self.requested_scopes.len() > MAX_DECLARATIONS {
             return Err(ManifestError::TooManyScopes);
         }
-        if self.requested_scopes.iter().any(|value| value.trim().is_empty()) {
+        if self
+            .requested_scopes
+            .iter()
+            .any(|value| value.trim().is_empty())
+        {
             return Err(ManifestError::EmptyScope);
         }
-        if self.requested_scopes.iter().any(|value| !valid_scope_token(value)) {
+        if self
+            .requested_scopes
+            .iter()
+            .any(|value| !valid_scope_token(value))
+        {
             return Err(ManifestError::InvalidScope);
         }
         let unique_scopes: HashSet<&str> =
@@ -178,15 +208,27 @@ impl CapabilityRegistry {
         if !valid_user_uuid(user_scope) {
             return Err(ManifestError::InvalidScope);
         }
-        let manifest = self.manifests.get(app_id).ok_or(ManifestError::EmptyAppId)?;
+        let manifest = self
+            .manifests
+            .get(app_id)
+            .ok_or(ManifestError::EmptyAppId)?;
         let granted_scopes = scopes.into_iter().collect::<HashSet<_>>();
         if granted_scopes.is_empty() || granted_scopes.len() > MAX_DECLARATIONS {
             return Err(ManifestError::TooManyScopes);
         }
         for scope in &granted_scopes {
-            if !valid_scope_token(scope) { return Err(ManifestError::InvalidScope); }
-            if !manifest.capabilities.iter().any(|declared| declared == scope)
-                || !manifest.requested_scopes.iter().any(|requested| requested == scope) {
+            if !valid_scope_token(scope) {
+                return Err(ManifestError::InvalidScope);
+            }
+            if !manifest
+                .capabilities
+                .iter()
+                .any(|declared| declared == scope)
+                || !manifest
+                    .requested_scopes
+                    .iter()
+                    .any(|requested| requested == scope)
+            {
                 return Err(ManifestError::InvalidScope);
             }
         }
@@ -230,7 +272,10 @@ impl CapabilityRegistry {
         }
         self.manifests.get(&grant.app_id).is_some_and(|manifest| {
             manifest.capabilities.iter().any(|item| item == capability)
-                && manifest.requested_scopes.iter().any(|scope| scope == capability)
+                && manifest
+                    .requested_scopes
+                    .iter()
+                    .any(|scope| scope == capability)
         })
     }
 
@@ -250,7 +295,11 @@ mod tests {
             version: "1.0.0".into(),
             protocol_version: 1,
             capabilities: vec!["notes.read".into(), "notes.search".into()],
-            requested_scopes: vec!["account:current".into(), "notes.read".into(), "notes.search".into()],
+            requested_scopes: vec![
+                "account:current".into(),
+                "notes.read".into(),
+                "notes.search".into(),
+            ],
         }
     }
 
@@ -273,7 +322,10 @@ mod tests {
     #[test]
     fn untrusted_publishers_cannot_register() {
         let mut registry = CapabilityRegistry::new(Vec::new());
-        assert_eq!(registry.register(manifest(), 1), Err(ManifestError::UntrustedPublisher));
+        assert_eq!(
+            registry.register(manifest(), 1),
+            Err(ManifestError::UntrustedPublisher)
+        );
     }
 
     #[test]
@@ -285,7 +337,11 @@ mod tests {
         assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440012", &grant, "notes.read"));
         let mut revoked = grant;
         revoked.revoked = true;
-        assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440011", &revoked, "notes.read"));
+        assert!(!registry.authorize(
+            "550e8400-e29b-41d4-a716-446655440011",
+            &revoked,
+            "notes.read"
+        ));
     }
 
     #[test]
@@ -294,7 +350,11 @@ mod tests {
         let mut app = manifest();
         app.requested_scopes.retain(|scope| scope != "notes.read");
         registry.register(app, 1).unwrap();
-        assert!(!registry.authorize("550e8400-e29b-41d4-a716-446655440011", &grant(), "notes.read"));
+        assert!(!registry.authorize(
+            "550e8400-e29b-41d4-a716-446655440011",
+            &grant(),
+            "notes.read"
+        ));
     }
 
     #[test]
@@ -312,7 +372,11 @@ mod tests {
             registry.register(takeover, 1),
             Err(ManifestError::AppIdOwnedByAnotherPublisher)
         );
-        assert!(registry.authorize("550e8400-e29b-41d4-a716-446655440011", &grant(), "notes.read"));
+        assert!(registry.authorize(
+            "550e8400-e29b-41d4-a716-446655440011",
+            &grant(),
+            "notes.read"
+        ));
     }
 
     #[test]
@@ -341,7 +405,9 @@ mod tests {
         assert_eq!(app.validate(1), Err(ManifestError::InvalidScope));
 
         let mut app = manifest();
-        app.capabilities = (0..=MAX_DECLARATIONS).map(|index| format!("capability.{index}")).collect();
+        app.capabilities = (0..=MAX_DECLARATIONS)
+            .map(|index| format!("capability.{index}"))
+            .collect();
         assert_eq!(app.validate(1), Err(ManifestError::TooManyCapabilities));
     }
 
@@ -350,12 +416,17 @@ mod tests {
         let mut registry = CapabilityRegistry::new(vec!["cenai.firstparty".into()]);
         registry.register(manifest(), 1).unwrap();
         let user = "550e8400-e29b-41d4-a716-446655440011";
-        let mut grant = registry.create_grant(user, "com.cenai.notes", vec!["notes.read".into()]).unwrap();
+        let mut grant = registry
+            .create_grant(user, "com.cenai.notes", vec!["notes.read".into()])
+            .unwrap();
         assert!(registry.authorize(user, &grant, "notes.read"));
-        assert!(registry.create_grant(user, "com.cenai.notes", vec!["account:admin".into()]).is_err());
-        assert!(registry.revoke_grant("550e8400-e29b-41d4-a716-446655440012", &mut grant).is_err());
+        assert!(registry
+            .create_grant(user, "com.cenai.notes", vec!["account:admin".into()])
+            .is_err());
+        assert!(registry
+            .revoke_grant("550e8400-e29b-41d4-a716-446655440012", &mut grant)
+            .is_err());
         registry.revoke_grant(user, &mut grant).unwrap();
         assert!(!registry.authorize(user, &grant, "notes.read"));
     }
-
 }

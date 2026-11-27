@@ -19,7 +19,11 @@ fn validate_endpoint_url(endpoint: &str) -> Result<(), &'static str> {
     if url.scheme() != "https" || url.host_str().is_none() {
         return Err("Remote MCP endpoints must use HTTPS");
     }
-    if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
         return Err("MCP endpoint URLs cannot contain credentials, query parameters or fragments");
     }
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
@@ -28,8 +32,20 @@ fn validate_endpoint_url(endpoint: &str) -> Result<(), &'static str> {
     }
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         let is_private = match ip {
-            std::net::IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_multicast(),
-            std::net::IpAddr::V6(ip) => ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast(),
+            std::net::IpAddr::V4(ip) => {
+                ip.is_private()
+                    || ip.is_loopback()
+                    || ip.is_link_local()
+                    || ip.is_unspecified()
+                    || ip.is_multicast()
+            }
+            std::net::IpAddr::V6(ip) => {
+                ip.is_loopback()
+                    || ip.is_unique_local()
+                    || ip.is_unicast_link_local()
+                    || ip.is_unspecified()
+                    || ip.is_multicast()
+            }
         };
         if is_private {
             return Err("Private, loopback and link-local MCP addresses are blocked");
@@ -42,37 +58,61 @@ fn is_non_public_ip(address: std::net::IpAddr) -> bool {
     match address {
         std::net::IpAddr::V4(ip) => {
             let octets = ip.octets();
-            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
-                || ip.is_multicast() || ip.is_broadcast() || octets[0] == 0 || octets[0] >= 240
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || ip.is_broadcast()
+                || octets[0] == 0
+                || octets[0] >= 240
                 || (octets[0] == 100 && (64..=127).contains(&octets[1]))
                 || (octets[0] == 192 && octets[1] == 0 && (octets[2] == 0 || octets[2] == 2))
-                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19 || (octets[1] == 51 && octets[2] == 100)))
+                || (octets[0] == 198
+                    && (octets[1] == 18
+                        || octets[1] == 19
+                        || (octets[1] == 51 && octets[2] == 100)))
                 || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
         }
         std::net::IpAddr::V6(ip) => {
             let segments = ip.segments();
             let octets = ip.octets();
-            let mapped_v4 = segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
-            let compatible_v4 = segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
+            let mapped_v4 =
+                segments[..5].iter().all(|segment| *segment == 0) && segments[5] == 0xffff;
+            let compatible_v4 =
+                segments[..6].iter().all(|segment| *segment == 0) && segments[6] != 0;
             if mapped_v4 || compatible_v4 {
                 return is_non_public_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
-                    octets[12], octets[13], octets[14], octets[15]
+                    octets[12], octets[13], octets[14], octets[15],
                 )));
             }
-            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
-                || ip.is_unspecified() || ip.is_multicast()
+            ip.is_loopback()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast()
                 || (segments[0] == 0x2001 && (segments[1] == 0x0db8 || segments[1] == 0x0002))
                 || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
                 || (segments[0] & 0xffc0 == 0xfec0)
-        },
+        }
     }
 }
 
-async fn resolve_public_addresses(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
-    let addresses = tokio::net::lookup_host((host, port)).await
-        .map_err(|error| format!("MCP host DNS lookup failed: {error}"))?.collect::<Vec<_>>();
-    if addresses.is_empty() { return Err("MCP host did not resolve to an address".into()); }
-    if addresses.iter().any(|address| is_non_public_ip(address.ip())) {
+async fn resolve_public_addresses(
+    host: &str,
+    port: u16,
+) -> Result<Vec<std::net::SocketAddr>, String> {
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|error| format!("MCP host DNS lookup failed: {error}"))?
+        .collect::<Vec<_>>();
+    if addresses.is_empty() {
+        return Err("MCP host did not resolve to an address".into());
+    }
+    if addresses
+        .iter()
+        .any(|address| is_non_public_ip(address.ip()))
+    {
         return Err("MCP host resolves to a private, reserved, or local network address".into());
     }
     Ok(addresses)
@@ -104,22 +144,40 @@ pub struct McpReview {
 
 impl McpServerManifest {
     pub fn validate(&self, supported_protocol: u16) -> Result<(), &'static str> {
-        if self.server_id.trim().is_empty() || self.server_id.len() > 128
-            || !self.server_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-            || self.publisher.trim().is_empty() || self.publisher.len() > 160 {
+        if self.server_id.trim().is_empty()
+            || self.server_id.len() > 128
+            || !self
+                .server_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            || self.publisher.trim().is_empty()
+            || self.publisher.len() > 160
+        {
             return Err("Publisher and safe server identity are required");
         }
-        if self.version.trim().is_empty() || self.version.len() > 64
-            || self.license_id.trim().is_empty() || self.license_id.len() > 80 {
+        if self.version.trim().is_empty()
+            || self.version.len() > 64
+            || self.license_id.trim().is_empty()
+            || self.license_id.len() > 80
+        {
             return Err("Server version and license must be declared within supported limits");
         }
-        if self.declared_dependencies.len() > 64 || self.declared_dependencies.iter().any(|dependency| {
-            dependency.trim().is_empty() || dependency.len() > 160
-                || !dependency.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._@/-".contains(&byte))
-        }) {
+        if self.declared_dependencies.len() > 64
+            || self.declared_dependencies.iter().any(|dependency| {
+                dependency.trim().is_empty()
+                    || dependency.len() > 160
+                    || !dependency
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"._@/-".contains(&byte))
+            })
+        {
             return Err("MCP dependencies contain an invalid or oversized identifier");
         }
-        let dependencies: HashSet<&str> = self.declared_dependencies.iter().map(String::as_str).collect();
+        let dependencies: HashSet<&str> = self
+            .declared_dependencies
+            .iter()
+            .map(String::as_str)
+            .collect();
         if dependencies.len() != self.declared_dependencies.len() {
             return Err("MCP dependencies must be unique");
         }
@@ -127,25 +185,43 @@ impl McpServerManifest {
         if self.protocol_version != supported_protocol {
             return Err("Unsupported MCP protocol version");
         }
-        if self.capabilities.is_empty() || self.capabilities.len() > 128
-            || self.capabilities.iter().any(|cap| cap.name.trim().is_empty()
-                || cap.name.len() > 128
-                || !cap.name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
-                || cap.description.len() > 2000
-                || cap.requested_scopes.is_empty()
-                || cap.requested_scopes.len() > 32
-                || cap.requested_scopes.iter().any(|scope| scope.trim().is_empty()
-                    || scope.len() > 128
-                    || !scope.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte)))
-        ) {
+        if self.capabilities.is_empty()
+            || self.capabilities.len() > 128
+            || self.capabilities.iter().any(|cap| {
+                cap.name.trim().is_empty()
+                    || cap.name.len() > 128
+                    || !cap
+                        .name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+                    || cap.description.len() > 2000
+                    || cap.requested_scopes.is_empty()
+                    || cap.requested_scopes.len() > 32
+                    || cap.requested_scopes.iter().any(|scope| {
+                        scope.trim().is_empty()
+                            || scope.len() > 128
+                            || !scope
+                                .bytes()
+                                .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+                    })
+            })
+        {
             return Err("Server must declare bounded capabilities and valid non-empty scopes");
         }
-        let names: HashSet<&str> = self.capabilities.iter().map(|cap| cap.name.as_str()).collect();
+        let names: HashSet<&str> = self
+            .capabilities
+            .iter()
+            .map(|cap| cap.name.as_str())
+            .collect();
         if names.len() != self.capabilities.len() {
             return Err("MCP capability names must be unique");
         }
         for capability in &self.capabilities {
-            let scopes: HashSet<&str> = capability.requested_scopes.iter().map(String::as_str).collect();
+            let scopes: HashSet<&str> = capability
+                .requested_scopes
+                .iter()
+                .map(String::as_str)
+                .collect();
             if scopes.len() != capability.requested_scopes.len() {
                 return Err("MCP capability scopes must be unique");
             }
@@ -154,15 +230,23 @@ impl McpServerManifest {
     }
 
     pub fn review(&self) -> McpReview {
-        let sensitive_capabilities = self.capabilities.iter()
+        let sensitive_capabilities = self
+            .capabilities
+            .iter()
             .filter(|capability| capability.requires_sensitive_read)
-            .map(|capability| capability.name.clone()).collect::<Vec<_>>();
-        let external_write_capabilities = self.capabilities.iter()
+            .map(|capability| capability.name.clone())
+            .collect::<Vec<_>>();
+        let external_write_capabilities = self
+            .capabilities
+            .iter()
             .filter(|capability| capability.requires_external_write)
-            .map(|capability| capability.name.clone()).collect::<Vec<_>>();
+            .map(|capability| capability.name.clone())
+            .collect::<Vec<_>>();
         let secure_transport = self.endpoint_url.starts_with("https://");
-        let requires_manual_review = !secure_transport || !self.publisher_verified
-            || !sensitive_capabilities.is_empty() || !external_write_capabilities.is_empty()
+        let requires_manual_review = !secure_transport
+            || !self.publisher_verified
+            || !sensitive_capabilities.is_empty()
+            || !external_write_capabilities.is_empty()
             || !self.declared_dependencies.is_empty();
         McpReview {
             secure_transport,
@@ -176,13 +260,14 @@ impl McpServerManifest {
     }
 
     pub fn may_execute(&self, capability: &str, user_approved: bool) -> bool {
-        self.capabilities.iter().find(|item| item.name == capability)
+        self.capabilities
+            .iter()
+            .find(|item| item.name == capability)
             .is_some_and(|item| {
                 (!item.requires_external_write && !item.requires_sensitive_read) || user_approved
             })
     }
 }
-
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
 pub struct McpTool {
@@ -196,16 +281,32 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
     if depth > 12 || !schema.is_object() {
         return Err("MCP input schema is invalid or too deeply nested".into());
     }
-    let kind = schema.get("type").and_then(serde_json::Value::as_str)
+    let kind = schema
+        .get("type")
+        .and_then(serde_json::Value::as_str)
         .ok_or("MCP input schema must declare a supported type")?;
-    if !matches!(kind, "object" | "array" | "string" | "number" | "integer" | "boolean" | "null") {
+    if !matches!(
+        kind,
+        "object" | "array" | "string" | "number" | "integer" | "boolean" | "null"
+    ) {
         return Err("MCP input schema uses an unsupported type".into());
     }
 
     // Reject validation keywords that this bounded validator does not implement.
     // Silently accepting pattern/format/$ref/etc. would make the UI's security
     // review disagree with the schema the remote server expects.
-    let common = ["type", "enum", "const", "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly"];
+    let common = [
+        "type",
+        "enum",
+        "const",
+        "title",
+        "description",
+        "default",
+        "examples",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+    ];
     let specific: &[&str] = match kind {
         "object" => &["properties", "required", "additionalProperties"],
         "array" => &["items", "minItems", "maxItems"],
@@ -213,62 +314,124 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
         "number" | "integer" => &["minimum", "maximum"],
         _ => &[],
     };
-    if schema.as_object().is_some_and(|fields| fields.keys().any(|key|
-        !common.contains(&key.as_str()) && !specific.contains(&key.as_str()))) {
-        return Err(format!("MCP {kind} schema contains an unsupported validation keyword"));
+    if schema.as_object().is_some_and(|fields| {
+        fields
+            .keys()
+            .any(|key| !common.contains(&key.as_str()) && !specific.contains(&key.as_str()))
+    }) {
+        return Err(format!(
+            "MCP {kind} schema contains an unsupported validation keyword"
+        ));
     }
 
     if let Some(values) = schema.get("enum") {
-        if !values.is_array() || values.as_array().is_some_and(|items| items.is_empty() || items.len() > 64) {
+        if !values.is_array()
+            || values
+                .as_array()
+                .is_some_and(|items| items.is_empty() || items.len() > 64)
+        {
             return Err("MCP schema enum must contain 1-64 values".into());
         }
     }
     if let Some(constant) = schema.get("const") {
         let mut type_schema = schema.clone();
-        if let Some(fields) = type_schema.as_object_mut() { fields.remove("const"); }
-        validate_tool_value(&type_schema, constant, depth + 1)
-            .map_err(|_| "MCP schema const does not match its declared type or constraints".to_owned())?;
+        if let Some(fields) = type_schema.as_object_mut() {
+            fields.remove("const");
+        }
+        validate_tool_value(&type_schema, constant, depth + 1).map_err(|_| {
+            "MCP schema const does not match its declared type or constraints".to_owned()
+        })?;
     }
     if kind == "object" {
-        let properties = schema.get("properties").and_then(serde_json::Value::as_object)
+        let properties = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
             .ok_or("MCP object schema must declare properties")?;
-        if properties.len() > 128 { return Err("MCP object schema has too many properties".into()); }
+        if properties.len() > 128 {
+            return Err("MCP object schema has too many properties".into());
+        }
         if let Some(required) = schema.get("required") {
             let values = required.as_array().ok_or("MCP required must be an array")?;
-            if values.len() > 128 { return Err("MCP required list is too large".into()); }
+            if values.len() > 128 {
+                return Err("MCP required list is too large".into());
+            }
             let mut unique = HashSet::new();
             for item in values {
-                let name = item.as_str().ok_or("MCP required entries must be strings")?;
-                if !unique.insert(name) { return Err("MCP required entries must be unique".into()); }
-                if !properties.contains_key(name) { return Err("MCP required entry is not a declared property".into()); }
+                let name = item
+                    .as_str()
+                    .ok_or("MCP required entries must be strings")?;
+                if !unique.insert(name) {
+                    return Err("MCP required entries must be unique".into());
+                }
+                if !properties.contains_key(name) {
+                    return Err("MCP required entry is not a declared property".into());
+                }
             }
         }
         if let Some(additional) = schema.get("additionalProperties") {
-            if !additional.is_boolean() { return Err("MCP additionalProperties must be a boolean".into()); }
+            if !additional.is_boolean() {
+                return Err("MCP additionalProperties must be a boolean".into());
+            }
         }
         for child in properties.values() {
             validate_schema_definition(child, depth + 1)?;
         }
     }
     if kind == "array" {
-        let items = schema.get("items").ok_or("MCP array schema must declare item schema")?;
+        let items = schema
+            .get("items")
+            .ok_or("MCP array schema must declare item schema")?;
         validate_schema_definition(items, depth + 1)?;
-        let min = schema.get("minItems").map(|value| value.as_u64().ok_or("MCP minItems must be a non-negative integer")).transpose()?;
-        let max = schema.get("maxItems").map(|value| value.as_u64().ok_or("MCP maxItems must be a non-negative integer")).transpose()?;
+        let min = schema
+            .get("minItems")
+            .map(|value| {
+                value
+                    .as_u64()
+                    .ok_or("MCP minItems must be a non-negative integer")
+            })
+            .transpose()?;
+        let max = schema
+            .get("maxItems")
+            .map(|value| {
+                value
+                    .as_u64()
+                    .ok_or("MCP maxItems must be a non-negative integer")
+            })
+            .transpose()?;
         if min.zip(max).is_some_and(|(min, max)| min > max) {
             return Err("MCP minItems cannot exceed maxItems".into());
         }
     }
     if kind == "string" {
-        let min = schema.get("minLength").map(|value| value.as_u64().ok_or("MCP minLength must be a non-negative integer")).transpose()?;
-        let max = schema.get("maxLength").map(|value| value.as_u64().ok_or("MCP maxLength must be a non-negative integer")).transpose()?;
+        let min = schema
+            .get("minLength")
+            .map(|value| {
+                value
+                    .as_u64()
+                    .ok_or("MCP minLength must be a non-negative integer")
+            })
+            .transpose()?;
+        let max = schema
+            .get("maxLength")
+            .map(|value| {
+                value
+                    .as_u64()
+                    .ok_or("MCP maxLength must be a non-negative integer")
+            })
+            .transpose()?;
         if min.zip(max).is_some_and(|(min, max)| min > max) {
             return Err("MCP minLength cannot exceed maxLength".into());
         }
     }
     if matches!(kind, "number" | "integer") {
-        let min = schema.get("minimum").map(|value| value.as_f64().ok_or("MCP minimum must be numeric")).transpose()?;
-        let max = schema.get("maximum").map(|value| value.as_f64().ok_or("MCP maximum must be numeric")).transpose()?;
+        let min = schema
+            .get("minimum")
+            .map(|value| value.as_f64().ok_or("MCP minimum must be numeric"))
+            .transpose()?;
+        let max = schema
+            .get("maximum")
+            .map(|value| value.as_f64().ok_or("MCP maximum must be numeric"))
+            .transpose()?;
         if min.zip(max).is_some_and(|(min, max)| min > max) {
             return Err("MCP minimum cannot exceed maximum".into());
         }
@@ -276,9 +439,18 @@ fn validate_schema_definition(schema: &serde_json::Value, depth: usize) -> Resul
     Ok(())
 }
 
-fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, depth: usize) -> Result<(), String> {
-    if depth > 12 { return Err("MCP tool arguments exceed the supported nesting depth".into()); }
-    let kind = schema.get("type").and_then(serde_json::Value::as_str).unwrap_or_default();
+fn validate_tool_value(
+    schema: &serde_json::Value,
+    value: &serde_json::Value,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > 12 {
+        return Err("MCP tool arguments exceed the supported nesting depth".into());
+    }
+    let kind = schema
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
     let valid = match kind {
         "object" => value.is_object(),
         "array" => value.is_array(),
@@ -289,26 +461,46 @@ fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, de
         "null" => value.is_null(),
         _ => false,
     };
-    if !valid { return Err(format!("MCP argument does not match the declared {kind} type")); }
-    if schema.get("const").is_some_and(|expected| expected != value) {
+    if !valid {
+        return Err(format!(
+            "MCP argument does not match the declared {kind} type"
+        ));
+    }
+    if schema
+        .get("const")
+        .is_some_and(|expected| expected != value)
+    {
         return Err("MCP argument does not match the declared constant value".into());
     }
     if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array) {
-        if !values.iter().any(|item| item == value) { return Err("MCP argument is not an allowed enum value".into()); }
+        if !values.iter().any(|item| item == value) {
+            return Err("MCP argument is not an allowed enum value".into());
+        }
     }
     match kind {
         "object" => {
             let object = value.as_object().ok_or("Expected MCP object")?;
-            if object.len() > 128 { return Err("MCP argument object has too many properties".into()); }
-            let properties = schema.get("properties").and_then(serde_json::Value::as_object).ok_or("Invalid MCP object schema")?;
-            if schema.get("additionalProperties").and_then(serde_json::Value::as_bool) == Some(false)
-                && object.keys().any(|key| !properties.contains_key(key)) {
+            if object.len() > 128 {
+                return Err("MCP argument object has too many properties".into());
+            }
+            let properties = schema
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+                .ok_or("Invalid MCP object schema")?;
+            if schema
+                .get("additionalProperties")
+                .and_then(serde_json::Value::as_bool)
+                == Some(false)
+                && object.keys().any(|key| !properties.contains_key(key))
+            {
                 return Err("MCP arguments contain undeclared properties".into());
             }
             if let Some(required) = schema.get("required").and_then(serde_json::Value::as_array) {
                 for item in required {
                     let key = item.as_str().ok_or("Invalid MCP required entry")?;
-                    if !object.contains_key(key) { return Err(format!("Required MCP argument '{key}' is missing")); }
+                    if !object.contains_key(key) {
+                        return Err(format!("Required MCP argument '{key}' is missing"));
+                    }
                 }
             }
             for (key, child) in properties {
@@ -319,26 +511,51 @@ fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, de
         }
         "array" => {
             let items = value.as_array().ok_or("Expected MCP array")?;
-            if items.len() > 256 { return Err("MCP argument array is too large".into()); }
+            if items.len() > 256 {
+                return Err("MCP argument array is too large".into());
+            }
             let item_schema = schema.get("items").ok_or("Invalid MCP array schema")?;
-            for item in items { validate_tool_value(item_schema, item, depth + 1)?; }
-            if schema.get("minItems").and_then(serde_json::Value::as_u64).is_some_and(|min| items.len() < min as usize)
-                || schema.get("maxItems").and_then(serde_json::Value::as_u64).is_some_and(|max| items.len() > max as usize) {
+            for item in items {
+                validate_tool_value(item_schema, item, depth + 1)?;
+            }
+            if schema
+                .get("minItems")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|min| items.len() < min as usize)
+                || schema
+                    .get("maxItems")
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some_and(|max| items.len() > max as usize)
+            {
                 return Err("MCP array length is outside the allowed range".into());
             }
         }
         "string" => {
             let text = value.as_str().unwrap_or_default();
             if text.len() > 20_000
-                || schema.get("minLength").and_then(serde_json::Value::as_u64).is_some_and(|min| text.chars().count() < min as usize)
-                || schema.get("maxLength").and_then(serde_json::Value::as_u64).is_some_and(|max| text.chars().count() > max as usize) {
+                || schema
+                    .get("minLength")
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some_and(|min| text.chars().count() < min as usize)
+                || schema
+                    .get("maxLength")
+                    .and_then(serde_json::Value::as_u64)
+                    .is_some_and(|max| text.chars().count() > max as usize)
+            {
                 return Err("MCP string argument is outside the allowed length".into());
             }
         }
         "number" | "integer" => {
             let number = value.as_f64().ok_or("Invalid MCP number")?;
-            if schema.get("minimum").and_then(serde_json::Value::as_f64).is_some_and(|min| number < min)
-                || schema.get("maximum").and_then(serde_json::Value::as_f64).is_some_and(|max| number > max) {
+            if schema
+                .get("minimum")
+                .and_then(serde_json::Value::as_f64)
+                .is_some_and(|min| number < min)
+                || schema
+                    .get("maximum")
+                    .and_then(serde_json::Value::as_f64)
+                    .is_some_and(|max| number > max)
+            {
                 return Err("MCP numeric argument is outside the allowed range".into());
             }
         }
@@ -347,35 +564,62 @@ fn validate_tool_value(schema: &serde_json::Value, value: &serde_json::Value, de
     Ok(())
 }
 
-fn validate_tool_arguments(schema: &serde_json::Value, arguments: &serde_json::Value) -> Result<(), String> {
-    if serde_json::to_vec(arguments).map_err(|error| error.to_string())?.len() > 64 * 1024 {
+fn validate_tool_arguments(
+    schema: &serde_json::Value,
+    arguments: &serde_json::Value,
+) -> Result<(), String> {
+    if serde_json::to_vec(arguments)
+        .map_err(|error| error.to_string())?
+        .len()
+        > 64 * 1024
+    {
         return Err("MCP tool arguments exceed the 64 KB limit".into());
     }
     validate_tool_value(schema, arguments, 0)
 }
 
-fn validate_rpc_response(value: &serde_json::Value, expected_id: &serde_json::Value, method: &str) -> Result<serde_json::Value, String> {
+fn validate_rpc_response(
+    value: &serde_json::Value,
+    expected_id: &serde_json::Value,
+    method: &str,
+) -> Result<serde_json::Value, String> {
     if value.get("jsonrpc").and_then(serde_json::Value::as_str) != Some("2.0") {
-        return Err(format!("MCP method {method} returned an invalid JSON-RPC version"));
+        return Err(format!(
+            "MCP method {method} returned an invalid JSON-RPC version"
+        ));
     }
     if value.get("id") != Some(expected_id) {
-        return Err(format!("MCP method {method} returned a response for a different request ID"));
+        return Err(format!(
+            "MCP method {method} returned a response for a different request ID"
+        ));
     }
     let has_result = value.get("result").is_some();
     let error = value.get("error");
     if has_result == error.is_some() {
-        return Err(format!("MCP method {method} returned an invalid JSON-RPC response envelope"));
+        return Err(format!(
+            "MCP method {method} returned an invalid JSON-RPC response envelope"
+        ));
     }
     if let Some(error) = error {
         if !error.is_object()
-            || error.get("code").and_then(serde_json::Value::as_i64).is_none()
-            || error.get("message").and_then(serde_json::Value::as_str).is_none()
+            || error
+                .get("code")
+                .and_then(serde_json::Value::as_i64)
+                .is_none()
+            || error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .is_none()
         {
-            return Err(format!("MCP method {method} returned a malformed JSON-RPC error"));
+            return Err(format!(
+                "MCP method {method} returned a malformed JSON-RPC error"
+            ));
         }
         return Err(format!("MCP method {method} failed: {error}"));
     }
-    value.get("result").cloned()
+    value
+        .get("result")
+        .cloned()
         .ok_or_else(|| format!("MCP method {method} omitted its result"))
 }
 
@@ -389,11 +633,19 @@ pub struct McpHttpClient {
 }
 
 impl McpHttpClient {
-    pub async fn new(manifest: McpServerManifest, bearer_token: Option<String>) -> Result<Self, String> {
-        manifest.validate(1).map_err(|error| format!("Invalid MCP manifest: {error:?}"))?;
-        let endpoint = reqwest::Url::parse(&manifest.endpoint_url).map_err(|error| error.to_string())?;
+    pub async fn new(
+        manifest: McpServerManifest,
+        bearer_token: Option<String>,
+    ) -> Result<Self, String> {
+        manifest
+            .validate(1)
+            .map_err(|error| format!("Invalid MCP manifest: {error:?}"))?;
+        let endpoint =
+            reqwest::Url::parse(&manifest.endpoint_url).map_err(|error| error.to_string())?;
         let host = endpoint.host_str().ok_or("MCP endpoint host is missing")?;
-        let port = endpoint.port_or_known_default().ok_or("MCP endpoint port is missing")?;
+        let port = endpoint
+            .port_or_known_default()
+            .ok_or("MCP endpoint port is missing")?;
         // Resolve once, reject private/reserved results, and pin the approved addresses
         // into the HTTP client to prevent DNS rebinding between validation and connect.
         let addresses = resolve_public_addresses(host, port).await?;
@@ -403,7 +655,8 @@ impl McpHttpClient {
             .redirect(reqwest::redirect::Policy::none())
             .resolve_to_addrs(host, &addresses)
             .user_agent("CenAI-MCP/0.3")
-            .build().map_err(|error| error.to_string())?;
+            .build()
+            .map_err(|error| error.to_string())?;
         Ok(Self {
             client,
             manifest,
@@ -414,9 +667,16 @@ impl McpHttpClient {
         })
     }
 
-    async fn rpc(&self, method: &str, params: serde_json::Value, notification: bool) -> Result<(serde_json::Value, Option<String>), String> {
+    async fn rpc(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        notification: bool,
+    ) -> Result<(serde_json::Value, Option<String>), String> {
         use reqwest::header::{ACCEPT, CONTENT_TYPE};
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut body = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -425,7 +685,9 @@ impl McpHttpClient {
         if !notification {
             body["id"] = serde_json::json!(id);
         }
-        let mut request = self.client.post(&self.manifest.endpoint_url)
+        let mut request = self
+            .client
+            .post(&self.manifest.endpoint_url)
             .header(ACCEPT, "application/json, text/event-stream")
             .header(CONTENT_TYPE, "application/json")
             .header("MCP-Protocol-Version", "2025-03-26")
@@ -438,14 +700,24 @@ impl McpHttpClient {
         }
         let response = request.send().await.map_err(|error| error.to_string())?;
         let status = response.status();
-        let session = response.headers().get("Mcp-Session-Id")
-            .and_then(|value| value.to_str().ok()).map(str::to_owned);
-        let content_type = response.headers().get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
+        let session = response
+            .headers()
+            .get("Mcp-Session-Id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
         if !status.is_success() {
             return Err(format!("MCP server returned HTTP {}", status.as_u16()));
         }
-        if response.content_length().is_some_and(|length| length > 2 * 1024 * 1024) {
+        if response
+            .content_length()
+            .is_some_and(|length| length > 2 * 1024 * 1024)
+        {
             return Err("MCP response exceeds the 2 MB response limit".into());
         }
         use futures_util::StreamExt;
@@ -458,23 +730,30 @@ impl McpHttpClient {
             }
             response_bytes.extend_from_slice(&chunk);
         }
-        let raw = String::from_utf8(response_bytes).map_err(|_| "MCP response is not valid UTF-8")?;
+        let raw =
+            String::from_utf8(response_bytes).map_err(|_| "MCP response is not valid UTF-8")?;
         if notification || raw.trim().is_empty() {
             return Ok((serde_json::Value::Null, session));
         }
-        if !content_type.contains("application/json") && !content_type.contains("text/event-stream") {
-            return Err(format!("MCP method {method} returned an unsupported content type"));
+        if !content_type.contains("application/json") && !content_type.contains("text/event-stream")
+        {
+            return Err(format!(
+                "MCP method {method} returned an unsupported content type"
+            ));
         }
         let expected_id = serde_json::Value::from(id);
         let value = if content_type.contains("text/event-stream") {
             let normalized = raw.replace("\r\n", "\n");
             let mut matching_response = None;
             for event in normalized.split("\n\n") {
-                let data = event.lines()
+                let data = event
+                    .lines()
                     .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
                     .collect::<Vec<_>>()
                     .join("\n");
-                if data.is_empty() || data == "[DONE]" { continue; }
+                if data.is_empty() || data == "[DONE]" {
+                    continue;
+                }
                 let candidate: serde_json::Value = serde_json::from_str(&data)
                     .map_err(|error| format!("Invalid MCP event-stream JSON: {error}"))?;
                 // MCP servers may send notifications while a request is pending.
@@ -483,7 +762,9 @@ impl McpHttpClient {
                     matching_response = Some(candidate);
                 }
             }
-            matching_response.ok_or_else(|| format!("MCP method {method} event stream omitted its matching response"))?
+            matching_response.ok_or_else(|| {
+                format!("MCP method {method} event stream omitted its matching response")
+            })?
         } else {
             serde_json::from_str::<serde_json::Value>(&raw)
                 .map_err(|error| format!("Invalid MCP JSON-RPC response: {error}"))?
@@ -493,28 +774,51 @@ impl McpHttpClient {
     }
 
     pub async fn initialize(&self) -> Result<serde_json::Value, String> {
-        let (result, session) = self.rpc("initialize", serde_json::json!({
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": { "name": "CenAI", "version": "0.3.0" }
-        }), false).await?;
+        let (result, session) = self
+            .rpc(
+                "initialize",
+                serde_json::json!({
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": { "name": "CenAI", "version": "0.3.0" }
+                }),
+                false,
+            )
+            .await?;
         if let Some(session) = session {
             *self.session_id.lock().await = Some(session);
         }
-        let _ = self.rpc("notifications/initialized", serde_json::json!({}), true).await?;
+        let _ = self
+            .rpc("notifications/initialized", serde_json::json!({}), true)
+            .await?;
         Ok(result)
     }
 
     pub async fn list_tools(&self) -> Result<Vec<McpTool>, String> {
         let (result, _) = self.rpc("tools/list", serde_json::json!({}), false).await?;
-        let tools: Vec<McpTool> = serde_json::from_value(result.get("tools").cloned().unwrap_or(serde_json::Value::Null))
-            .map_err(|error| format!("Invalid MCP tools/list response: {error}"))?;
-        if tools.len() > 128 { return Err("MCP server returned more than 128 tools".into()); }
+        let tools: Vec<McpTool> = serde_json::from_value(
+            result
+                .get("tools")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+        )
+        .map_err(|error| format!("Invalid MCP tools/list response: {error}"))?;
+        if tools.len() > 128 {
+            return Err("MCP server returned more than 128 tools".into());
+        }
         let mut indexed = std::collections::HashMap::new();
         for tool in &tools {
-            if tool.name.trim().is_empty() || tool.name.len() > 128
-                || tool.description.as_ref().is_some_and(|description| description.len() > 2000)
-                || serde_json::to_vec(&tool.input_schema).map_err(|error| error.to_string())?.len() > 32 * 1024 {
+            if tool.name.trim().is_empty()
+                || tool.name.len() > 128
+                || tool
+                    .description
+                    .as_ref()
+                    .is_some_and(|description| description.len() > 2000)
+                || serde_json::to_vec(&tool.input_schema)
+                    .map_err(|error| error.to_string())?
+                    .len()
+                    > 32 * 1024
+            {
                 return Err("MCP tool metadata exceeds supported limits".into());
             }
             validate_schema_definition(&tool.input_schema, 0)?;
@@ -535,13 +839,24 @@ impl McpHttpClient {
         if !self.manifest.may_execute(tool_name, user_approved) {
             return Err("This MCP action requires explicit user approval.".into());
         }
-        let tool = self.tools.read().await.get(tool_name).cloned()
+        let tool = self
+            .tools
+            .read()
+            .await
+            .get(tool_name)
+            .cloned()
             .ok_or("MCP tool was not discovered in the active server session")?;
         validate_tool_arguments(&tool.input_schema, &arguments)?;
-        let (result, _) = self.rpc("tools/call", serde_json::json!({
-            "name": tool_name,
-            "arguments": arguments
-        }), false).await?;
+        let (result, _) = self
+            .rpc(
+                "tools/call",
+                serde_json::json!({
+                    "name": tool_name,
+                    "arguments": arguments
+                }),
+                false,
+            )
+            .await?;
         Ok(result)
     }
 }
@@ -574,10 +889,15 @@ mod tests {
     fn json_rpc_responses_must_match_the_request_and_have_one_valid_outcome() {
         let request_id = serde_json::json!(42);
         let valid = serde_json::json!({"jsonrpc":"2.0","id":42,"result":{"tools":[]}});
-        assert_eq!(validate_rpc_response(&valid, &request_id, "tools/list").unwrap(), serde_json::json!({"tools":[]}));
+        assert_eq!(
+            validate_rpc_response(&valid, &request_id, "tools/list").unwrap(),
+            serde_json::json!({"tools":[]})
+        );
 
         let wrong_id = serde_json::json!({"jsonrpc":"2.0","id":41,"result":{}});
-        assert!(validate_rpc_response(&wrong_id, &request_id, "tools/list").unwrap_err().contains("different request ID"));
+        assert!(validate_rpc_response(&wrong_id, &request_id, "tools/list")
+            .unwrap_err()
+            .contains("different request ID"));
 
         let wrong_version = serde_json::json!({"jsonrpc":"1.0","id":42,"result":{}});
         assert!(validate_rpc_response(&wrong_version, &request_id, "tools/list").is_err());
@@ -588,17 +908,25 @@ mod tests {
         let conflicting_outcomes = serde_json::json!({"jsonrpc":"2.0","id":42,"result":{},"error":{"code":-1,"message":"bad"}});
         assert!(validate_rpc_response(&conflicting_outcomes, &request_id, "tools/list").is_err());
 
-        let malformed_error = serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":"bad","message":false}});
+        let malformed_error =
+            serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":"bad","message":false}});
         assert!(validate_rpc_response(&malformed_error, &request_id, "tools/list").is_err());
 
-        let remote_error = serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":-32000,"message":"denied"}});
-        assert!(validate_rpc_response(&remote_error, &request_id, "tools/list").unwrap_err().contains("denied"));
+        let remote_error =
+            serde_json::json!({"jsonrpc":"2.0","id":42,"error":{"code":-32000,"message":"denied"}});
+        assert!(
+            validate_rpc_response(&remote_error, &request_id, "tools/list")
+                .unwrap_err()
+                .contains("denied")
+        );
     }
 
     #[test]
     fn manifests_reject_ambiguous_or_unbounded_capability_metadata() {
         let mut manifest = test_server();
-        manifest.capabilities[0].requested_scopes.push("mail.send".into());
+        manifest.capabilities[0]
+            .requested_scopes
+            .push("mail.send".into());
         assert!(manifest.validate(1).is_err());
         let mut manifest = test_server();
         manifest.capabilities[0].name = "mail send".into();
@@ -634,10 +962,22 @@ mod tests {
             "additionalProperties": false
         });
         assert!(validate_schema_definition(&schema, 0).is_ok());
-        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","count":2})).is_ok());
+        assert!(validate_tool_arguments(
+            &schema,
+            &serde_json::json!({"to":"team@example.com","count":2})
+        )
+        .is_ok());
         assert!(validate_tool_arguments(&schema, &serde_json::json!({"count":2})).is_err());
-        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","count":9})).is_err());
-        assert!(validate_tool_arguments(&schema, &serde_json::json!({"to":"team@example.com","shell":"rm -rf /"})).is_err());
+        assert!(validate_tool_arguments(
+            &schema,
+            &serde_json::json!({"to":"team@example.com","count":9})
+        )
+        .is_err());
+        assert!(validate_tool_arguments(
+            &schema,
+            &serde_json::json!({"to":"team@example.com","shell":"rm -rf /"})
+        )
+        .is_err());
     }
 
     #[test]
@@ -649,7 +989,9 @@ mod tests {
         assert!(validate_schema_definition(&inverted_range, 0).is_err());
 
         let unsupported_pattern = serde_json::json!({"type":"string","pattern":"^safe$"});
-        assert!(validate_schema_definition(&unsupported_pattern, 0).unwrap_err().contains("unsupported validation keyword"));
+        assert!(validate_schema_definition(&unsupported_pattern, 0)
+            .unwrap_err()
+            .contains("unsupported validation keyword"));
 
         let duplicate_required = serde_json::json!({
             "type":"object",
@@ -697,7 +1039,10 @@ mod tests {
     fn insecure_endpoints_and_duplicate_capabilities_are_rejected() {
         let mut server = test_server();
         server.endpoint_url = "http://mcp.example.com".into();
-        assert_eq!(server.validate(1), Err("Remote MCP endpoints must use HTTPS"));
+        assert_eq!(
+            server.validate(1),
+            Err("Remote MCP endpoints must use HTTPS")
+        );
         server.endpoint_url = "https://user:password@mcp.example.com".into();
         assert!(server.validate(1).is_err());
         server.endpoint_url = "https://127.0.0.1/mcp".into();
@@ -706,6 +1051,9 @@ mod tests {
         assert!(server.validate(1).is_err());
         server.endpoint_url = "https://mcp.example.com".into();
         server.capabilities.push(server.capabilities[0].clone());
-        assert_eq!(server.validate(1), Err("MCP capability names must be unique"));
+        assert_eq!(
+            server.validate(1),
+            Err("MCP capability names must be unique")
+        );
     }
 }

@@ -11,9 +11,14 @@ const MAX_CALLBACK_BYTES: usize = 8 * 1024;
 pub const MAX_AUTHORIZATION_AGE_SECONDS: i64 = 10 * 60;
 
 /// Rejects stale authorization attempts so a copied redirect cannot be replayed indefinitely.
-pub fn validate_authorization_age(started_at_unix_seconds: i64, now_unix_seconds: i64) -> Result<(), &'static str> {
-    if started_at_unix_seconds <= 0 || now_unix_seconds < started_at_unix_seconds
-        || now_unix_seconds.saturating_sub(started_at_unix_seconds) > MAX_AUTHORIZATION_AGE_SECONDS {
+pub fn validate_authorization_age(
+    started_at_unix_seconds: i64,
+    now_unix_seconds: i64,
+) -> Result<(), &'static str> {
+    if started_at_unix_seconds <= 0
+        || now_unix_seconds < started_at_unix_seconds
+        || now_unix_seconds.saturating_sub(started_at_unix_seconds) > MAX_AUTHORIZATION_AGE_SECONDS
+    {
         return Err("Google sign-in request expired. Start the connection again");
     }
     Ok(())
@@ -28,8 +33,12 @@ pub struct AuthorizationRequest {
 
 pub fn create_authorization_request(client_id: &str) -> Result<AuthorizationRequest, &'static str> {
     let client_id = client_id.trim();
-    if client_id.len() > 256 || !client_id.ends_with(".apps.googleusercontent.com")
-        || client_id.chars().any(|character| matches!(character, '/' | '?' | '#' | '@' | '\n' | '\r')) {
+    if client_id.len() > 256
+        || !client_id.ends_with(".apps.googleusercontent.com")
+        || client_id
+            .chars()
+            .any(|character| matches!(character, '/' | '?' | '#' | '@' | '\n' | '\r'))
+    {
         return Err("A valid Google OAuth client ID is required");
     }
     let mut verifier_bytes = [0u8; 32];
@@ -51,7 +60,11 @@ pub fn create_authorization_request(client_id: &str) -> Result<AuthorizationRequ
         .append_pair("state", &state)
         .append_pair("access_type", "offline")
         .append_pair("prompt", "consent");
-    Ok(AuthorizationRequest { url: url.to_string(), state, verifier })
+    Ok(AuthorizationRequest {
+        url: url.to_string(),
+        state,
+        verifier,
+    })
 }
 
 /// Validate the exact custom-scheme redirect and one-time state before exposing a code.
@@ -60,9 +73,13 @@ pub fn validate_callback(callback: &str, expected_state: &str) -> Result<String,
         return Err("OAuth callback or expected state is invalid");
     }
     let url = reqwest::Url::parse(callback).map_err(|_| "OAuth callback URL is invalid")?;
-    if url.scheme() != "com.cenai.app" || url.host().is_some()
-        || url.path() != "/oauth2redirect" || !url.username().is_empty()
-        || url.password().is_some() || url.fragment().is_some() {
+    if url.scheme() != "com.cenai.app"
+        || url.host().is_some()
+        || url.path() != "/oauth2redirect"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
         return Err("Unexpected OAuth redirect URI");
     }
     let mut state = None;
@@ -73,14 +90,18 @@ pub fn validate_callback(callback: &str, expected_state: &str) -> Result<String,
             "state" if state.is_none() => state = Some(value.into_owned()),
             "code" if code.is_none() => code = Some(value.into_owned()),
             "error" if error.is_none() => error = Some(value.into_owned()),
-            "state" | "code" | "error" => return Err("OAuth callback contains duplicate parameters"),
+            "state" | "code" | "error" => {
+                return Err("OAuth callback contains duplicate parameters")
+            }
             _ => {}
         }
     }
     if state.as_deref() != Some(expected_state) {
         return Err("OAuth state validation failed");
     }
-    if error.is_some() { return Err("Google authorization was denied or failed"); }
+    if error.is_some() {
+        return Err("Google authorization was denied or failed");
+    }
     let code = code.ok_or("Google did not return an authorization code")?;
     if code.is_empty() || code.len() > 4096 || code.chars().any(char::is_control) {
         return Err("Google authorization code is invalid");
@@ -99,23 +120,58 @@ mod tests {
         assert_ne!(first.state, second.state);
         assert_ne!(first.verifier, second.verifier);
         let url = reqwest::Url::parse(&first.url).unwrap();
-        let pairs = url.query_pairs().collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(pairs.get("code_challenge_method").map(|v| v.as_ref()), Some("S256"));
-        assert_eq!(pairs.get("redirect_uri").map(|v| v.as_ref()), Some(REDIRECT_URI));
-        assert_eq!(pairs.get("state").map(|v| v.as_ref()), Some(first.state.as_str()));
+        let pairs = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            pairs.get("code_challenge_method").map(|v| v.as_ref()),
+            Some("S256")
+        );
+        assert_eq!(
+            pairs.get("redirect_uri").map(|v| v.as_ref()),
+            Some(REDIRECT_URI)
+        );
+        assert_eq!(
+            pairs.get("state").map(|v| v.as_ref()),
+            Some(first.state.as_str())
+        );
         let expected = URL_SAFE_NO_PAD.encode(Sha256::digest(first.verifier.as_bytes()));
-        assert_eq!(pairs.get("code_challenge").map(|v| v.as_ref()), Some(expected.as_str()));
+        assert_eq!(
+            pairs.get("code_challenge").map(|v| v.as_ref()),
+            Some(expected.as_str())
+        );
     }
 
     #[test]
     fn callback_requires_exact_redirect_state_and_single_code() {
         let state = "a".repeat(43);
-        assert_eq!(validate_callback(&format!("{REDIRECT_URI}?state={state}&code=abc"), &state).unwrap(), "abc");
-        assert!(validate_callback(&format!("{REDIRECT_URI}?state=wrong&code=abc"), &state).is_err());
-        assert!(validate_callback(&format!("https://attacker.example/?state={state}&code=abc"), &state).is_err());
-        assert!(validate_callback(&format!("{REDIRECT_URI}?state={state}&code=a&code=b"), &state).is_err());
-        assert!(validate_callback(&format!("{REDIRECT_URI}?state={state}&error=access_denied"), &state).is_err());
-        assert!(validate_callback(&format!("com.cenai.app://evil/oauth2redirect?state={state}&code=abc"), &state).is_err());
+        assert_eq!(
+            validate_callback(&format!("{REDIRECT_URI}?state={state}&code=abc"), &state).unwrap(),
+            "abc"
+        );
+        assert!(
+            validate_callback(&format!("{REDIRECT_URI}?state=wrong&code=abc"), &state).is_err()
+        );
+        assert!(validate_callback(
+            &format!("https://attacker.example/?state={state}&code=abc"),
+            &state
+        )
+        .is_err());
+        assert!(validate_callback(
+            &format!("{REDIRECT_URI}?state={state}&code=a&code=b"),
+            &state
+        )
+        .is_err());
+        assert!(validate_callback(
+            &format!("{REDIRECT_URI}?state={state}&error=access_denied"),
+            &state
+        )
+        .is_err());
+        assert!(validate_callback(
+            &format!("com.cenai.app://evil/oauth2redirect?state={state}&code=abc"),
+            &state
+        )
+        .is_err());
     }
 
     #[test]
@@ -130,6 +186,10 @@ mod tests {
     fn invalid_client_ids_are_rejected() {
         assert!(create_authorization_request("https://evil.apps.googleusercontent.com").is_err());
         assert!(create_authorization_request("client-id").is_err());
-        assert!(create_authorization_request(&format!("{} .apps.googleusercontent.com", "x".repeat(300))).is_err());
+        assert!(create_authorization_request(&format!(
+            "{} .apps.googleusercontent.com",
+            "x".repeat(300)
+        ))
+        .is_err());
     }
 }

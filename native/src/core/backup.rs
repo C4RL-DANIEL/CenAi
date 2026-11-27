@@ -41,9 +41,17 @@ impl EncryptedBackup {
         OsRng.fill_bytes(&mut nonce_bytes);
 
         let key = derive_key(passphrase, &salt)?;
-        let cipher = Aes256Gcm::new_from_slice(&key[..]).map_err(|_| "Backup encryption could not initialize".to_owned())?;
+        let cipher = Aes256Gcm::new_from_slice(&key[..])
+            .map_err(|_| "Backup encryption could not initialize".to_owned())?;
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher.encrypt(nonce, Payload { msg: plaintext, aad: AAD })
+        let ciphertext = cipher
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: AAD,
+                },
+            )
             .map_err(|_| "Backup encryption failed".to_owned())?;
 
         Ok(Self {
@@ -60,20 +68,32 @@ impl EncryptedBackup {
         if self.format_version != FORMAT_VERSION || self.kdf != KDF_ID {
             return Err("Backup format or key-derivation parameters are unsupported".into());
         }
-        if self.salt_base64.len() > 64 || self.nonce_base64.len() > 64
-            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES {
+        if self.salt_base64.len() > 64
+            || self.nonce_base64.len() > 64
+            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES
+        {
             return Err("Backup envelope contains oversized encoded fields".into());
         }
-        let salt = STANDARD.decode(&self.salt_base64).map_err(|_| "Backup salt is malformed".to_owned())?;
-        let nonce = STANDARD.decode(&self.nonce_base64).map_err(|_| "Backup nonce is malformed".to_owned())?;
-        let ciphertext = STANDARD.decode(&self.ciphertext_base64).map_err(|_| "Backup ciphertext is malformed".to_owned())?;
-        if salt.len() != SALT_LENGTH || nonce.len() != NONCE_LENGTH
-            || ciphertext.len() < 16 || ciphertext.len() > MAX_CIPHERTEXT_BYTES {
+        let salt = STANDARD
+            .decode(&self.salt_base64)
+            .map_err(|_| "Backup salt is malformed".to_owned())?;
+        let nonce = STANDARD
+            .decode(&self.nonce_base64)
+            .map_err(|_| "Backup nonce is malformed".to_owned())?;
+        let ciphertext = STANDARD
+            .decode(&self.ciphertext_base64)
+            .map_err(|_| "Backup ciphertext is malformed".to_owned())?;
+        if salt.len() != SALT_LENGTH
+            || nonce.len() != NONCE_LENGTH
+            || ciphertext.len() < 16
+            || ciphertext.len() > MAX_CIPHERTEXT_BYTES
+        {
             return Err("Backup envelope contains invalid cryptographic lengths".into());
         }
 
         let key = derive_key(passphrase, &salt)?;
-        let cipher = Aes256Gcm::new_from_slice(&key[..]).map_err(|_| "Backup decryption could not initialize".to_owned())?;
+        let cipher = Aes256Gcm::new_from_slice(&key[..])
+            .map_err(|_| "Backup decryption could not initialize".to_owned())?;
         cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: &ciphertext, aad: AAD })
             .map_err(|_| "Backup could not be authenticated; the passphrase may be wrong or the file was modified".into())
     }
@@ -96,15 +116,26 @@ impl EncryptedBackup {
         if self.format_version != FORMAT_VERSION || self.kdf != KDF_ID {
             return Err("Backup format or key-derivation parameters are unsupported".into());
         }
-        if self.salt_base64.len() > 64 || self.nonce_base64.len() > 64
-            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES {
+        if self.salt_base64.len() > 64
+            || self.nonce_base64.len() > 64
+            || self.ciphertext_base64.len() > MAX_ENCODED_CIPHERTEXT_BYTES
+        {
             return Err("Backup envelope contains oversized encoded fields".into());
         }
-        let salt = STANDARD.decode(&self.salt_base64).map_err(|_| "Backup salt is malformed".to_owned())?;
-        let nonce = STANDARD.decode(&self.nonce_base64).map_err(|_| "Backup nonce is malformed".to_owned())?;
-        let ciphertext = STANDARD.decode(&self.ciphertext_base64).map_err(|_| "Backup ciphertext is malformed".to_owned())?;
-        if salt.len() != SALT_LENGTH || nonce.len() != NONCE_LENGTH
-            || ciphertext.len() < 16 || ciphertext.len() > MAX_CIPHERTEXT_BYTES {
+        let salt = STANDARD
+            .decode(&self.salt_base64)
+            .map_err(|_| "Backup salt is malformed".to_owned())?;
+        let nonce = STANDARD
+            .decode(&self.nonce_base64)
+            .map_err(|_| "Backup nonce is malformed".to_owned())?;
+        let ciphertext = STANDARD
+            .decode(&self.ciphertext_base64)
+            .map_err(|_| "Backup ciphertext is malformed".to_owned())?;
+        if salt.len() != SALT_LENGTH
+            || nonce.len() != NONCE_LENGTH
+            || ciphertext.len() < 16
+            || ciphertext.len() > MAX_CIPHERTEXT_BYTES
+        {
             return Err("Backup envelope contains invalid cryptographic lengths".into());
         }
         Ok(())
@@ -112,8 +143,12 @@ impl EncryptedBackup {
 }
 
 fn validate_passphrase(passphrase: &str) -> Result<(), String> {
-    if passphrase.len() < 12 || passphrase.len() > 1024 || passphrase.chars().any(char::is_control) {
-        return Err("Backup passphrase must be 12–1024 UTF-8 bytes and contain no control characters".into());
+    if passphrase.len() < 12 || passphrase.len() > 1024 || passphrase.chars().any(char::is_control)
+    {
+        return Err(
+            "Backup passphrase must be 12–1024 UTF-8 bytes and contain no control characters"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -122,7 +157,8 @@ fn derive_key(passphrase: &str, salt: &[u8]) -> Result<Zeroizing<[u8; 32]>, Stri
     let params = Params::new(65_536, 3, 1, Some(32)).map_err(|error| error.to_string())?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
-    argon2.hash_password_into(passphrase.as_bytes(), salt, &mut key[..])
+    argon2
+        .hash_password_into(passphrase.as_bytes(), salt, &mut key[..])
         .map_err(|error| error.to_string())?;
     Ok(key)
 }

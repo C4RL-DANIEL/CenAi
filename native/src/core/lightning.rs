@@ -53,16 +53,26 @@ impl Default for LightningStatus {
 }
 
 pub fn verify_model_metadata(bytes: u64, sha256: &str) -> Result<(), &'static str> {
-    if bytes != MODEL_BYTES { return Err("Lightning model has an unexpected byte size"); }
-    if !sha256.eq_ignore_ascii_case(MODEL_SHA256) { return Err("Lightning model SHA-256 does not match the pinned artifact"); }
+    if bytes != MODEL_BYTES {
+        return Err("Lightning model has an unexpected byte size");
+    }
+    if !sha256.eq_ignore_ascii_case(MODEL_SHA256) {
+        return Err("Lightning model SHA-256 does not match the pinned artifact");
+    }
     Ok(())
 }
 
 pub fn validate_prompt(prompt: &str) -> Result<(), &'static str> {
     let prompt = prompt.trim();
-    if prompt.is_empty() { return Err("Lightning requires a non-empty prompt"); }
-    if prompt.len() > 32_000 { return Err("Lightning prompt exceeds the 32 KB limit"); }
-    if prompt.chars().any(|character| character == '\0') { return Err("Lightning prompt contains a null character"); }
+    if prompt.is_empty() {
+        return Err("Lightning requires a non-empty prompt");
+    }
+    if prompt.len() > 32_000 {
+        return Err("Lightning prompt exceeds the 32 KB limit");
+    }
+    if prompt.chars().any(|character| character == '\0') {
+        return Err("Lightning prompt contains a null character");
+    }
     Ok(())
 }
 

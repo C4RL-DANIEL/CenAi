@@ -1,12 +1,31 @@
 //! Voice-session state machine. Audio capture and provider transport remain platform adapters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VoiceMode { PushToTalk, RealtimeSpeech }
+pub enum VoiceMode {
+    PushToTalk,
+    RealtimeSpeech,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VoiceState { Idle, AwaitingPermission, Connecting, Listening, Speaking, Interrupted, Ended, Failed }
+pub enum VoiceState {
+    Idle,
+    AwaitingPermission,
+    Connecting,
+    Listening,
+    Speaking,
+    Interrupted,
+    Ended,
+    Failed,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VoiceEvent { RequestMicrophonePermission, ConnectProvider, StartCapture, StopCapture, InterruptPlayback, CloseSession }
+pub enum VoiceEvent {
+    RequestMicrophonePermission,
+    ConnectProvider,
+    StartCapture,
+    StopCapture,
+    InterruptPlayback,
+    CloseSession,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioFrame {
@@ -16,12 +35,25 @@ pub struct AudioFrame {
 }
 
 impl AudioFrame {
-    pub fn from_pcm16_le(sample_rate_hz: u32, channels: u8, bytes: &[u8]) -> Result<Self, &'static str> {
-        if !bytes.len().is_multiple_of(2) { return Err("PCM16 audio buffer has an incomplete sample"); }
-        let samples = bytes.as_chunks::<2>().0.iter()
+    pub fn from_pcm16_le(
+        sample_rate_hz: u32,
+        channels: u8,
+        bytes: &[u8],
+    ) -> Result<Self, &'static str> {
+        if !bytes.len().is_multiple_of(2) {
+            return Err("PCM16 audio buffer has an incomplete sample");
+        }
+        let samples = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|chunk| i16::from_le_bytes(*chunk))
             .collect::<Vec<_>>();
-        let frame = Self { sample_rate_hz, channels, samples };
+        let frame = Self {
+            sample_rate_hz,
+            channels,
+            samples,
+        };
         frame.validate()?;
         Ok(frame)
     }
@@ -30,7 +62,9 @@ impl AudioFrame {
         if !matches!(self.sample_rate_hz, 16_000 | 24_000 | 48_000) {
             return Err("Unsupported voice sample rate");
         }
-        if self.channels != 1 { return Err("Voice capture must be mono PCM"); }
+        if self.channels != 1 {
+            return Err("Voice capture must be mono PCM");
+        }
         if self.samples.is_empty() || self.samples.len() > self.sample_rate_hz as usize * 4 {
             return Err("Audio frame must contain between 1 ms and 4 seconds of samples");
         }
@@ -38,11 +72,17 @@ impl AudioFrame {
     }
 
     fn rms_level(&self) -> u32 {
-        if self.samples.is_empty() { return 0; }
-        let sum = self.samples.iter().map(|sample| {
-            let value = i64::from(*sample);
-            (value * value) as u64
-        }).sum::<u64>();
+        if self.samples.is_empty() {
+            return 0;
+        }
+        let sum = self
+            .samples
+            .iter()
+            .map(|sample| {
+                let value = i64::from(*sample);
+                (value * value) as u64
+            })
+            .sum::<u64>();
         ((sum / self.samples.len() as u64) as f64).sqrt() as u32
     }
 }
@@ -63,8 +103,14 @@ impl AudioChunk {
         if !matches!(self.sample_rate_hz, 16_000 | 24_000 | 48_000) || self.samples.is_empty() {
             return Err("Audio chunk format is invalid");
         }
-        let data_length = self.samples.len().checked_mul(2).ok_or("Audio chunk is too large")?;
-        if data_length > u32::MAX as usize - 36 { return Err("Audio chunk exceeds WAV limits"); }
+        let data_length = self
+            .samples
+            .len()
+            .checked_mul(2)
+            .ok_or("Audio chunk is too large")?;
+        if data_length > u32::MAX as usize - 36 {
+            return Err("Audio chunk exceeds WAV limits");
+        }
         let data_length = data_length as u32;
         let mut wav = Vec::with_capacity(44 + data_length as usize);
         wav.extend_from_slice(b"RIFF");
@@ -79,7 +125,9 @@ impl AudioChunk {
         wav.extend_from_slice(&16u16.to_le_bytes());
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&data_length.to_le_bytes());
-        for sample in &self.samples { wav.extend_from_slice(&sample.to_le_bytes()); }
+        for sample in &self.samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
         Ok(wav)
     }
 }
@@ -155,11 +203,17 @@ impl VoiceAudioBuffer {
     }
 
     fn take_chunk(&mut self) -> Option<AudioChunk> {
-        if self.samples.is_empty() { return None; }
+        if self.samples.is_empty() {
+            return None;
+        }
         let samples = std::mem::take(&mut self.samples);
         let speech_detected = std::mem::replace(&mut self.speech_active, false);
         self.silence_samples = 0;
-        Some(AudioChunk { sample_rate_hz: self.sample_rate_hz, samples, speech_detected })
+        Some(AudioChunk {
+            sample_rate_hz: self.sample_rate_hz,
+            samples,
+            speech_detected,
+        })
     }
 }
 
@@ -169,11 +223,20 @@ pub struct VoicePipeline {
 }
 
 impl VoicePipeline {
-    pub fn new(mode: VoiceMode, sample_rate_hz: u32, max_chunk_ms: u32) -> Result<Self, &'static str> {
-        Ok(Self { session: VoiceSession::new(mode), audio: VoiceAudioBuffer::new(sample_rate_hz, max_chunk_ms)? })
+    pub fn new(
+        mode: VoiceMode,
+        sample_rate_hz: u32,
+        max_chunk_ms: u32,
+    ) -> Result<Self, &'static str> {
+        Ok(Self {
+            session: VoiceSession::new(mode),
+            audio: VoiceAudioBuffer::new(sample_rate_hz, max_chunk_ms)?,
+        })
     }
 
-    pub fn start(&mut self) -> Result<VoiceEvent, &'static str> { self.session.start() }
+    pub fn start(&mut self) -> Result<VoiceEvent, &'static str> {
+        self.session.start()
+    }
 
     pub fn permission_result(&mut self, granted: bool) -> Result<VoiceEvent, &'static str> {
         self.session.permission_result(granted)
@@ -202,7 +265,9 @@ impl VoicePipeline {
         self.audio.drain_ready_chunks()
     }
 
-    pub fn stop(&mut self) -> VoiceEvent { self.session.stop() }
+    pub fn stop(&mut self) -> VoiceEvent {
+        self.session.stop()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -216,11 +281,20 @@ pub struct VoiceSession {
 
 impl VoiceSession {
     pub fn new(mode: VoiceMode) -> Self {
-        Self { mode, state: VoiceState::Idle, microphone_granted: false, output_active: false, last_error: None }
+        Self {
+            mode,
+            state: VoiceState::Idle,
+            microphone_granted: false,
+            output_active: false,
+            last_error: None,
+        }
     }
 
     pub fn start(&mut self) -> Result<VoiceEvent, &'static str> {
-        if !matches!(self.state, VoiceState::Idle | VoiceState::Ended | VoiceState::Failed) {
+        if !matches!(
+            self.state,
+            VoiceState::Idle | VoiceState::Ended | VoiceState::Failed
+        ) {
             return Err("Voice session is already active");
         }
         self.microphone_granted = false;
@@ -231,7 +305,9 @@ impl VoiceSession {
     }
 
     pub fn permission_result(&mut self, granted: bool) -> Result<VoiceEvent, &'static str> {
-        if self.state != VoiceState::AwaitingPermission { return Err("Microphone permission was not requested"); }
+        if self.state != VoiceState::AwaitingPermission {
+            return Err("Microphone permission was not requested");
+        }
         self.microphone_granted = granted;
         if !granted {
             self.state = VoiceState::Failed;
@@ -243,20 +319,26 @@ impl VoiceSession {
     }
 
     pub fn provider_connected(&mut self) -> Result<VoiceEvent, &'static str> {
-        if self.state != VoiceState::Connecting { return Err("Voice provider is not connecting"); }
+        if self.state != VoiceState::Connecting {
+            return Err("Voice provider is not connecting");
+        }
         self.state = VoiceState::Listening;
         Ok(VoiceEvent::StartCapture)
     }
 
     pub fn assistant_started_speaking(&mut self) -> Result<(), &'static str> {
-        if self.state != VoiceState::Listening { return Err("Voice session is not listening"); }
+        if self.state != VoiceState::Listening {
+            return Err("Voice session is not listening");
+        }
         self.output_active = true;
         self.state = VoiceState::Speaking;
         Ok(())
     }
 
     pub fn user_interrupted(&mut self) -> Result<VoiceEvent, &'static str> {
-        if self.state != VoiceState::Speaking { return Err("There is no active assistant speech to interrupt"); }
+        if self.state != VoiceState::Speaking {
+            return Err("There is no active assistant speech to interrupt");
+        }
         self.output_active = false;
         self.state = VoiceState::Interrupted;
         Ok(VoiceEvent::InterruptPlayback)
@@ -283,7 +365,11 @@ mod tests {
     use super::*;
 
     fn frame(level: i16) -> AudioFrame {
-        AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![level; 1_600] }
+        AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![level; 1_600],
+        }
     }
 
     #[test]
@@ -309,9 +395,17 @@ mod tests {
     #[test]
     fn voice_activity_silence_timeout_is_sample_based_not_frame_count_based() {
         let mut buffer = VoiceAudioBuffer::new(16_000, 5_000).unwrap();
-        let speech = AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![1200; 800] };
+        let speech = AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![1200; 800],
+        };
         assert!(buffer.push_frame(speech).unwrap().is_none());
-        let short_silence = AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 800] };
+        let short_silence = AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![0; 800],
+        };
         assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
         assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
         assert!(buffer.push_frame(short_silence.clone()).unwrap().is_none());
@@ -324,10 +418,34 @@ mod tests {
     #[test]
     fn voice_audio_buffer_enforces_frame_format_and_chunk_size() {
         let mut buffer = VoiceAudioBuffer::new(16_000, 500).unwrap();
-        assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 48_000, channels: 1, samples: vec![900; 1600] }).is_err());
-        assert!(buffer.push_frame(AudioFrame { sample_rate_hz: 16_000, channels: 2, samples: vec![900; 1600] }).is_err());
-        assert!(AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 32_000] }.validate().is_ok());
-        assert!(AudioFrame { sample_rate_hz: 16_000, channels: 1, samples: vec![0; 64_001] }.validate().is_err());
+        assert!(buffer
+            .push_frame(AudioFrame {
+                sample_rate_hz: 48_000,
+                channels: 1,
+                samples: vec![900; 1600]
+            })
+            .is_err());
+        assert!(buffer
+            .push_frame(AudioFrame {
+                sample_rate_hz: 16_000,
+                channels: 2,
+                samples: vec![900; 1600]
+            })
+            .is_err());
+        assert!(AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![0; 32_000]
+        }
+        .validate()
+        .is_ok());
+        assert!(AudioFrame {
+            sample_rate_hz: 16_000,
+            channels: 1,
+            samples: vec![0; 64_001]
+        }
+        .validate()
+        .is_err());
         let mut completed = None;
         for _ in 0..5 {
             completed = buffer.push_frame(frame(1000)).unwrap();
@@ -356,7 +474,11 @@ mod tests {
 
     #[test]
     fn audio_chunk_encodes_valid_pcm16_wav_header() {
-        let chunk = AudioChunk { sample_rate_hz: 16_000, samples: vec![1, -1, 300], speech_detected: true };
+        let chunk = AudioChunk {
+            sample_rate_hz: 16_000,
+            samples: vec![1, -1, 300],
+            speech_detected: true,
+        };
         let wav = chunk.to_wav_bytes().unwrap();
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");
@@ -386,11 +508,14 @@ mod tests {
         pipeline.start().unwrap();
         pipeline.permission_result(true).unwrap();
         pipeline.provider_connected().unwrap();
-        let first = pipeline.ingest_frame(AudioFrame {
-            sample_rate_hz: 16_000,
-            channels: 1,
-            samples: vec![1400; 32_000],
-        }).unwrap().unwrap();
+        let first = pipeline
+            .ingest_frame(AudioFrame {
+                sample_rate_hz: 16_000,
+                channels: 1,
+                samples: vec![1400; 32_000],
+            })
+            .unwrap()
+            .unwrap();
         assert_eq!(first.duration_ms(), 500);
         let queued = pipeline.drain_pending_chunks();
         // 32,000 samples at 16 kHz produce four 500 ms chunks:
@@ -404,7 +529,10 @@ mod tests {
     fn voice_session_requires_permission_and_provider_connection() {
         let mut session = VoiceSession::new(VoiceMode::RealtimeSpeech);
         assert_eq!(session.start(), Ok(VoiceEvent::RequestMicrophonePermission));
-        assert_eq!(session.permission_result(true), Ok(VoiceEvent::ConnectProvider));
+        assert_eq!(
+            session.permission_result(true),
+            Ok(VoiceEvent::ConnectProvider)
+        );
         assert_eq!(session.provider_connected(), Ok(VoiceEvent::StartCapture));
         assert_eq!(session.state, VoiceState::Listening);
     }
@@ -416,7 +544,10 @@ mod tests {
         session.permission_result(true).unwrap();
         session.provider_connected().unwrap();
         session.assistant_started_speaking().unwrap();
-        assert_eq!(session.user_interrupted(), Ok(VoiceEvent::InterruptPlayback));
+        assert_eq!(
+            session.user_interrupted(),
+            Ok(VoiceEvent::InterruptPlayback)
+        );
         assert_eq!(session.resume_listening(), Ok(VoiceEvent::StartCapture));
         assert_eq!(session.state, VoiceState::Listening);
     }

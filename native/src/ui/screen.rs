@@ -10,8 +10,11 @@ fn accent() -> egui::Color32 {
 
 fn text(value: impl Into<String>, size: f32, color: egui::Color32) -> egui::RichText {
     let color = LIGHT_MODE.with(|light| {
-        if !light.get() { return color; }
-        let spread = color.r().max(color.g()).max(color.b()) - color.r().min(color.g()).min(color.b());
+        if !light.get() {
+            return color;
+        }
+        let spread =
+            color.r().max(color.g()).max(color.b()) - color.r().min(color.g()).min(color.b());
         if spread < 65 && color.r() > 145 {
             egui::Color32::from_rgb(65, 75, 98)
         } else if color == egui::Color32::WHITE {
@@ -26,7 +29,10 @@ fn text(value: impl Into<String>, size: f32, color: egui::Color32) -> egui::Rich
 fn surface<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::InnerResponse<R> {
     egui::Frame::new()
         .fill(egui::Color32::from_rgba_unmultiplied(24, 29, 49, 232))
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(53, 62, 91)))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            egui::Color32::from_rgb(53, 62, 91),
+        ))
         .inner_margin(egui::Margin::same(16))
         .corner_radius(egui::CornerRadius::same(20))
         .show(ui, add)
@@ -36,20 +42,44 @@ fn background(ctx: &egui::Context, time: f32) {
     let painter = ctx.layer_painter(egui::LayerId::background());
     let rect = ctx.input(|input| input.screen_rect());
     let light = LIGHT_MODE.with(Cell::get);
-    painter.rect_filled(rect, 0.0, if light { egui::Color32::from_rgb(241, 245, 253) } else { egui::Color32::from_rgb(8, 11, 22) });
+    painter.rect_filled(
+        rect,
+        0.0,
+        if light {
+            egui::Color32::from_rgb(241, 245, 253)
+        } else {
+            egui::Color32::from_rgb(8, 11, 22)
+        },
+    );
     let drift = (time * 0.16).sin();
     let glow_a = egui::pos2(rect.width() * (0.22 + drift * 0.06), rect.height() * 0.22);
     let glow_b = egui::pos2(rect.width() * 0.84, rect.height() * (0.65 + drift * 0.04));
     for (center, color) in [
-        (glow_a, if light { egui::Color32::from_rgba_unmultiplied(115, 137, 240, 24) } else { egui::Color32::from_rgba_unmultiplied(73, 94, 226, 20) }),
-        (glow_b, if light { egui::Color32::from_rgba_unmultiplied(185, 123, 220, 20) } else { egui::Color32::from_rgba_unmultiplied(142, 65, 210, 18) }),
+        (
+            glow_a,
+            if light {
+                egui::Color32::from_rgba_unmultiplied(115, 137, 240, 24)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(73, 94, 226, 20)
+            },
+        ),
+        (
+            glow_b,
+            if light {
+                egui::Color32::from_rgba_unmultiplied(185, 123, 220, 20)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(142, 65, 210, 18)
+            },
+        ),
     ] {
         for layer in (1..=8).rev() {
             let radius = rect.width().min(rect.height()) * (0.06 + layer as f32 * 0.035);
             let alpha = (10.0 - layer as f32).max(1.0) as u8;
-            painter.circle_filled(center, radius, egui::Color32::from_rgba_unmultiplied(
-                color.r(), color.g(), color.b(), alpha,
-            ));
+            painter.circle_filled(
+                center,
+                radius,
+                egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha),
+            );
         }
     }
 }
@@ -59,9 +89,17 @@ fn top_bar(ui: &mut egui::Ui) {
         ui.label(text("Cen", 23.0, egui::Color32::WHITE).strong());
         ui.label(text("AI", 23.0, accent()).strong());
         ui.add_space(8.0);
-        ui.label(text("PERSONAL INTELLIGENCE", 9.0, egui::Color32::from_rgb(139, 151, 184)));
+        ui.label(text(
+            "PERSONAL INTELLIGENCE",
+            9.0,
+            egui::Color32::from_rgb(139, 151, 184),
+        ));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(text("●  READY", 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                "●  READY",
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         });
     });
 }
@@ -75,20 +113,36 @@ fn navigation(ui: &mut egui::Ui, state: &mut AppState) {
             (Destination::Settings, "⚙", "Settings"),
         ];
         for (destination, glyph, label) in items {
-            if state.mfa_login_required && destination != Destination::Settings { continue; }
+            if state.mfa_login_required && destination != Destination::Settings {
+                continue;
+            }
             let selected = state.destination == destination;
             let fill = if selected {
                 egui::Color32::from_rgb(49, 59, 104)
             } else {
                 egui::Color32::TRANSPARENT
             };
-            let color = if selected { egui::Color32::WHITE } else { egui::Color32::from_rgb(145, 154, 180) };
-            if ui.add_sized(
-                [if state.mfa_login_required { ui.available_width() } else { ui.available_width() / 4.0 }, 54.0],
-                egui::Button::new(text(format!("{glyph}\n{label}"), 11.0, color))
-                    .fill(fill)
-                    .stroke(egui::Stroke::NONE),
-            ).clicked() {
+            let color = if selected {
+                egui::Color32::WHITE
+            } else {
+                egui::Color32::from_rgb(145, 154, 180)
+            };
+            if ui
+                .add_sized(
+                    [
+                        if state.mfa_login_required {
+                            ui.available_width()
+                        } else {
+                            ui.available_width() / 4.0
+                        },
+                        54.0,
+                    ],
+                    egui::Button::new(text(format!("{glyph}\n{label}"), 11.0, color))
+                        .fill(fill)
+                        .stroke(egui::Stroke::NONE),
+                )
+                .clicked()
+            {
                 state.destination = destination;
             }
         }
@@ -111,7 +165,15 @@ fn markdown(ui: &mut egui::Ui, source: &str, user_message: bool) {
                     .inner_margin(egui::Margin::same(10))
                     .corner_radius(egui::CornerRadius::same(10))
                     .show(ui, |ui| {
-                        ui.add(egui::Label::new(egui::RichText::new(code.trim_end()).monospace().size(12.0).color(egui::Color32::from_rgb(190, 211, 255))).wrap());
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(code.trim_end())
+                                    .monospace()
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(190, 211, 255)),
+                            )
+                            .wrap(),
+                        );
                     });
                 code.clear();
                 code_mode = false;
@@ -129,7 +191,10 @@ fn markdown(ui: &mut egui::Ui, source: &str, user_message: bool) {
             ui.label(text(heading, 19.0, egui::Color32::WHITE).strong());
         } else if let Some(heading) = trimmed.strip_prefix("# ") {
             ui.label(text(heading, 22.0, egui::Color32::WHITE).strong());
-        } else if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+        } else if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
             ui.horizontal(|ui| {
                 ui.label(text("•", 14.0, accent()));
                 ui.label(text(item, 13.0, egui::Color32::from_rgb(224, 230, 245)));
@@ -146,7 +211,15 @@ fn markdown(ui: &mut egui::Ui, source: &str, user_message: bool) {
             .inner_margin(egui::Margin::same(10))
             .corner_radius(egui::CornerRadius::same(10))
             .show(ui, |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(code).monospace().size(12.0).color(egui::Color32::from_rgb(190, 211, 255))).wrap());
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(code)
+                            .monospace()
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(190, 211, 255)),
+                    )
+                    .wrap(),
+                );
             });
     }
 }
@@ -154,48 +227,99 @@ fn markdown(ui: &mut egui::Ui, source: &str, user_message: bool) {
 fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(8.0);
     ui.label(text("A little more than a chat.", 25.0, egui::Color32::WHITE).strong());
-    ui.label(text("Think it through. Build it. Get it done.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text(
+        "Think it through. Build it. Get it done.",
+        13.0,
+        egui::Color32::from_rgb(163, 174, 203),
+    ));
     if !state.agent_action_status.is_empty() {
         ui.add_space(6.0);
         surface(ui, |ui| {
-            ui.label(text(&state.agent_action_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.agent_action_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         });
     }
     ui.add_space(16.0);
 
-    let history_items: Vec<(String, String)> = state.conversation_history.iter()
+    let history_items: Vec<(String, String)> = state
+        .conversation_history
+        .iter()
         .map(|item| (item.id.clone(), item.title.clone()))
         .collect();
     surface(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(text("RECENT CONVERSATIONS", 9.0, egui::Color32::from_rgb(143, 154, 180)).strong());
-            if ui.add_enabled(!state.conversation.sending, egui::Button::new("+ New chat")).clicked() {
+            ui.label(
+                text(
+                    "RECENT CONVERSATIONS",
+                    9.0,
+                    egui::Color32::from_rgb(143, 154, 180),
+                )
+                .strong(),
+            );
+            if ui
+                .add_enabled(!state.conversation.sending, egui::Button::new("+ New chat"))
+                .clicked()
+            {
                 state.pending_new_conversation = true;
             }
         });
         if history_items.is_empty() {
-            ui.label(text("Your saved conversations will appear here.", 10.0, egui::Color32::from_rgb(143, 154, 180)));
+            ui.label(text(
+                "Your saved conversations will appear here.",
+                10.0,
+                egui::Color32::from_rgb(143, 154, 180),
+            ));
         } else {
-            ui.label(text(format!("{} saved conversations", history_items.len()), 9.0, egui::Color32::from_rgb(143, 154, 180)));
-            egui::ScrollArea::vertical().max_height(150.0).show_rows(ui, 28.0, history_items.len(), |ui, rows| {
-                for index in rows {
-                    let (id, title) = &history_items[index];
-                    let label = if title.trim().is_empty() { "New chat" } else { title.as_str() };
-                    let selected = state.active_conversation_id == *id;
-                    if !state.conversation.sending && ui.selectable_label(selected, label).clicked() && !selected {
-                        state.pending_conversation_switch = Some(id.clone());
+            ui.label(text(
+                format!("{} saved conversations", history_items.len()),
+                9.0,
+                egui::Color32::from_rgb(143, 154, 180),
+            ));
+            egui::ScrollArea::vertical().max_height(150.0).show_rows(
+                ui,
+                28.0,
+                history_items.len(),
+                |ui, rows| {
+                    for index in rows {
+                        let (id, title) = &history_items[index];
+                        let label = if title.trim().is_empty() {
+                            "New chat"
+                        } else {
+                            title.as_str()
+                        };
+                        let selected = state.active_conversation_id == *id;
+                        if !state.conversation.sending
+                            && ui.selectable_label(selected, label).clicked()
+                            && !selected
+                        {
+                            state.pending_conversation_switch = Some(id.clone());
+                        }
                     }
-                }
-            });
+                },
+            );
         }
     });
     ui.add_space(8.0);
 
     if state.conversation.messages().next().is_none() {
         surface(ui, |ui| {
-            ui.label(text("What would you like to work on?", 17.0, egui::Color32::WHITE).strong());
+            ui.label(
+                text(
+                    "What would you like to work on?",
+                    17.0,
+                    egui::Color32::WHITE,
+                )
+                .strong(),
+            );
             ui.add_space(6.0);
-            ui.label(text("CenAI can help you research, plan, create, code and manage ongoing work.", 12.0, egui::Color32::from_rgb(166, 178, 207)));
+            ui.label(text(
+                "CenAI can help you research, plan, create, code and manage ongoing work.",
+                12.0,
+                egui::Color32::from_rgb(166, 178, 207),
+            ));
             ui.add_space(12.0);
             ui.horizontal_wrapped(|ui| {
                 for prompt in ["Research a topic", "Plan a project", "Help me build an app"] {
@@ -206,32 +330,63 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             });
         });
     } else {
-        egui::ScrollArea::vertical().stick_to_bottom(true).max_height(ui.available_height() - 104.0).show(ui, |ui| {
-            for message in state.conversation.messages() {
-                let is_user = message.role == MessageRole::User;
-                surface(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(text(if is_user { "YOU" } else { "CENAI" }, 9.0, if is_user { accent() } else { egui::Color32::from_rgb(119, 220, 183) }).strong());
-                        if message.streaming {
-                            ui.label(text("GENERATING", 9.0, egui::Color32::from_rgb(183, 168, 255)));
-                        }
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .max_height(ui.available_height() - 104.0)
+            .show(ui, |ui| {
+                for message in state.conversation.messages() {
+                    let is_user = message.role == MessageRole::User;
+                    surface(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                text(
+                                    if is_user { "YOU" } else { "CENAI" },
+                                    9.0,
+                                    if is_user {
+                                        accent()
+                                    } else {
+                                        egui::Color32::from_rgb(119, 220, 183)
+                                    },
+                                )
+                                .strong(),
+                            );
+                            if message.streaming {
+                                ui.label(text(
+                                    "GENERATING",
+                                    9.0,
+                                    egui::Color32::from_rgb(183, 168, 255),
+                                ));
+                            }
+                        });
+                        markdown(ui, &message.body, is_user);
                     });
-                    markdown(ui, &message.body, is_user);
-                });
-                ui.add_space(8.0);
-            }
-        });
+                    ui.add_space(8.0);
+                }
+            });
     }
 
-    let latest_assistant = state.conversation.messages()
-        .filter(|message| message.role == MessageRole::Assistant && !message.body.trim().is_empty() && !message.streaming)
-        .map(|message| message.body.clone()).last();
+    let latest_assistant = state
+        .conversation
+        .messages()
+        .filter(|message| {
+            message.role == MessageRole::Assistant
+                && !message.body.trim().is_empty()
+                && !message.streaming
+        })
+        .map(|message| message.body.clone())
+        .last();
     if let Some(response) = latest_assistant {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
                 let voice_ready = state.voice_service_status.starts_with("Ready ·")
                     || state.voice_service_status.starts_with("Connected ·");
-                if ui.add_enabled(!state.account_email.is_empty() && voice_ready, egui::Button::new("Read aloud · CenAI Voice")).clicked() {
+                if ui
+                    .add_enabled(
+                        !state.account_email.is_empty() && voice_ready,
+                        egui::Button::new("Read aloud · CenAI Voice"),
+                    )
+                    .clicked()
+                {
                     state.pending_speech_text = Some(response);
                     state.speech_status = "Preparing speech playback…".into();
                 }
@@ -240,7 +395,11 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
             if !state.speech_status.is_empty() {
-                ui.label(text(&state.speech_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+                ui.label(text(
+                    &state.speech_status,
+                    10.0,
+                    egui::Color32::from_rgb(119, 220, 183),
+                ));
             }
             ui.label(text("CenAI Voice sends your text to Cloudflare for English speech synthesis. Your account quota is checked before each request; audio is returned for local playback.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
@@ -248,13 +407,22 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     surface(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut state.conversation.draft)
-                .hint_text("Message CenAI…")
-                .desired_width(ui.available_width() - 82.0)
-                .margin(egui::vec2(8.0, 12.0)));
-            let can_send = !state.conversation.draft.trim().is_empty() && !state.conversation.sending;
-            if ui.add_enabled(can_send, egui::Button::new(text("Send  ↑", 13.0, egui::Color32::WHITE))
-                .fill(egui::Color32::from_rgb(86, 103, 207))).clicked() {
+            ui.add(
+                egui::TextEdit::singleline(&mut state.conversation.draft)
+                    .hint_text("Message CenAI…")
+                    .desired_width(ui.available_width() - 82.0)
+                    .margin(egui::vec2(8.0, 12.0)),
+            );
+            let can_send =
+                !state.conversation.draft.trim().is_empty() && !state.conversation.sending;
+            if ui
+                .add_enabled(
+                    can_send,
+                    egui::Button::new(text("Send  ↑", 13.0, egui::Color32::WHITE))
+                        .fill(egui::Color32::from_rgb(86, 103, 207)),
+                )
+                .clicked()
+            {
                 state.conversation.submit_draft();
             }
         });
@@ -279,12 +447,22 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
             ui.label(text("Voice transcription sends your recording to Google Gemini using your configured Gemini key. The transcript stays in the draft until you review and send it.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
         ui.horizontal(|ui| {
-            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("＋ Attach file")).clicked() {
+            if ui
+                .add_enabled(
+                    !state.account_email.is_empty(),
+                    egui::Button::new("＋ Attach file"),
+                )
+                .clicked()
+            {
                 state.pending_attachment_picker = true;
                 state.attachment_status = "Opening Android document picker…".into();
             }
             if !state.attachments.is_empty() {
-                ui.label(text(format!("{} attached", state.attachments.len()), 10.0, accent()));
+                ui.label(text(
+                    format!("{} attached", state.attachments.len()),
+                    10.0,
+                    accent(),
+                ));
             }
         });
         let attachment_items = state.attachments.clone();
@@ -340,16 +518,29 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
                 });
         }
         if !state.attachment_status.is_empty() && state.attachments.is_empty() {
-            ui.label(text(&state.attachment_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.attachment_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
         ui.horizontal(|ui| {
             ui.checkbox(&mut state.planning_mode, "Plan task first");
             ui.add_enabled_ui(state.personal_memory_enabled, |ui| {
-                ui.checkbox(&mut state.include_memory_for_request, "Use my private memory for this message");
+                ui.checkbox(
+                    &mut state.include_memory_for_request,
+                    "Use my private memory for this message",
+                );
             });
-            if state.conversation.sending { ui.label(text("Working…", 10.0, accent())); }
+            if state.conversation.sending {
+                ui.label(text("Working…", 10.0, accent()));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(text("Sensitive actions always need approval", 9.0, egui::Color32::from_rgb(124, 136, 165)));
+                ui.label(text(
+                    "Sensitive actions always need approval",
+                    9.0,
+                    egui::Color32::from_rgb(124, 136, 165),
+                ));
             });
         });
     });
@@ -358,18 +549,38 @@ fn conversation(ui: &mut egui::Ui, state: &mut AppState) {
 fn work(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Your Work", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Projects, saved artifacts and task plans in your private account workspace.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text(
+        "Projects, saved artifacts and task plans in your private account workspace.",
+        13.0,
+        egui::Color32::from_rgb(163, 174, 203),
+    ));
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Create a project", 17.0, egui::Color32::WHITE).strong());
-        ui.add(egui::TextEdit::singleline(&mut state.project_name_draft).hint_text("Project name").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::multiline(&mut state.project_description_draft).hint_text("What are you working on?").desired_width(f32::INFINITY).desired_rows(2));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.project_name_draft)
+                .hint_text("Project name")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::multiline(&mut state.project_description_draft)
+                .hint_text("What are you working on?")
+                .desired_width(f32::INFINITY)
+                .desired_rows(2),
+        );
         if ui.button("Create project").clicked() {
-            state.pending_project_create = Some((state.project_name_draft.trim().to_owned(), state.project_description_draft.trim().to_owned()));
+            state.pending_project_create = Some((
+                state.project_name_draft.trim().to_owned(),
+                state.project_description_draft.trim().to_owned(),
+            ));
             state.project_status = "Saving project…".into();
         }
         if !state.project_status.is_empty() {
-            ui.label(text(&state.project_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.project_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(10.0);
@@ -378,19 +589,35 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     if state.projects.is_empty() {
         surface(ui, |ui| {
             ui.label(text("Projects", 17.0, egui::Color32::WHITE).strong());
-            ui.label(text("Your saved projects will appear here.", 12.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(
+                "Your saved projects will appear here.",
+                12.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
         });
     } else {
         for project in &state.projects {
             surface(ui, |ui| {
                 ui.label(text(&project.name, 16.0, egui::Color32::WHITE).strong());
                 if !project.description.is_empty() {
-                    ui.label(text(&project.description, 12.0, egui::Color32::from_rgb(163, 174, 203)));
+                    ui.label(text(
+                        &project.description,
+                        12.0,
+                        egui::Color32::from_rgb(163, 174, 203),
+                    ));
                 }
-                ui.label(text(format!("{} saved artifacts", project.artifacts.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                ui.label(text(
+                    format!("{} saved artifacts", project.artifacts.len()),
+                    10.0,
+                    egui::Color32::from_rgb(140, 154, 190),
+                ));
                 for artifact in &project.artifacts {
                     ui.horizontal(|ui| {
-                        ui.label(text(format!("▤  {}", artifact.file_name), 11.0, egui::Color32::from_rgb(165, 184, 220)));
+                        ui.label(text(
+                            format!("▤  {}", artifact.file_name),
+                            11.0,
+                            egui::Color32::from_rgb(165, 184, 220),
+                        ));
                         if ui.small_button("Open").clicked() {
                             open_artifact = Some(artifact.id.clone());
                         }
@@ -408,7 +635,11 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(text("Agent task plans", 17.0, egui::Color32::WHITE).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(text(format!("{} saved", state.task_plans.len()), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                ui.label(text(
+                    format!("{} saved", state.task_plans.len()),
+                    10.0,
+                    egui::Color32::from_rgb(140, 154, 190),
+                ));
             });
         });
         ui.label(text("Central Brain proposals are saved here for review. Saving a plan never executes its steps.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
@@ -420,34 +651,67 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     for plan in plans {
         surface(ui, |ui| {
             ui.label(text(&plan.goal, 14.0, egui::Color32::WHITE).strong());
-            let completed = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::Completed).count();
+            let completed = plan
+                .steps
+                .iter()
+                .filter(|step| step.status == crate::core::agents::StepStatus::Completed)
+                .count();
             ui.label(text(
-                if plan.stopped { format!("Stopped · {completed}/{} steps complete", plan.steps.len()) }
-                else if plan.is_paused() { format!("Paused · {completed}/{} steps complete", plan.steps.len()) }
-                else { format!("{completed}/{} steps complete · approval-controlled workflow", plan.steps.len()) },
+                if plan.stopped {
+                    format!("Stopped · {completed}/{} steps complete", plan.steps.len())
+                } else if plan.is_paused() {
+                    format!("Paused · {completed}/{} steps complete", plan.steps.len())
+                } else {
+                    format!(
+                        "{completed}/{} steps complete · approval-controlled workflow",
+                        plan.steps.len()
+                    )
+                },
                 10.0,
-                if plan.stopped { egui::Color32::from_rgb(235, 156, 130) }
-                else if plan.is_paused() { egui::Color32::from_rgb(224, 190, 120) }
-                else { egui::Color32::from_rgb(119, 220, 183) },
+                if plan.stopped {
+                    egui::Color32::from_rgb(235, 156, 130)
+                } else if plan.is_paused() {
+                    egui::Color32::from_rgb(224, 190, 120)
+                } else {
+                    egui::Color32::from_rgb(119, 220, 183)
+                },
             ));
             if !plan.stopped {
                 let mut background_authorized = plan.background_authorized;
-                if ui.checkbox(&mut background_authorized, "Allow background cognitive processing").changed() {
-                    state.pending_plan_action = Some((plan.id.clone(), 0, if background_authorized {
-                        "background_enable".into()
-                    } else {
-                        "background_disable".into()
-                    }));
+                if ui
+                    .checkbox(
+                        &mut background_authorized,
+                        "Allow background cognitive processing",
+                    )
+                    .changed()
+                {
+                    state.pending_plan_action = Some((
+                        plan.id.clone(),
+                        0,
+                        if background_authorized {
+                            "background_enable".into()
+                        } else {
+                            "background_disable".into()
+                        },
+                    ));
                 }
                 ui.label(text("Only research, analysis and writing steps run in the background. No device controls or external actions. Android scheduling is best-effort.", 9.5, egui::Color32::from_rgb(145, 158, 186)));
             }
             let ready_count = plan.ready_steps().len();
-            if ready_count > 0 && !plan.stopped && ui.button(format!("Run {ready_count} ready step(s) in parallel")).clicked() {
+            if ready_count > 0
+                && !plan.stopped
+                && ui
+                    .button(format!("Run {ready_count} ready step(s) in parallel"))
+                    .clicked()
+            {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "execute_ready".into()));
             }
             let interrupted_count = plan.interrupted_steps_ready_to_retry().len();
-            if interrupted_count > 0 && !plan.stopped
-                && ui.button(format!("Retry {interrupted_count} interrupted step(s)")).clicked()
+            if interrupted_count > 0
+                && !plan.stopped
+                && ui
+                    .button(format!("Retry {interrupted_count} interrupted step(s)"))
+                    .clicked()
             {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "retry_interrupted".into()));
             }
@@ -470,74 +734,116 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
             for step in &plan.steps {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label(text(format!("#{} · {:?}", step.id, step.role), 10.0, egui::Color32::from_rgb(165, 184, 220)));
-                    ui.label(text(format!("{:?}", step.status), 10.0, egui::Color32::from_rgb(190, 198, 220)));
+                    ui.label(text(
+                        format!("#{} · {:?}", step.id, step.role),
+                        10.0,
+                        egui::Color32::from_rgb(165, 184, 220),
+                    ));
+                    ui.label(text(
+                        format!("{:?}", step.status),
+                        10.0,
+                        egui::Color32::from_rgb(190, 198, 220),
+                    ));
                 });
                 ui.label(text(&step.title, 11.0, egui::Color32::WHITE));
                 if !step.depends_on.is_empty() {
                     ui.label(text(
-                        format!("Depends on step(s): {}", step.depends_on.iter().map(u64::to_string).collect::<Vec<_>>().join(", ")),
+                        format!(
+                            "Depends on step(s): {}",
+                            step.depends_on
+                                .iter()
+                                .map(u64::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
                         9.0,
                         egui::Color32::from_rgb(140, 154, 190),
                     ));
                 }
-                let ready = !plan.is_paused() && step.status == crate::core::agents::StepStatus::Pending
-                    && step.depends_on.iter().all(|dependency| plan.steps.iter().any(|candidate|
-                        candidate.id == *dependency && candidate.status == crate::core::agents::StepStatus::Completed));
+                let ready = !plan.is_paused()
+                    && step.status == crate::core::agents::StepStatus::Pending
+                    && step.depends_on.iter().all(|dependency| {
+                        plan.steps.iter().any(|candidate| {
+                            candidate.id == *dependency
+                                && candidate.status == crate::core::agents::StepStatus::Completed
+                        })
+                    });
                 if let Some(output) = step.output.as_deref() {
                     let heading = match step.status {
                         crate::core::agents::StepStatus::Blocked => "Blocked · required handoff",
-                        crate::core::agents::StepStatus::Failed if output.starts_with("Execution was interrupted") => "Execution interrupted · manual retry available",
+                        crate::core::agents::StepStatus::Failed
+                            if output.starts_with("Execution was interrupted") =>
+                        {
+                            "Execution interrupted · manual retry available"
+                        }
                         _ => "AI step result",
                     };
-                    ui.collapsing(heading, |ui| { ui.label(text(output, 11.0, egui::Color32::from_rgb(210, 220, 232))); });
+                    ui.collapsing(heading, |ui| {
+                        ui.label(text(output, 11.0, egui::Color32::from_rgb(210, 220, 232)));
+                    });
                 }
-                ui.horizontal_wrapped(|ui| {
-                    match step.status {
-                        crate::core::agents::StepStatus::Pending if ready && !plan.stopped => {
-                            if ui.button("Run with AI").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "execute".into()));
-                            }
-                            if ui.button("Mark started").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "start".into()));
-                            }
-                            if ui.button("Request approval").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "request_approval".into()));
-                            }
+                ui.horizontal_wrapped(|ui| match step.status {
+                    crate::core::agents::StepStatus::Pending if ready && !plan.stopped => {
+                        if ui.button("Run with AI").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "execute".into()));
                         }
-                        crate::core::agents::StepStatus::WaitingForApproval if !plan.stopped => {
-                            if ui.button("Approve step").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "approve".into()));
-                            }
-                            if ui.button("Decline").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "deny".into()));
-                            }
+                        if ui.button("Mark started").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "start".into()));
                         }
-                        crate::core::agents::StepStatus::Blocked if !plan.stopped && !plan.is_paused() => {
-                            if ui.button("Retry after resolving blocker").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "retry_blocked".into()));
-                            }
+                        if ui.button("Request approval").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "request_approval".into()));
                         }
-                        crate::core::agents::StepStatus::Failed if !plan.stopped && !plan.is_paused() => {
-                            if ui.button("Retry failed step").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "retry_failed".into()));
-                            }
-                        }
-                        crate::core::agents::StepStatus::Running if !plan.stopped => {
-                            if ui.button("Mark complete").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "complete".into()));
-                            }
-                            if ui.button("Mark failed").clicked() {
-                                state.pending_plan_action = Some((plan.id.clone(), step.id, "fail".into()));
-                            }
-                        }
-                        _ => {}
                     }
+                    crate::core::agents::StepStatus::WaitingForApproval if !plan.stopped => {
+                        if ui.button("Approve step").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "approve".into()));
+                        }
+                        if ui.button("Decline").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "deny".into()));
+                        }
+                    }
+                    crate::core::agents::StepStatus::Blocked
+                        if !plan.stopped && !plan.is_paused() =>
+                    {
+                        if ui.button("Retry after resolving blocker").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "retry_blocked".into()));
+                        }
+                    }
+                    crate::core::agents::StepStatus::Failed
+                        if !plan.stopped && !plan.is_paused() =>
+                    {
+                        if ui.button("Retry failed step").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "retry_failed".into()));
+                        }
+                    }
+                    crate::core::agents::StepStatus::Running if !plan.stopped => {
+                        if ui.button("Mark complete").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "complete".into()));
+                        }
+                        if ui.button("Mark failed").clicked() {
+                            state.pending_plan_action =
+                                Some((plan.id.clone(), step.id, "fail".into()));
+                        }
+                    }
+                    _ => {}
                 });
             }
-            let has_active_work = plan.steps.iter().any(|step| matches!(step.status,
-                crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
-                | crate::core::agents::StepStatus::WaitingForApproval));
+            let has_active_work = plan.steps.iter().any(|step| {
+                matches!(
+                    step.status,
+                    crate::core::agents::StepStatus::Pending
+                        | crate::core::agents::StepStatus::Running
+                        | crate::core::agents::StepStatus::WaitingForApproval
+                )
+            });
             if !plan.stopped && (plan.is_paused() || has_active_work) {
                 if plan.is_paused() {
                     if ui.button("Resume plan").clicked() {
@@ -547,9 +853,15 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                     state.pending_plan_action = Some((plan.id.clone(), 0, "pause".into()));
                 }
             }
-            if !plan.stopped && plan.steps.iter().any(|step| matches!(step.status,
-                crate::core::agents::StepStatus::Pending | crate::core::agents::StepStatus::Running
-                | crate::core::agents::StepStatus::WaitingForApproval))
+            if !plan.stopped
+                && plan.steps.iter().any(|step| {
+                    matches!(
+                        step.status,
+                        crate::core::agents::StepStatus::Pending
+                            | crate::core::agents::StepStatus::Running
+                            | crate::core::agents::StepStatus::WaitingForApproval
+                    )
+                })
                 && ui.button("Stop this plan").clicked()
             {
                 state.pending_plan_action = Some((plan.id.clone(), 0, "stop".into()));
@@ -559,7 +871,11 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     }
     if !state.plan_status.is_empty() {
         surface(ui, |ui| {
-            ui.label(text(&state.plan_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.plan_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         });
     }
     if let Some(artifact_id) = open_artifact {
@@ -583,13 +899,26 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
         });
-        if !open { state.confirm_artifact_delete = None; }
+        if !open {
+            state.confirm_artifact_delete = None;
+        }
     }
     if !state.artifact_preview_name.is_empty() || !state.artifact_preview_status.is_empty() {
         ui.add_space(10.0);
         surface(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(text(if state.artifact_preview_name.is_empty() { "Artifact preview" } else { &state.artifact_preview_name }, 15.0, egui::Color32::WHITE).strong());
+                ui.label(
+                    text(
+                        if state.artifact_preview_name.is_empty() {
+                            "Artifact preview"
+                        } else {
+                            &state.artifact_preview_name
+                        },
+                        15.0,
+                        egui::Color32::WHITE,
+                    )
+                    .strong(),
+                );
                 if ui.small_button("Close").clicked() {
                     state.artifact_preview_id.clear();
                     state.artifact_preview_project_id.clear();
@@ -599,17 +928,27 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
             if !state.artifact_preview_status.is_empty() {
-                ui.label(text(&state.artifact_preview_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.label(text(
+                    &state.artifact_preview_status,
+                    10.0,
+                    egui::Color32::from_rgb(220, 184, 121),
+                ));
             }
             if !state.artifact_preview_content.is_empty() {
-                egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
-                    ui.add(egui::TextEdit::multiline(&mut state.artifact_preview_content)
-                        .desired_rows(10)
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace));
-                });
+                egui::ScrollArea::vertical()
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut state.artifact_preview_content)
+                                .desired_rows(10)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace),
+                        );
+                    });
             }
-            if !state.artifact_preview_id.is_empty() && ui.button("Save changes to this artifact").clicked() {
+            if !state.artifact_preview_id.is_empty()
+                && ui.button("Save changes to this artifact").clicked()
+            {
                 state.pending_artifact = Some((
                     state.artifact_preview_project_id.clone(),
                     state.artifact_preview_id.clone(),
@@ -629,10 +968,29 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     } else {
         for plan in &state.task_plans {
             surface(ui, |ui| {
-                let completed = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::Completed).count();
-                let blocked = plan.steps.iter().filter(|step| matches!(step.status,
-                    crate::core::agents::StepStatus::Blocked | crate::core::agents::StepStatus::Failed)).count();
-                let waiting = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::WaitingForApproval).count();
+                let completed = plan
+                    .steps
+                    .iter()
+                    .filter(|step| step.status == crate::core::agents::StepStatus::Completed)
+                    .count();
+                let blocked = plan
+                    .steps
+                    .iter()
+                    .filter(|step| {
+                        matches!(
+                            step.status,
+                            crate::core::agents::StepStatus::Blocked
+                                | crate::core::agents::StepStatus::Failed
+                        )
+                    })
+                    .count();
+                let waiting = plan
+                    .steps
+                    .iter()
+                    .filter(|step| {
+                        step.status == crate::core::agents::StepStatus::WaitingForApproval
+                    })
+                    .count();
                 ui.label(text(&plan.goal, 15.0, egui::Color32::WHITE).strong());
                 let summary = if plan.stopped {
                     "Stopped".to_owned()
@@ -645,19 +1003,50 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                 ui.label(text(summary, 10.0, egui::Color32::from_rgb(140, 154, 190)));
                 for step in &plan.steps {
                     let (marker, color) = match step.status {
-                        crate::core::agents::StepStatus::Completed => ("✓", egui::Color32::from_rgb(119, 220, 183)),
-                        crate::core::agents::StepStatus::Running => ("●", egui::Color32::from_rgb(120, 180, 245)),
-                        crate::core::agents::StepStatus::WaitingForApproval => ("!", egui::Color32::from_rgb(240, 190, 132)),
-                        crate::core::agents::StepStatus::Blocked | crate::core::agents::StepStatus::Failed => ("×", egui::Color32::from_rgb(235, 145, 145)),
-                        crate::core::agents::StepStatus::Cancelled => ("–", egui::Color32::from_rgb(143, 154, 180)),
-                        crate::core::agents::StepStatus::Pending => ("○", egui::Color32::from_rgb(163, 174, 203)),
+                        crate::core::agents::StepStatus::Completed => {
+                            ("✓", egui::Color32::from_rgb(119, 220, 183))
+                        }
+                        crate::core::agents::StepStatus::Running => {
+                            ("●", egui::Color32::from_rgb(120, 180, 245))
+                        }
+                        crate::core::agents::StepStatus::WaitingForApproval => {
+                            ("!", egui::Color32::from_rgb(240, 190, 132))
+                        }
+                        crate::core::agents::StepStatus::Blocked
+                        | crate::core::agents::StepStatus::Failed => {
+                            ("×", egui::Color32::from_rgb(235, 145, 145))
+                        }
+                        crate::core::agents::StepStatus::Cancelled => {
+                            ("–", egui::Color32::from_rgb(143, 154, 180))
+                        }
+                        crate::core::agents::StepStatus::Pending => {
+                            ("○", egui::Color32::from_rgb(163, 174, 203))
+                        }
                     };
-                    ui.label(text(format!("{marker}  {:?} — {} · {:?}", step.role, step.title, step.status), 11.0, color));
-                    if let Some(output) = step.output.as_deref().filter(|value| !value.trim().is_empty()) {
+                    ui.label(text(
+                        format!(
+                            "{marker}  {:?} — {} · {:?}",
+                            step.role, step.title, step.status
+                        ),
+                        11.0,
+                        color,
+                    ));
+                    if let Some(output) = step
+                        .output
+                        .as_deref()
+                        .filter(|value| !value.trim().is_empty())
+                    {
                         egui::CollapsingHeader::new("View saved step result")
                             .id_salt(("task-step-result", &plan.id, step.id))
                             .show(ui, |ui| {
-                                ui.add(egui::Label::new(text(output, 10.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                                ui.add(
+                                    egui::Label::new(text(
+                                        output,
+                                        10.0,
+                                        egui::Color32::from_rgb(190, 201, 224),
+                                    ))
+                                    .wrap(),
+                                );
                             });
                     }
                 }
@@ -669,20 +1058,41 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     surface(ui, |ui| {
         ui.label(text("Automations", 17.0, egui::Color32::WHITE).strong());
         ui.label(text("Create account-owned UTC schedules. Every due run is saved for your review; no action runs without your approval.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.automation_id_draft).hint_text("Schedule ID (daily-report)").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.automation_title_draft).hint_text("What should CenAI prepare?").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.automation_schedule_draft).hint_text("Cron schedule in UTC (0 9 * * 1-5)").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.automation_id_draft)
+                .hint_text("Schedule ID (daily-report)")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.automation_title_draft)
+                .hint_text("What should CenAI prepare?")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.automation_schedule_draft)
+                .hint_text("Cron schedule in UTC (0 9 * * 1-5)")
+                .desired_width(f32::INFINITY),
+        );
         ui.label(text("Every scheduled task is prepared for review. CenAI never executes a scheduled action without your approval.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
         if ui.button("Save schedule").clicked() {
-            if state.automation_id_draft.trim().is_empty() || state.automation_title_draft.trim().is_empty() || state.automation_schedule_draft.trim().is_empty() {
-                state.automation_status = "Enter a schedule ID, task description and five-field UTC cron expression.".into();
+            if state.automation_id_draft.trim().is_empty()
+                || state.automation_title_draft.trim().is_empty()
+                || state.automation_schedule_draft.trim().is_empty()
+            {
+                state.automation_status =
+                    "Enter a schedule ID, task description and five-field UTC cron expression."
+                        .into();
             } else {
                 state.pending_automation_save = true;
                 state.automation_status = "Saving automation…".into();
             }
         }
         if !state.automation_status.is_empty() {
-            ui.label(text(&state.automation_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.automation_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     let automations = state.automations.clone();
@@ -690,14 +1100,34 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         surface(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(text(&automation.title, 14.0, egui::Color32::WHITE).strong());
-                ui.label(text(if automation.enabled { "Enabled" } else { "Paused" }, 10.0, if automation.enabled { egui::Color32::from_rgb(119, 220, 183) } else { egui::Color32::from_rgb(220, 184, 121) }));
+                ui.label(text(
+                    if automation.enabled {
+                        "Enabled"
+                    } else {
+                        "Paused"
+                    },
+                    10.0,
+                    if automation.enabled {
+                        egui::Color32::from_rgb(119, 220, 183)
+                    } else {
+                        egui::Color32::from_rgb(220, 184, 121)
+                    },
+                ));
             });
-            ui.label(text(format!("{} · UTC · {}", automation.id, automation.schedule), 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(
+                format!("{} · UTC · {}", automation.id, automation.schedule),
+                10.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
             if let Some(pending_at) = automation.pending_scheduled_at {
                 let due = chrono::DateTime::<chrono::Utc>::from_timestamp(pending_at, 0)
                     .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string())
                     .unwrap_or_else(|| "unknown time".into());
-                ui.label(text(format!("Due · awaiting review ({due})"), 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.label(text(
+                    format!("Due · awaiting review ({due})"),
+                    10.0,
+                    egui::Color32::from_rgb(220, 184, 121),
+                ));
                 if ui.button("Review in conversation").clicked() {
                     if let Some(prompt) = automation.review_prompt() {
                         if !state.conversation.draft.trim().is_empty() {
@@ -707,15 +1137,28 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
                         state.destination = Destination::Conversation;
                         state.automation_status = "Review prompt prepared. Read it and press Send when you are ready; no action has been approved or executed.".into();
                     } else {
-                        state.automation_status = "This scheduled occurrence is no longer eligible for review.".into();
+                        state.automation_status =
+                            "This scheduled occurrence is no longer eligible for review.".into();
                     }
                 }
             } else if let Ok(Some(next)) = automation.next_run_after(chrono::Utc::now()) {
-                ui.label(text(format!("Next run: {}", next.format("%Y-%m-%d %H:%M UTC")), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                ui.label(text(
+                    format!("Next run: {}", next.format("%Y-%m-%d %H:%M UTC")),
+                    10.0,
+                    egui::Color32::from_rgb(140, 154, 190),
+                ));
             }
             ui.horizontal(|ui| {
-                if ui.button(if automation.enabled { "Pause" } else { "Resume" }).clicked() {
-                    state.pending_automation_toggle = Some((automation.id.clone(), !automation.enabled));
+                if ui
+                    .button(if automation.enabled {
+                        "Pause"
+                    } else {
+                        "Resume"
+                    })
+                    .clicked()
+                {
+                    state.pending_automation_toggle =
+                        Some((automation.id.clone(), !automation.enabled));
                 }
                 if ui.button("Delete").clicked() {
                     state.pending_automation_delete = Some(automation.id.clone());
@@ -729,26 +1172,55 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
         surface(ui, |ui| {
             ui.label(text("Create a text artifact", 16.0, egui::Color32::WHITE).strong());
             egui::ComboBox::from_id_salt("artifact_project")
-                .selected_text(state.projects.iter().find(|project| project.id == state.artifact_project_id)
-                    .map(|project| project.name.as_str()).unwrap_or("Choose project"))
+                .selected_text(
+                    state
+                        .projects
+                        .iter()
+                        .find(|project| project.id == state.artifact_project_id)
+                        .map(|project| project.name.as_str())
+                        .unwrap_or("Choose project"),
+                )
                 .show_ui(ui, |ui| {
                     for project in &state.projects {
-                        ui.selectable_value(&mut state.artifact_project_id, project.id.clone(), &project.name);
+                        ui.selectable_value(
+                            &mut state.artifact_project_id,
+                            project.id.clone(),
+                            &project.name,
+                        );
                     }
                 });
-            ui.add(egui::TextEdit::singleline(&mut state.artifact_name_draft).hint_text("Artifact filename").desired_width(f32::INFINITY));
-            ui.add(egui::TextEdit::multiline(&mut state.artifact_content_draft).hint_text("Write a note or draft…").desired_width(f32::INFINITY).desired_rows(4));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.artifact_name_draft)
+                    .hint_text("Artifact filename")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut state.artifact_content_draft)
+                    .hint_text("Write a note or draft…")
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(4),
+            );
             if ui.button("Save artifact").clicked() {
                 state.pending_artifact = Some((
                     state.artifact_project_id.clone(),
-                    format!("artifact-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
+                    format!(
+                        "artifact-{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                    ),
                     state.artifact_name_draft.trim().to_owned(),
                     state.artifact_content_draft.clone(),
                 ));
                 state.artifact_status = "Saving artifact…".into();
             }
             if !state.artifact_status.is_empty() {
-                ui.label(text(&state.artifact_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+                ui.label(text(
+                    &state.artifact_status,
+                    10.0,
+                    egui::Color32::from_rgb(119, 220, 183),
+                ));
             }
         });
     }
@@ -757,7 +1229,11 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
 fn connections(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(10.0);
     ui.label(text("Connections", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Bring your models, tools and services together.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text(
+        "Bring your models, tools and services together.",
+        13.0,
+        egui::Color32::from_rgb(163, 174, 203),
+    ));
     ui.add_space(18.0);
     surface(ui, |ui| {
         ui.label(text("Ecosystem Engine", 17.0, egui::Color32::WHITE).strong());
@@ -765,23 +1241,57 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
         ui.label(text("Only publisher accounts approved by CenAI can register manifests. Other users can review and grant permissions to trusted apps below.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.separator();
         ui.label(text("Register an app manifest", 13.0, egui::Color32::WHITE).strong());
-        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_app_id_draft).hint_text("App ID (com.example.app)").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_publisher_id_draft).hint_text("Trusted publisher ID").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.ecosystem_app_id_draft)
+                .hint_text("App ID (com.example.app)")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.ecosystem_publisher_id_draft)
+                .hint_text("Trusted publisher ID")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut state.ecosystem_version_draft).hint_text("Version"));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.ecosystem_version_draft).hint_text("Version"),
+            );
         });
-        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_description_draft).hint_text("Short app description").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_capabilities_draft).hint_text("Capabilities, comma separated (notes.read)").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.ecosystem_scopes_draft).hint_text("Requested scopes, comma separated").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.ecosystem_description_draft)
+                .hint_text("Short app description")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.ecosystem_capabilities_draft)
+                .hint_text("Capabilities, comma separated (notes.read)")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.ecosystem_scopes_draft)
+                .hint_text("Requested scopes, comma separated")
+                .desired_width(f32::INFINITY),
+        );
         if ui.button("Register app manifest").clicked() {
-            let capabilities = state.ecosystem_capabilities_draft.split(',').map(str::trim)
-                .filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
-            let requested_scopes = state.ecosystem_scopes_draft.split(',').map(str::trim)
-                .filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+            let capabilities = state
+                .ecosystem_capabilities_draft
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let requested_scopes = state
+                .ecosystem_scopes_draft
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
             if state.ecosystem_app_id_draft.trim().is_empty()
                 || state.ecosystem_publisher_id_draft.trim().is_empty()
                 || state.ecosystem_version_draft.trim().is_empty()
-                || capabilities.is_empty() || requested_scopes.is_empty() {
+                || capabilities.is_empty()
+                || requested_scopes.is_empty()
+            {
                 state.ecosystem_status = "Complete the app identity, publisher, version, capabilities and requested scopes.".into();
             } else {
                 state.pending_ecosystem_register = Some(serde_json::json!({
@@ -793,41 +1303,88 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
                     "capabilities": capabilities,
                     "requestedScopes": requested_scopes
                 }));
-                state.ecosystem_status = "Submitting manifest to the trusted-publisher registry…".into();
+                state.ecosystem_status =
+                    "Submitting manifest to the trusted-publisher registry…".into();
             }
         }
     });
     surface(ui, |ui| {
         ui.label(text("Connect a remote MCP server", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Add a server endpoint over HTTPS. Discovery does not grant permission to run its tools.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.mcp_server_id_draft).hint_text("Server ID (for example, org.example.tools)").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.mcp_endpoint_draft).hint_text("HTTPS endpoint URL").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.mcp_publisher_draft).hint_text("Publisher name").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.mcp_server_id_draft)
+                .hint_text("Server ID (for example, org.example.tools)")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.mcp_endpoint_draft)
+                .hint_text("HTTPS endpoint URL")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.mcp_publisher_draft)
+                .hint_text("Publisher name")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut state.mcp_version_draft).hint_text("Version"));
             ui.add(egui::TextEdit::singleline(&mut state.mcp_license_draft).hint_text("License"));
         });
-        ui.add(egui::TextEdit::singleline(&mut state.mcp_capabilities_draft).hint_text("Declared capability names, comma separated").desired_width(f32::INFINITY));
-        ui.add(egui::TextEdit::singleline(&mut state.mcp_bearer_token_draft).password(true).hint_text("Optional server bearer token (encrypted on this device)").desired_width(f32::INFINITY));
-        if ui.add_enabled(!state.mcp_server_id_draft.trim().is_empty() && !state.mcp_bearer_token_draft.is_empty(), egui::Button::new("Save encrypted server token")).clicked() {
-            state.pending_mcp_token_save = Some((state.mcp_server_id_draft.trim().to_owned(), state.mcp_bearer_token_draft.clone()));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.mcp_capabilities_draft)
+                .hint_text("Declared capability names, comma separated")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut state.mcp_bearer_token_draft)
+                .password(true)
+                .hint_text("Optional server bearer token (encrypted on this device)")
+                .desired_width(f32::INFINITY),
+        );
+        if ui
+            .add_enabled(
+                !state.mcp_server_id_draft.trim().is_empty()
+                    && !state.mcp_bearer_token_draft.is_empty(),
+                egui::Button::new("Save encrypted server token"),
+            )
+            .clicked()
+        {
+            state.pending_mcp_token_save = Some((
+                state.mcp_server_id_draft.trim().to_owned(),
+                state.mcp_bearer_token_draft.clone(),
+            ));
             state.mcp_status = "Saving server token to the Android Keystore…".into();
         }
-        if ui.add_enabled(!state.mcp_server_id_draft.trim().is_empty(), egui::Button::new("Remove saved server token")).clicked() {
-            state.pending_mcp_token_save = Some((state.mcp_server_id_draft.trim().to_owned(), String::new()));
+        if ui
+            .add_enabled(
+                !state.mcp_server_id_draft.trim().is_empty(),
+                egui::Button::new("Remove saved server token"),
+            )
+            .clicked()
+        {
+            state.pending_mcp_token_save =
+                Some((state.mcp_server_id_draft.trim().to_owned(), String::new()));
             state.mcp_status = "Removing saved server token…".into();
         }
-        ui.checkbox(&mut state.mcp_reviewed, "I reviewed the publisher, endpoint and requested capabilities");
+        ui.checkbox(
+            &mut state.mcp_reviewed,
+            "I reviewed the publisher, endpoint and requested capabilities",
+        );
         if ui.button("Discover tools").clicked() {
-            let capabilities = state.mcp_capabilities_draft.split(',')
-                .map(str::trim).filter(|name| !name.is_empty())
+            let capabilities = state
+                .mcp_capabilities_draft
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
                 .map(|name| crate::core::mcp::McpCapability {
                     name: name.to_owned(),
-                    description: "Declared capability; inspect remote tool schema before use".into(),
+                    description: "Declared capability; inspect remote tool schema before use"
+                        .into(),
                     requires_sensitive_read: true,
                     requires_external_write: true,
                     requested_scopes: vec![name.to_owned()],
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
             if !state.mcp_reviewed {
                 state.mcp_status = "Review the publisher and requested capabilities first.".into();
             } else {
@@ -846,14 +1403,26 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
         if !state.mcp_status.is_empty() {
-            ui.label(text(&state.mcp_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            ui.label(text(
+                &state.mcp_status,
+                10.0,
+                egui::Color32::from_rgb(220, 184, 121),
+            ));
         }
         for tool in &state.mcp_tools {
             ui.collapsing(&tool.name, |ui| {
                 if let Some(description) = &tool.description {
-                    ui.label(text(description, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+                    ui.label(text(
+                        description,
+                        11.0,
+                        egui::Color32::from_rgb(163, 174, 203),
+                    ));
                 }
-                ui.label(text(tool.input_schema.to_string(), 10.0, egui::Color32::from_rgb(170, 190, 225)));
+                ui.label(text(
+                    tool.input_schema.to_string(),
+                    10.0,
+                    egui::Color32::from_rgb(170, 190, 225),
+                ));
                 if ui.button("Review and approve this tool").clicked() {
                     state.mcp_pending_approval = Some(tool.name.clone());
                 }
@@ -870,23 +1439,47 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
         });
         ui.label(text("Connect other apps to CenAI with explicit, account-specific permissions. Every grant can be revoked independently.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         if state.account_email.is_empty() {
-            ui.label(text("Sign in to view your private app connections.", 11.0, egui::Color32::from_rgb(220, 184, 121)));
+            ui.label(text(
+                "Sign in to view your private app connections.",
+                11.0,
+                egui::Color32::from_rgb(220, 184, 121),
+            ));
         } else if state.ecosystem_apps.is_empty() {
-            ui.label(text("No compatible apps are currently registered. Refresh to check the catalog.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(
+                "No compatible apps are currently registered. Refresh to check the catalog.",
+                11.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
         }
         let apps = state.ecosystem_apps.clone();
         for app in apps {
             ui.separator();
             ui.label(text(&app.app_id, 13.0, egui::Color32::WHITE).strong());
-            ui.label(text(format!("Publisher: {} · Version {}", app.publisher_id, app.version), 10.0, accent()));
+            ui.label(text(
+                format!("Publisher: {} · Version {}", app.publisher_id, app.version),
+                10.0,
+                accent(),
+            ));
             if !app.description.is_empty() {
-                ui.label(text(&app.description, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    &app.description,
+                    11.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
             }
             let active_grant = !app.revoked && !app.granted_scopes.is_empty();
             if active_grant {
-                ui.label(text(format!("Granted: {}", app.granted_scopes.join(", ")), 10.0, egui::Color32::from_rgb(119, 220, 183)));
+                ui.label(text(
+                    format!("Granted: {}", app.granted_scopes.join(", ")),
+                    10.0,
+                    egui::Color32::from_rgb(119, 220, 183),
+                ));
             } else {
-                ui.label(text("No active permissions granted.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    "No active permissions granted.",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
             }
             if state.ecosystem_selected_app != app.app_id {
                 if ui.button("Review permissions").clicked() {
@@ -894,20 +1487,45 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
                     state.ecosystem_grant_scopes_draft.clear();
                 }
             } else {
-                ui.label(text("Choose only the permissions this app needs:", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-                let mut selected = state.ecosystem_grant_scopes_draft.split(',')
-                    .map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned).collect::<std::collections::HashSet<_>>();
+                ui.label(text(
+                    "Choose only the permissions this app needs:",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
+                let mut selected = state
+                    .ecosystem_grant_scopes_draft
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .collect::<std::collections::HashSet<_>>();
                 for scope in &app.requested_scopes {
                     let mut checked = selected.contains(scope);
                     if ui.checkbox(&mut checked, scope).changed() {
-                        if checked { selected.insert(scope.clone()); } else { selected.remove(scope); }
+                        if checked {
+                            selected.insert(scope.clone());
+                        } else {
+                            selected.remove(scope);
+                        }
                     }
                 }
-                state.ecosystem_grant_scopes_draft = selected.into_iter().collect::<Vec<_>>().join(",");
+                state.ecosystem_grant_scopes_draft =
+                    selected.into_iter().collect::<Vec<_>>().join(",");
                 ui.horizontal(|ui| {
-                    let scopes = state.ecosystem_grant_scopes_draft.split(',')
-                        .map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned).collect::<Vec<_>>();
-                    if ui.add_enabled(!scopes.is_empty(), egui::Button::new("Grant selected permissions")).clicked() {
+                    let scopes = state
+                        .ecosystem_grant_scopes_draft
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    if ui
+                        .add_enabled(
+                            !scopes.is_empty(),
+                            egui::Button::new("Grant selected permissions"),
+                        )
+                        .clicked()
+                    {
                         state.pending_ecosystem_grant = Some((app.app_id.clone(), scopes));
                         state.ecosystem_status = "Saving this account's app permissions…".into();
                     }
@@ -923,7 +1541,11 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
             }
         }
         if !state.ecosystem_status.is_empty() {
-            ui.label(text(&state.ecosystem_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.ecosystem_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     surface(ui, |ui| {
@@ -933,64 +1555,129 @@ fn connections(ui: &mut egui::Ui, state: &mut AppState) {
         } else {
             "CenAI Cloud is available for this signed-in account; server-side quotas apply."
         };
-        ui.label(text(managed_status, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            managed_status,
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
         ui.separator();
         ui.label(text("Bring your own provider", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Configure OpenAI-compatible or DeepSeek credentials in Settings. Keys are stored in Android Keystore and used only for the selected provider route.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.separator();
         ui.label(text("Remote MCP tools", 16.0, egui::Color32::WHITE).strong());
         let tool_status = if state.mcp_tools.is_empty() {
-            "No tools discovered. Connect an HTTPS MCP server above."
-                .to_owned()
+            "No tools discovered. Connect an HTTPS MCP server above.".to_owned()
         } else {
-            format!("{} tools discovered. Discovery does not grant execution permission.", state.mcp_tools.len())
+            format!(
+                "{} tools discovered. Discovery does not grant execution permission.",
+                state.mcp_tools.len()
+            )
         };
-        ui.label(text(tool_status, 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            tool_status,
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
     });
     if !state.mcp_call_result.is_empty() {
         surface(ui, |ui| {
             ui.label(text("Last tool result", 13.0, egui::Color32::WHITE).strong());
-            ui.label(text(&state.mcp_call_result, 10.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(
+                &state.mcp_call_result,
+                10.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
         });
     }
     if let Some(tool_name) = state.mcp_pending_approval.clone() {
         let mut open = true;
-        egui::Window::new("Approve MCP action").collapsible(false).resizable(true).open(&mut open).show(ui.ctx(), |ui| {
-            ui.label(text("This sends the following request to an external MCP server.", 12.0, egui::Color32::WHITE));
-            ui.label(text(format!("Server: {}", state.mcp_server_id_draft), 11.0, egui::Color32::from_rgb(163, 174, 203)));
-            ui.label(text(format!("Tool: {tool_name}"), 12.0, egui::Color32::WHITE).strong());
-            ui.add(egui::TextEdit::multiline(&mut state.mcp_call_arguments_draft).desired_rows(5).desired_width(360.0));
-            ui.horizontal(|ui| {
-                if ui.button("Approve once and run").clicked() {
-                    state.pending_mcp_call = Some((state.mcp_server_id_draft.clone(), tool_name.clone(), state.mcp_call_arguments_draft.clone()));
-                    state.mcp_pending_approval = None;
-                    state.mcp_status = "Running the approved MCP action…".into();
-                }
-                if ui.button("Cancel").clicked() { state.mcp_pending_approval = None; }
+        egui::Window::new("Approve MCP action")
+            .collapsible(false)
+            .resizable(true)
+            .open(&mut open)
+            .show(ui.ctx(), |ui| {
+                ui.label(text(
+                    "This sends the following request to an external MCP server.",
+                    12.0,
+                    egui::Color32::WHITE,
+                ));
+                ui.label(text(
+                    format!("Server: {}", state.mcp_server_id_draft),
+                    11.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
+                ui.label(text(format!("Tool: {tool_name}"), 12.0, egui::Color32::WHITE).strong());
+                ui.add(
+                    egui::TextEdit::multiline(&mut state.mcp_call_arguments_draft)
+                        .desired_rows(5)
+                        .desired_width(360.0),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Approve once and run").clicked() {
+                        state.pending_mcp_call = Some((
+                            state.mcp_server_id_draft.clone(),
+                            tool_name.clone(),
+                            state.mcp_call_arguments_draft.clone(),
+                        ));
+                        state.mcp_pending_approval = None;
+                        state.mcp_status = "Running the approved MCP action…".into();
+                    }
+                    if ui.button("Cancel").clicked() {
+                        state.mcp_pending_approval = None;
+                    }
+                });
             });
-        });
-        if !open { state.mcp_pending_approval = None; }
+        if !open {
+            state.mcp_pending_approval = None;
+        }
     }
 }
 
 fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     surface(ui, |ui| {
         ui.label(text("CenAI Voice", 18.0, egui::Color32::WHITE).strong());
-        ui.label(text("Cloud speech powered by Deepgram Aura-1 through Cloudflare Workers AI.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.label(text("Primary profile: CenAI Original · English · en-US", 11.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Server model: Deepgram Aura-1 · Cloudflare Workers AI", 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text(
+            "Cloud speech powered by Deepgram Aura-1 through Cloudflare Workers AI.",
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
+        ui.label(text(
+            "Primary profile: CenAI Original · English · en-US",
+            11.0,
+            egui::Color32::from_rgb(190, 201, 224),
+        ));
+        ui.label(text(
+            "Server model: Deepgram Aura-1 · Cloudflare Workers AI",
+            10.0,
+            egui::Color32::from_rgb(190, 201, 224),
+        ));
         ui.label(text("Validated language: English. Additional languages will appear only after quality testing.", 10.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Speech language: English", 11.0, egui::Color32::from_rgb(190, 201, 224)));
-        ui.label(text("Aura-1 currently supports the English voice profile in CenAI.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            "Speech language: English",
+            11.0,
+            egui::Color32::from_rgb(190, 201, 224),
+        ));
+        ui.label(text(
+            "Aura-1 currently supports the English voice profile in CenAI.",
+            9.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
         ui.label(text("No speech model is bundled in the app. Speech text is sent to the authenticated CenAI Worker and synthesized by Cloudflare Workers AI. A daily per-account and shared service quota protects the free allowance.", 10.0, egui::Color32::from_rgb(119, 220, 183)));
         ui.separator();
         ui.label(text("Cloud voice service", 12.0, egui::Color32::WHITE).strong());
-        ui.label(text(&state.voice_service_status, 10.0, egui::Color32::from_rgb(190, 201, 224)));
+        ui.label(text(
+            &state.voice_service_status,
+            10.0,
+            egui::Color32::from_rgb(190, 201, 224),
+        ));
         if ui.button("Check cloud voice service").clicked() {
             state.pending_voice_service_check = true;
             state.voice_service_status = "Checking CenAI Voice Workers AI service…".into();
         }
-        if ui.small_button("View CenAI Voice implementation plan").clicked() {
+        if ui
+            .small_button("View CenAI Voice implementation plan")
+            .clicked()
+        {
             state.pending_open_url = Some("https://github.com/C4RL-DANIEL/CenAi/blob/rewrite/rust-native-core/docs/CENAI-VOICE.md".into());
         }
     });
@@ -999,12 +1686,24 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         surface(ui, |ui| {
             ui.label(text("Secure sign-in", 19.0, egui::Color32::WHITE).strong());
             ui.label(text("This account has a verified authenticator. CenAI remains locked until you complete the second factor.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-            if let Some(factor) = state.mfa_factors.iter().find(|factor| factor.id == state.mfa_enrollment_factor_id) {
-                ui.label(text(format!("Authenticator: {}", factor.friendly_name), 11.0, egui::Color32::WHITE));
+            if let Some(factor) = state
+                .mfa_factors
+                .iter()
+                .find(|factor| factor.id == state.mfa_enrollment_factor_id)
+            {
+                ui.label(text(
+                    format!("Authenticator: {}", factor.friendly_name),
+                    11.0,
+                    egui::Color32::WHITE,
+                ));
             }
-            ui.add(egui::TextEdit::singleline(&mut state.mfa_code_draft)
-                .password(false).char_limit(6).hint_text("6-digit authenticator code")
-                .desired_width(f32::INFINITY));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.mfa_code_draft)
+                    .password(false)
+                    .char_limit(6)
+                    .hint_text("6-digit authenticator code")
+                    .desired_width(f32::INFINITY),
+            );
             ui.horizontal(|ui| {
                 if ui.button("Verify and unlock CenAI").clicked() {
                     state.pending_mfa_verify = true;
@@ -1019,7 +1718,11 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
             if !state.mfa_status.is_empty() {
-                ui.label(text(&state.mfa_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.label(text(
+                    &state.mfa_status,
+                    10.0,
+                    egui::Color32::from_rgb(220, 184, 121),
+                ));
             }
             ui.label(text("Only this verification step is available until the account's second factor succeeds.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         });
@@ -1027,7 +1730,11 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
     }
     ui.add_space(10.0);
     ui.label(text("Settings", 26.0, egui::Color32::WHITE).strong());
-    ui.label(text("Make CenAI feel right for you.", 13.0, egui::Color32::from_rgb(163, 174, 203)));
+    ui.label(text(
+        "Make CenAI feel right for you.",
+        13.0,
+        egui::Color32::from_rgb(163, 174, 203),
+    ));
     ui.add_space(12.0);
     surface(ui, |ui| {
         ui.label(text("Permissions & responsible use", 16.0, egui::Color32::WHITE).strong());
@@ -1041,51 +1748,152 @@ fn settings(ui: &mut egui::Ui, state: &mut AppState) {
         ui.checkbox(&mut state.light_mode, "Use light appearance");
         ui.checkbox(&mut state.reduced_motion, "Reduce interface motion");
         let previous_guardian_consent = state.guardian_consent;
-        ui.checkbox(&mut state.guardian_consent, "Allow minimal Guardian diagnostics");
+        ui.checkbox(
+            &mut state.guardian_consent,
+            "Allow minimal Guardian diagnostics",
+        );
         if previous_guardian_consent != state.guardian_consent {
             state.pending_guardian_consent = Some(state.guardian_consent);
         }
         ui.label(text("Only a coarse diagnostic category may be uploaded, and only with your consent plus server-side rollout approval. Prompts, message text, file contents, paths and credentials are never sent.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.label(text("The interface respects this setting when animating transitions.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            "The interface respects this setting when animating transitions.",
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
         if let Some(snapshot) = &state.guardian_snapshot {
-            let ram_used = snapshot.ram_total_kb.saturating_sub(snapshot.ram_available_kb);
-            let ram_percent = ram_used.saturating_mul(100).checked_div(snapshot.ram_total_kb).unwrap_or(0);
+            let ram_used = snapshot
+                .ram_total_kb
+                .saturating_sub(snapshot.ram_available_kb);
+            let ram_percent = ram_used
+                .saturating_mul(100)
+                .checked_div(snapshot.ram_total_kb)
+                .unwrap_or(0);
             ui.separator();
             ui.label(text("Local device health", 13.0, egui::Color32::WHITE).strong());
             ui.horizontal_wrapped(|ui| {
-                ui.label(text(format!("CPU: {}%", snapshot.cpu_usage_percent.map_or_else(|| "sampling".into(), |value| value.to_string())), 10.0, accent()));
-                ui.label(text(format!("RAM: {}% · {:.0}/{:.0} MB", ram_percent, ram_used as f64 / 1024.0, snapshot.ram_total_kb as f64 / 1024.0), 10.0, accent()));
-                ui.label(text(format!("Storage free: {:.1} GB", snapshot.storage_available_bytes as f64 / 1_073_741_824.0), 10.0, accent()));
+                ui.label(text(
+                    format!(
+                        "CPU: {}%",
+                        snapshot
+                            .cpu_usage_percent
+                            .map_or_else(|| "sampling".into(), |value| value.to_string())
+                    ),
+                    10.0,
+                    accent(),
+                ));
+                ui.label(text(
+                    format!(
+                        "RAM: {}% · {:.0}/{:.0} MB",
+                        ram_percent,
+                        ram_used as f64 / 1024.0,
+                        snapshot.ram_total_kb as f64 / 1024.0
+                    ),
+                    10.0,
+                    accent(),
+                ));
+                ui.label(text(
+                    format!(
+                        "Storage free: {:.1} GB",
+                        snapshot.storage_available_bytes as f64 / 1_073_741_824.0
+                    ),
+                    10.0,
+                    accent(),
+                ));
                 if let Some(battery) = snapshot.battery_percent {
-                    ui.label(text(format!("Battery: {battery}% · {}", snapshot.battery_status.as_deref().unwrap_or("status unavailable")), 10.0, accent()));
+                    ui.label(text(
+                        format!(
+                            "Battery: {battery}% · {}",
+                            snapshot
+                                .battery_status
+                                .as_deref()
+                                .unwrap_or("status unavailable")
+                        ),
+                        10.0,
+                        accent(),
+                    ));
                 }
             });
-            ui.label(text(format!("Network totals · RX {:.1} MB · TX {:.1} MB", snapshot.network_rx_bytes as f64 / 1_048_576.0, snapshot.network_tx_bytes as f64 / 1_048_576.0), 10.0, egui::Color32::from_rgb(163, 174, 203)));
-                        let low_memory = snapshot.ram_available_kb > 0 && snapshot.ram_available_kb < 256 * 1024;
-            let low_storage = snapshot.storage_available_bytes > 0 && snapshot.storage_available_bytes < 512 * 1_048_576;
+            ui.label(text(
+                format!(
+                    "Network totals · RX {:.1} MB · TX {:.1} MB",
+                    snapshot.network_rx_bytes as f64 / 1_048_576.0,
+                    snapshot.network_tx_bytes as f64 / 1_048_576.0
+                ),
+                10.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
+            let low_memory =
+                snapshot.ram_available_kb > 0 && snapshot.ram_available_kb < 256 * 1024;
+            let low_storage = snapshot.storage_available_bytes > 0
+                && snapshot.storage_available_bytes < 512 * 1_048_576;
             let low_battery = snapshot.battery_percent.is_some_and(|value| value < 15)
-                && !snapshot.battery_status.as_deref().is_some_and(|status| status.eq_ignore_ascii_case("charging"));
+                && !snapshot
+                    .battery_status
+                    .as_deref()
+                    .is_some_and(|status| status.eq_ignore_ascii_case("charging"));
             let high_cpu = snapshot.cpu_usage_percent.is_some_and(|value| value >= 90);
             if low_memory || low_storage || low_battery || high_cpu {
-                ui.label(text("Guardian noticed a device resource warning:", 10.0, egui::Color32::from_rgb(240, 178, 126)).strong());
-                if low_memory { ui.label(text("Available memory is low.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
-                if low_storage { ui.label(text("Device storage is nearly full.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
-                if low_battery { ui.label(text("Battery is critically low.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
-                if high_cpu { ui.label(text("CPU usage is unusually high.", 10.0, egui::Color32::from_rgb(240, 178, 126))); }
+                ui.label(
+                    text(
+                        "Guardian noticed a device resource warning:",
+                        10.0,
+                        egui::Color32::from_rgb(240, 178, 126),
+                    )
+                    .strong(),
+                );
+                if low_memory {
+                    ui.label(text(
+                        "Available memory is low.",
+                        10.0,
+                        egui::Color32::from_rgb(240, 178, 126),
+                    ));
+                }
+                if low_storage {
+                    ui.label(text(
+                        "Device storage is nearly full.",
+                        10.0,
+                        egui::Color32::from_rgb(240, 178, 126),
+                    ));
+                }
+                if low_battery {
+                    ui.label(text(
+                        "Battery is critically low.",
+                        10.0,
+                        egui::Color32::from_rgb(240, 178, 126),
+                    ));
+                }
+                if high_cpu {
+                    ui.label(text(
+                        "CPU usage is unusually high.",
+                        10.0,
+                        egui::Color32::from_rgb(240, 178, 126),
+                    ));
+                }
             }
-ui.label(text("System metrics are sampled locally and are never uploaded as Guardian telemetry.", 9.0, egui::Color32::from_rgb(163, 174, 203)));
+            ui.label(text(
+                "System metrics are sampled locally and are never uploaded as Guardian telemetry.",
+                9.0,
+                egui::Color32::from_rgb(163, 174, 203),
+            ));
         }
         ui.separator();
         ui.label(text("Central Brain memory", 15.0, egui::Color32::WHITE).strong());
         let previous_memory_enabled = state.personal_memory_enabled;
-        ui.checkbox(&mut state.personal_memory_enabled, "Enable my private personal memory");
+        ui.checkbox(
+            &mut state.personal_memory_enabled,
+            "Enable my private personal memory",
+        );
         if previous_memory_enabled != state.personal_memory_enabled {
             state.pending_memory_enabled = Some(state.personal_memory_enabled);
         }
         ui.label(text("Memories are stored under your authenticated account only. The Brain can use them only when you explicitly allow personal memory for a request. Disabling memory prevents retrieval and new saves.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.separator();
         ui.label(text("Local conversation knowledge", 14.0, egui::Color32::WHITE).strong());
-        ui.checkbox(&mut state.local_knowledge_enabled, "Search my saved conversations for relevant context");
+        ui.checkbox(
+            &mut state.local_knowledge_enabled,
+            "Search my saved conversations for relevant context",
+        );
         ui.label(text("Search runs on device and adds a small, relevance-ranked selection of encrypted saved chats to the current request. Cloud providers receive those excerpts with the request; Offline Lightning keeps them on device. This is separate from personal memory.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         egui::ComboBox::from_id_salt("cenai_memory_category")
             .selected_text(match state.memory_category_draft.as_str() {
@@ -1096,30 +1904,70 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 _ => "Preference",
             })
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.memory_category_draft, "preference".into(), "Preference");
-                ui.selectable_value(&mut state.memory_category_draft, "profile".into(), "Profile");
-                ui.selectable_value(&mut state.memory_category_draft, "project".into(), "Project");
-                ui.selectable_value(&mut state.memory_category_draft, "workflow".into(), "Workflow");
+                ui.selectable_value(
+                    &mut state.memory_category_draft,
+                    "preference".into(),
+                    "Preference",
+                );
+                ui.selectable_value(
+                    &mut state.memory_category_draft,
+                    "profile".into(),
+                    "Profile",
+                );
+                ui.selectable_value(
+                    &mut state.memory_category_draft,
+                    "project".into(),
+                    "Project",
+                );
+                ui.selectable_value(
+                    &mut state.memory_category_draft,
+                    "workflow".into(),
+                    "Workflow",
+                );
                 ui.selectable_value(&mut state.memory_category_draft, "fact".into(), "Fact");
             });
-        ui.add(egui::TextEdit::multiline(&mut state.memory_content_draft)
-            .hint_text("Add a fact or preference to remember (up to 8,000 characters)")
-            .desired_rows(3).desired_width(f32::INFINITY));
-        if ui.add_enabled(state.personal_memory_enabled && !state.memory_content_draft.trim().is_empty(), egui::Button::new("Save private memory")).clicked() {
-            state.pending_memory_save = Some((state.memory_category_draft.clone(), state.memory_content_draft.trim().to_owned()));
+        ui.add(
+            egui::TextEdit::multiline(&mut state.memory_content_draft)
+                .hint_text("Add a fact or preference to remember (up to 8,000 characters)")
+                .desired_rows(3)
+                .desired_width(f32::INFINITY),
+        );
+        if ui
+            .add_enabled(
+                state.personal_memory_enabled && !state.memory_content_draft.trim().is_empty(),
+                egui::Button::new("Save private memory"),
+            )
+            .clicked()
+        {
+            state.pending_memory_save = Some((
+                state.memory_category_draft.clone(),
+                state.memory_content_draft.trim().to_owned(),
+            ));
             state.personal_memory_status = "Saving to your private Central Brain memory…".into();
         }
         if !state.memory_content_draft.is_empty() && !state.personal_memory_enabled {
-            ui.label(text("Enable personal memory before saving.", 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            ui.label(text(
+                "Enable personal memory before saving.",
+                10.0,
+                egui::Color32::from_rgb(220, 184, 121),
+            ));
         }
         if !state.personal_memory_status.is_empty() {
-            ui.label(text(&state.personal_memory_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.personal_memory_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
         if ui.small_button("Delete all saved memories").clicked() {
             state.confirm_memory_clear = true;
         }
         if state.confirm_memory_clear {
-            ui.label(text("Permanently delete every saved memory for this account?", 10.0, egui::Color32::from_rgb(235, 166, 145)));
+            ui.label(text(
+                "Permanently delete every saved memory for this account?",
+                10.0,
+                egui::Color32::from_rgb(235, 166, 145),
+            ));
             ui.horizontal(|ui| {
                 if ui.button("Delete all memories").clicked() {
                     state.pending_memory_clear = true;
@@ -1138,7 +1986,14 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(text(memory.category.to_uppercase(), 9.0, accent()).strong());
-                        ui.add(egui::Label::new(text(&memory.content, 10.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                        ui.add(
+                            egui::Label::new(text(
+                                &memory.content,
+                                10.0,
+                                egui::Color32::from_rgb(190, 201, 224),
+                            ))
+                            .wrap(),
+                        );
                     });
                     if ui.small_button("Delete").clicked() {
                         delete_memory = Some(memory.id.clone());
@@ -1154,7 +2009,10 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Offline AI · Lightning", 16.0, egui::Color32::WHITE).strong());
-        ui.checkbox(&mut state.offline_ai_enabled, "Use Lightning for all new chats");
+        ui.checkbox(
+            &mut state.offline_ai_enabled,
+            "Use Lightning for all new chats",
+        );
         ui.label(text(
             "When enabled, new chat prompts go directly to the bundled Qwen3 model on this device. CenAI does not send those prompts to cloud AI providers. Offline mode is available without signing in; signed-in accounts can save this preference.",
             11.0,
@@ -1171,37 +2029,67 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
         ui.label(text("Application updates", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("CenAI checks official GitHub releases, verifies the APK SHA-256, and checks the installed signing certificate before opening Android's installer. Installation always requires your confirmation.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.horizontal(|ui| {
-            if ui.add_enabled(!state.pending_update_check && !state.pending_update_download, egui::Button::new("Check for updates")).clicked() {
+            if ui
+                .add_enabled(
+                    !state.pending_update_check && !state.pending_update_download,
+                    egui::Button::new("Check for updates"),
+                )
+                .clicked()
+            {
                 state.pending_update_check = true;
                 state.update_status = "Checking official CenAI releases…".into();
                 state.available_update = None;
                 state.update_download_path.clear();
             }
             if let Some(update) = state.available_update.as_ref() {
-                if ui.add_enabled(!state.pending_update_download && state.update_download_path.is_empty(), egui::Button::new("Download verified APK")).clicked() {
+                if ui
+                    .add_enabled(
+                        !state.pending_update_download && state.update_download_path.is_empty(),
+                        egui::Button::new("Download verified APK"),
+                    )
+                    .clicked()
+                {
                     state.pending_update_download = true;
                     state.update_status = format!("Downloading CenAI {}…", update.version);
                 }
             }
             if !state.update_download_path.is_empty() && ui.button("Install update").clicked() {
                 state.pending_update_install = true;
-                state.update_status = "Verifying the installed signing certificate and opening Android installer…".into();
+                state.update_status =
+                    "Verifying the installed signing certificate and opening Android installer…"
+                        .into();
             }
         });
         if let Some(update) = state.available_update.as_ref() {
-            ui.label(text(format!("Version {} is available.", update.version), 11.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                format!("Version {} is available.", update.version),
+                11.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
             if !update.notes.is_empty() {
-                ui.label(text(&update.notes, 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    &update.notes,
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
             }
         }
         if !state.update_status.is_empty() {
-            ui.label(text(&state.update_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.update_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("AI provider keys", 16.0, egui::Color32::WHITE).strong());
-        ui.label(text("Your key is encrypted with Android Keystore and stays on this device.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            "Your key is encrypted with Android Keystore and stays on this device.",
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
         ui.checkbox(&mut state.multi_agent_enabled, "Multi-provider consensus");
         ui.label(text("When enabled, CenAI asks every configured provider connection independently, then synthesizes their answers. Each provider uses its own saved model and endpoint. At least two connected providers are required; no provider key is shared. Consensus is answer-only (no tool/device actions); Offline Lightning takes priority when offline mode is enabled.", 9.5, egui::Color32::from_rgb(163, 174, 203)));
         let previous_provider = state.provider_key_provider.clone();
@@ -1214,25 +2102,57 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 _ => "OpenAI-compatible",
             })
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.provider_key_provider, "openai".into(), "OpenAI-compatible");
-                ui.selectable_value(&mut state.provider_key_provider, "deepseek".into(), "DeepSeek");
-                ui.selectable_value(&mut state.provider_key_provider, "anthropic".into(), "Anthropic Claude");
-                ui.selectable_value(&mut state.provider_key_provider, "gemini".into(), "Google Gemini");
-                ui.selectable_value(&mut state.provider_key_provider, "custom".into(), "Custom OpenAI-compatible");
+                ui.selectable_value(
+                    &mut state.provider_key_provider,
+                    "openai".into(),
+                    "OpenAI-compatible",
+                );
+                ui.selectable_value(
+                    &mut state.provider_key_provider,
+                    "deepseek".into(),
+                    "DeepSeek",
+                );
+                ui.selectable_value(
+                    &mut state.provider_key_provider,
+                    "anthropic".into(),
+                    "Anthropic Claude",
+                );
+                ui.selectable_value(
+                    &mut state.provider_key_provider,
+                    "gemini".into(),
+                    "Google Gemini",
+                );
+                ui.selectable_value(
+                    &mut state.provider_key_provider,
+                    "custom".into(),
+                    "Custom OpenAI-compatible",
+                );
             });
         if previous_provider != state.provider_key_provider {
             state.pending_provider_config_load = true;
             state.provider_config_status.clear();
         }
-        ui.label(text("Model identifier", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.provider_model_draft)
-            .hint_text("Provider model ID")
-            .char_limit(128)
-            .desired_width(f32::INFINITY));
-        ui.label(text("API endpoint", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.provider_endpoint_draft)
-            .hint_text("https://api.example.com/v1")
-            .desired_width(f32::INFINITY));
+        ui.label(text(
+            "Model identifier",
+            10.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.provider_model_draft)
+                .hint_text("Provider model ID")
+                .char_limit(128)
+                .desired_width(f32::INFINITY),
+        );
+        ui.label(text(
+            "API endpoint",
+            10.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.provider_endpoint_draft)
+                .hint_text("https://api.example.com/v1")
+                .desired_width(f32::INFINITY),
+        );
         ui.label(text("Custom endpoints must use HTTPS and a public host. Anthropic and Gemini use their official endpoints; this endpoint is used by OpenAI-compatible providers.", 9.0, egui::Color32::from_rgb(143, 154, 180)));
         if ui.button("Save model & endpoint").clicked() {
             state.pending_provider_config_save = Some((
@@ -1243,24 +2163,38 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             state.provider_config_status = "Validating provider configuration…".into();
         }
         if !state.provider_config_status.is_empty() {
-            ui.label(text(&state.provider_config_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.provider_config_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
-        ui.add(egui::TextEdit::singleline(&mut state.provider_key_draft)
-            .password(true)
-            .hint_text("Paste provider API key")
-            .desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.provider_key_draft)
+                .password(true)
+                .hint_text("Paste provider API key")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
             if ui.button("Save key securely").clicked() {
-                state.pending_provider_key = Some((state.provider_key_provider.clone(), state.provider_key_draft.clone()));
+                state.pending_provider_key = Some((
+                    state.provider_key_provider.clone(),
+                    state.provider_key_draft.clone(),
+                ));
                 state.provider_key_status = "Saving to Android Keystore…".into();
             }
             if ui.button("Remove key").clicked() {
-                state.pending_provider_key = Some((state.provider_key_provider.clone(), String::new()));
+                state.pending_provider_key =
+                    Some((state.provider_key_provider.clone(), String::new()));
                 state.provider_key_status = "Removing stored key…".into();
             }
         });
         if !state.provider_key_status.is_empty() {
-            ui.label(text(&state.provider_key_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.provider_key_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
@@ -1277,32 +2211,54 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             state.system_prompt_status = "Saving encrypted instructions…".into();
         }
         if !state.system_prompt_status.is_empty() {
-            ui.label(text(&state.system_prompt_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.system_prompt_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Response budget", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Set the maximum output-token budget for provider responses. Managed CenAI Cloud and multi-provider consensus apply their own safety caps; Offline Lightning uses its model runtime budget.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::Slider::new(&mut state.max_response_tokens, 256..=8_192).step_by(256.0).text("Maximum tokens"));
+        ui.add(
+            egui::Slider::new(&mut state.max_response_tokens, 256..=8_192)
+                .step_by(256.0)
+                .text("Maximum tokens"),
+        );
         if ui.button("Save response budget").clicked() {
             state.pending_max_response_tokens_save = Some(state.max_response_tokens);
             state.max_response_tokens_status = "Saving response budget…".into();
         }
         if !state.max_response_tokens_status.is_empty() {
-            ui.label(text(&state.max_response_tokens_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.max_response_tokens_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
-        ui.label(text("Google Gemini account connection", 15.0, egui::Color32::WHITE).strong());
+        ui.label(
+            text(
+                "Google Gemini account connection",
+                15.0,
+                egui::Color32::WHITE,
+            )
+            .strong(),
+        );
         ui.label(text("Use Google's OAuth authorization-code flow with PKCE. Your refresh token is encrypted in the account-scoped Android Keystore vault.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.gemini_oauth_client_id_draft)
-            .hint_text("Google OAuth client ID (.apps.googleusercontent.com)")
-            .desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.gemini_oauth_client_id_draft)
+                .hint_text("Google OAuth client ID (.apps.googleusercontent.com)")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
             if ui.button("Connect Google account").clicked() {
-                state.pending_gemini_oauth_start = Some(state.gemini_oauth_client_id_draft.trim().to_owned());
+                state.pending_gemini_oauth_start =
+                    Some(state.gemini_oauth_client_id_draft.trim().to_owned());
                 state.gemini_oauth_status = "Preparing secure Google sign-in…".into();
             }
             if ui.button("Disconnect Google").clicked() {
@@ -1311,7 +2267,11 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             }
         });
         if !state.gemini_oauth_status.is_empty() {
-            ui.label(text(&state.gemini_oauth_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.gemini_oauth_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
@@ -1319,49 +2279,124 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
         ui.label(text("CenAI account", 16.0, egui::Color32::WHITE).strong());
         if state.account_email.is_empty() {
             ui.label(text("Sign in with an existing CenAI account. New accounts are provisioned through the authorized CenAI Discord process; registration is not available in this app.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-            ui.add(egui::TextEdit::singleline(&mut state.auth_email_draft).hint_text("Account email").desired_width(f32::INFINITY));
-            ui.add(egui::TextEdit::singleline(&mut state.auth_password_draft).password(true).hint_text("Password").desired_width(f32::INFINITY));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.auth_email_draft)
+                    .hint_text("Account email")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut state.auth_password_draft)
+                    .password(true)
+                    .hint_text("Password")
+                    .desired_width(f32::INFINITY),
+            );
             if ui.button("Sign in securely").clicked() {
-                state.pending_sign_in = Some((state.auth_email_draft.trim().to_owned(), state.auth_password_draft.clone()));
+                state.pending_sign_in = Some((
+                    state.auth_email_draft.trim().to_owned(),
+                    state.auth_password_draft.clone(),
+                ));
                 state.auth_password_draft.clear();
                 state.auth_status = "Signing in…".into();
             }
         } else {
-            ui.label(text(format!("Signed in as {}", state.account_email), 12.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                format!("Signed in as {}", state.account_email),
+                12.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
             if state.email_verified {
-                ui.label(text("Email verified", 11.0, egui::Color32::from_rgb(119, 220, 183)));
+                ui.label(text(
+                    "Email verified",
+                    11.0,
+                    egui::Color32::from_rgb(119, 220, 183),
+                ));
             } else {
-                ui.label(text("Email verification required for protected account features.", 11.0, egui::Color32::from_rgb(220, 184, 121)));
+                ui.label(text(
+                    "Email verification required for protected account features.",
+                    11.0,
+                    egui::Color32::from_rgb(220, 184, 121),
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Send verification code").clicked() { state.pending_send_otp = true; state.otp_status = "Sending verification code…".into(); }
+                    if ui.button("Send verification code").clicked() {
+                        state.pending_send_otp = true;
+                        state.otp_status = "Sending verification code…".into();
+                    }
                 });
-                ui.add(egui::TextEdit::singleline(&mut state.otp_draft).hint_text("Six-digit email code").desired_width(f32::INFINITY));
-                if ui.button("Verify email").clicked() { state.pending_verify_otp = Some(state.otp_draft.trim().to_owned()); state.otp_status = "Verifying email…".into(); }
-                if !state.otp_status.is_empty() { ui.label(text(&state.otp_status, 10.0, egui::Color32::from_rgb(220, 184, 121))); }
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.otp_draft)
+                        .hint_text("Six-digit email code")
+                        .desired_width(f32::INFINITY),
+                );
+                if ui.button("Verify email").clicked() {
+                    state.pending_verify_otp = Some(state.otp_draft.trim().to_owned());
+                    state.otp_status = "Verifying email…".into();
+                }
+                if !state.otp_status.is_empty() {
+                    ui.label(text(
+                        &state.otp_status,
+                        10.0,
+                        egui::Color32::from_rgb(220, 184, 121),
+                    ));
+                }
             }
             ui.separator();
             ui.label(text("Multi-factor authentication", 14.0, egui::Color32::WHITE).strong());
             ui.label(text("Protect this CenAI account with a time-based authenticator code. Your authenticator secret is shown only during enrollment.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-            ui.add(egui::TextEdit::singleline(&mut state.mfa_friendly_name_draft)
-                .hint_text("Authenticator device name").desired_width(f32::INFINITY));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.mfa_friendly_name_draft)
+                    .hint_text("Authenticator device name")
+                    .desired_width(f32::INFINITY),
+            );
             ui.horizontal(|ui| {
                 if ui.button("Refresh authenticator status").clicked() {
                     state.pending_mfa_refresh = true;
                     state.mfa_status = "Loading authenticator status…".into();
                 }
-                if ui.add_enabled(!state.mfa_login_required, egui::Button::new("Enroll authenticator")).clicked() {
+                if ui
+                    .add_enabled(
+                        !state.mfa_login_required,
+                        egui::Button::new("Enroll authenticator"),
+                    )
+                    .clicked()
+                {
                     state.pending_mfa_enroll = true;
                     state.mfa_status = "Creating authenticator setup…".into();
                 }
             });
             if !state.mfa_enrollment_secret.is_empty() {
-                ui.label(text("Add this setup key in your authenticator app:", 10.0, egui::Color32::from_rgb(220, 184, 121)));
-                ui.add(egui::TextEdit::singleline(&mut state.mfa_enrollment_secret).interactive(false).desired_width(f32::INFINITY));
+                ui.label(text(
+                    "Add this setup key in your authenticator app:",
+                    10.0,
+                    egui::Color32::from_rgb(220, 184, 121),
+                ));
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.mfa_enrollment_secret)
+                        .interactive(false)
+                        .desired_width(f32::INFINITY),
+                );
             }
             if !state.mfa_enrollment_factor_id.is_empty() {
-                ui.label(text("Selected authenticator is ready for verification.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
-                ui.add(egui::TextEdit::singleline(&mut state.mfa_code_draft).hint_text("Six-digit authenticator code").desired_width(f32::INFINITY));
-                if ui.add_enabled(state.mfa_code_draft.len() == 6 && !state.mfa_code_draft.chars().any(|character| !character.is_ascii_digit()), egui::Button::new("Verify authenticator code")).clicked() {
+                ui.label(text(
+                    "Selected authenticator is ready for verification.",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.mfa_code_draft)
+                        .hint_text("Six-digit authenticator code")
+                        .desired_width(f32::INFINITY),
+                );
+                if ui
+                    .add_enabled(
+                        state.mfa_code_draft.len() == 6
+                            && !state
+                                .mfa_code_draft
+                                .chars()
+                                .any(|character| !character.is_ascii_digit()),
+                        egui::Button::new("Verify authenticator code"),
+                    )
+                    .clicked()
+                {
                     state.pending_mfa_verify = true;
                     state.mfa_status = "Verifying authenticator code…".into();
                 }
@@ -1371,25 +2406,45 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                 let mut removed_factor = None;
                 for factor in &state.mfa_factors {
                     ui.horizontal(|ui| {
-                        ui.label(text(format!("{} · {}", factor.friendly_name, factor.status), 10.0, egui::Color32::from_rgb(190, 201, 224)));
-                        if ui.small_button("Use").clicked() { selected_factor = Some(factor.id.clone()); }
-                        if ui.add_enabled(!state.mfa_login_required, egui::Button::new("Remove")).clicked() { removed_factor = Some(factor.id.clone()); }
+                        ui.label(text(
+                            format!("{} · {}", factor.friendly_name, factor.status),
+                            10.0,
+                            egui::Color32::from_rgb(190, 201, 224),
+                        ));
+                        if ui.small_button("Use").clicked() {
+                            selected_factor = Some(factor.id.clone());
+                        }
+                        if ui
+                            .add_enabled(!state.mfa_login_required, egui::Button::new("Remove"))
+                            .clicked()
+                        {
+                            removed_factor = Some(factor.id.clone());
+                        }
                     });
                 }
                 if let Some(factor_id) = selected_factor {
                     state.mfa_enrollment_factor_id = factor_id;
                     state.mfa_enrollment_secret.clear();
-                    state.mfa_status = "Enter a current code from this authenticator to verify it.".into();
+                    state.mfa_status =
+                        "Enter a current code from this authenticator to verify it.".into();
                 }
                 if let Some(factor_id) = removed_factor {
                     state.pending_mfa_unenroll = Some(factor_id);
                     state.mfa_status = "Removing authenticator…".into();
                 }
             } else {
-                ui.label(text("No authenticator factors were returned. Refresh status after signing in.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    "No authenticator factors were returned. Refresh status after signing in.",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
             }
             if !state.mfa_status.is_empty() {
-                ui.label(text(&state.mfa_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+                ui.label(text(
+                    &state.mfa_status,
+                    10.0,
+                    egui::Color32::from_rgb(119, 220, 183),
+                ));
             }
             if ui.button("Sign out").clicked() {
                 state.pending_sign_out = true;
@@ -1397,28 +2452,60 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             }
         }
         if !state.auth_status.is_empty() {
-            ui.label(text(&state.auth_status, 10.0, egui::Color32::from_rgb(220, 184, 121)));
+            ui.label(text(
+                &state.auth_status,
+                10.0,
+                egui::Color32::from_rgb(220, 184, 121),
+            ));
         }
     });
-    if state.mfa_login_required { return; }
+    if state.mfa_login_required {
+        return;
+    }
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("CenAI membership", 16.0, egui::Color32::WHITE).strong());
-        ui.label(text("Manage membership through the secure CenAI billing service.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
+        ui.label(text(
+            "Manage membership through the secure CenAI billing service.",
+            11.0,
+            egui::Color32::from_rgb(163, 174, 203),
+        ));
         ui.horizontal(|ui| {
-            if ui.button("Supporter").clicked() { state.pending_checkout_plan = Some("supporter".into()); state.checkout_status = "Preparing secure checkout…".into(); }
-            if ui.button("Pro").clicked() { state.pending_checkout_plan = Some("pro".into()); state.checkout_status = "Preparing secure checkout…".into(); }
+            if ui.button("Supporter").clicked() {
+                state.pending_checkout_plan = Some("supporter".into());
+                state.checkout_status = "Preparing secure checkout…".into();
+            }
+            if ui.button("Pro").clicked() {
+                state.pending_checkout_plan = Some("pro".into());
+                state.checkout_status = "Preparing secure checkout…".into();
+            }
         });
-        if !state.checkout_status.is_empty() { ui.label(text(&state.checkout_status, 10.0, egui::Color32::from_rgb(119, 220, 183))); }
+        if !state.checkout_status.is_empty() {
+            ui.label(text(
+                &state.checkout_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
+        }
     });
     ui.add_space(8.0);
     surface(ui, |ui| {
         ui.label(text("Encrypted workspace backup", 16.0, egui::Color32::WHITE).strong());
         ui.label(text("Back up projects, tasks, automations, conversations and files. The backup is encrypted on this device before upload; CenAI storage only receives the encrypted envelope.", 11.0, egui::Color32::from_rgb(163, 174, 203)));
-        ui.add(egui::TextEdit::singleline(&mut state.backup_passphrase_draft).password(true)
-            .hint_text("Backup passphrase (at least 12 characters)").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.backup_passphrase_draft)
+                .password(true)
+                .hint_text("Backup passphrase (at least 12 characters)")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
-            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Upload encrypted backup")).clicked() {
+            if ui
+                .add_enabled(
+                    !state.account_email.is_empty(),
+                    egui::Button::new("Upload encrypted backup"),
+                )
+                .clicked()
+            {
                 if state.backup_passphrase_draft.len() < 12 {
                     state.backup_status = "Use a backup passphrase of at least 12 bytes.".into();
                 } else {
@@ -1426,30 +2513,53 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
                     state.backup_status = "Encrypting your workspace before upload…".into();
                 }
             }
-            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from cloud")).clicked() {
+            if ui
+                .add_enabled(
+                    !state.account_email.is_empty(),
+                    egui::Button::new("Restore from cloud"),
+                )
+                .clicked()
+            {
                 if state.backup_passphrase_draft.len() < 12 {
-                    state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
+                    state.backup_status =
+                        "Enter the original backup passphrase (at least 12 bytes).".into();
                 } else if !state.backup_restore_confirmed {
-                    state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
+                    state.backup_status =
+                        "Confirm that restoring replaces the current local workspace.".into();
                 } else {
                     state.pending_backup_download = true;
                     state.backup_status = "Downloading encrypted backup…".into();
                 }
             }
-            if ui.add_enabled(!state.account_email.is_empty(), egui::Button::new("Restore from file")).clicked() {
+            if ui
+                .add_enabled(
+                    !state.account_email.is_empty(),
+                    egui::Button::new("Restore from file"),
+                )
+                .clicked()
+            {
                 if state.backup_passphrase_draft.len() < 12 {
-                    state.backup_status = "Enter the original backup passphrase (at least 12 bytes).".into();
+                    state.backup_status =
+                        "Enter the original backup passphrase (at least 12 bytes).".into();
                 } else if !state.backup_restore_confirmed {
-                    state.backup_status = "Confirm that restoring replaces the current local workspace.".into();
+                    state.backup_status =
+                        "Confirm that restoring replaces the current local workspace.".into();
                 } else {
                     state.pending_backup_file_picker = true;
                     state.backup_status = "Choose your encrypted CenAI backup file…".into();
                 }
             }
         });
-        ui.checkbox(&mut state.backup_restore_confirmed, "I understand restore replaces this account's current local workspace");
+        ui.checkbox(
+            &mut state.backup_restore_confirmed,
+            "I understand restore replaces this account's current local workspace",
+        );
         if !state.backup_status.is_empty() {
-            ui.label(text(&state.backup_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.backup_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
     });
     ui.add_space(8.0);
@@ -1458,15 +2568,27 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
         ui.label(text("Run development commands in a separate Linux microVM with a private, per-account snapshot workspace. Runtime limits: 1 vCPU, 2 GB RAM and 55 seconds per command. Network access is restricted to approved development registries and GitHub. Credentials and environment variables are never forwarded.", 10.0, egui::Color32::from_rgb(163, 174, 203)));
         ui.label(text("Command", 11.0, egui::Color32::WHITE));
         ui.text_edit_singleline(&mut state.sandbox_command_draft);
-        ui.label(text("Arguments (JSON string array)", 11.0, egui::Color32::WHITE));
+        ui.label(text(
+            "Arguments (JSON string array)",
+            11.0,
+            egui::Color32::WHITE,
+        ));
         ui.add(egui::TextEdit::multiline(&mut state.sandbox_arguments_draft).desired_rows(2));
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(text("Project ID", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    "Project ID",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
                 ui.text_edit_singleline(&mut state.sandbox_project_id_draft);
             });
             ui.vertical(|ui| {
-                ui.label(text("Working directory", 10.0, egui::Color32::from_rgb(163, 174, 203)));
+                ui.label(text(
+                    "Working directory",
+                    10.0,
+                    egui::Color32::from_rgb(163, 174, 203),
+                ));
                 ui.text_edit_singleline(&mut state.sandbox_working_directory_draft);
             });
         });
@@ -1475,11 +2597,19 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
             state.sandbox_status = "Waiting to start isolated execution…".into();
         }
         if !state.sandbox_status.is_empty() {
-            ui.label(text(&state.sandbox_status, 10.0, egui::Color32::from_rgb(119, 220, 183)));
+            ui.label(text(
+                &state.sandbox_status,
+                10.0,
+                egui::Color32::from_rgb(119, 220, 183),
+            ));
         }
         if !state.sandbox_output.is_empty() {
-            egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| ui.monospace(&state.sandbox_output));
-            if ui.small_button("Clear sandbox output").clicked() { state.sandbox_output.clear(); }
+            egui::ScrollArea::vertical()
+                .max_height(160.0)
+                .show(ui, |ui| ui.monospace(&state.sandbox_output));
+            if ui.small_button("Clear sandbox output").clicked() {
+                state.sandbox_output.clear();
+            }
         }
     });
     ui.add_space(8.0);
@@ -1490,26 +2620,64 @@ ui.label(text("System metrics are sampled locally and are never uploaded as Guar
 }
 
 pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
-    if state.mfa_login_required { state.destination = Destination::Settings; }
+    if state.mfa_login_required {
+        state.destination = Destination::Settings;
+    }
     LIGHT_MODE.with(|light| light.set(state.light_mode));
-    ctx.set_visuals(if state.light_mode { egui::Visuals::light() } else { egui::Visuals::dark() });
+    ctx.set_visuals(if state.light_mode {
+        egui::Visuals::light()
+    } else {
+        egui::Visuals::dark()
+    });
     ctx.style_mut(|style| {
         style.spacing.item_spacing = egui::vec2(10.0, 8.0);
         style.visuals.panel_fill = egui::Color32::TRANSPARENT;
-        style.visuals.window_fill = if state.light_mode { egui::Color32::from_rgb(247, 249, 255) } else { egui::Color32::from_rgb(18, 23, 40) };
-        style.visuals.widgets.inactive.bg_fill = if state.light_mode { egui::Color32::from_rgb(232, 237, 249) } else { egui::Color32::from_rgb(31, 38, 62) };
-        style.visuals.widgets.hovered.bg_fill = if state.light_mode { egui::Color32::from_rgb(218, 226, 249) } else { egui::Color32::from_rgb(53, 64, 104) };
-        style.visuals.widgets.active.bg_fill = if state.light_mode { egui::Color32::from_rgb(202, 214, 248) } else { egui::Color32::from_rgb(76, 91, 157) };
+        style.visuals.window_fill = if state.light_mode {
+            egui::Color32::from_rgb(247, 249, 255)
+        } else {
+            egui::Color32::from_rgb(18, 23, 40)
+        };
+        style.visuals.widgets.inactive.bg_fill = if state.light_mode {
+            egui::Color32::from_rgb(232, 237, 249)
+        } else {
+            egui::Color32::from_rgb(31, 38, 62)
+        };
+        style.visuals.widgets.hovered.bg_fill = if state.light_mode {
+            egui::Color32::from_rgb(218, 226, 249)
+        } else {
+            egui::Color32::from_rgb(53, 64, 104)
+        };
+        style.visuals.widgets.active.bg_fill = if state.light_mode {
+            egui::Color32::from_rgb(202, 214, 248)
+        } else {
+            egui::Color32::from_rgb(76, 91, 157)
+        };
         style.visuals.selection.bg_fill = egui::Color32::from_rgb(76, 91, 157);
     });
     background(ctx, time_seconds);
 
     egui::TopBottomPanel::top("cenai_header")
-        .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 236) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 224) }).inner_margin(egui::Margin::symmetric(18, 14)))
+        .frame(
+            egui::Frame::new()
+                .fill(if state.light_mode {
+                    egui::Color32::from_rgba_unmultiplied(250, 252, 255, 236)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(12, 16, 30, 224)
+                })
+                .inner_margin(egui::Margin::symmetric(18, 14)),
+        )
         .show(ctx, top_bar);
 
     egui::TopBottomPanel::bottom("cenai_navigation")
-        .frame(egui::Frame::new().fill(if state.light_mode { egui::Color32::from_rgba_unmultiplied(250, 252, 255, 242) } else { egui::Color32::from_rgba_unmultiplied(12, 16, 30, 240) }).inner_margin(egui::Margin::symmetric(8, 8)))
+        .frame(
+            egui::Frame::new()
+                .fill(if state.light_mode {
+                    egui::Color32::from_rgba_unmultiplied(250, 252, 255, 242)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(12, 16, 30, 240)
+                })
+                .inner_margin(egui::Margin::symmetric(8, 8)),
+        )
         .show(ctx, |ui| navigation(ui, state));
 
     egui::CentralPanel::default()
@@ -1523,14 +2691,14 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
                     egui::vec2(content_width, ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                            match state.destination {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| match state.destination {
                                 Destination::Conversation => conversation(ui, state),
                                 Destination::YourWork => work(ui, state),
                                 Destination::Connections => connections(ui, state),
                                 Destination::Settings => settings(ui, state),
-                            }
-                        });
+                            });
                     },
                 );
             });
@@ -1563,10 +2731,19 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, time_seconds: f32) {
         if approved {
             state.pending_agent_action_execute = Some((tool_name, arguments));
             state.pending_agent_action = None;
-            state.agent_action_status = if is_sandbox { "Cloud sandbox command approved once. Starting remote execution…".into() } else { "Action approved once. Waiting for Android to open the requested destination…".into() };
+            state.agent_action_status = if is_sandbox {
+                "Cloud sandbox command approved once. Starting remote execution…".into()
+            } else {
+                "Action approved once. Waiting for Android to open the requested destination…"
+                    .into()
+            };
         } else if denied || !open {
             state.pending_agent_action = None;
-            state.agent_action_status = if is_sandbox { "Cloud sandbox command denied. Nothing was executed.".into() } else { "Android action denied. Nothing was opened or shared.".into() };
+            state.agent_action_status = if is_sandbox {
+                "Cloud sandbox command denied. Nothing was executed.".into()
+            } else {
+                "Android action denied. Nothing was opened or shared.".into()
+            };
         }
     }
 }

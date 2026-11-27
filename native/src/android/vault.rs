@@ -8,13 +8,16 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use base64::{engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD}, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use jni::{
     objects::{JByteArray, JObject, JString, JValue},
     JNIEnv, JavaVM,
 };
-use winit::platform::android::activity::AndroidApp;
 use sha2::{Digest, Sha256};
+use winit::platform::android::activity::AndroidApp;
 
 use crate::core::network::SessionVault;
 use crate::core::workspace::WORKSPACE_CIPHER_MAGIC;
@@ -27,39 +30,85 @@ fn valid_supabase_user_id(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 36
         && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
-        })
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
 }
 
 fn supported_user_setting_key(key: &str) -> bool {
-    if matches!(key, "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" | "active_provider" | "system_prompt" | "max_response_tokens" | "voice_language") {
+    if matches!(
+        key,
+        "light_mode"
+            | "reduced_motion"
+            | "offline_ai_enabled"
+            | "local_knowledge_enabled"
+            | "multi_agent_enabled"
+            | "active_provider"
+            | "system_prompt"
+            | "max_response_tokens"
+            | "voice_language"
+    ) {
         return true;
     }
     let parts = key.split('_').collect::<Vec<_>>();
     parts.len() == 3
         && parts[0] == "provider"
         && matches!(parts[1], "model" | "endpoint")
-        && matches!(parts[2], "openai" | "deepseek" | "anthropic" | "gemini" | "custom")
+        && matches!(
+            parts[2],
+            "openai" | "deepseek" | "anthropic" | "gemini" | "custom"
+        )
 }
 
 fn valid_user_setting_value(key: &str, value: &str) -> bool {
     match key {
-        "light_mode" | "reduced_motion" | "offline_ai_enabled" | "local_knowledge_enabled" | "multi_agent_enabled" => matches!(value, "true" | "false"),
-        "active_provider" => matches!(value, "openai" | "deepseek" | "anthropic" | "gemini" | "custom"),
+        "light_mode"
+        | "reduced_motion"
+        | "offline_ai_enabled"
+        | "local_knowledge_enabled"
+        | "multi_agent_enabled" => matches!(value, "true" | "false"),
+        "active_provider" => matches!(
+            value,
+            "openai" | "deepseek" | "anthropic" | "gemini" | "custom"
+        ),
         "system_prompt" => value.len() <= 8_000 && !value.contains('\0'),
-        "max_response_tokens" => value.parse::<u32>().is_ok_and(|tokens| (256..=8_192).contains(&tokens) && tokens % 256 == 0),
-        "voice_language" => matches!(value, "Chinese" | "English" | "Japanese" | "Korean" | "German" | "French" | "Russian" | "Portuguese" | "Spanish" | "Italian"),
-        _ if key.starts_with("provider_model_") => !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control),
-        _ if key.starts_with("provider_endpoint_") => value.len() <= 2048 && !value.chars().any(char::is_control),
+        "max_response_tokens" => value
+            .parse::<u32>()
+            .is_ok_and(|tokens| (256..=8_192).contains(&tokens) && tokens % 256 == 0),
+        "voice_language" => matches!(
+            value,
+            "Chinese"
+                | "English"
+                | "Japanese"
+                | "Korean"
+                | "German"
+                | "French"
+                | "Russian"
+                | "Portuguese"
+                | "Spanish"
+                | "Italian"
+        ),
+        _ if key.starts_with("provider_model_") => {
+            !value.trim().is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
+        }
+        _ if key.starts_with("provider_endpoint_") => {
+            value.len() <= 2048 && !value.chars().any(char::is_control)
+        }
         _ => false,
     }
 }
 
 fn valid_workspace_relative_path(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 256 && !value.starts_with('/')
-        && !value.contains('\\') && !value.contains('\n') && !value.contains('\r')
-        && value.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+    !value.is_empty()
+        && value.len() <= 256
+        && !value.starts_with('/')
+        && !value.contains('\\')
+        && !value.contains('\n')
+        && !value.contains('\r')
+        && value
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
 pub struct AndroidSecretVault {
@@ -72,13 +121,20 @@ impl AndroidSecretVault {
     fn from_vm_and_files_dir(vm: JavaVM, files_dir: PathBuf) -> Result<Self, String> {
         let directory = files_dir.join("cenai-vault");
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-        Ok(Self { vm, files_dir, path: directory.join("secrets.json") })
+        Ok(Self {
+            vm,
+            files_dir,
+            path: directory.join("secrets.json"),
+        })
     }
 
     /// Activity-backed constructor retained for the NativeActivity renderer.
     pub fn new(app: AndroidApp) -> Result<Self, String> {
-        let files_dir = app.internal_data_path().ok_or("Android private data directory is unavailable")?;
-        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
+        let files_dir = app
+            .internal_data_path()
+            .ok_or("Android private data directory is unavailable")?;
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }
+            .map_err(|error| error.to_string())?;
         Self::from_vm_and_files_dir(vm, files_dir)
     }
 
@@ -86,35 +142,52 @@ impl AndroidSecretVault {
     /// not a winit AndroidApp, but Android Keystore is available from any app thread.
     pub fn new_from_context(env: &mut JNIEnv<'_>, context: &JObject<'_>) -> Result<Self, String> {
         let vm = env.get_java_vm().map_err(|error| error.to_string())?;
-        let files = env.call_method(context, "getFilesDir", "()Ljava/io/File;", &[])
-            .and_then(|value| value.l()).map_err(|error| error.to_string())?;
-        let path = env.call_method(&files, "getAbsolutePath", "()Ljava/lang/String;", &[])
-            .and_then(|value| value.l()).map_err(|error| error.to_string())?;
+        let files = env
+            .call_method(context, "getFilesDir", "()Ljava/io/File;", &[])
+            .and_then(|value| value.l())
+            .map_err(|error| error.to_string())?;
+        let path = env
+            .call_method(&files, "getAbsolutePath", "()Ljava/lang/String;", &[])
+            .and_then(|value| value.l())
+            .map_err(|error| error.to_string())?;
         let path = JString::from(path);
-        let files_dir = env.get_string(&path).map_err(|error| error.to_string())?
-            .to_string_lossy().into_owned();
+        let files_dir = env
+            .get_string(&path)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .into_owned();
         if files_dir.is_empty() {
             return Err("Android application files directory is unavailable".into());
         }
         Self::from_vm_and_files_dir(vm, PathBuf::from(files_dir))
     }
 
-    pub fn files_dir(&self) -> &std::path::Path { &self.files_dir }
+    pub fn files_dir(&self) -> &std::path::Path {
+        &self.files_dir
+    }
 
-    fn with_env<T>(&self, operation: impl FnOnce(&mut JNIEnv<'_>) -> jni::errors::Result<T>) -> Result<T, String> {
-        let mut env = self.vm.attach_current_thread().map_err(|error| error.to_string())?;
+    fn with_env<T>(
+        &self,
+        operation: impl FnOnce(&mut JNIEnv<'_>) -> jni::errors::Result<T>,
+    ) -> Result<T, String> {
+        let mut env = self
+            .vm
+            .attach_current_thread()
+            .map_err(|error| error.to_string())?;
         operation(&mut env).map_err(|error| error.to_string())
     }
 
     fn key<'local>(env: &mut JNIEnv<'local>) -> jni::errors::Result<JObject<'local>> {
         let store_class = env.find_class("java/security/KeyStore")?;
         let provider = env.new_string("AndroidKeyStore")?;
-        let store = env.call_static_method(
-            store_class,
-            "getInstance",
-            "(Ljava/lang/String;)Ljava/security/KeyStore;",
-            &[JValue::Object(&provider)],
-        )?.l()?;
+        let store = env
+            .call_static_method(
+                store_class,
+                "getInstance",
+                "(Ljava/lang/String;)Ljava/security/KeyStore;",
+                &[JValue::Object(&provider)],
+            )?
+            .l()?;
         env.call_method(
             &store,
             "load",
@@ -123,24 +196,28 @@ impl AndroidSecretVault {
         )?;
 
         let alias = env.new_string("cenai_aes_gcm_v1")?;
-        let key = env.call_method(
-            &store,
-            "getKey",
-            "(Ljava/lang/String;[C)Ljava/security/Key;",
-            &[JValue::Object(&alias), JValue::Object(&JObject::null())],
-        )?.l()?;
+        let key = env
+            .call_method(
+                &store,
+                "getKey",
+                "(Ljava/lang/String;[C)Ljava/security/Key;",
+                &[JValue::Object(&alias), JValue::Object(&JObject::null())],
+            )?
+            .l()?;
         if !key.is_null() {
             return Ok(key);
         }
 
         let algorithm = env.new_string("AES")?;
         let provider = env.new_string("AndroidKeyStore")?;
-        let generator = env.call_static_method(
-            "javax/crypto/KeyGenerator",
-            "getInstance",
-            "(Ljava/lang/String;Ljava/lang/String;)Ljavax/crypto/KeyGenerator;",
-            &[JValue::Object(&algorithm), JValue::Object(&provider)],
-        )?.l()?;
+        let generator = env
+            .call_static_method(
+                "javax/crypto/KeyGenerator",
+                "getInstance",
+                "(Ljava/lang/String;Ljava/lang/String;)Ljavax/crypto/KeyGenerator;",
+                &[JValue::Object(&algorithm), JValue::Object(&provider)],
+            )?
+            .l()?;
         let builder = env.new_object(
             "android/security/keystore/KeyGenParameterSpec$Builder",
             "(Ljava/lang/String;I)V",
@@ -174,25 +251,52 @@ impl AndroidSecretVault {
             "(Z)Landroid/security/keystore/KeyGenParameterSpec$Builder;",
             &[JValue::Bool(1)],
         )?;
-        let specification = env.call_method(&builder, "build", "()Landroid/security/keystore/KeyGenParameterSpec;", &[])?.l()?;
+        let specification = env
+            .call_method(
+                &builder,
+                "build",
+                "()Landroid/security/keystore/KeyGenParameterSpec;",
+                &[],
+            )?
+            .l()?;
         env.call_method(
             &generator,
             "init",
             "(Ljava/security/spec/AlgorithmParameterSpec;)V",
             &[JValue::Object(&specification)],
         )?;
-        env.call_method(&generator, "generateKey", "()Ljavax/crypto/SecretKey;", &[])?.l()
+        env.call_method(&generator, "generateKey", "()Ljavax/crypto/SecretKey;", &[])?
+            .l()
     }
 
     fn encrypt_bytes(&self, value: &[u8]) -> Result<Vec<u8>, String> {
         self.with_env(|env| {
             let key = Self::key(env)?;
             let algorithm = env.new_string("AES/GCM/NoPadding")?;
-            let cipher = env.call_static_method("javax/crypto/Cipher", "getInstance", "(Ljava/lang/String;)Ljavax/crypto/Cipher;", &[JValue::Object(&algorithm)])?.l()?;
-            env.call_method(&cipher, "init", "(ILjava/security/Key;)V", &[JValue::Int(1), JValue::Object(&key)])?;
+            let cipher = env
+                .call_static_method(
+                    "javax/crypto/Cipher",
+                    "getInstance",
+                    "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
+                    &[JValue::Object(&algorithm)],
+                )?
+                .l()?;
+            env.call_method(
+                &cipher,
+                "init",
+                "(ILjava/security/Key;)V",
+                &[JValue::Int(1), JValue::Object(&key)],
+            )?;
             let plain = env.byte_array_from_slice(value)?;
             let plain_object = JObject::from(plain);
-            let encrypted = env.call_method(&cipher, "doFinal", "([B)[B", &[JValue::Object(&plain_object)])?.l()?;
+            let encrypted = env
+                .call_method(
+                    &cipher,
+                    "doFinal",
+                    "([B)[B",
+                    &[JValue::Object(&plain_object)],
+                )?
+                .l()?;
             let iv = env.call_method(&cipher, "getIV", "()[B", &[])?.l()?;
             let mut packed = env.convert_byte_array(JByteArray::from(iv))?;
             packed.extend(env.convert_byte_array(JByteArray::from(encrypted))?);
@@ -205,45 +309,86 @@ impl AndroidSecretVault {
     }
 
     fn decrypt_bytes(&self, packed: &[u8]) -> Result<Vec<u8>, String> {
-        if packed.len() <= 12 { return Err("Encrypted secret is truncated".into()); }
+        if packed.len() <= 12 {
+            return Err("Encrypted secret is truncated".into());
+        }
         self.with_env(|env| {
             let key = Self::key(env)?;
             let algorithm = env.new_string("AES/GCM/NoPadding")?;
-            let cipher = env.call_static_method("javax/crypto/Cipher", "getInstance", "(Ljava/lang/String;)Ljavax/crypto/Cipher;", &[JValue::Object(&algorithm)])?.l()?;
+            let cipher = env
+                .call_static_method(
+                    "javax/crypto/Cipher",
+                    "getInstance",
+                    "(Ljava/lang/String;)Ljavax/crypto/Cipher;",
+                    &[JValue::Object(&algorithm)],
+                )?
+                .l()?;
             let iv = env.byte_array_from_slice(&packed[..12])?;
             let iv_object = JObject::from(iv);
-            let parameters = env.new_object("javax/crypto/spec/GCMParameterSpec", "(I[B)V", &[JValue::Int(128), JValue::Object(&iv_object)])?;
-            env.call_method(&cipher, "init", "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V", &[JValue::Int(2), JValue::Object(&key), JValue::Object(&parameters)])?;
+            let parameters = env.new_object(
+                "javax/crypto/spec/GCMParameterSpec",
+                "(I[B)V",
+                &[JValue::Int(128), JValue::Object(&iv_object)],
+            )?;
+            env.call_method(
+                &cipher,
+                "init",
+                "(ILjava/security/Key;Ljava/security/spec/AlgorithmParameterSpec;)V",
+                &[
+                    JValue::Int(2),
+                    JValue::Object(&key),
+                    JValue::Object(&parameters),
+                ],
+            )?;
             let ciphertext = env.byte_array_from_slice(&packed[12..])?;
             let ciphertext_object = JObject::from(ciphertext);
-            let plain = env.call_method(&cipher, "doFinal", "([B)[B", &[JValue::Object(&ciphertext_object)])?.l()?;
+            let plain = env
+                .call_method(
+                    &cipher,
+                    "doFinal",
+                    "([B)[B",
+                    &[JValue::Object(&ciphertext_object)],
+                )?
+                .l()?;
             env.convert_byte_array(JByteArray::from(plain))
         })
     }
 
     fn decrypt(&self, packed: &[u8]) -> Result<String, String> {
         let bytes = self.decrypt_bytes(packed)?;
-        String::from_utf8(bytes)
-            .map_err(|_| "Encrypted credential contains invalid UTF-8 and was not accepted".to_owned())
+        String::from_utf8(bytes).map_err(|_| {
+            "Encrypted credential contains invalid UTF-8 and was not accepted".to_owned()
+        })
     }
     fn read_map(&self) -> Result<BTreeMap<String, String>, String> {
         const MAX_VAULT_FILE_BYTES: u64 = 1024 * 1024;
         const MAX_VAULT_ENTRIES: usize = 256;
-        if !self.path.exists() { return Ok(BTreeMap::new()); }
+        if !self.path.exists() {
+            return Ok(BTreeMap::new());
+        }
         let metadata = fs::metadata(&self.path).map_err(|error| error.to_string())?;
         if !metadata.is_file() || metadata.len() > MAX_VAULT_FILE_BYTES {
-            return Err("Encrypted credential vault is not a regular file or exceeds the 1 MB safety limit".into());
+            return Err(
+                "Encrypted credential vault is not a regular file or exceeds the 1 MB safety limit"
+                    .into(),
+            );
         }
         let bytes = fs::read(&self.path).map_err(|error| error.to_string())?;
         if bytes.len() as u64 > MAX_VAULT_FILE_BYTES {
-            return Err("Encrypted credential vault grew beyond the 1 MB safety limit while reading".into());
+            return Err(
+                "Encrypted credential vault grew beyond the 1 MB safety limit while reading".into(),
+            );
         }
         let values: BTreeMap<String, String> = serde_json::from_slice(&bytes)
             .map_err(|error| format!("Encrypted credential vault is invalid: {error}"))?;
-        if values.len() > MAX_VAULT_ENTRIES || values.iter().any(|(name, encoded)| {
-            name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
-        }) {
-            return Err("Encrypted credential vault contains entries outside the supported limits".into());
+        if values.len() > MAX_VAULT_ENTRIES
+            || values.iter().any(|(name, encoded)| {
+                name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
+            })
+        {
+            return Err(
+                "Encrypted credential vault contains entries outside the supported limits".into(),
+            );
         }
         Ok(values)
     }
@@ -251,9 +396,11 @@ impl AndroidSecretVault {
     fn write_map(&self, values: &BTreeMap<String, String>) -> Result<(), String> {
         const MAX_VAULT_FILE_BYTES: usize = 1024 * 1024;
         const MAX_VAULT_ENTRIES: usize = 256;
-        if values.len() > MAX_VAULT_ENTRIES || values.iter().any(|(name, encoded)| {
-            name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
-        }) {
+        if values.len() > MAX_VAULT_ENTRIES
+            || values.iter().any(|(name, encoded)| {
+                name.is_empty() || name.len() > 120 || encoded.len() > 256 * 1024
+            })
+        {
             return Err("Credential vault update exceeds the supported entry limits".into());
         }
         let bytes = serde_json::to_vec(values).map_err(|error| error.to_string())?;
@@ -261,7 +408,11 @@ impl AndroidSecretVault {
             return Err("Credential vault update exceeds the 1 MB safety limit".into());
         }
         let temporary = self.path.with_extension("tmp");
-        let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(&temporary)
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temporary)
             .map_err(|error| error.to_string())?;
         file.write_all(&bytes).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| error.to_string())?;
@@ -269,16 +420,25 @@ impl AndroidSecretVault {
     }
 
     fn put_secrets(&self, entries: &[(&str, &str)]) -> Result<(), String> {
-        if entries.iter().any(|(name, _)| name.is_empty() || name.len() > 120) {
+        if entries
+            .iter()
+            .any(|(name, _)| name.is_empty() || name.len() > 120)
+        {
             return Err("Secret name is invalid".into());
         }
-        let _guard = VAULT_FILE_LOCK.get_or_init(|| Mutex::new(())).lock().map_err(|_| "Vault lock poisoned")?;
+        let _guard = VAULT_FILE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .map_err(|_| "Vault lock poisoned")?;
         let mut values = self.read_map()?;
         for (name, value) in entries {
             if value.is_empty() {
                 values.remove(*name);
             } else {
-                values.insert((*name).to_owned(), STANDARD_NO_PAD.encode(self.encrypt(value)?));
+                values.insert(
+                    (*name).to_owned(),
+                    STANDARD_NO_PAD.encode(self.encrypt(value)?),
+                );
             }
         }
         self.write_map(&values)
@@ -293,17 +453,34 @@ impl AndroidSecretVault {
     /// is a canonical Supabase UUID; provider keys are immediately re-encrypted
     /// and moved into that account's scoped Rust vault namespace.
     pub fn migrate_legacy_export(&self, raw: &str) -> Result<bool, String> {
-        if raw.len() > 64 * 1024 { return Err("Legacy secure-store export exceeds the migration limit".into()); }
-        let value: serde_json::Value = serde_json::from_str(raw)
-            .map_err(|_| "Legacy secure-store export is invalid JSON")?;
-        let access = value.get("access_token").and_then(serde_json::Value::as_str).unwrap_or_default();
-        let refresh = value.get("refresh_token").and_then(serde_json::Value::as_str).unwrap_or_default();
-        if access.is_empty() || refresh.is_empty() { return Ok(false); }
-        let payload = access.split('.').nth(1).ok_or("Legacy access token is not a JWT")?;
-        let decoded = URL_SAFE_NO_PAD.decode(payload).map_err(|_| "Legacy access token payload is invalid")?;
+        if raw.len() > 64 * 1024 {
+            return Err("Legacy secure-store export exceeds the migration limit".into());
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(raw).map_err(|_| "Legacy secure-store export is invalid JSON")?;
+        let access = value
+            .get("access_token")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let refresh = value
+            .get("refresh_token")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if access.is_empty() || refresh.is_empty() {
+            return Ok(false);
+        }
+        let payload = access
+            .split('.')
+            .nth(1)
+            .ok_or("Legacy access token is not a JWT")?;
+        let decoded = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| "Legacy access token payload is invalid")?;
         let claims: serde_json::Value = serde_json::from_slice(&decoded)
             .map_err(|_| "Legacy access token claims are invalid")?;
-        let user_id = claims.get("sub").and_then(serde_json::Value::as_str)
+        let user_id = claims
+            .get("sub")
+            .and_then(serde_json::Value::as_str)
             .ok_or("Legacy access token has no account subject")?;
         if !valid_supabase_user_id(user_id) {
             return Err("Legacy access token account identity is invalid".into());
@@ -312,9 +489,15 @@ impl AndroidSecretVault {
         if !existing_user_id.is_empty() && existing_user_id != user_id {
             return Err("Legacy credentials belong to a different CenAI account; original data was retained".into());
         }
-        let email = value.get("account_email").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let email = value
+            .get("account_email")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
         let digest = Sha256::digest(user_id.as_bytes());
-        let account_scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let account_scope = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
         let mut entries = Vec::new();
         for (name, secret) in [
             ("supabase_access_token", access),
@@ -326,11 +509,23 @@ impl AndroidSecretVault {
                 entries.push((name.to_owned(), secret.to_owned()));
             }
         }
-        if value.get("email_verified").and_then(serde_json::Value::as_bool) == Some(true)
-            && self.get_secret(&format!("cenai_{account_scope}_email_verified"))?.is_empty() {
-            entries.push((format!("cenai_{account_scope}_email_verified"), "true".to_owned()));
+        if value
+            .get("email_verified")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+            && self
+                .get_secret(&format!("cenai_{account_scope}_email_verified"))?
+                .is_empty()
+        {
+            entries.push((
+                format!("cenai_{account_scope}_email_verified"),
+                "true".to_owned(),
+            ));
         }
-        if let Some(keys) = value.get("provider_keys").and_then(serde_json::Value::as_object) {
+        if let Some(keys) = value
+            .get("provider_keys")
+            .and_then(serde_json::Value::as_object)
+        {
             for (legacy_provider, rust_provider) in [
                 ("openai", "openai"),
                 ("deepseek", "deepseek"),
@@ -341,15 +536,21 @@ impl AndroidSecretVault {
                 ("gemini_oauth_access_token", "gemini_oauth_access"),
                 ("gemini_oauth_refresh_token", "gemini_oauth_refresh"),
             ] {
-                if let Some(key) = keys.get(legacy_provider).and_then(serde_json::Value::as_str) {
+                if let Some(key) = keys
+                    .get(legacy_provider)
+                    .and_then(serde_json::Value::as_str)
+                {
                     let slot = format!("provider_api_key_{account_scope}_{rust_provider}");
                     if !key.trim().is_empty() && self.get_secret(&slot)?.is_empty() {
                         entries.push((slot, key.to_owned()));
                     }
                 }
             }
-            if let Some(expiry_ms) = keys.get("gemini_oauth_expires_at_ms")
-                .and_then(serde_json::Value::as_str).and_then(|value| value.parse::<i64>().ok()) {
+            if let Some(expiry_ms) = keys
+                .get("gemini_oauth_expires_at_ms")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|value| value.parse::<i64>().ok())
+            {
                 let expiry_seconds = expiry_ms / 1000;
                 let slot = format!("provider_api_key_{account_scope}_gemini_oauth_expiry");
                 if expiry_seconds > 0 && self.get_secret(&slot)?.is_empty() {
@@ -357,40 +558,76 @@ impl AndroidSecretVault {
                 }
             }
         }
-        self.put_secrets(&entries.iter().map(|(name, secret)| (name.as_str(), secret.as_str())).collect::<Vec<_>>())?;
+        self.put_secrets(
+            &entries
+                .iter()
+                .map(|(name, secret)| (name.as_str(), secret.as_str()))
+                .collect::<Vec<_>>(),
+        )?;
         Ok(true)
     }
 
     fn scoped_secret_name(&self, namespace: &str, key: &str) -> Result<String, String> {
         let account_id = self.get_secret("supabase_account_id")?;
         if account_id.is_empty() {
-            return Err("Sign in to the CenAI account before accessing account-scoped settings.".into());
+            return Err(
+                "Sign in to the CenAI account before accessing account-scoped settings.".into(),
+            );
         }
         let digest = Sha256::digest(account_id.as_bytes());
-        let account_scope = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let account_scope = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
         Ok(format!("{namespace}_{account_scope}_{key}"))
     }
 
     pub fn get_secret(&self, name: &str) -> Result<String, String> {
-        let _guard = VAULT_FILE_LOCK.get_or_init(|| Mutex::new(())).lock().map_err(|_| "Vault lock poisoned")?;
+        let _guard = VAULT_FILE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .map_err(|_| "Vault lock poisoned")?;
         let values = self.read_map()?;
-        let Some(encoded) = values.get(name) else { return Ok(String::new()); };
-        let packed = STANDARD_NO_PAD.decode(encoded).map_err(|error| error.to_string())?;
+        let Some(encoded) = values.get(name) else {
+            return Ok(String::new());
+        };
+        let packed = STANDARD_NO_PAD
+            .decode(encoded)
+            .map_err(|error| error.to_string())?;
         self.decrypt(&packed)
     }
 }
 
 impl SessionVault for AndroidSecretVault {
-    fn access_token(&self) -> Result<String, String> { self.get_secret("supabase_access_token") }
-    fn refresh_token(&self) -> Result<String, String> { self.get_secret("supabase_refresh_token") }
-    fn account_email(&self) -> Result<String, String> { self.get_secret("supabase_account_email") }
-    fn account_id(&self) -> Result<String, String> { self.get_secret("supabase_account_id") }
+    fn access_token(&self) -> Result<String, String> {
+        self.get_secret("supabase_access_token")
+    }
+    fn refresh_token(&self) -> Result<String, String> {
+        self.get_secret("supabase_refresh_token")
+    }
+    fn account_email(&self) -> Result<String, String> {
+        self.get_secret("supabase_account_email")
+    }
+    fn account_id(&self) -> Result<String, String> {
+        self.get_secret("supabase_account_id")
+    }
 
-    fn encrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
-        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path) || plaintext.len() > 110 * 1024 * 1024 {
-            return Err("Account-file encryption identity, path, or payload size is invalid".into());
+    fn encrypt_workspace_bytes(
+        &self,
+        user_identity: &str,
+        relative_path: &str,
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        if !valid_supabase_user_id(user_identity)
+            || !valid_workspace_relative_path(relative_path)
+            || plaintext.len() > 110 * 1024 * 1024
+        {
+            return Err(
+                "Account-file encryption identity, path, or payload size is invalid".into(),
+            );
         }
-        let mut envelope = format!("CENAI-ACCOUNT-FILE-V1\n{user_identity}\n{relative_path}\n").into_bytes();
+        let mut envelope =
+            format!("CENAI-ACCOUNT-FILE-V1\n{user_identity}\n{relative_path}\n").into_bytes();
         envelope.extend_from_slice(plaintext);
         let encrypted = self.encrypt_bytes(&envelope)?;
         let mut output = WORKSPACE_CIPHER_MAGIC.to_vec();
@@ -398,9 +635,17 @@ impl SessionVault for AndroidSecretVault {
         Ok(output)
     }
 
-    fn decrypt_workspace_bytes(&self, user_identity: &str, relative_path: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
-        if !valid_supabase_user_id(user_identity) || !valid_workspace_relative_path(relative_path)
-            || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC) || ciphertext.len() > 120 * 1024 * 1024 {
+    fn decrypt_workspace_bytes(
+        &self,
+        user_identity: &str,
+        relative_path: &str,
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        if !valid_supabase_user_id(user_identity)
+            || !valid_workspace_relative_path(relative_path)
+            || !ciphertext.starts_with(WORKSPACE_CIPHER_MAGIC)
+            || ciphertext.len() > 120 * 1024 * 1024
+        {
             return Err("Encrypted account-file identity, path, or envelope is invalid".into());
         }
         let envelope = self.decrypt_bytes(&ciphertext[WORKSPACE_CIPHER_MAGIC.len()..])?;
@@ -409,13 +654,25 @@ impl SessionVault for AndroidSecretVault {
             return Err("Encrypted file belongs to a different account or storage path".into());
         }
         let plaintext = envelope[prefix.len()..].to_vec();
-        if plaintext.len() > 110 * 1024 * 1024 { return Err("Encrypted account file exceeds the storage limit".into()); }
+        if plaintext.len() > 110 * 1024 * 1024 {
+            return Err("Encrypted account file exceeds the storage limit".into());
+        }
         Ok(plaintext)
     }
 
-    fn save_session(&self, access: &str, refresh: &str, user_id: &str, email: &str) -> Result<(), String> {
-        if !valid_supabase_user_id(user_id) || access.trim().is_empty() || refresh.trim().is_empty() {
-            return Err("A valid Supabase user UUID and complete authenticated session are required.".into());
+    fn save_session(
+        &self,
+        access: &str,
+        refresh: &str,
+        user_id: &str,
+        email: &str,
+    ) -> Result<(), String> {
+        if !valid_supabase_user_id(user_id) || access.trim().is_empty() || refresh.trim().is_empty()
+        {
+            return Err(
+                "A valid Supabase user UUID and complete authenticated session are required."
+                    .into(),
+            );
         }
         self.put_secrets(&[
             ("supabase_access_token", access),
@@ -434,7 +691,11 @@ impl SessionVault for AndroidSecretVault {
         ])
     }
     fn provider_key(&self, provider: &str) -> Result<String, String> {
-        if provider.len() > 32 || !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+        if provider.len() > 32
+            || !provider.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '_' || character == '-'
+            })
+        {
             return Err("Provider identifier is invalid".into());
         }
         let name = self.scoped_secret_name("provider_api_key", provider)?;
@@ -478,7 +739,11 @@ impl SessionVault for AndroidSecretVault {
     }
 
     fn save_provider_key(&self, provider: &str, key: &str) -> Result<(), String> {
-        if provider.len() > 32 || !provider.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-') {
+        if provider.len() > 32
+            || !provider.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '_' || character == '-'
+            })
+        {
             return Err("Provider identifier is invalid".into());
         }
         let name = self.scoped_secret_name("provider_api_key", provider)?;
@@ -486,14 +751,18 @@ impl SessionVault for AndroidSecretVault {
     }
 }
 
-
 #[cfg(test)]
 mod identity_tests {
     use super::{supported_user_setting_key, valid_supabase_user_id, valid_user_setting_value};
 
     #[test]
     fn account_preferences_allow_only_known_keys_and_typed_values() {
-        for key in ["light_mode", "reduced_motion", "offline_ai_enabled", "local_knowledge_enabled"] {
+        for key in [
+            "light_mode",
+            "reduced_motion",
+            "offline_ai_enabled",
+            "local_knowledge_enabled",
+        ] {
             assert!(supported_user_setting_key(key));
             assert!(valid_user_setting_value(key, "true"));
             assert!(!valid_user_setting_value(key, "yes"));
@@ -506,26 +775,45 @@ mod identity_tests {
         assert!(!valid_user_setting_value("max_response_tokens", "100"));
         assert!(!valid_user_setting_value("max_response_tokens", "999"));
         assert!(supported_user_setting_key("system_prompt"));
-        assert!(valid_user_setting_value("system_prompt", "Be concise.\\nExplain assumptions."));
-        assert!(!valid_user_setting_value("system_prompt", &"x".repeat(8_001)));
+        assert!(valid_user_setting_value(
+            "system_prompt",
+            "Be concise.\\nExplain assumptions."
+        ));
+        assert!(!valid_user_setting_value(
+            "system_prompt",
+            &"x".repeat(8_001)
+        ));
         assert!(supported_user_setting_key("active_provider"));
         assert!(valid_user_setting_value("active_provider", "custom"));
         assert!(!valid_user_setting_value("active_provider", "unknown"));
         assert!(supported_user_setting_key("provider_model_custom"));
-        assert!(valid_user_setting_value("provider_model_custom", "vendor-model-v1"));
+        assert!(valid_user_setting_value(
+            "provider_model_custom",
+            "vendor-model-v1"
+        ));
         assert!(supported_user_setting_key("provider_endpoint_custom"));
-        assert!(valid_user_setting_value("provider_endpoint_custom", "https://api.example.com/v1"));
+        assert!(valid_user_setting_value(
+            "provider_endpoint_custom",
+            "https://api.example.com/v1"
+        ));
         assert!(!supported_user_setting_key("provider_secret_openai"));
         assert!(!supported_user_setting_key("provider_model_unknown"));
-        assert!(!valid_user_setting_value("provider_model_custom", "bad\\nmodel"));
+        assert!(!valid_user_setting_value(
+            "provider_model_custom",
+            "bad\\nmodel"
+        ));
     }
 
     #[test]
     fn only_canonical_supabase_uuid_identities_are_accepted() {
-        assert!(valid_supabase_user_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(valid_supabase_user_id(
+            "550e8400-e29b-41d4-a716-446655440000"
+        ));
         assert!(!valid_supabase_user_id(""));
         assert!(!valid_supabase_user_id("user@example.com"));
         assert!(!valid_supabase_user_id("550e8400e29b41d4a716446655440000"));
-        assert!(!valid_supabase_user_id("550e8400-e29b-41d4-a716-44665544000z"));
+        assert!(!valid_supabase_user_id(
+            "550e8400-e29b-41d4-a716-44665544000z"
+        ));
     }
 }

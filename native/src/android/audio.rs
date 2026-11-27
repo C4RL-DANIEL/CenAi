@@ -1,11 +1,17 @@
 //! Android microphone capture using AudioRecord, exposed as bounded PCM16 frames to Rust.
+use crate::core::voice::AudioFrame;
+use jni::{
+    objects::{GlobalRef, JObject, JValue},
+    JavaVM,
+};
 use std::{
-    sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
     thread::{self, JoinHandle},
 };
-use jni::{objects::{GlobalRef, JObject, JValue}, JavaVM};
 use winit::platform::android::activity::AndroidApp;
-use crate::core::voice::AudioFrame;
 
 const SAMPLE_RATE: i32 = 16_000;
 const CHANNEL_IN_MONO: i32 = 16;
@@ -15,7 +21,10 @@ const REQUEST_CODE: i32 = 7_331;
 
 /// AndroidApp exposes an unowned JNI global reference. Convert it to a local
 /// reference for this attached thread without deleting the AndroidApp-owned global.
-fn activity_local<'local>(env: &mut jni::JNIEnv<'local>, app: &AndroidApp) -> jni::errors::Result<JObject<'local>> {
+fn activity_local<'local>(
+    env: &mut jni::JNIEnv<'local>,
+    app: &AndroidApp,
+) -> jni::errors::Result<JObject<'local>> {
     let global = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
     let local = env.new_local_ref(&global);
     std::mem::forget(global);
@@ -46,9 +55,15 @@ impl AndroidAudioCapture {
         }
     }
 
-    fn with_env<T>(&self, operation: impl FnOnce(&mut jni::JNIEnv<'_>) -> jni::errors::Result<T>) -> Result<T, String> {
-        let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
-        let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
+    fn with_env<T>(
+        &self,
+        operation: impl FnOnce(&mut jni::JNIEnv<'_>) -> jni::errors::Result<T>,
+    ) -> Result<T, String> {
+        let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr().cast()) }
+            .map_err(|error| error.to_string())?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|error| error.to_string())?;
         operation(&mut env).map_err(|error| error.to_string())
     }
 
@@ -56,26 +71,37 @@ impl AndroidAudioCapture {
         self.with_env(|env| {
             let activity = activity_local(env, &self.app)?;
             let permission = env.new_string("android.permission.RECORD_AUDIO")?;
-            let result = env.call_method(
-                &activity,
-                "checkSelfPermission",
-                "(Ljava/lang/String;)I",
-                &[JValue::Object(&permission)],
-            )?.i()?;
+            let result = env
+                .call_method(
+                    &activity,
+                    "checkSelfPermission",
+                    "(Ljava/lang/String;)I",
+                    &[JValue::Object(&permission)],
+                )?
+                .i()?;
             Ok(result == 0)
         })
     }
 
     fn request_permission(&mut self) {
-        if self.permission_requested { return; }
+        if self.permission_requested {
+            return;
+        }
         self.permission_requested = true;
         let app = self.app.clone();
         let callback_app = app.clone();
         app.run_on_java_main_thread(Box::new(move || {
             let vm = unsafe { JavaVM::from_raw(callback_app.vm_as_ptr().cast()) };
-            let Ok(vm) = vm else { log::error!("Could not attach to Android VM for microphone permission"); return; };
-            let Ok(mut env) = vm.attach_current_thread() else { return; };
-            let Ok(activity) = activity_local(&mut env, &callback_app) else { return; };
+            let Ok(vm) = vm else {
+                log::error!("Could not attach to Android VM for microphone permission");
+                return;
+            };
+            let Ok(mut env) = vm.attach_current_thread() else {
+                return;
+            };
+            let Ok(activity) = activity_local(&mut env, &callback_app) else {
+                return;
+            };
             let result = (|| -> jni::errors::Result<()> {
                 let permission = env.new_string("android.permission.RECORD_AUDIO")?;
                 let permissions = env.new_object_array(1, "java/lang/String", JObject::null())?;
@@ -85,20 +111,33 @@ impl AndroidAudioCapture {
                     &activity,
                     "requestPermissions",
                     "([Ljava/lang/String;I)V",
-                    &[JValue::Object(&permissions_object), JValue::Int(REQUEST_CODE)],
+                    &[
+                        JValue::Object(&permissions_object),
+                        JValue::Int(REQUEST_CODE),
+                    ],
                 )?;
                 Ok(())
             })();
-            if let Err(error) = result { log::error!("Microphone permission request failed: {error}"); }
+            if let Err(error) = result {
+                log::error!("Microphone permission request failed: {error}");
+            }
         }));
     }
 
     /// Returns false while the Android permission prompt is pending.
     pub fn start(&mut self) -> Result<bool, String> {
-        if self.worker.as_ref().is_some_and(|worker| worker.is_finished()) {
-            if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+        if self
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.is_finished())
+        {
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
         }
-        if self.worker.is_some() { return Err("Microphone capture is already active".into()); }
+        if self.worker.is_some() {
+            return Err("Microphone capture is already active".into());
+        }
         if !self.has_permission()? {
             self.request_permission();
             return Ok(false);
@@ -209,7 +248,11 @@ impl AndroidAudioCapture {
     pub fn stop(&mut self) {
         self.permission_requested = false;
         self.stop_flag.store(true, Ordering::Release);
-        let recorder = self.recorder.lock().ok().and_then(|slot| slot.as_ref().cloned());
+        let recorder = self
+            .recorder
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned());
         if let Some(recorder) = recorder {
             let _ = self.with_env(|env| {
                 env.call_method(recorder.as_obj(), "stop", "()V", &[])?;
@@ -223,7 +266,9 @@ impl AndroidAudioCapture {
 }
 
 impl Drop for AndroidAudioCapture {
-    fn drop(&mut self) { self.stop(); }
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 fn parse_pcm_wav(bytes: &[u8]) -> Result<(u32, u16, &[u8]), String> {
@@ -238,15 +283,25 @@ fn parse_pcm_wav(bytes: &[u8]) -> Result<(u32, u16, &[u8]), String> {
     let mut data = None;
     while offset.saturating_add(8) <= bytes.len() {
         let id = &bytes[offset..offset + 4];
-        let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().map_err(|_| "Invalid WAV chunk")?) as usize;
+        let size = u32::from_le_bytes(
+            bytes[offset + 4..offset + 8]
+                .try_into()
+                .map_err(|_| "Invalid WAV chunk")?,
+        ) as usize;
         let start = offset + 8;
         let end = start.checked_add(size).ok_or("WAV chunk length overflow")?;
-        if end > bytes.len() { return Err("WAV chunk exceeds audio buffer".into()); }
+        if end > bytes.len() {
+            return Err("WAV chunk exceeds audio buffer".into());
+        }
         match id {
             b"fmt " if size >= 16 => {
                 format = Some(u16::from_le_bytes([bytes[start], bytes[start + 1]]));
                 channels = Some(u16::from_le_bytes([bytes[start + 2], bytes[start + 3]]));
-                sample_rate = Some(u32::from_le_bytes(bytes[start + 4..start + 8].try_into().map_err(|_| "Invalid WAV sample rate")?));
+                sample_rate = Some(u32::from_le_bytes(
+                    bytes[start + 4..start + 8]
+                        .try_into()
+                        .map_err(|_| "Invalid WAV sample rate")?,
+                ));
                 bits = Some(u16::from_le_bytes([bytes[start + 14], bytes[start + 15]]));
             }
             b"data" => data = Some(&bytes[start..end]),
@@ -301,77 +356,144 @@ impl AndroidAudioPlayback {
         let stop_flag = self.stop_flag.clone();
         let track_slot = self.track.clone();
         let error_sender = self.error_sender.clone();
-        self.worker = Some(thread::Builder::new().name("cenai-audio-playback".into()).spawn(move || {
-            let result = (|| -> Result<(), String> {
-                let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|error| error.to_string())?;
-                let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
-                let min_buffer = env.call_static_method(
-                    "android/media/AudioTrack",
-                    "getMinBufferSize",
-                    "(III)I",
-                    &[JValue::Int(sample_rate as i32), JValue::Int(4), JValue::Int(2)],
-                ).map_err(|error| error.to_string())?.i().map_err(|error| error.to_string())?;
-                if min_buffer <= 0 { return Err("Android could not determine an audio output buffer size".into()); }
-                let buffer_size = (min_buffer as usize).max(8192).min(128 * 1024) as i32;
-                let track = env.new_object(
-                    "android/media/AudioTrack",
-                    "(IIIIII)V",
-                    &[
-                        JValue::Int(3), JValue::Int(sample_rate as i32), JValue::Int(4),
-                        JValue::Int(2), JValue::Int(buffer_size), JValue::Int(1),
-                    ],
-                ).map_err(|error| error.to_string())?;
-                let state = env.call_method(&track, "getState", "()I", &[])
-                    .map_err(|error| error.to_string())?.i().map_err(|error| error.to_string())?;
-                if state != 1 { return Err("Android AudioTrack failed to initialize".into()); }
-                let global = env.new_global_ref(&track).map_err(|error| error.to_string())?;
-                *track_slot.lock().map_err(|_| "Audio playback state lock was poisoned")? = Some(global);
-                env.call_method(&track, "play", "()V", &[]).map_err(|error| error.to_string())?;
-                for chunk in pcm.chunks(16 * 1024) {
-                    if stop_flag.load(Ordering::Acquire) { break; }
-                    let bytes = env.byte_array_from_slice(chunk).map_err(|error| error.to_string())?;
-                    let bytes_object = JObject::from(bytes);
-                    let mut offset = 0usize;
-                    while offset < chunk.len() && !stop_flag.load(Ordering::Acquire) {
-                        let written = env.call_method(
-                            &track, "write", "([BII)I",
-                            &[JValue::Object(&bytes_object), JValue::Int(offset as i32), JValue::Int((chunk.len() - offset) as i32)],
-                        ).map_err(|error| error.to_string())?.i().map_err(|error| error.to_string())?;
-                        if written < 0 { return Err(format!("Android audio output failed with code {written}")); }
-                        if written == 0 { return Err("Android audio output stopped accepting PCM data".into()); }
-                        offset += written as usize;
-                    }
-                }
-                let _ = env.call_method(&track, "stop", "()V", &[]);
-                let _ = env.call_method(&track, "release", "()V", &[]);
-                Ok(())
-            })();
-            if result.is_err() {
-                // Always release AudioTrack on partial initialization or write failures.
-                if let Ok(vm) = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) } {
-                    if let Ok(mut env) = vm.attach_current_thread() {
-                        if let Ok(slot) = track_slot.lock() {
-                            if let Some(track) = slot.as_ref() {
-                                let _ = env.call_method(track.as_obj(), "stop", "()V", &[]);
-                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
-                                let _ = env.call_method(track.as_obj(), "release", "()V", &[]);
-                                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+        self.worker = Some(
+            thread::Builder::new()
+                .name("cenai-audio-playback".into())
+                .spawn(move || {
+                    let result = (|| -> Result<(), String> {
+                        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }
+                            .map_err(|error| error.to_string())?;
+                        let mut env = vm
+                            .attach_current_thread()
+                            .map_err(|error| error.to_string())?;
+                        let min_buffer = env
+                            .call_static_method(
+                                "android/media/AudioTrack",
+                                "getMinBufferSize",
+                                "(III)I",
+                                &[
+                                    JValue::Int(sample_rate as i32),
+                                    JValue::Int(4),
+                                    JValue::Int(2),
+                                ],
+                            )
+                            .map_err(|error| error.to_string())?
+                            .i()
+                            .map_err(|error| error.to_string())?;
+                        if min_buffer <= 0 {
+                            return Err(
+                                "Android could not determine an audio output buffer size".into()
+                            );
+                        }
+                        let buffer_size = (min_buffer as usize).max(8192).min(128 * 1024) as i32;
+                        let track = env
+                            .new_object(
+                                "android/media/AudioTrack",
+                                "(IIIIII)V",
+                                &[
+                                    JValue::Int(3),
+                                    JValue::Int(sample_rate as i32),
+                                    JValue::Int(4),
+                                    JValue::Int(2),
+                                    JValue::Int(buffer_size),
+                                    JValue::Int(1),
+                                ],
+                            )
+                            .map_err(|error| error.to_string())?;
+                        let state = env
+                            .call_method(&track, "getState", "()I", &[])
+                            .map_err(|error| error.to_string())?
+                            .i()
+                            .map_err(|error| error.to_string())?;
+                        if state != 1 {
+                            return Err("Android AudioTrack failed to initialize".into());
+                        }
+                        let global = env
+                            .new_global_ref(&track)
+                            .map_err(|error| error.to_string())?;
+                        *track_slot
+                            .lock()
+                            .map_err(|_| "Audio playback state lock was poisoned")? = Some(global);
+                        env.call_method(&track, "play", "()V", &[])
+                            .map_err(|error| error.to_string())?;
+                        for chunk in pcm.chunks(16 * 1024) {
+                            if stop_flag.load(Ordering::Acquire) {
+                                break;
+                            }
+                            let bytes = env
+                                .byte_array_from_slice(chunk)
+                                .map_err(|error| error.to_string())?;
+                            let bytes_object = JObject::from(bytes);
+                            let mut offset = 0usize;
+                            while offset < chunk.len() && !stop_flag.load(Ordering::Acquire) {
+                                let written = env
+                                    .call_method(
+                                        &track,
+                                        "write",
+                                        "([BII)I",
+                                        &[
+                                            JValue::Object(&bytes_object),
+                                            JValue::Int(offset as i32),
+                                            JValue::Int((chunk.len() - offset) as i32),
+                                        ],
+                                    )
+                                    .map_err(|error| error.to_string())?
+                                    .i()
+                                    .map_err(|error| error.to_string())?;
+                                if written < 0 {
+                                    return Err(format!(
+                                        "Android audio output failed with code {written}"
+                                    ));
+                                }
+                                if written == 0 {
+                                    return Err(
+                                        "Android audio output stopped accepting PCM data".into()
+                                    );
+                                }
+                                offset += written as usize;
+                            }
+                        }
+                        let _ = env.call_method(&track, "stop", "()V", &[]);
+                        let _ = env.call_method(&track, "release", "()V", &[]);
+                        Ok(())
+                    })();
+                    if result.is_err() {
+                        // Always release AudioTrack on partial initialization or write failures.
+                        if let Ok(vm) = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) } {
+                            if let Ok(mut env) = vm.attach_current_thread() {
+                                if let Ok(slot) = track_slot.lock() {
+                                    if let Some(track) = slot.as_ref() {
+                                        let _ = env.call_method(track.as_obj(), "stop", "()V", &[]);
+                                        if env.exception_check().unwrap_or(false) {
+                                            let _ = env.exception_clear();
+                                        }
+                                        let _ =
+                                            env.call_method(track.as_obj(), "release", "()V", &[]);
+                                        if env.exception_check().unwrap_or(false) {
+                                            let _ = env.exception_clear();
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
-            if let Err(error) = result {
-                log::warn!("CenAI speech playback failed: {error}");
-                let _ = error_sender.try_send(error);
-            }
-            if let Ok(mut slot) = track_slot.lock() { *slot = None; }
-        }).map_err(|error| error.to_string())?);
+                    if let Err(error) = result {
+                        log::warn!("CenAI speech playback failed: {error}");
+                        let _ = error_sender.try_send(error);
+                    }
+                    if let Ok(mut slot) = track_slot.lock() {
+                        *slot = None;
+                    }
+                })
+                .map_err(|error| error.to_string())?,
+        );
         Ok(())
     }
 
     pub fn is_playing(&self) -> bool {
-        self.worker.as_ref().is_some_and(|worker| !worker.is_finished())
+        self.worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished())
     }
 
     pub fn try_error(&self) -> Option<String> {
@@ -380,7 +502,11 @@ impl AndroidAudioPlayback {
 
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::Release);
-        let track = self.track.lock().ok().and_then(|slot| slot.as_ref().cloned());
+        let track = self
+            .track
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned());
         if let Some(track) = track {
             let vm = unsafe { JavaVM::from_raw(self.app.vm_as_ptr().cast()) };
             if let Ok(vm) = vm {
@@ -389,10 +515,14 @@ impl AndroidAudioPlayback {
                 }
             }
         }
-        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
 impl Drop for AndroidAudioPlayback {
-    fn drop(&mut self) { self.stop(); }
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
