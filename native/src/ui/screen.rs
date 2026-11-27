@@ -629,10 +629,37 @@ fn work(ui: &mut egui::Ui, state: &mut AppState) {
     } else {
         for plan in &state.task_plans {
             surface(ui, |ui| {
+                let completed = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::Completed).count();
+                let blocked = plan.steps.iter().filter(|step| matches!(step.status,
+                    crate::core::agents::StepStatus::Blocked | crate::core::agents::StepStatus::Failed)).count();
+                let waiting = plan.steps.iter().filter(|step| step.status == crate::core::agents::StepStatus::WaitingForApproval).count();
                 ui.label(text(&plan.goal, 15.0, egui::Color32::WHITE).strong());
-                ui.label(text(format!("{} steps · {}", plan.steps.len(), if plan.stopped { "Stopped" } else { "Tracked in approval workflow" }), 10.0, egui::Color32::from_rgb(140, 154, 190)));
+                let summary = if plan.stopped {
+                    "Stopped".to_owned()
+                } else if plan.is_paused() {
+                    "Paused".to_owned()
+                } else {
+                    format!("{completed}/{} completed · {waiting} awaiting approval · {blocked} blocked/failed",
+                        plan.steps.len())
+                };
+                ui.label(text(summary, 10.0, egui::Color32::from_rgb(140, 154, 190)));
                 for step in &plan.steps {
-                    ui.label(text(format!("○  {:?} — {}", step.role, step.title), 11.0, egui::Color32::from_rgb(163, 174, 203)));
+                    let (marker, color) = match step.status {
+                        crate::core::agents::StepStatus::Completed => ("✓", egui::Color32::from_rgb(119, 220, 183)),
+                        crate::core::agents::StepStatus::Running => ("●", egui::Color32::from_rgb(120, 180, 245)),
+                        crate::core::agents::StepStatus::WaitingForApproval => ("!", egui::Color32::from_rgb(240, 190, 132)),
+                        crate::core::agents::StepStatus::Blocked | crate::core::agents::StepStatus::Failed => ("×", egui::Color32::from_rgb(235, 145, 145)),
+                        crate::core::agents::StepStatus::Cancelled => ("–", egui::Color32::from_rgb(143, 154, 180)),
+                        crate::core::agents::StepStatus::Pending => ("○", egui::Color32::from_rgb(163, 174, 203)),
+                    };
+                    ui.label(text(format!("{marker}  {:?} — {} · {:?}", step.role, step.title, step.status), 11.0, color));
+                    if let Some(output) = step.output.as_deref().filter(|value| !value.trim().is_empty()) {
+                        egui::CollapsingHeader::new("View saved step result")
+                            .id_salt(("task-step-result", &plan.id, step.id))
+                            .show(ui, |ui| {
+                                ui.add(egui::Label::new(text(output, 10.0, egui::Color32::from_rgb(190, 201, 224))).wrap());
+                            });
+                    }
                 }
             });
             ui.add_space(8.0);
