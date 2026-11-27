@@ -42,7 +42,11 @@ jobs:
       - name: Apply and commit canonical Rust formatting
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/rewrite/')
         run: |
+          # rustfmt can expose a second-order diff in deeply nested expressions.
+          # Run twice, then require the exact same strict check used below.
           cargo fmt --all
+          cargo fmt --all
+          cargo fmt --all -- --check
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
