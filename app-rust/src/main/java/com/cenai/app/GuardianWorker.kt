@@ -33,7 +33,12 @@ class GuardianWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 stat.availableBytes.toString(),
                 percent.toString(),
                 crash.getLong("last_crash_at", 0L).toString(),
-                crash.getString("last_crash_category", "").orEmpty().replace("|", "_").take(64)
+                crash.getString("last_crash_category", "").orEmpty().replace("|", "_").take(64),
+                crash.getLong("last_lifecycle_at", 0L).toString(),
+                crash.getString("last_lifecycle_event", "").orEmpty().replace("|", "_").take(32),
+                crash.getInt("lifecycle_event_count", 0).toString(),
+                crash.getString("memory_pressure", "unknown").orEmpty().replace("|", "_").take(16),
+                crash.getLong("memory_pressure_at", 0L).toString()
             ).joinToString("|")
             val history = app.getSharedPreferences("cenai_guardian_history", Context.MODE_PRIVATE)
             synchronized(LOCK) {
