@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - "rewrite/**"
+    tags:
+      - "v*"
     paths:
       - "native/**"
       - "app-rust/**"
