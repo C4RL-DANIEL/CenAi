@@ -67,8 +67,10 @@ async function sandboxProxy(request, env) {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
   const token = (request.headers.get("Authorization") || "").trim();
   if (!/^Bearer\s+\S+/i.test(token)) return json(401, { error: "Sign in required" });
+  const backend = sandboxBackendUrl(env);
+  if (!backend) return json(503, { error: "Sandbox backend is not configured for this deployment" });
   try {
-    const upstream = await fetch(CENAI_SANDBOX_BACKEND, {
+    const upstream = await fetch(backend, {
       method: "POST",
       headers: {
         Authorization: token,
