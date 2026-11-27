@@ -171,7 +171,7 @@
     const password = $("new-password").value;
     const confirmation = $("confirm-password").value;
     if (Array.from(password).length < 12) { note("Use at least 12 characters for your password.", "error"); return; }
-    if (Array.from(password).length > 128) { note("Use no more than 128 characters for your password.", "error"); return; }
+    if (Array.from(password).length > 72) { note("Use no more than 72 characters for your password.", "error"); return; }
     if (password !== confirmation) { note("The passwords do not match.", "error"); return; }
     const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
     if (!saved?.access_token) { note("Your registration session expired. Reopen the invitation link and sign in again.", "error"); return; }
