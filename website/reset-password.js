@@ -36,18 +36,20 @@
     event.preventDefault();
     const password = document.getElementById("password").value;
     const confirm = document.getElementById("confirm").value;
-    if (password.length < 8) return message("Use at least 8 characters.", "error");
+    if (Array.from(password).length < 12) return message("Use at least 12 characters.", "error");
+    if (Array.from(password).length > 128) return message("Use no more than 128 characters.", "error");
     if (password !== confirm) return message("The passwords do not match.", "error");
     submit.disabled = true;
     submit.textContent = "Updating…";
     try {
-      const response = await fetch(SUPABASE_URL + "/auth/v1/user", {
-        method: "PUT",
+      const response = await fetch(SUPABASE_URL + "/functions/v1/cenai-password-policy", {
+        method: "POST",
         headers: { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password }),
+        cache: "no-store"
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.msg || data.message || data.error_description || data.error || "Password update failed.");
+      if (!response.ok || data.updated !== true) throw new Error(data.error || "Password update failed.");
       form.hidden = true;
       message("Your CenAI password has been updated. You can now return to the app and sign in with your new password.", "ok");
       history.replaceState(null, "", location.pathname);
