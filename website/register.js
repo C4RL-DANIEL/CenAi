@@ -177,14 +177,14 @@
     const button = event.currentTarget.querySelector("button[type=submit]");
     button.disabled = true;
     try {
-      const response = await fetch(config.supabaseUrl.replace(/\/$/, "") + "/auth/v1/user", {
-        method: "PUT",
+      const response = await fetch(config.supabaseUrl.replace(/\/$/, "") + "/functions/v1/cenai-password-policy", {
+        method: "POST",
         headers: { "Content-Type": "application/json", apikey: config.publishableKey, Authorization: "Bearer " + saved.access_token },
         body: JSON.stringify({ password }),
         cache: "no-store"
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.msg || result.message || "Password could not be saved.");
+      if (!response.ok || result.updated !== true) throw new Error(result.error || "Password could not be saved.");
       $("password-form").classList.add("hidden");
       note("Registration complete. Sign in to the CenAI Android app with your Discord email and the password you just created.", "success");
     } catch (error) {
