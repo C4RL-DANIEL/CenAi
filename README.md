@@ -63,6 +63,12 @@ Other providers are not automatically account-connected. Only implement their OA
 
 Provider API keys stay on-device and are encrypted using Android Keystore. Use official provider API endpoints and API credentials. A consumer subscription does not automatically include API access. Never commit API keys, OAuth tokens, signing keys or private configuration.
 
+### Password safety on the Free Supabase plan
+
+Supabase's built-in Have I Been Pwned password protection is a paid-plan Auth setting, so CenAI does not claim that the platform-wide control is enabled. The official website registration and recovery flows instead submit password changes to the authenticated `cenai-password-policy` Edge Function. That function enforces 12–128 characters, rejects a password containing the account email local-part or a single repeated character, and checks the password against Have I Been Pwned's Pwned Passwords range API before changing the account password. The check uses SHA-1 k-anonymity: only the first five hexadecimal characters of the password hash are sent; the plaintext password and full hash are not sent to HIBP or logged. If the breach-check service is unavailable, the password change fails closed and the existing password remains unchanged.
+
+This policy is enforced in CenAI's registration and recovery pages. It is not a Supabase-wide password hook: an administrator or a separate client that calls Supabase Auth's password-update endpoint directly can bypass the website flow. Keep account password changes routed through CenAI's policy endpoint until a platform-wide Auth hook is available.
+
 
 ## UI design references
 
