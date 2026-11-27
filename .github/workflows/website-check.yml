@@ -50,6 +50,8 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Test password policy and breach protection
+        run: deno test --no-check supabase/functions/cenai-password-policy/policy.test.ts
       - name: Type-check PayPal and admin control-plane Edge Functions
         run: |
           for function in cenai-ai-quota cenai-billing cenai-control-plane cenai-ecosystem cenai-email-otp cenai-memory cenai-password-policy cenai-paypal-billing cenai-public-api cenai-telemetry; do
